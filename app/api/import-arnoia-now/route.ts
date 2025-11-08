@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 
-export const maxDuration = 300 // 5 minutos
+export const maxDuration = 60 // 1 minuto
 
 export async function GET() {
   console.log("[v0] ==========================================")
