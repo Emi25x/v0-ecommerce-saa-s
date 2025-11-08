@@ -1,0 +1,66 @@
+import { NextResponse } from "next/server"
+import { createClient } from "@/lib/supabase/server"
+import type { Request } from "next/dist/server/web/types"
+
+export async function GET(request: Request) {
+  try {
+    const supabase = await createClient()
+
+    // Get last visit times from localStorage (will be passed as query params)
+    const url = new URL(request.url)
+    const lastVisitOrders = url.searchParams.get("lastVisitOrders")
+    const lastVisitProducts = url.searchParams.get("lastVisitProducts")
+    const lastVisitShipments = url.searchParams.get("lastVisitShipments")
+
+    // Count new orders since last visit
+    let newOrdersCount = 0
+    if (lastVisitOrders) {
+      try {
+        const { count } = await supabase
+          .from("ml_orders")
+          .select("*", { count: "exact", head: true })
+          .gte("date_created", lastVisitOrders)
+
+        newOrdersCount = count || 0
+      } catch (error) {
+        console.log("[v0] ml_orders table not found, skipping")
+      }
+    }
+
+    // Count new products since last visit
+    let newProductsCount = 0
+    if (lastVisitProducts) {
+      try {
+        const { count } = await supabase
+          .from("ml_listings")
+          .select("*", { count: "exact", head: true })
+          .gte("created_at", lastVisitProducts)
+
+        newProductsCount = count || 0
+      } catch (error) {
+        console.log("[v0] ml_listings table not found, skipping")
+      }
+    }
+
+    let readyToShipCountValue = 0
+    try {
+      const { count: readyToShipCount } = await supabase
+        .from("ml_shipments")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "ready_to_ship")
+
+      readyToShipCountValue = readyToShipCount || 0
+    } catch (error) {
+      console.log("[v0] ml_shipments table not found, skipping")
+    }
+
+    return NextResponse.json({
+      orders: newOrdersCount,
+      products: newProductsCount,
+      shipments: readyToShipCountValue,
+    })
+  } catch (error) {
+    console.error("[v0] Error fetching notifications:", error)
+    return NextResponse.json({ orders: 0, products: 0, shipments: 0 })
+  }
+}

@@ -1,0 +1,47 @@
+import { type NextRequest, NextResponse } from "next/server"
+import { createClient } from "@/lib/supabase/server"
+
+export async function GET(request: NextRequest, { params }: { params: { claimId: string } }) {
+  try {
+    const supabase = await createClient()
+
+    // Get the authenticated user
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    // Get MercadoLibre credentials
+    const { data: credentials, error: credError } = await supabase
+      .from("mercadolibre_credentials")
+      .select("access_token")
+      .eq("user_id", user.id)
+      .single()
+
+    if (credError || !credentials) {
+      return NextResponse.json({ error: "MercadoLibre not connected" }, { status: 400 })
+    }
+
+    // Fetch return details from MercadoLibre API
+    const response = await fetch(`https://api.mercadolibre.com/post-purchase/v2/claims/${params.claimId}/returns`, {
+      headers: {
+        Authorization: `Bearer ${credentials.access_token}`,
+      },
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      return NextResponse.json({ error: errorData }, { status: response.status })
+    }
+
+    const returnData = await response.json()
+    return NextResponse.json(returnData)
+  } catch (error) {
+    console.error("Error fetching return details:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}

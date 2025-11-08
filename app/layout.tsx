@@ -1,18 +1,15 @@
-import type { Metadata } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
-import { Analytics } from '@vercel/analytics/next'
-import './globals.css'
-
-const _geist = Geist({ subsets: ["latin"] });
-const _geistMono = Geist_Mono({ subsets: ["latin"] });
+import type React from "react"
+import type { Metadata } from "next"
+import { Suspense } from "react"
+import { MigrationProvider } from "@/components/migration-provider"
+import { Toaster } from "@/components/ui/toaster"
+import { AppSidebar } from "@/components/app-sidebar"
+import "./globals.css"
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
-  generator: 'v0.app',
-  icons: {
-    icon: '/icon.svg',
-  },
+  title: "Ecommerce Manager - SaaS",
+  description: "Gestiona tu ecommerce con integraciones de Mercado Libre y Shopify",
+  generator: "v0.app",
 }
 
 export default function RootLayout({
@@ -21,10 +18,17 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
-      <body className={`font-sans antialiased`}>
-        {children}
-        <Analytics />
+    <html lang="es" className="dark">
+      <body className="font-sans antialiased">
+        <MigrationProvider>
+          <div className="flex min-h-screen">
+            <AppSidebar />
+            <main className="flex-1">
+              <Suspense fallback={null}>{children}</Suspense>
+            </main>
+          </div>
+        </MigrationProvider>
+        <Toaster />
       </body>
     </html>
   )
