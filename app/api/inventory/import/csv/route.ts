@@ -123,6 +123,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ totalRecords: dataLines.length })
     }
 
+    const columnMapping = source.column_mapping
+    const hasOnlyBasicData =
+      !columnMapping.title && !columnMapping.description && !columnMapping.category && !columnMapping.brand
+    console.log("[v0] Importación solo con datos básicos (precio/stock):", hasOnlyBasicData)
+
     const { data: historyRecord, error: historyError } = await supabase
       .from("import_history")
       .insert({
@@ -148,6 +153,7 @@ export async function POST(request: NextRequest) {
     let imported = 0
     let updated = 0
     let failed = 0
+    let skipped = 0
 
     for (let i = 0; i < dataLines.length; i++) {
       const line = dataLines[i]
@@ -234,12 +240,119 @@ export async function POST(request: NextRequest) {
             }
           }
         } else {
-          const { error: insertError } = await supabase.from("products").insert(product)
-          if (insertError) {
-            console.error("[v0] Error insertando producto:", insertError.message)
-            failed++
+          if (hasOnlyBasicData) {
+            console.log(`[v0] SKU ${standardFields.sku} no existe - Buscando en fuentes principales...`)
+
+            try {
+              const { data: primarySources } = await supabase
+                .from("import_sources")
+                .select("*")
+                .or("name.ilike.%Arnoia%,name.ilike.%Arnoia Act%")
+                .order("name", { ascending: true })
+
+              let productFound = false
+              const sourcesToSearch = primarySources || []
+
+              sourcesToSearch.sort((a, b) => {
+                const aIsArnoia = a.name.toLowerCase().includes("arnoia") && !a.name.toLowerCase().includes("act")
+                const bIsArnoia = b.name.toLowerCase().includes("arnoia") && !b.name.toLowerCase().includes("act")
+                if (aIsArnoia && !bIsArnoia) return -1
+                if (!aIsArnoia && bIsArnoia) return 1
+                return 0
+              })
+
+              console.log(
+                `[v0] Fuentes para búsqueda:`,
+                sourcesToSearch.map((s) => s.name),
+              )
+
+              for (const primarySource of sourcesToSearch) {
+                if (productFound || !primarySource.url_template) continue
+
+                console.log(`[v0] Buscando en "${primarySource.name}"...`)
+
+                try {
+                  const primaryResponse = await fetch(primarySource.url_template)
+                  if (!primaryResponse.ok) continue
+
+                  const primaryCsvText = await primaryResponse.text()
+                  const primaryLines = primaryCsvText.split("\n").filter((line) => line.trim())
+                  const primarySeparator = primarySource.csv_separator || detectSeparator(primaryLines[0])
+                  const primaryHeaders = parseCSVLine(primaryLines[0], primarySeparator)
+                  const primaryDataLines = primaryLines.slice(1)
+
+                  for (const primaryLine of primaryDataLines) {
+                    const primaryValues = parseCSVLine(primaryLine, primarySeparator)
+
+                    const primaryStandardFields: any = {}
+                    Object.entries(primarySource.column_mapping).forEach(([dbField, csvField]) => {
+                      const index = primaryHeaders.indexOf(csvField as string)
+                      if (index !== -1 && primaryValues[index]) {
+                        const value = primaryValues[index].trim()
+                        if (value && value !== "" && value !== "undefined" && value !== "null") {
+                          if (NUMERIC_FIELDS.includes(dbField)) {
+                            const numericValue = parseNumericValue(value)
+                            if (numericValue !== null) {
+                              primaryStandardFields[dbField] = numericValue
+                            }
+                          } else {
+                            primaryStandardFields[dbField] = value
+                          }
+                        }
+                      }
+                    })
+
+                    if (primaryStandardFields.sku === standardFields.sku) {
+                      console.log(`[v0] ✅ SKU ${standardFields.sku} encontrado en "${primarySource.name}"`)
+
+                      const completeProduct = {
+                        sku: standardFields.sku,
+                        title: primaryStandardFields.title || standardFields.sku,
+                        description: primaryStandardFields.description,
+                        category: primaryStandardFields.category,
+                        brand: primaryStandardFields.brand,
+                        price: standardFields.price || primaryStandardFields.price || 0,
+                        stock: standardFields.stock || primaryStandardFields.stock || 0,
+                        source: [sourceId, primarySource.id],
+                      }
+
+                      const { error: insertError } = await supabase.from("products").insert(completeProduct)
+                      if (insertError) {
+                        console.error("[v0] Error insertando producto completo:", insertError.message)
+                        failed++
+                      } else {
+                        console.log(`[v0] ✅ Producto ${standardFields.sku} importado con datos completos`)
+                        imported++
+                      }
+
+                      productFound = true
+                      break
+                    }
+                  }
+
+                  if (productFound) break
+                } catch (fetchError: any) {
+                  console.error(`[v0] Error procesando fuente "${primarySource.name}":`, fetchError.message)
+                  continue
+                }
+              }
+
+              if (!productFound) {
+                console.log(`[v0] ⚠️ SKU ${standardFields.sku} no encontrado en ninguna fuente - SALTANDO`)
+                skipped++
+              }
+            } catch (searchError: any) {
+              console.error(`[v0] Error buscando en fuentes principales:`, searchError.message)
+              skipped++
+            }
           } else {
-            imported++
+            const { error: insertError } = await supabase.from("products").insert(product)
+            if (insertError) {
+              console.error("[v0] Error insertando producto:", insertError.message)
+              failed++
+            } else {
+              imported++
+            }
           }
         }
 
@@ -264,6 +377,8 @@ export async function POST(request: NextRequest) {
             updated,
             "Fallidos:",
             failed,
+            "Saltados:",
+            skipped,
           )
         }
       } catch (error: any) {
@@ -283,7 +398,7 @@ export async function POST(request: NextRequest) {
       })
       .eq("id", historyRecord.id)
 
-    console.log("[v0] Importación completada:", { imported, updated, failed })
+    console.log("[v0] Importación completada:", { imported, updated, failed, skipped })
 
     return NextResponse.json({
       summary: {
@@ -291,6 +406,7 @@ export async function POST(request: NextRequest) {
         imported,
         updated,
         failed,
+        skipped,
       },
       historyId: historyRecord.id,
     })

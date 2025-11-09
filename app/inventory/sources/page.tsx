@@ -85,6 +85,7 @@ export default function ImportSourcesPage() {
   const [showImportConfirmDialog, setShowImportConfirmDialog] = useState(false)
   const [sourceToImport, setSourceToImport] = useState<SourceWithSchedule | null>(null)
   const [showProgressDialog, setShowProgressDialog] = useState(false)
+  const [backgroundImports, setBackgroundImports] = useState<Map<string, typeof importProgress>>(new Map())
   const [importProgress, setImportProgress] = useState({
     total: 0,
     processed: 0,
@@ -92,9 +93,9 @@ export default function ImportSourcesPage() {
     updated: 0,
     failed: 0,
     status: "running" as "running" | "completed" | "cancelled" | "error",
-    startTime: null as Date | null, // Agregando tiempo de inicio
-    lastUpdate: null as Date | null, // Agregando timestamp del último update
-    speed: 0, // Agregando velocidad de procesamiento (productos/segundo)
+    startTime: null as Date | null,
+    lastUpdate: null as Date | null,
+    speed: 0,
     errors: [] as Array<{ sku: string; message: string; details: string }>,
     csvInfo: null as null | {
       headers: string[]
@@ -1092,6 +1093,19 @@ export default function ImportSourcesPage() {
     }
   }
 
+  function handleReopenImportDialog(sourceId: string) {
+    const backgroundImport = backgroundImports.get(sourceId)
+    if (backgroundImport) {
+      const source = sources.find((s) => s.id === sourceId)
+      if (source) {
+        setSourceToImport(source)
+        setImportProgress(backgroundImport)
+        setShowProgressDialog(true)
+        console.log("[v0] Modal de importación recuperado para:", source.name)
+      }
+    }
+  }
+
   // Esta función ya no es necesaria ya que el progreso se actualiza vía polling desde executeImport
   // async function updateImportProgress() {
   //   if (!currentImportHistoryId || !showProgressDialog) return
@@ -1216,6 +1230,32 @@ export default function ImportSourcesPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="flex-1 space-y-4">
+                  {backgroundImports.has(source.id) && (
+                    <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full" />
+                          <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                            Importación en progreso
+                          </span>
+                        </div>
+                        <Button variant="ghost" size="sm" onClick={() => handleReopenImportDialog(source.id)}>
+                          Ver progreso
+                        </Button>
+                      </div>
+                      {(() => {
+                        const bg = backgroundImports.get(source.id)
+                        if (bg && bg.total > 0) {
+                          return (
+                            <div className="mt-2 text-xs text-blue-700 dark:text-blue-300">
+                              {bg.processed} / {bg.total} productos ({Math.round((bg.processed / bg.total) * 100)}%)
+                            </div>
+                          )
+                        }
+                        return null
+                      })()}
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <button
                       onClick={() => toggleSourceExpansion(source.id)}
@@ -1346,10 +1386,10 @@ export default function ImportSourcesPage() {
                     <Button
                       className="flex-1"
                       onClick={() => handleRunImport(source)}
-                      disabled={importing === source.id}
+                      disabled={importing === source.id || backgroundImports.has(source.id)}
                     >
                       <Play className="h-4 w-4 mr-2" />
-                      {importing === source.id ? "Importando..." : "Ejecutar"}
+                      {importing === source.id || backgroundImports.has(source.id) ? "Importando..." : "Ejecutar"}
                     </Button>
                     <Button
                       variant="outline"
@@ -1667,19 +1707,18 @@ export default function ImportSourcesPage() {
       <Dialog
         open={showProgressDialog}
         onOpenChange={(open) => {
-          // Solo permitir cerrar si la importación no está en curso (status != "running")
-          // y si el usuario ha confirmado el cierre.
-          // Si la importación está en curso, el botón "Cerrar" estará deshabilitado y solo se podrá cancelar.
-          if (!open && importProgress.status !== "running") {
+          if (!open) {
+            // Si hay una importación en progreso, moverla a segundo plano
+            if (importProgress.status === "running" && sourceToImport) {
+              console.log("[v0] Moviendo importación a segundo plano:", sourceToImport.name)
+              setBackgroundImports((prev) => new Map(prev).set(sourceToImport.id, { ...importProgress }))
+              toast({
+                title: "Importación en segundo plano",
+                description: `La importación de "${sourceToImport.name}" continúa ejecutándose. Haz clic en "Ver progreso" para reabrir el modal.`,
+              })
+            }
             setShowProgressDialog(false)
-            setCurrentImportHistoryId(null) // Limpiar el ID del historial actual
-            setSourceToImport(null) // Limpiar la fuente seleccionada
           }
-          // Si open es false y el status es 'running', significa que el usuario
-          // intentó cerrar el modal haciendo clic fuera de él.
-          // En este caso, NO cerramos el modal, para forzar la interacción a través de los botones.
-          // Sin embargo, si se hace clic en el botón 'Cerrar' cuando está disponible (estado no 'running'),
-          // sí se cerrará el modal. La lógica del botón 'Cerrar' está en DialogFooter.
         }}
       >
         <DialogContent className="max-w-md">
@@ -1749,7 +1788,22 @@ export default function ImportSourcesPage() {
                 <div className="space-y-1">
                   <div className="text-muted-foreground">Tiempo transcurrido</div>
                   <div className="font-medium">
-                    {Math.floor((new Date().getTime() - importProgress.startTime.getTime()) / 1000)}s
+                    {(() => {
+                      const elapsedSeconds = Math.floor(
+                        (new Date().getTime() - importProgress.startTime.getTime()) / 1000,
+                      )
+                      const hours = Math.floor(elapsedSeconds / 3600)
+                      const minutes = Math.floor((elapsedSeconds % 3600) / 60)
+                      const seconds = elapsedSeconds % 60
+
+                      if (hours > 0) {
+                        return `${hours}h ${minutes}m ${seconds}s`
+                      } else if (minutes > 0) {
+                        return `${minutes}m ${seconds}s`
+                      } else {
+                        return `${seconds}s`
+                      }
+                    })()}
                   </div>
                 </div>
                 <div className="space-y-1">
@@ -1781,8 +1835,22 @@ export default function ImportSourcesPage() {
                 <p className="text-sm text-blue-800 dark:text-blue-200">
                   {importProgress.speed > 0 && importProgress.total > importProgress.processed && (
                     <>
-                      Tiempo estimado restante:{" "}
-                      {Math.round((importProgress.total - importProgress.processed) / importProgress.speed)}s
+                      Tiempo estimado restante: {(() => {
+                        const remainingSeconds = Math.round(
+                          (importProgress.total - importProgress.processed) / importProgress.speed,
+                        )
+                        const hours = Math.floor(remainingSeconds / 3600)
+                        const minutes = Math.floor((remainingSeconds % 3600) / 60)
+                        const seconds = remainingSeconds % 60
+
+                        if (hours > 0) {
+                          return `${hours}h ${minutes}m ${seconds}s`
+                        } else if (minutes > 0) {
+                          return `${minutes}m ${seconds}s`
+                        } else {
+                          return `${seconds}s`
+                        }
+                      })()}
                     </>
                   )}
                   {importProgress.speed === 0 &&
