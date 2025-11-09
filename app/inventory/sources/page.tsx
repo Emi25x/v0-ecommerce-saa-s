@@ -363,7 +363,7 @@ export default function ImportSourcesPage() {
 
               const productData: any = {
                 sku,
-                source_id: source.id,
+                source: [source.id], // Confirmado: source es ARRAY en la tabla products
               }
 
               if (columnMapping.title && row[columnMapping.title]) {
