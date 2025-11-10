@@ -123,13 +123,33 @@ export default function ImportSourcesPage() {
   useEffect(() => {
     loadSources()
     const interval = setInterval(checkRunningImports, 5000)
-    // Ya no se necesita este intervalo ya que el progreso se actualiza vía polling desde executeImport
-    // const progressInterval = setInterval(updateImportProgress, 2000)
+    const backgroundProgressInterval = setInterval(updateBackgroundImportsProgress, 2000)
     return () => {
       clearInterval(interval)
-      // clearInterval(progressInterval)
+      clearInterval(backgroundProgressInterval)
     }
   }, [])
+
+  async function updateBackgroundImportsProgress() {
+    if (backgroundImports.size === 0) return
+
+    const updatedImports = new Map(backgroundImports)
+    let hasUpdates = false
+
+    for (const [sourceId, progress] of backgroundImports.entries()) {
+      if (progress.status !== "running") continue
+
+      // Copiar el progreso actual de importProgress si es la misma fuente
+      if (sourceToImport?.id === sourceId && importProgress.status === "running") {
+        updatedImports.set(sourceId, { ...importProgress })
+        hasUpdates = true
+      }
+    }
+
+    if (hasUpdates) {
+      setBackgroundImports(updatedImports)
+    }
+  }
 
   async function loadSources() {
     try {
@@ -347,76 +367,94 @@ export default function ImportSourcesPage() {
       const errorsList: Array<{ sku: string; message: string; details: string }> = []
       const missingProducts: string[] = []
 
-      const batchSize = 10
+      const batchSize = 50
       for (let i = 1; i < lines.length; i += batchSize) {
         const batch = lines.slice(i, Math.min(i + batchSize, lines.length))
 
-        await Promise.all(
-          batch.map(async (line, batchIndex) => {
-            const lineNumber = i + batchIndex
-            try {
-              const values = line.split(detectedSeparator).map((v) => v.trim().replace(/^"|"$/g, ""))
-              const row: Record<string, string> = {}
-              headers.forEach((header, index) => {
-                row[header] = values[index] || ""
+        const productsToUpsert: any[] = []
+        const productsSKUs: string[] = []
+
+        // Primera pasada: preparar datos
+        for (let batchIndex = 0; batchIndex < batch.length; batchIndex++) {
+          const line = batch[batchIndex]
+          const lineNumber = i + batchIndex
+          try {
+            const values = line.split(detectedSeparator).map((v) => v.trim().replace(/^"|"$/g, ""))
+            const row: Record<string, string> = {}
+            headers.forEach((header, index) => {
+              row[header] = values[index] || ""
+            })
+
+            const sku = row[columnMapping.sku]
+            if (!sku) {
+              console.log(`[v0] Línea ${lineNumber}: SKU vacío, saltando`)
+              if (errorsList.length < 5) {
+                errorsList.push({
+                  sku: `Línea ${lineNumber}`,
+                  message: "SKU vacío",
+                  details: `La columna "${columnMapping.sku}" no contiene un SKU válido.`,
+                })
+              }
+              continue
+            }
+
+            productsSKUs.push(sku)
+
+            const price = row[columnMapping.price]?.replace(",", ".") || ""
+            const stock = row[columnMapping.stock] || ""
+            const name = row[columnMapping.title] || ""
+            const description = row[columnMapping.description] || ""
+            const category = row[columnMapping.category] || ""
+            const brand = row[columnMapping.brand] || ""
+
+            const hasOnlyBasicData = !name && !description && !category && (price || stock)
+
+            const productData: any = {
+              sku,
+              source: [source.id],
+              status: "active",
+            }
+
+            if (name) productData.title = name
+            if (price) productData.price = Number.parseFloat(price) || 0
+            if (stock) productData.stock = Number.parseInt(stock) || 0
+            if (description) productData.description = description
+            if (category) productData.category = category
+            if (brand) productData.brand = brand
+
+            productsToUpsert.push({ productData, hasOnlyBasicData, sku, lineNumber })
+          } catch (error: any) {
+            failed++
+            console.error(`[v0] Línea ${lineNumber}: ❌ ERROR parseando línea:`, error)
+            if (errorsList.length < 5) {
+              errorsList.push({
+                sku: `Línea ${lineNumber}`,
+                message: error.message || "Error desconocido",
+                details: "Error al parsear línea",
               })
+            }
+          }
+        }
 
-              const sku = row[columnMapping.sku]
-              if (!sku) {
-                console.log(`[v0] Línea ${lineNumber}: SKU vacío, saltando`)
-                console.log(`[v0] Línea ${lineNumber}: Columna SKU buscada: "${columnMapping.sku}"`)
-                console.log(`[v0] Línea ${lineNumber}: Columnas disponibles:`, Object.keys(row))
-                console.log(`[v0] Línea ${lineNumber}: Primera fila de datos:`, row)
-                failed++
-                if (errorsList.length < 5) {
-                  errorsList.push({
-                    sku: `Línea ${lineNumber}`,
-                    message: "SKU vacío",
-                    details: `La columna "${columnMapping.sku}" no contiene un SKU válido. Columnas disponibles: ${Object.keys(row).join(", ")}`,
-                  })
-                }
-                return
-              }
+        const { data: existingProducts } = await supabase.from("products").select("id, sku").in("sku", productsSKUs)
 
-              const { data: existingProduct } = await supabase.from("products").select("id").eq("sku", sku).single()
+        const existingMap = new Map(existingProducts?.map((p) => [p.sku, p.id]) || [])
 
-              const productData: any = {
-                sku,
-                source: [source.id],
-              }
+        // Segunda pasada: procesar cada producto
+        await Promise.all(
+          productsToUpsert.map(async ({ productData, hasOnlyBasicData, sku, lineNumber }) => {
+            try {
+              const existingId = existingMap.get(sku)
 
-              if (columnMapping.title && row[columnMapping.title]) {
-                productData.title = row[columnMapping.title]
-              }
-              if (columnMapping.price && row[columnMapping.price]) {
-                productData.price = Number.parseFloat(row[columnMapping.price].replace(",", ".")) || 0
-              }
-              if (columnMapping.stock && row[columnMapping.stock]) {
-                productData.stock = Number.parseInt(row[columnMapping.stock]) || 0
-              }
-              if (columnMapping.description && row[columnMapping.description]) {
-                productData.description = row[columnMapping.description]
-              }
-              if (columnMapping.category && row[columnMapping.category]) {
-                productData.category = row[columnMapping.category]
-              }
-              if (columnMapping.brand && row[columnMapping.brand]) {
-                productData.brand = row[columnMapping.brand]
-              }
-
-              if (existingProduct) {
+              if (existingId) {
+                // Producto existe - actualizar
                 if (importMode === "skip") {
                   console.log(`[v0] Línea ${lineNumber}: SKU ${sku} existe, saltando (modo skip)`)
                   return
                 }
 
-                console.log(`[v0] Línea ${lineNumber}: Intentando actualizar producto ${sku}`)
-                console.log(`[v0] Línea ${lineNumber}: Datos a actualizar:`, JSON.stringify(productData, null, 2))
-
-                const { error: updateError } = await supabase
-                  .from("products")
-                  .update(productData)
-                  .eq("id", existingProduct.id)
+                console.log(`[v0] Línea ${lineNumber}: Intentando actualizar producto ${sku} (ID: ${existingId})`)
+                const { error: updateError } = await supabase.from("products").update(productData).eq("id", existingId)
 
                 if (updateError) {
                   console.error(`[v0] Línea ${lineNumber}: ❌ ERROR actualizando ${sku}:`, {
@@ -438,296 +476,227 @@ export default function ImportSourcesPage() {
                   updated++
                 }
               } else {
+                // Producto NO existe
                 if (hasOnlyBasicData) {
-                  console.log(`[v0] Línea ${lineNumber}: ⚠️ SKU ${sku} no existe - Buscando en fuentes principales...`)
-
-                  try {
-                    const { data: primarySources } = await supabase
-                      .from("import_sources")
-                      .select("*")
-                      .or("name.ilike.%Arnoia%,name.ilike.%Arnoia Act%")
-                      .order("name", { ascending: true }) // "Arnoia" viene antes que "Arnoia Act" alfabéticamente
-
-                    let productFound = false
-                    const sourcesToSearch = primarySources || []
-
-                    // Ordenar para asegurar que "Arnoia" (sin "Act") se busque primero
-                    sourcesToSearch.sort((a, b) => {
-                      const aIsArnoia = a.name.toLowerCase().includes("arnoia") && !a.name.toLowerCase().includes("act")
-                      const bIsArnoia = b.name.toLowerCase().includes("arnoia") && !b.name.toLowerCase().includes("act")
-                      if (aIsArnoia && !bIsArnoia) return -1
-                      if (!aIsArnoia && bIsArnoia) return 1
-                      return 0
+                  const backupSources = sources
+                    .filter((s) => s.id !== source.id && s.name.toLowerCase().includes("arnoia"))
+                    .sort((a, b) => {
+                      const aHasAct = a.name.toLowerCase().includes("act")
+                      const bHasAct = b.name.toLowerCase().includes("act")
+                      if (!aHasAct && bHasAct) return -1
+                      if (aHasAct && !bHasAct) return 1
+                      return a.name.localeCompare(b.name)
                     })
 
-                    console.log(
-                      `[v0] Línea ${lineNumber}: Fuentes encontradas para búsqueda:`,
-                      sourcesToSearch.map((s) => s.name),
-                    )
+                  let foundProduct = null
 
-                    // Buscar en cada fuente hasta encontrar el producto
-                    for (const primarySource of sourcesToSearch) {
-                      if (productFound) break
-
-                      if (!primarySource.url_template) {
-                        console.log(`[v0] Línea ${lineNumber}: Fuente "${primarySource.name}" no tiene URL, saltando`)
-                        continue
-                      }
-
+                  for (const backupSource of backupSources) {
+                    if (!backupSource.url_template) {
+                      // Usar url_template para la búsqueda de respaldo
                       console.log(
-                        `[v0] Línea ${lineNumber}: Buscando en fuente "${primarySource.name}", descargando CSV desde:`,
-                        primarySource.url_template,
+                        `[v0] Línea ${lineNumber}: Fuente de respaldo "${backupSource.name}" no tiene URL, saltando`,
                       )
+                      continue
+                    }
+                    console.log(`[v0] Línea ${lineNumber}: Buscando en fuente de respaldo "${backupSource.name}"...`)
 
-                      try {
-                        // Descargar el CSV de la fuente
-                        const primaryCsvResponse = await fetch(primarySource.url_template)
-                        if (!primaryCsvResponse.ok) {
-                          console.error(
-                            `[v0] Línea ${lineNumber}: Error descargando CSV de "${primarySource.name}":`,
-                            primaryCsvResponse.statusText,
-                          )
-                          continue
-                        }
-
-                        const primaryCsvText = await primaryCsvResponse.text()
-                        const primaryLines = primaryCsvText.split("\n").filter((line) => line.trim())
-                        const primaryFirstLine = primaryLines[0]
-
-                        // Detectar separador del CSV
-                        const primarySeparators = ["|", ";", ",", "\t"]
-                        const primarySeparatorCounts = primarySeparators.map((sep) => ({
-                          separator: sep,
-                          count: (primaryFirstLine.match(new RegExp(`\\${sep}`, "g")) || []).length,
-                        }))
-                        const primaryDetectedSeparator = primarySeparatorCounts.reduce((max, current) =>
-                          current.count > max.count ? current : max,
-                        ).separator
-
-                        const primaryHeaders = primaryFirstLine
-                          .split(primaryDetectedSeparator)
-                          .map((h) => h.trim().replace(/^"|"$/g, ""))
-
-                        // Detectar columnas automáticamente
-                        const primaryColumnMapping = {
-                          sku:
-                            primaryHeaders.find((h) => /^(sku|codigo|cod|referencia|ref|code|id)$/i.test(h.trim())) ||
-                            primarySource.column_mapping.sku,
-                          title:
-                            primaryHeaders.find((h) =>
-                              /^(nombre|name|titulo|title|descripcion|description|producto|product)$/i.test(h.trim()),
-                            ) ||
-                            primarySource.column_mapping.title ||
-                            primarySource.column_mapping.name,
-                          price:
-                            primaryHeaders.find((h) => /^(precio|price|pvp|cost|costo)$/i.test(h.trim())) ||
-                            primarySource.column_mapping.price,
-                          stock:
-                            primaryHeaders.find((h) =>
-                              /^(stock|cantidad|quantity|existencia|disponible)$/i.test(h.trim()),
-                            ) || primarySource.column_mapping.stock,
-                          description:
-                            primaryHeaders.find((h) =>
-                              /^(descripcion|description|desc|detalle|sinopsis)$/i.test(h.trim()),
-                            ) || primarySource.column_mapping.description,
-                          category:
-                            primaryHeaders.find((h) =>
-                              /^(categoria|category|cat|tipo|type|familia|materia)$/i.test(h.trim()),
-                            ) || primarySource.column_mapping.category,
-                          brand:
-                            primaryHeaders.find((h) =>
-                              /^(marca|brand|fabricante|manufacturer|autor|editorial)$/i.test(h.trim()),
-                            ) || primarySource.column_mapping.brand,
-                        }
-
-                        console.log(
-                          `[v0] Línea ${lineNumber}: Columnas de "${primarySource.name}":`,
-                          primaryHeaders,
-                          "Mapeo:",
-                          primaryColumnMapping,
-                        )
-
-                        // Buscar el SKU en el CSV
-                        for (let primaryLineIndex = 1; primaryLineIndex < primaryLines.length; primaryLineIndex++) {
-                          const primaryLine = primaryLines[primaryLineIndex]
-                          const primaryValues = primaryLine
-                            .split(primaryDetectedSeparator)
-                            .map((v) => v.trim().replace(/^"|"$/g, ""))
-                          const primaryRow: Record<string, string> = {}
-                          primaryHeaders.forEach((header, index) => {
-                            primaryRow[header] = primaryValues[index] || ""
-                          })
-
-                          const primarySku = primaryRow[primaryColumnMapping.sku]
-                          if (primarySku === sku) {
-                            // ¡Encontramos el producto!
-                            console.log(`[v0] Línea ${lineNumber}: ✅ SKU ${sku} encontrado en "${primarySource.name}"`)
-
-                            const completeProductData: any = {
-                              sku,
-                              source: [source.id, primarySource.id], // Incluir ambas fuentes
-                            }
-
-                            // Importar TODOS los datos disponibles de la fuente
-                            if (primaryColumnMapping.title && primaryRow[primaryColumnMapping.title]) {
-                              completeProductData.title = primaryRow[primaryColumnMapping.title]
-                            }
-                            if (primaryColumnMapping.description && primaryRow[primaryColumnMapping.description]) {
-                              completeProductData.description = primaryRow[primaryColumnMapping.description]
-                            }
-                            if (primaryColumnMapping.category && primaryRow[primaryColumnMapping.category]) {
-                              completeProductData.category = primaryRow[primaryColumnMapping.category]
-                            }
-                            if (primaryColumnMapping.brand && primaryRow[primaryColumnMapping.brand]) {
-                              completeProductData.brand = primaryRow[primaryColumnMapping.brand]
-                            }
-
-                            // Usar precio y stock de la fuente actual que es más reciente
-                            if (columnMapping.price && row[columnMapping.price]) {
-                              completeProductData.price =
-                                Number.parseFloat(row[columnMapping.price].replace(",", ".")) || 0
-                            } else if (primaryColumnMapping.price && primaryRow[primaryColumnMapping.price]) {
-                              completeProductData.price =
-                                Number.parseFloat(primaryRow[primaryColumnMapping.price].replace(",", ".")) || 0
-                            }
-
-                            if (columnMapping.stock && row[columnMapping.stock]) {
-                              completeProductData.stock = Number.parseInt(row[columnMapping.stock]) || 0
-                            } else if (primaryColumnMapping.stock && primaryRow[primaryColumnMapping.stock]) {
-                              completeProductData.stock = Number.parseInt(primaryRow[primaryColumnMapping.stock]) || 0
-                            }
-
-                            console.log(
-                              `[v0] Línea ${lineNumber}: Datos completos a importar desde "${primarySource.name}":`,
-                              JSON.stringify(completeProductData, null, 2),
-                            )
-
-                            // Insertar el producto completo
-                            const { error: insertError } = await supabase.from("products").insert(completeProductData)
-
-                            if (insertError) {
-                              console.error(
-                                `[v0] Línea ${lineNumber}: ❌ ERROR insertando ${sku} desde "${primarySource.name}":`,
-                                {
-                                  message: insertError.message,
-                                  details: insertError.details,
-                                  hint: insertError.hint,
-                                  code: insertError.code,
-                                },
-                              )
-                              failed++
-                              if (errorsList.length < 5) {
-                                errorsList.push({
-                                  sku,
-                                  message: insertError.message,
-                                  details:
-                                    `${insertError.details || ""} ${insertError.hint || ""}`.trim() ||
-                                    `Error al insertar desde "${primarySource.name}"`,
-                                })
-                              }
-                            } else {
-                              console.log(
-                                `[v0] Línea ${lineNumber}: ✅ Producto ${sku} importado exitosamente desde "${primarySource.name}" con todos los datos`,
-                              )
-                              imported++
-                            }
-
-                            productFound = true
-                            break
-                          }
-                        }
-
-                        if (productFound) {
-                          console.log(
-                            `[v0] Línea ${lineNumber}: Producto encontrado en "${primarySource.name}", deteniendo búsqueda`,
-                          )
-                          break
-                        } else {
-                          console.log(
-                            `[v0] Línea ${lineNumber}: Producto no encontrado en "${primarySource.name}", continuando búsqueda...`,
-                          )
-                        }
-                      } catch (fetchError: any) {
+                    try {
+                      const response = await fetch(backupSource.url_template)
+                      if (!response.ok) {
                         console.error(
-                          `[v0] Línea ${lineNumber}: Error procesando fuente "${primarySource.name}":`,
-                          fetchError.message,
+                          `[v0] Línea ${lineNumber}: Error descargando CSV de respaldo "${backupSource.name}": ${response.statusText}`,
                         )
                         continue
                       }
-                    }
+                      const csvText = await response.text()
+                      const backupLines = csvText.split("\n").filter((line) => line.trim())
+                      if (backupLines.length === 0) continue
 
-                    if (!productFound) {
-                      console.log(
-                        `[v0] Línea ${lineNumber}: ⚠️ SKU ${sku} no encontrado en ninguna fuente principal - SALTANDO`,
-                      )
-                      skipped++
-                      if (missingProducts.length < 10) {
-                        missingProducts.push(sku)
+                      const backupFirstLine = backupLines[0]
+                      // Detectar separador del CSV de respaldo
+                      const backupSeparators = ["|", ";", ",", "\t"]
+                      const backupSeparatorCounts = backupSeparators.map((sep) => ({
+                        separator: sep,
+                        count: (backupFirstLine.match(new RegExp(`\\${sep}`, "g")) || []).length,
+                      }))
+                      const backupDetectedSeparator = backupSeparatorCounts.reduce((max, current) =>
+                        current.count > max.count ? current : max,
+                      ).separator
+
+                      const backupHeaders = backupLines[0]
+                        .split(backupDetectedSeparator)
+                        .map((h) => h.trim().replace(/^"|"$/g, ""))
+                      // Mapeo de columnas para la fuente de respaldo (usando la misma lógica para mantener consistencia)
+                      const backupColumnMapping = {
+                        sku:
+                          backupHeaders.find((h) => /^(sku|codigo|cod|referencia|ref|code|id)$/i.test(h.trim())) ||
+                          backupSource.column_mapping.sku,
+                        title:
+                          backupHeaders.find((h) =>
+                            /^(nombre|name|titulo|title|descripcion|description|producto|product)$/i.test(h.trim()),
+                          ) ||
+                          backupSource.column_mapping.title ||
+                          backupSource.column_mapping.name,
+                        price:
+                          backupHeaders.find((h) => /^(precio|price|pvp|cost|costo)$/i.test(h.trim())) ||
+                          backupSource.column_mapping.price,
+                        stock:
+                          backupHeaders.find((h) =>
+                            /^(stock|cantidad|quantity|existencia|disponible)$/i.test(h.trim()),
+                          ) || backupSource.column_mapping.stock,
+                        description:
+                          backupHeaders.find((h) =>
+                            /^(descripcion|description|desc|detalle|sinopsis)$/i.test(h.trim()),
+                          ) || backupSource.column_mapping.description,
+                        category:
+                          backupHeaders.find((h) =>
+                            /^(categoria|category|cat|tipo|type|familia|materia)$/i.test(h.trim()),
+                          ) || backupSource.column_mapping.category,
+                        brand:
+                          backupHeaders.find((h) =>
+                            /^(marca|brand|fabricante|manufacturer|autor|editorial)$/i.test(h.trim()),
+                          ) || backupSource.column_mapping.brand,
                       }
-                      if (errorsList.length < 5) {
-                        errorsList.push({
-                          sku,
-                          message: "Producto no encontrado en ninguna fuente",
-                          details:
-                            "El producto no existe en la base de datos ni en las fuentes principales 'Arnoia' o 'Arnoia Act'. Verifique el SKU.",
+
+                      for (let j = 1; j < backupLines.length; j++) {
+                        const backupValues = backupLines[j]
+                          .split(backupDetectedSeparator)
+                          .map((v) => v.trim().replace(/^"|"$/g, ""))
+                        const backupRow: Record<string, string> = {}
+                        backupHeaders.forEach((header, index) => {
+                          backupRow[header] = backupValues[index] || ""
                         })
+
+                        // Usar el mapeo de la fuente de respaldo para buscar el SKU
+                        if (backupRow[backupColumnMapping.sku] === sku) {
+                          foundProduct = backupRow
+                          // Importar con todos los datos de la fuente de respaldo
+                          const completeProductData = {
+                            sku,
+                            title: foundProduct[backupColumnMapping.title] || sku, // Asegurar un título
+                            description: foundProduct[backupColumnMapping.description] || "",
+                            category: foundProduct[backupColumnMapping.category] || "",
+                            brand: foundProduct[backupColumnMapping.brand] || "",
+                            // Usar el precio/stock del CSV original si están presentes, sino de la fuente de respaldo
+                            price:
+                              productData.price ||
+                              (foundProduct[backupColumnMapping.price]
+                                ? Number.parseFloat(foundProduct[backupColumnMapping.price].replace(",", "."))
+                                : 0),
+                            stock:
+                              productData.stock ||
+                              (foundProduct[backupColumnMapping.stock]
+                                ? Number.parseInt(foundProduct[backupColumnMapping.stock])
+                                : 0),
+                            source: [source.id, backupSource.id], // Incluir ambas fuentes
+                            status: "active",
+                          }
+
+                          console.log(
+                            `[v0] Línea ${lineNumber}: ✅ SKU ${sku} encontrado en fuente de respaldo "${backupSource.name}"`,
+                          )
+                          console.log(
+                            `[v0] Línea ${lineNumber}: Datos completos a importar:`,
+                            JSON.stringify(completeProductData, null, 2),
+                          )
+
+                          const { error: insertError } = await supabase.from("products").insert(completeProductData)
+
+                          if (insertError) {
+                            console.error(
+                              `[v0] Línea ${lineNumber}: ❌ ERROR insertando ${sku} desde respaldo "${backupSource.name}":`,
+                              {
+                                message: insertError.message,
+                                details: insertError.details,
+                                hint: insertError.hint,
+                                code: insertError.code,
+                              },
+                            )
+                            failed++
+                            if (errorsList.length < 5) {
+                              errorsList.push({
+                                sku,
+                                message: insertError.message,
+                                details:
+                                  `${insertError.details || ""} ${insertError.hint || ""}`.trim() ||
+                                  `Error al insertar desde "${backupSource.name}"`,
+                              })
+                            }
+                          } else {
+                            console.log(
+                              `[v0] Línea ${lineNumber}: ✅ Producto ${sku} importado exitosamente desde respaldo "${backupSource.name}"`,
+                            )
+                            imported++
+                          }
+                          foundProduct = true // Marcar como encontrado
+                          break // Salir del bucle de líneas de respaldo
+                        }
                       }
+
+                      if (foundProduct) break // Salir del bucle de fuentes de respaldo
+                    } catch (error: any) {
+                      console.error(
+                        `[v0] Línea ${lineNumber}: Error procesando fuente de respaldo "${backupSource.name}":`,
+                        error.message,
+                      )
+                      continue // Intentar con la siguiente fuente de respaldo
                     }
-                  } catch (primarySourceError: any) {
-                    console.error(
-                      `[v0] Línea ${lineNumber}: ❌ ERROR buscando en fuentes principales:`,
-                      primarySourceError,
+                  }
+
+                  if (!foundProduct) {
+                    console.log(
+                      `[v0] Línea ${lineNumber}: ⚠️ SKU ${sku} no encontrado en ninguna fuente de respaldo - SALTANDO`,
                     )
                     skipped++
-                    if (missingProducts.length < 10) {
-                      missingProducts.push(sku)
-                    }
+                    missingProducts.push(sku)
                     if (errorsList.length < 5) {
                       errorsList.push({
                         sku,
-                        message: "Error al buscar en fuentes principales",
-                        details: primarySourceError.message || "Error desconocido al consultar fuentes principales",
+                        message: "Producto no encontrado en fuentes de respaldo",
+                        details:
+                          "El producto no existe y no se encontró en las fuentes de respaldo configuradas. Verifique el SKU.",
                       })
                     }
                   }
-
-                  return
-                }
-
-                // Si no es hasOnlyBasicData, entonces es un producto nuevo y se inserta con los datos disponibles
-                console.log(
-                  `[v0] Línea ${lineNumber}: ⚠️ SKU ${sku} no existe, procediendo a insertar como nuevo producto`,
-                )
-                console.log(`[v0] Línea ${lineNumber}: Datos a insertar:`, JSON.stringify(productData, null, 2))
-
-                const { error: insertError } = await supabase.from("products").insert(productData)
-
-                if (insertError) {
-                  console.error(`[v0] Línea ${lineNumber}: ❌ ERROR insertando ${sku}:`, {
-                    message: insertError.message,
-                    details: insertError.details,
-                    hint: insertError.hint,
-                    code: insertError.code,
-                  })
-                  failed++
-                  if (errorsList.length < 5) {
-                    errorsList.push({
-                      sku,
-                      message: insertError.message,
-                      details: `${insertError.details || ""} ${insertError.hint || ""}`.trim() || "Error al insertar",
-                    })
-                  }
                 } else {
-                  console.log(`[v0] Línea ${lineNumber}: ✅ Producto ${sku} importado exitosamente`)
-                  imported++
+                  // Tiene todos los datos - importar directamente
+                  console.log(
+                    `[v0] Línea ${lineNumber}: ⚠️ SKU ${sku} no existe, procediendo a insertar como nuevo producto`,
+                  )
+                  if (!productData.title) {
+                    productData.title = sku // Asegurar un título si no se encontró
+                  }
+                  console.log(`[v0] Línea ${lineNumber}: Datos a insertar:`, JSON.stringify(productData, null, 2))
+
+                  const { error: insertError } = await supabase.from("products").insert(productData)
+
+                  if (insertError) {
+                    console.error(`[v0] Línea ${lineNumber}: ❌ ERROR insertando ${sku}:`, {
+                      message: insertError.message,
+                      details: insertError.details,
+                      hint: insertError.hint,
+                      code: insertError.code,
+                    })
+                    failed++
+                    if (errorsList.length < 5) {
+                      errorsList.push({
+                        sku,
+                        message: insertError.message,
+                        details: `${insertError.details || ""} ${insertError.hint || ""}`.trim() || "Error al insertar",
+                      })
+                    }
+                  } else {
+                    console.log(`[v0] Línea ${lineNumber}: ✅ Producto ${sku} importado exitosamente`)
+                    imported++
+                  }
                 }
               }
             } catch (error: any) {
-              console.error(`[v0] Línea ${lineNumber}: ❌ ERROR GENERAL procesando:`, error)
+              console.error(`[v0] Línea ${lineNumber}: ❌ ERROR GENERAL procesando ${sku}:`, error)
               failed++
               if (errorsList.length < 5) {
                 errorsList.push({
-                  sku: `Línea ${lineNumber}`,
+                  sku,
                   message: error.message || "Error desconocido",
                   details: error.stack || "Sin detalles adicionales",
                 })
@@ -740,18 +709,25 @@ export default function ImportSourcesPage() {
         const elapsedSeconds = (new Date().getTime() - now.getTime()) / 1000
         const speed = elapsedSeconds > 0 ? processed / elapsedSeconds : 0
 
-        setImportProgress({
+        const currentProgress = {
           total: totalProducts,
           processed,
           imported,
           updated,
           failed,
-          status: "running",
+          status: "running" as const,
           startTime: now,
           lastUpdate: new Date(),
           speed: Math.round(speed * 10) / 10,
           errors: errorsList,
-        })
+          csvInfo: importProgress.csvInfo, // Mantener csvInfo
+        }
+
+        setImportProgress(currentProgress)
+
+        if (!showProgressDialog) {
+          setBackgroundImports((prev) => new Map(prev).set(source.id, currentProgress))
+        }
 
         console.log(`[v0] Progreso: ${processed}/${totalProducts} (${Math.round((processed / totalProducts) * 100)}%)`)
       }
@@ -786,17 +762,26 @@ export default function ImportSourcesPage() {
       console.log("[v0] Fallidos:", failed)
       console.log("[v0] Saltados (no existen):", skipped)
 
-      setImportProgress({
+      const finalProgress = {
         total: totalProducts,
         processed: totalProducts,
         imported,
         updated,
         failed,
-        status: "completed",
+        status: "completed" as const,
         startTime: now,
         lastUpdate: new Date(),
         speed: totalProducts / ((new Date().getTime() - now.getTime()) / 1000),
         errors: errorsList,
+        csvInfo: importProgress.csvInfo, // Mantener csvInfo
+      }
+
+      setImportProgress(finalProgress)
+
+      setBackgroundImports((prev) => {
+        const updated = new Map(prev)
+        updated.delete(source.id) // Eliminar de segundo plano cuando termina
+        return updated
       })
 
       toast({
@@ -812,12 +797,19 @@ export default function ImportSourcesPage() {
       console.error("[v0] Error stack:", error.stack)
       console.error("[v0] Error message:", error.message)
       setImportProgress((prev) => ({ ...prev, status: "error" }))
+
+      setBackgroundImports((prev) => {
+        const updated = new Map(prev)
+        updated.delete(source.id) // Eliminar de segundo plano cuando hay error
+        return updated
+      })
+
       toast({
         title: "Error",
         description: error.message || "No se pudo ejecutar la importación",
         variant: "destructive",
       })
-      // Asegurarse de que el historial se marque como error si algo falla catastróficamente
+      // Asegurarse de que el historial semarque como error si algo falla catastróficamente
       if (currentImportHistoryId) {
         await supabase
           .from("import_history")
@@ -1006,7 +998,7 @@ export default function ImportSourcesPage() {
     try {
       const { data: runningHistory } = await supabase
         .from("import_history")
-        .select("id")
+        .select("id, source_id")
         .eq("source_id", sourceId)
         .eq("status", "running")
         .maybeSingle() // Usar maybeSingle ya que solo esperamos una importación 'running' por fuente
@@ -1718,6 +1710,8 @@ export default function ImportSourcesPage() {
               })
             }
             setShowProgressDialog(false)
+            // Al cerrar manualmente (no completar), resetear el historial ID para evitar reabrir un modal incorrecto
+            // setCurrentImportHistoryId(null);
           }
         }}
       >
