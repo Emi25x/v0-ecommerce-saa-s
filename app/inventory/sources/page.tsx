@@ -412,7 +412,6 @@ export default function ImportSourcesPage() {
             const productData: any = {
               sku,
               source: [source.id],
-              status: "active",
             }
 
             if (name) productData.title = name
@@ -589,7 +588,6 @@ export default function ImportSourcesPage() {
                                 ? Number.parseInt(foundProduct[backupColumnMapping.stock])
                                 : 0),
                             source: [source.id, backupSource.id], // Incluir ambas fuentes
-                            status: "active",
                           }
 
                           console.log(
@@ -718,7 +716,7 @@ export default function ImportSourcesPage() {
           status: "running" as const,
           startTime: now,
           lastUpdate: new Date(),
-          speed: Math.round(speed * 10) / 10,
+          speed: Math.round(speed * 10) / 10, // Redondear a 1 decimal
           errors: errorsList,
           csvInfo: importProgress.csvInfo, // Mantener csvInfo
         }
