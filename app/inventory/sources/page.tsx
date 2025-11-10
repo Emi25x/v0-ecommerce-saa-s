@@ -37,6 +37,7 @@ import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
 import Link from "next/link"
 import Papa from "papaparse" // Importar PapaParse
+import { useRouter } from "next/navigation" // Importar useRouter
 
 // Función auxiliar para detectar el separador CSV
 function detectSeparator(text: string): string {
@@ -127,6 +128,7 @@ interface ImportProgressState {
 }
 
 export default function ImportSourcesPage() {
+  const router = useRouter() // Inicializar useRouter
   const [sources, setSources] = useState<SourceWithSchedule[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedSource, setSelectedSource] = useState<SourceWithSchedule | null>(null)
@@ -1171,30 +1173,18 @@ export default function ImportSourcesPage() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold">Gestor de Importaciones</h1>
-          <p className="text-muted-foreground mt-1">Administra tus fuentes de importación y sus configuraciones</p>
+          <h1 className="text-4xl font-bold">Gestor de Importaciones</h1>
+          <p className="text-muted-foreground mt-2">Administra tus fuentes de importación y sus configuraciones</p>
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={async () => {
-              if (!confirm("¿Cancelar todas las importaciones en curso?")) return
-              try {
-                const res = await fetch("/api/fix-imports")
-                const data = await res.json()
-                alert(`${data.fixed} importaciones canceladas`)
-                window.location.reload()
-              } catch (error) {
-                alert("Error al cancelar importaciones")
-              }
-            }}
-          >
-            Limpiar atascadas
-          </Button>
-          <Button variant="outline" asChild>
+          <Button asChild variant="outline">
             <Link href="/inventory">Volver a Inventario</Link>
+          </Button>
+          <Button onClick={() => router.push("/inventory/sources/new")}>
+            <Upload className="h-4 w-4 mr-2" />
+            Nueva Fuente
           </Button>
         </div>
       </div>
@@ -1204,7 +1194,7 @@ export default function ImportSourcesPage() {
           <CardContent className="flex flex-col items-center justify-center h-64">
             <FileText className="h-12 w-12 text-muted-foreground mb-4" />
             <p className="text-muted-foreground text-center">No hay fuentes de importación configuradas</p>
-            <Button className="mt-4" onClick={() => (window.location.href = "/import-sources")}>
+            <Button className="mt-4" onClick={() => router.push("/inventory/sources/new")}>
               <Upload className="h-4 w-4 mr-2" />
               Crear Nueva Fuente
             </Button>
