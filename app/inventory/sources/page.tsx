@@ -1177,6 +1177,22 @@ export default function ImportSourcesPage() {
           <p className="text-muted-foreground mt-1">Administra tus fuentes de importación y sus configuraciones</p>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={async () => {
+              if (!confirm("¿Cancelar todas las importaciones en curso?")) return
+              try {
+                const res = await fetch("/api/fix-imports")
+                const data = await res.json()
+                alert(`${data.fixed} importaciones canceladas`)
+                window.location.reload()
+              } catch (error) {
+                alert("Error al cancelar importaciones")
+              }
+            }}
+          >
+            Limpiar atascadas
+          </Button>
           <Button variant="outline" asChild>
             <Link href="/inventory">Volver a Inventario</Link>
           </Button>
