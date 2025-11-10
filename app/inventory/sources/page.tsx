@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react" // Importar useRef
 import { createBrowserClient } from "@supabase/ssr"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -162,6 +162,8 @@ export default function ImportSourcesPage() {
 
   const [importMode, setImportMode] = useState<"update" | "overwrite" | "skip">("update")
 
+  const isExecutingRef = useRef(false)
+
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -256,12 +258,13 @@ export default function ImportSourcesPage() {
   }
 
   async function handleRunImport(source: SourceWithSchedule) {
-    console.log("[v0] ========================================")
-    console.log("[v0] handleRunImport LLAMADO")
-    console.log("[v0] Fuente presionada:", source.name, "ID:", source.id)
-    console.log("[v0] Estado actual sourceToImport:", sourceToImport?.name)
-    console.log("[v0] Estado actual importing:", importing)
-    console.log("[v0] ========================================")
+    // Prevenir clics duplicados
+    if (isExecutingRef.current) {
+      console.log("[v0] Ya hay una importación siendo configurada, ignorando clic")
+      return
+    }
+
+    console.log("[v0] Botón EJECUTAR presionado para:", source.name, "ID:", source.id)
 
     setSourceToImport(source)
     setImportMode("update") // Por defecto: actualizar datos
@@ -665,7 +668,7 @@ export default function ImportSourcesPage() {
             const category = row.category || row.categoria || row.rubro
             const brand = row.brand || row.marca || row.fabricante
             const price = row.price || row.precio || row.pventa
-            const stock = row.stock || row.cantidad || row.existencia || row.quantity
+            const stock = row.stock || row.quantity || row.existencia || row.qty
 
             // Validar si el precio o stock son números válidos
             const parsedPrice = Number.parseFloat(price)
@@ -699,9 +702,9 @@ export default function ImportSourcesPage() {
                 )
                 const backupStock = Number.parseInt(
                   backupProductData.stock ||
-                    backupProductData.cantidad ||
+                    backupProductData.quantity ||
                     backupProductData.existencia ||
-                    backupProductData.quantity,
+                    backupProductData.qty,
                 )
 
                 const productData = {
@@ -969,11 +972,17 @@ export default function ImportSourcesPage() {
       setImporting(null)
       setShowImportConfirmDialog(false)
       setSourceToImport(null)
-      // Asegurarse de que el modal de progreso se cierre si la importación termina
+
+      // Solo cerrar el modal si la importación terminó completamente
       if (importProgress.status !== "running") {
         setShowProgressDialog(false)
         setCurrentImportHistoryId(null)
       }
+
+      // Asegurar que se puede ejecutar otra importación después de 2 segundos
+      setTimeout(() => {
+        isExecutingRef.current = false
+      }, 2000)
     }
   }
 
@@ -1485,8 +1494,8 @@ export default function ImportSourcesPage() {
                                   : "En curso"}
                           </Badge>
                           <span>
-                            {source.last_import.products_imported} importados, {source.last_import.products_updated}{" "}
-                            actualizados
+                            {source.last_import.products_imported} productos importados,{" "}
+                            {source.last_import.products_updated} actualizados
                           </span>
                         </div>
                       </div>
@@ -1505,10 +1514,18 @@ export default function ImportSourcesPage() {
                     <Button
                       className="flex-1"
                       onClick={() => handleRunImport(source)}
-                      disabled={importing === source.id || backgroundImports.has(source.id) || isRunning} // Deshabilitar si ya hay una importación en curso (db o background)
+                      disabled={
+                        importing === source.id ||
+                        backgroundImports.has(source.id) ||
+                        isRunning ||
+                        isExecutingRef.current
+                      } // Deshabilitar si ya hay una importación en curso (db, background, o configuración iniciada)
                     >
                       <Play className="h-4 w-4 mr-2" />
-                      {importing === source.id || backgroundImports.has(source.id) || isRunning
+                      {importing === source.id ||
+                      backgroundImports.has(source.id) ||
+                      isRunning ||
+                      isExecutingRef.current
                         ? "Importando..."
                         : "Ejecutar"}
                     </Button>
@@ -1816,6 +1833,13 @@ export default function ImportSourcesPage() {
             </Button>
             <Button
               onClick={() => {
+                // Prevenir doble clic
+                if (isExecutingRef.current) {
+                  console.log("[v0] Importación ya iniciándose, ignorando clic")
+                  return
+                }
+
+                isExecutingRef.current = true
                 console.log("[v0] ========================================")
                 console.log("[v0] Botón CONTINUAR presionado")
                 console.log("[v0] sourceToImport:", sourceToImport?.name, "ID:", sourceToImport?.id)
@@ -1823,7 +1847,12 @@ export default function ImportSourcesPage() {
                 console.log("[v0] ========================================")
 
                 if (sourceToImport) {
-                  executeImport(sourceToImport)
+                  executeImport(sourceToImport).finally(() => {
+                    // Liberar después de 2 segundos para evitar clicks accidentales
+                    setTimeout(() => {
+                      isExecutingRef.current = false
+                    }, 2000)
+                  })
                 }
               }}
               variant={importMode === "overwrite" ? "destructive" : "default"}
