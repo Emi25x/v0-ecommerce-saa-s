@@ -182,6 +182,32 @@ export default function ImportSourcesPage() {
     }
   }, [])
 
+  useEffect(() => {
+    const syncImportingState = async () => {
+      const sourcesInProgress = sources.filter((s) => s.last_import?.status === "in_progress")
+
+      if (sourcesInProgress.length > 0) {
+        console.log(
+          "[v0] Detectadas importaciones en curso:",
+          sourcesInProgress.map((s) => s.name),
+        )
+
+        // Si hay importaciones en curso, setear el estado local
+        sourcesInProgress.forEach((source) => {
+          if (!importing && !backgroundImports.has(source.id)) {
+            // La importación está en curso en la DB pero no en el estado local
+            // Esto significa que se quedó atascada o el navegador se cerró
+            console.log("[v0] Importación atascada detectada para:", source.name)
+          }
+        })
+      }
+    }
+
+    if (sources.length > 0) {
+      syncImportingState()
+    }
+  }, [sources])
+
   async function updateBackgroundImportsProgress() {
     if (backgroundImports.size === 0) return
 
@@ -1551,7 +1577,7 @@ export default function ImportSourcesPage() {
 
                   {/* Botones de acción */}
                   <div className="flex gap-2 pt-4">
-                    {importing === source.id ? (
+                    {importing === source.id || source.last_import?.status === "in_progress" ? (
                       <Button
                         variant="ghost"
                         onClick={() => handleCancelImport(source.id)}
