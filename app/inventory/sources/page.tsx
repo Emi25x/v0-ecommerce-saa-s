@@ -256,6 +256,13 @@ export default function ImportSourcesPage() {
   }
 
   async function handleRunImport(source: SourceWithSchedule) {
+    console.log("[v0] ========================================")
+    console.log("[v0] handleRunImport LLAMADO")
+    console.log("[v0] Fuente presionada:", source.name, "ID:", source.id)
+    console.log("[v0] Estado actual sourceToImport:", sourceToImport?.name)
+    console.log("[v0] Estado actual importing:", importing)
+    console.log("[v0] ========================================")
+
     setSourceToImport(source)
     setImportMode("update") // Por defecto: actualizar datos
     setShowImportConfirmDialog(true)
@@ -1809,6 +1816,12 @@ export default function ImportSourcesPage() {
             </Button>
             <Button
               onClick={() => {
+                console.log("[v0] ========================================")
+                console.log("[v0] Botón CONTINUAR presionado")
+                console.log("[v0] sourceToImport:", sourceToImport?.name, "ID:", sourceToImport?.id)
+                console.log("[v0] importMode:", importMode)
+                console.log("[v0] ========================================")
+
                 if (sourceToImport) {
                   executeImport(sourceToImport)
                 }
