@@ -1726,19 +1726,29 @@ export default function ImportSourcesPage() {
             </Button>
             <Button
               onClick={() => {
+                console.log("[v0] ===== BOTÓN CONTINUAR CLICKEADO =====")
+                console.log("[v0] isExecutingRef.current:", isExecutingRef.current)
+                console.log("[v0] sourceToImport:", sourceToImport)
+
                 if (isExecutingRef.current) {
+                  console.log("[v0] BLOQUEADO: isExecutingRef ya está en true")
                   return
                 }
 
+                console.log("[v0] Marcando isExecutingRef como true")
                 isExecutingRef.current = true
-                // Eliminar logs de debug innecesarios
 
                 if (sourceToImport) {
+                  console.log("[v0] Ejecutando executeImport para:", sourceToImport.name)
                   executeImport(sourceToImport).finally(() => {
                     setTimeout(() => {
+                      console.log("[v0] Liberando isExecutingRef después de 2 segundos")
                       isExecutingRef.current = false
                     }, 2000)
                   })
+                } else {
+                  console.log("[v0] ERROR: sourceToImport es null")
+                  isExecutingRef.current = false
                 }
               }}
               variant={importMode === "overwrite" ? "destructive" : "default"}
