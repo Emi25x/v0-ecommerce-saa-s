@@ -5,12 +5,11 @@ export async function GET() {
   try {
     const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
-    // Cancelar todas las importaciones en estado "in_progress"
     const { data, error } = await supabase
       .from("import_history")
       .update({
         status: "cancelled",
-        ended_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
       })
       .eq("status", "in_progress")
       .select()
