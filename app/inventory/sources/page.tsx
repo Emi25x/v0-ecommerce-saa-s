@@ -1412,16 +1412,11 @@ export default function ImportSourcesPage() {
                       <Button
                         variant="secondary"
                         onClick={() => {
-                          console.log("[v0] Click en botón Importar ahora")
-                          console.log("[v0] importing:", importing)
-                          console.log("[v0] backgroundImports.has(source.id):", backgroundImports.has(source.id))
-                          console.log("[v0] isRunning:", isRunning)
-                          console.log("[v0] isExecutingRef.current:", isExecutingRef.current)
                           handleRunImport(source)
                         }}
                         disabled={
                           !!importing || backgroundImports.has(source.id) || isRunning || isExecutingRef.current
-                        } // Deshabilitar si ya hay una importación en curso (db, background, o configuración iniciada)
+                        }
                       >
                         <Play className="h-4 w-4 mr-2" />
                         Importar ahora
@@ -1731,22 +1726,15 @@ export default function ImportSourcesPage() {
             </Button>
             <Button
               onClick={() => {
-                // Prevenir doble clic
                 if (isExecutingRef.current) {
-                  console.log("[v0] Importación ya iniciándose, ignorando clic")
                   return
                 }
 
                 isExecutingRef.current = true
-                console.log("[v0] ========================================")
-                console.log("[v0] Botón CONTINUAR presionado")
-                console.log("[v0] sourceToImport:", sourceToImport?.name, "ID:", sourceToImport?.id)
-                console.log("[v0] importMode:", importMode)
-                console.log("[v0] ========================================")
+                // Eliminar logs de debug innecesarios
 
                 if (sourceToImport) {
                   executeImport(sourceToImport).finally(() => {
-                    // Liberar después de 2 segundos para evitar clicks accidentales
                     setTimeout(() => {
                       isExecutingRef.current = false
                     }, 2000)
@@ -1778,8 +1766,7 @@ export default function ImportSourcesPage() {
               })
             }
             setShowProgressDialog(false)
-            // Al cerrar manualmente (no completar), resetear el historial ID para evitar reabrir un modal incorrecto
-            //setCurrentImportHistoryId(null); // No resetear para permitir reabrir si es necesario
+            //setCurrentImportHistoryId(null) // No resetear, para permitir reabrir si es necesario
           }
         }}
       >
