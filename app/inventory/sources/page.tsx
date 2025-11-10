@@ -1415,7 +1415,14 @@ export default function ImportSourcesPage() {
                     ) : (
                       <Button
                         variant="secondary"
-                        onClick={() => handleRunImport(source)}
+                        onClick={() => {
+                          console.log("[v0] Click en botón Importar ahora")
+                          console.log("[v0] importing:", importing)
+                          console.log("[v0] backgroundImports.has(source.id):", backgroundImports.has(source.id))
+                          console.log("[v0] isRunning:", isRunning)
+                          console.log("[v0] isExecutingRef.current:", isExecutingRef.current)
+                          handleRunImport(source)
+                        }}
                         disabled={
                           !!importing || backgroundImports.has(source.id) || isRunning || isExecutingRef.current
                         } // Deshabilitar si ya hay una importación en curso (db, background, o configuración iniciada)
