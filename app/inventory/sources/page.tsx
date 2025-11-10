@@ -288,59 +288,36 @@ export default function ImportSourcesPage() {
 
   const handleCleanupStuckImports = async () => {
     try {
-      const supabase = await createClient() // Using createClient for consistency
+      console.log("[v0] Calling cleanup API endpoint")
 
-      // Buscar todas las importaciones en estado "in_progress"
-      const { data: stuckImports, error: fetchError } = await supabase
-        .from("import_history")
-        .select("*")
-        .eq("status", "in_progress")
+      const response = await fetch("/api/inventory/import/cleanup", {
+        method: "POST",
+      })
 
-      if (fetchError) {
-        console.error("[v0] Error al buscar importaciones atascadas:", fetchError)
+      const data = await response.json()
+      console.log("[v0] Cleanup response:", data)
+
+      if (!response.ok) {
         toast({
           title: "Error",
-          description: "No se pudieron buscar importaciones atascadas.",
+          description: data.error || "No se pudieron limpiar las importaciones.",
           variant: "destructive",
         })
         return
       }
 
-      if (!stuckImports || stuckImports.length === 0) {
+      if (data.cleaned === 0) {
         toast({
           title: "Nada que limpiar",
-          description: "No hay importaciones atascadas.",
+          description: data.message,
           variant: "secondary",
         })
-        return
-      }
-
-      console.log("[v0] Encontradas", stuckImports.length, "importaciones atascadas")
-
-      // Actualizar todas a "cancelled"
-      const { error: updateError } = await supabase
-        .from("import_history")
-        .update({
-          status: "cancelled",
-          finished_at: new Date().toISOString(), // Assuming finished_at is appropriate for cancellation
-        })
-        .eq("status", "in_progress")
-
-      if (updateError) {
-        console.error("[v0] Error al limpiar importaciones:", updateError)
+      } else {
         toast({
-          title: "Error",
-          description: "Ocurrió un error al limpiar las importaciones atascadas.",
-          variant: "destructive",
+          title: "Limpieza completada",
+          description: data.message,
         })
-        return
       }
-
-      console.log("[v0] Importaciones limpiadas exitosamente")
-      toast({
-        title: "Limpieza completada",
-        description: `Se cancelaron ${stuckImports.length} importaciones atascadas.`,
-      })
 
       // Recargar las fuentes
       await loadSources()
