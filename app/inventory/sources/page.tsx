@@ -263,16 +263,12 @@ export default function ImportSourcesPage() {
   }
 
   async function handleRunImport(source: SourceWithSchedule) {
-    // Prevenir clics duplicados
     if (isExecutingRef.current) {
-      console.log("[v0] Ya hay una importación siendo configurada, ignorando clic")
       return
     }
 
-    console.log("[v0] Botón EJECUTAR presionado para:", source.name, "ID:", source.id)
-
     setSourceToImport(source)
-    setImportMode("update") // Por defecto: actualizar datos
+    setImportMode("update")
     setShowImportConfirmDialog(true)
   }
 
@@ -729,7 +725,7 @@ export default function ImportSourcesPage() {
       // Finalizar importación
       const finalStatus = importProgress.status === "cancelled" ? "cancelled" : totalFailed > 0 ? "error" : "success"
       const finalMessage =
-        totalFailed > 0 && !importProgress.status === "cancelled" ? `Se encontraron ${totalFailed} errores.` : ""
+        totalFailed > 0 && importProgress.status !== "cancelled" ? `Se encontraron ${totalFailed} errores.` : ""
 
       if (historyId) {
         await supabase
