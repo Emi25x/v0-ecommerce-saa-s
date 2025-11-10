@@ -182,32 +182,6 @@ export default function ImportSourcesPage() {
     }
   }, [])
 
-  useEffect(() => {
-    const syncImportingState = async () => {
-      const sourcesInProgress = sources.filter((s) => s.last_import?.status === "in_progress")
-
-      if (sourcesInProgress.length > 0) {
-        console.log(
-          "[v0] Detectadas importaciones en curso:",
-          sourcesInProgress.map((s) => s.name),
-        )
-
-        // Si hay importaciones en curso, setear el estado local
-        sourcesInProgress.forEach((source) => {
-          if (!importing && !backgroundImports.has(source.id)) {
-            // La importación está en curso en la DB pero no en el estado local
-            // Esto significa que se quedó atascada o el navegador se cerró
-            console.log("[v0] Importación atascada detectada para:", source.name)
-          }
-        })
-      }
-    }
-
-    if (sources.length > 0) {
-      syncImportingState()
-    }
-  }, [sources])
-
   async function updateBackgroundImportsProgress() {
     if (backgroundImports.size === 0) return
 
@@ -286,48 +260,6 @@ export default function ImportSourcesPage() {
     }
   }
 
-  const handleCleanupStuckImports = async () => {
-    console.log("[v0] ===== CLEANUP BUTTON CLICKED =====")
-
-    const confirmed = window.confirm("¿Estás seguro de que quieres cancelar todas las importaciones en curso?")
-    if (!confirmed) {
-      console.log("[v0] User cancelled cleanup")
-      return
-    }
-
-    try {
-      console.log("[v0] Calling cleanup API endpoint at /api/inventory/import/cleanup")
-
-      const response = await fetch("/api/inventory/import/cleanup", {
-        method: "POST",
-      })
-
-      console.log("[v0] Response status:", response.status)
-
-      const data = await response.json()
-      console.log("[v0] Response data:", data)
-
-      if (!response.ok) {
-        alert(`Error: ${data.error || "No se pudieron limpiar las importaciones"}`)
-        return
-      }
-
-      if (data.cleaned === 0) {
-        alert(`Nada que limpiar: ${data.message}`)
-      } else {
-        alert(`Limpieza completada: ${data.message}`)
-      }
-
-      // Recargar las fuentes
-      console.log("[v0] Reloading sources...")
-      await loadSources()
-      console.log("[v0] Sources reloaded")
-    } catch (error) {
-      console.error("[v0] Error en handleCleanupStuckImports:", error)
-      alert(`Error inesperado: ${error}`)
-    }
-  }
-
   async function handleRunImport(source: SourceWithSchedule) {
     // Prevenir clics duplicados
     if (isExecutingRef.current) {
@@ -341,159 +273,6 @@ export default function ImportSourcesPage() {
     setImportMode("update") // Por defecto: actualizar datos
     setShowImportConfirmDialog(true)
   }
-
-  // La migración al servidor causó problemas, volvemos al código funcional anterior
-
-  // async function executeImportServer(source: SourceWithSchedule) {
-  //   try {
-  //     setImporting(source.id)
-  //     setShowProgressDialog(true)
-  //     const now = new Date()
-  //     setImportProgress({
-  //       total: 0,
-  //       processed: 0,
-  //       imported: 0,
-  //       updated: 0,
-  //       failed: 0,
-  //       status: "running",
-  //       startTime: now,
-  //       lastUpdate: now,
-  //       speed: 0,
-  //       errors: [],
-  //       csvInfo: null,
-  //     })
-
-  //     console.log("[v0] ===== INICIANDO IMPORTACIÓN EN SERVIDOR =====")
-  //     console.log("[v0] Fuente:", source.name)
-  //     console.log("[v0] URL:", source.url_template)
-  //     console.log("[v0] Modo de importación:", importMode)
-  //     console.log("[v0] Hora de inicio:", now.toLocaleString())
-
-  //     if (!source.url_template) {
-  //       throw new Error("La fuente no tiene una URL configurada")
-  //     }
-
-  //     // Iniciar la importación en el servidor
-  //     const startResponse = await fetch("/api/inventory/import/start", {
-  //       method: "POST",
-  //       headers: { "Content-Type": "application/json" },
-  //       body: JSON.stringify({
-  //         sourceId: source.id,
-  //         mode: importMode,
-  //       }),
-  //     })
-
-  //     if (!startResponse.ok) {
-  //       const errorData = await startResponse.json()
-  //       throw new Error(errorData.error || "Error al iniciar la importación")
-  //     }
-
-  //     const { historyId } = await startResponse.json()
-  //     console.log("[v0] Importación iniciada en servidor con historyId:", historyId)
-  //     setCurrentImportHistoryId(historyId)
-
-  //     // Polling para obtener el progreso desde el servidor
-  //     const pollInterval = setInterval(async () => {
-  //       try {
-  //         const progressResponse = await fetch(`/api/inventory/import/progress/${historyId}`)
-  //         if (!progressResponse.ok) {
-  //           console.error("[v0] Error al obtener progreso:", progressResponse.statusText)
-  //           return
-  //         }
-
-  //         const progressData = await progressResponse.json()
-
-  //         const currentProgress = {
-  //           total: progressData.total || 0,
-  //           processed: progressData.processed || 0,
-  //           imported: progressData.products_imported || 0,
-  //           updated: progressData.products_updated || 0,
-  //           failed: progressData.products_failed || 0,
-  //           status:
-  //             progressData.status === "running"
-  //               ? ("running" as const)
-  //               : progressData.status === "success"
-  //                 ? ("completed" as const)
-  //                 : progressData.status === "cancelled"
-  //                   ? ("cancelled" as const)
-  //                   : ("error" as const),
-  //           startTime: now,
-  //           lastUpdate: new Date(),
-  //           speed: progressData.speed || 0,
-  //           errors: progressData.errors || [],
-  //           csvInfo: null, // csvInfo no se trae del servidor en este polling
-  //         }
-
-  //         setImportProgress(currentProgress)
-
-  //         if (!showProgressDialog) {
-  //           setBackgroundImports((prev) => new Map(prev).set(source.id, currentProgress))
-  //         }
-
-  //         // Si la importación terminó, detener el polling
-  //         if (progressData.status !== "running") {
-  //           clearInterval(pollInterval)
-
-  //           setBackgroundImports((prev) => {
-  //             const updated = new Map(prev)
-  //             updated.delete(source.id)
-  //             return updated
-  //           })
-
-  //           if (progressData.status === "success") {
-  //             toast({
-  //               title: "Importación completada",
-  //               description: `${progressData.products_imported} productos importados, ${progressData.products_updated} actualizados`,
-  //             })
-  //           } else if (progressData.status === "cancelled") {
-  //             toast({
-  //               title: "Importación cancelada",
-  //               description: "La importación fue cancelada por el usuario",
-  //               variant: "destructive",
-  //             })
-  //           } else {
-  //             toast({
-  //               title: "Error en importación",
-  //               description: progressData.error_message || "Ocurrió un error durante la importación",
-  //               variant: "destructive",
-  //             })
-  //           }
-
-  //           loadSources()
-  //           checkRunningImports()
-  //         }
-  //       } catch (error) {
-  //         console.error("[v0] Error en polling de progreso:", error)
-  //       }
-  //     }, 2000) // Polling cada 2 segundos
-
-  //     // Limpiar interval cuando el componente se desmonte o cuando se cierra el modal
-  //     // Si el modal se cierra manualmente, debemos asegurarnos de que el interval se detenga
-  //     // La lógica del onOpenChange del Dialog ya maneja la detención del polling si no se está mostrando.
-  //     // Sin embargo, para el caso de desmonte del componente, se necesita este return.
-  //     return () => clearInterval(pollInterval)
-  //   } catch (error: any) {
-  //     console.error("[v0] ===== ERROR AL INICIAR IMPORTACIÓN =====")
-  //     console.error("[v0] Error:", error)
-  //     setImportProgress((prev) => ({ ...prev, status: "error" }))
-
-  //     setBackgroundImports((prev) => {
-  //       const updated = new Map(prev)
-  //       updated.delete(source.id)
-  //       return updated
-  //     })
-
-  //     toast({
-  //       title: "Error",
-  //       description: error.message || "No se pudo iniciar la importación",
-  //       variant: "destructive",
-  //     })
-  //   } finally {
-  //     setImporting(null)
-  //     setShowImportConfirmDialog(false)
-  //     setSourceToImport(null)
-  //   }
-  // }
 
   async function executeImport(source: SourceWithSchedule) {
     let historyId: string | undefined // Declarar historyId aquí
@@ -1398,16 +1177,8 @@ export default function ImportSourcesPage() {
           <p className="text-muted-foreground mt-1">Administra tus fuentes de importación y sus configuraciones</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handleCleanupStuckImports} className="gap-2 bg-transparent">
-            <X className="h-4 w-4" />
-            Limpiar atascadas
-          </Button>
-          <Button onClick={() => (window.location.href = "/import-sources")}>
-            <Upload className="h-4 w-4 mr-2" />
-            Nueva Fuente
-          </Button>
-          <Button variant="outline" onClick={() => (window.location.href = "/inventory")}>
-            Volver a Inventario
+          <Button variant="outline" asChild>
+            <Link href="/inventory">Volver a Inventario</Link>
           </Button>
         </div>
       </div>
