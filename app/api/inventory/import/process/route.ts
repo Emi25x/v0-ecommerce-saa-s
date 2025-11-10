@@ -1,27 +1,26 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import Papa from "papaparse"
 
-console.log("[v0] ========================================")
-console.log("[v0] IMPORT PROCESS ENDPOINT MODULE LOADING")
-console.log("[v0] ========================================")
+export const maxDuration = 300 // 5 minutes max execution time
 
 export async function POST(request: NextRequest) {
-  console.log("[v0] ========================================")
-  console.log("[v0] POST /api/inventory/import/process - CALLED")
-  console.log("[v0] ========================================")
+  const startTime = Date.now()
 
   try {
     const body = await request.json()
-    const { historyId, sourceId, importMode } = body
-
-    console.log("[v0] Background import params:", { historyId, sourceId, importMode })
+    const { historyId, sourceId } = body
 
     const supabase = await createClient()
 
-    // Actualizar estado a "running"
-    await supabase.from("import_history").update({ status: "running" }).eq("id", historyId)
+    await supabase
+      .from("import_history")
+      .update({
+        status: "running",
+        started_at: new Date().toISOString(),
+      })
+      .eq("id", historyId)
 
-    // Obtener configuración de la fuente
     const { data: source, error: sourceError } = await supabase
       .from("import_sources")
       .select("*")
@@ -29,157 +28,198 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (sourceError || !source) {
-      throw new Error("Fuente no encontrada")
+      throw new Error("Source not found")
     }
 
-    console.log("[v0] Source loaded:", source.name)
-
-    // Descargar CSV
-    const csvUrl = source.url_template
-    if (!csvUrl) {
-      throw new Error("URL del CSV no configurada")
-    }
-
-    console.log("[v0] Downloading CSV from:", csvUrl)
-    const csvResponse = await fetch(csvUrl)
+    const csvResponse = await fetch(source.url_template)
     if (!csvResponse.ok) {
-      throw new Error(`Error descargando CSV: ${csvResponse.statusText}`)
+      throw new Error(`Failed to download CSV: ${csvResponse.statusText}`)
     }
-
     const csvText = await csvResponse.text()
-    console.log("[v0] CSV downloaded, size:", csvText.length, "bytes")
 
-    // Detectar separador
-    const firstLine = csvText.split("\n")[0]
-    let separator = ","
-    if (firstLine.includes("|")) separator = "|"
-    else if (firstLine.includes(";")) separator = ";"
-
-    console.log("[v0] Detected separator:", separator)
-
-    // Parsear CSV
-    const lines = csvText.split("\n").filter((line) => line.trim())
-    const headers = lines[0].split(separator).map((h) => h.trim())
-    const dataLines = lines.slice(1)
-
-    console.log("[v0] CSV parsed - Headers:", headers.length, "Rows:", dataLines.length)
-
-    const columnMapping = source.column_mapping || {}
-    const skuColumnName = columnMapping["sku"]
-
-    if (!skuColumnName) {
-      throw new Error("Columna SKU no mapeada")
-    }
-
-    const skuIndex = headers.indexOf(skuColumnName)
-    if (skuIndex === -1) {
-      throw new Error(`Columna SKU "${skuColumnName}" no encontrada en el CSV`)
-    }
-
-    console.log("[v0] SKU column:", skuColumnName, "at index:", skuIndex)
-
-    let imported = 0
-    let updated = 0
-    let failed = 0
-
-    // Procesar productos en lotes de 100
-    for (let i = 0; i < dataLines.length; i++) {
-      const line = dataLines[i]
-      const values = line.split(separator).map((v) => v.trim())
-
-      const sku = values[skuIndex]
-      if (!sku) {
-        failed++
-        continue
+    const delimiters = ["|", ";", ",", "\t"]
+    let maxColumns = 0
+    let bestDelimiter = ","
+    for (const delimiter of delimiters) {
+      const parsed = Papa.parse(csvText, { delimiter, preview: 1 })
+      const columnCount = parsed.data[0]?.length || 0
+      if (columnCount > maxColumns) {
+        maxColumns = columnCount
+        bestDelimiter = delimiter
       }
+    }
 
-      // Construir objeto de producto
-      const productData: any = {}
+    const parsed = Papa.parse(csvText, {
+      delimiter: bestDelimiter,
+      header: true,
+      skipEmptyLines: true,
+    })
 
-      for (const [dbField, csvColumn] of Object.entries(columnMapping)) {
-        const columnIndex = headers.indexOf(csvColumn)
-        if (columnIndex !== -1 && values[columnIndex]) {
-          const value = values[columnIndex]
+    const products = parsed.data as any[]
+    const mapping = source.column_mapping || {}
 
-          // Validar campos numéricos
-          if (["stock", "price", "cost"].includes(dbField)) {
-            const numValue = Number.parseFloat(value.replace(",", "."))
-            if (!isNaN(numValue)) {
-              productData[dbField] = numValue
+    const sampleProduct = products[0] || {}
+    const hasName = sampleProduct[mapping.name || "name"]
+    const hasDescription = sampleProduct[mapping.description || "description"]
+    const hasCategory = sampleProduct[mapping.category || "category"]
+    const hasOnlyBasicData = !hasName && !hasDescription && !hasCategory
+
+    const backupProductsMap = new Map()
+
+    if (hasOnlyBasicData) {
+      const { data: allSources } = await supabase
+        .from("import_sources")
+        .select("*")
+        .eq("is_active", true)
+        .neq("id", sourceId)
+
+      if (allSources) {
+        const backupSources = allSources
+          .filter((s) => s.name.toLowerCase().includes("arnoia") && !s.name.toLowerCase().includes("stock"))
+          .sort((a, b) => {
+            const aHasAct = a.name.toLowerCase().includes("act")
+            const bHasAct = b.name.toLowerCase().includes("act")
+            if (aHasAct === bHasAct) return 0
+            return aHasAct ? 1 : -1
+          })
+
+        for (const backupSource of backupSources) {
+          try {
+            const backupResponse = await fetch(backupSource.url_template)
+            if (backupResponse.ok) {
+              const backupCsvText = await backupResponse.text()
+              const backupParsed = Papa.parse(backupCsvText, {
+                delimiter: bestDelimiter,
+                header: true,
+                skipEmptyLines: true,
+              })
+              const backupMapping = backupSource.column_mapping || {}
+
+              backupParsed.data.forEach((row: any) => {
+                const sku = row[backupMapping.sku || "sku"]
+                if (sku) {
+                  backupProductsMap.set(sku, {
+                    name: row[backupMapping.name || "name"] || "",
+                    description: row[backupMapping.description || "description"] || "",
+                    category: row[backupMapping.category || "category"] || "",
+                    brand: row[backupMapping.brand || "brand"] || "",
+                  })
+                }
+              })
             }
-          } else {
-            productData[dbField] = value
+          } catch (err) {
+            console.error(`Failed to load backup source ${backupSource.name}:`, err)
           }
         }
       }
-
-      // Verificar si el producto existe
-      const { data: existingProduct } = await supabase.from("products").select("id").eq("sku", sku).single()
-
-      if (existingProduct) {
-        // Actualizar producto existente
-        if (importMode === "skip") {
-          // Saltar producto existente
-          continue
-        }
-
-        const { error: updateError } = await supabase.from("products").update(productData).eq("id", existingProduct.id)
-
-        if (updateError) {
-          console.error("[v0] Error updating product:", sku, updateError)
-          failed++
-        } else {
-          updated++
-        }
-      } else {
-        // Insertar nuevo producto
-        productData.sku = sku
-        productData.source = [source.name]
-
-        const { error: insertError } = await supabase.from("products").insert(productData)
-
-        if (insertError) {
-          console.error("[v0] Error inserting product:", sku, insertError)
-          failed++
-        } else {
-          imported++
-        }
-      }
-
-      // Actualizar progreso cada 100 productos
-      if ((i + 1) % 100 === 0) {
-        await supabase
-          .from("import_history")
-          .update({
-            products_imported: imported,
-            products_updated: updated,
-            products_failed: failed,
-          })
-          .eq("id", historyId)
-
-        console.log("[v0] Progress:", i + 1, "/", dataLines.length)
-      }
     }
 
-    // Actualizar estado final
+    const BATCH_SIZE = 50
+    let importedCount = 0
+    let updatedCount = 0
+    let failedCount = 0
+
+    for (let i = 0; i < products.length; i += BATCH_SIZE) {
+      const batch = products.slice(i, i + BATCH_SIZE)
+      const batchSkus = batch.map((p) => p[mapping.sku || "sku"]).filter(Boolean)
+
+      const { data: existingProducts } = await supabase.from("products").select("sku").in("sku", batchSkus)
+
+      const existingSkusSet = new Set(existingProducts?.map((p) => p.sku) || [])
+
+      const upsertPromises = batch.map(async (row) => {
+        try {
+          const sku = row[mapping.sku || "sku"]
+          const price = row[mapping.price || "price"]
+          const stock = row[mapping.stock || "stock"]
+
+          if (!sku) return null
+
+          const exists = existingSkusSet.has(sku)
+
+          let productData: any = {
+            sku,
+            price: Number.parseFloat(price) || 0,
+            stock: Number.parseInt(stock) || 0,
+            source: [source.id],
+          }
+
+          if (!exists && hasOnlyBasicData) {
+            const backupProduct = backupProductsMap.get(sku)
+            if (backupProduct) {
+              productData = {
+                ...productData,
+                title: backupProduct.name || sku,
+                description: backupProduct.description,
+                category: backupProduct.category,
+                brand: backupProduct.brand,
+              }
+            } else {
+              // Skip if not found in backup sources
+              return null
+            }
+          } else if (!exists) {
+            // New product with complete data
+            productData.title = row[mapping.name || "name"] || sku
+            productData.description = row[mapping.description || "description"]
+            productData.category = row[mapping.category || "category"]
+            productData.brand = row[mapping.brand || "brand"]
+          }
+
+          const { error } = await supabase.from("products").upsert(productData, {
+            onConflict: "sku",
+          })
+
+          if (error) throw error
+
+          return { success: true, exists, sku }
+        } catch (error: any) {
+          return { success: false, error: error.message, sku: row[mapping.sku || "sku"] }
+        }
+      })
+
+      const results = await Promise.all(upsertPromises)
+
+      results.forEach((result) => {
+        if (result === null) return
+        if (result.success) {
+          if (result.exists) updatedCount++
+          else importedCount++
+        } else {
+          failedCount++
+        }
+      })
+
+      await supabase
+        .from("import_history")
+        .update({
+          products_imported: importedCount,
+          products_updated: updatedCount,
+          products_failed: failedCount,
+        })
+        .eq("id", historyId)
+    }
+
     await supabase
       .from("import_history")
       .update({
         status: "success",
-        products_imported: imported,
-        products_updated: updated,
-        products_failed: failed,
         completed_at: new Date().toISOString(),
+        products_imported: importedCount,
+        products_updated: updatedCount,
+        products_failed: failedCount,
       })
       .eq("id", historyId)
 
-    console.log("[v0] Import completed:", { imported, updated, failed })
-
-    return NextResponse.json({ success: true, imported, updated, failed })
+    return NextResponse.json({
+      success: true,
+      imported: importedCount,
+      updated: updatedCount,
+      failed: failedCount,
+    })
   } catch (error: any) {
-    console.error("[v0] Error in background import:", error)
+    console.error("Import process error:", error)
 
-    // Actualizar estado a error
     const { historyId } = await request.json()
     if (historyId) {
       const supabase = await createClient()
@@ -193,6 +233,6 @@ export async function POST(request: NextRequest) {
         .eq("id", historyId)
     }
 
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: "Import failed", details: error.message }, { status: 500 })
   }
 }

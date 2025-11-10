@@ -231,6 +231,167 @@ export default function ImportSourcesPage() {
         csvInfo: null,
       })
 
+      console.log("[v0] ===== INICIANDO IMPORTACIÓN EN SERVIDOR =====")
+      console.log("[v0] Fuente:", source.name)
+      console.log("[v0] URL:", source.url_template)
+      console.log("[v0] Modo de importación:", importMode)
+      console.log("[v0] Hora de inicio:", now.toLocaleString())
+
+      if (!source.url_template) {
+        throw new Error("La fuente no tiene una URL configurada")
+      }
+
+      // Iniciar la importación en el servidor
+      const startResponse = await fetch("/api/inventory/import/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceId: source.id,
+          mode: importMode,
+        }),
+      })
+
+      if (!startResponse.ok) {
+        const errorData = await startResponse.json()
+        throw new Error(errorData.error || "Error al iniciar la importación")
+      }
+
+      const { historyId } = await startResponse.json()
+      console.log("[v0] Importación iniciada en servidor con historyId:", historyId)
+      setCurrentImportHistoryId(historyId)
+
+      // Polling para obtener el progreso desde el servidor
+      const pollInterval = setInterval(async () => {
+        try {
+          const progressResponse = await fetch(`/api/inventory/import/progress/${historyId}`)
+          if (!progressResponse.ok) {
+            console.error("[v0] Error al obtener progreso:", progressResponse.statusText)
+            return
+          }
+
+          const progressData = await progressResponse.json()
+
+          const currentProgress = {
+            total: progressData.total || 0,
+            processed: progressData.processed || 0,
+            imported: progressData.products_imported || 0,
+            updated: progressData.products_updated || 0,
+            failed: progressData.products_failed || 0,
+            status:
+              progressData.status === "running"
+                ? ("running" as const)
+                : progressData.status === "success"
+                  ? ("completed" as const)
+                  : progressData.status === "cancelled"
+                    ? ("cancelled" as const)
+                    : ("error" as const),
+            startTime: now,
+            lastUpdate: new Date(),
+            speed: progressData.speed || 0,
+            errors: progressData.errors || [],
+            csvInfo: null, // csvInfo no se trae del servidor en este polling
+          }
+
+          setImportProgress(currentProgress)
+
+          if (!showProgressDialog) {
+            setBackgroundImports((prev) => new Map(prev).set(source.id, currentProgress))
+          }
+
+          // Si la importación terminó, detener el polling
+          if (progressData.status !== "running") {
+            clearInterval(pollInterval)
+
+            setBackgroundImports((prev) => {
+              const updated = new Map(prev)
+              updated.delete(source.id)
+              return updated
+            })
+
+            if (progressData.status === "success") {
+              toast({
+                title: "Importación completada",
+                description: `${progressData.products_imported} productos importados, ${progressData.products_updated} actualizados`,
+              })
+            } else if (progressData.status === "cancelled") {
+              toast({
+                title: "Importación cancelada",
+                description: "La importación fue cancelada por el usuario",
+                variant: "destructive",
+              })
+            } else {
+              toast({
+                title: "Error en importación",
+                description: progressData.error_message || "Ocurrió un error durante la importación",
+                variant: "destructive",
+              })
+            }
+
+            loadSources()
+            checkRunningImports()
+          }
+        } catch (error) {
+          console.error("[v0] Error en polling de progreso:", error)
+        }
+      }, 2000) // Polling cada 2 segundos
+
+      // Limpiar interval cuando el componente se desmonte o cuando se cierra el modal
+      // Si el modal se cierra manualmente, debemos asegurarnos de que el interval se detenga
+      // La lógica del onOpenChange del Dialog ya maneja la detención del polling si no se está mostrando.
+      // Sin embargo, para el caso de desmonte del componente, se necesita este return.
+      return () => clearInterval(pollInterval)
+    } catch (error: any) {
+      console.error("[v0] ===== ERROR AL INICIAR IMPORTACIÓN =====")
+      console.error("[v0] Error:", error)
+      setImportProgress((prev) => ({ ...prev, status: "error" }))
+
+      setBackgroundImports((prev) => {
+        const updated = new Map(prev)
+        updated.delete(source.id)
+        return updated
+      })
+
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo iniciar la importación",
+        variant: "destructive",
+      })
+    } finally {
+      setImporting(null)
+      setShowImportConfirmDialog(false)
+      setSourceToImport(null)
+    }
+  }
+
+  /*
+  ============================================
+  BACKUP: CÓDIGO ORIGINAL DE IMPORTACIÓN EN NAVEGADOR
+  ============================================
+
+  Para restaurar el código anterior si hay problemas:
+  1. Comenta la nueva función executeImport arriba
+  2. Descomenta este código
+  3. Renombra esta función a executeImport
+
+  async function executeImportInBrowser(source: SourceWithSchedule) {
+    try {
+      setImporting(source.id)
+      setShowProgressDialog(true)
+      const now = new Date()
+      setImportProgress({
+        total: 0,
+        processed: 0,
+        imported: 0,
+        updated: 0,
+        failed: 0,
+        status: "running",
+        startTime: now,
+        lastUpdate: now,
+        speed: 0,
+        errors: [],
+        csvInfo: null,
+      })
+
       console.log("[v0] ===== INICIANDO IMPORTACIÓN DIRECTA DESDE NAVEGADOR =====")
       console.log("[v0] Fuente:", source.name)
       console.log("[v0] URL:", source.url_template)
@@ -824,6 +985,7 @@ export default function ImportSourcesPage() {
       setSourceToImport(null)
     }
   }
+  */
 
   async function handleQuickDisableSchedule(source: SourceWithSchedule) {
     if (source.schedules.length === 0) return

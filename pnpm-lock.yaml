@@ -143,6 +143,9 @@ importers:
       openai:
         specifier: 6.3.0
         version: 6.3.0(ws@8.18.3)(zod@3.25.67)
+      papaparse:
+        specifier: latest
+        version: 5.5.3
       react:
         specifier: latest
         version: 19.2.0
@@ -1919,6 +1922,9 @@ packages:
         optional: true
       zod:
         optional: true
+
+  papaparse@5.5.3:
+    resolution: {integrity: sha512-5QvjGxYVjxO59MGU2lHVYpRWBBtKHnlIAcSe1uNFCkkptUh63NFRj0FJQm7nR67puEruUci/ZkjmEFrjCAyP4A==}
 
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
@@ -3757,6 +3763,8 @@ snapshots:
     optionalDependencies:
       ws: 8.18.3
       zod: 3.25.67
+
+  papaparse@5.5.3: {}
 
   picocolors@1.1.1: {}
 
