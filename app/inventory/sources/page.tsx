@@ -18,6 +18,9 @@ import {
   ChevronDown,
   ChevronUp,
   StopCircle,
+  Hourglass,
+  X,
+  Loader2,
 } from "lucide-react"
 import {
   Dialog,
@@ -1161,64 +1164,87 @@ export default function ImportSourcesPage() {
     }
   }
 
-  async function handleCancelImport(sourceId: string) {
-    // Buscar el ID del historial de importación asociado a la fuente que está corriendo
-    let historyIdToCancel = null
+  async function handleCancelImport(sourceId?: string) {
     try {
-      const { data: runningHistory } = await supabase
-        .from("import_history")
-        .select("id, source_id")
-        .eq("source_id", sourceId)
-        .eq("status", "running")
-        .maybeSingle() // Usar maybeSingle ya que solo esperamos una importación 'running' por fuente
+      // Si hay una importación activa en el diálogo
+      if (importing && showProgressDialog) {
+        // Check if the progress modal is open
+        console.log(`[v0] Cancelando importación activa en diálogo: ${importing}`)
 
-      if (runningHistory) {
-        historyIdToCancel = runningHistory.id
-      } else {
-        // Si no se encuentra un historial 'running', puede ser que el estado no se haya actualizado todavía
-        // o que ya haya terminado pero no se ha refrescado la lista.
-        // Intentamos usar el currentImportHistoryId si está definido y es para la misma fuente.
-        if (currentImportHistoryId && sourceId === sourceToImport?.id) {
-          historyIdToCancel = currentImportHistoryId
+        setImportProgress((prev) => ({ ...prev, status: "cancelled" })) // Update status locally
+
+        // Limpiar el estado de importación y cerrar el modal
+        setImporting(null)
+        setShowProgressDialog(false)
+        setShowImportConfirmDialog(false)
+        setSourceToImport(null)
+        //setCurrentImportHistoryId(null) // No resetear para permitir reabrir si se mueve a segundo plano
+
+        // Actualizar el historial si existe
+        if (currentImportHistoryId) {
+          await supabase
+            .from("import_history")
+            .update({
+              status: "cancelled",
+              finished_at: new Date().toISOString(),
+              error_message: "Importación cancelada por el usuario",
+            })
+            .eq("id", currentImportHistoryId)
         }
-      }
 
-      if (!historyIdToCancel) {
-        console.log(`[v0] No se encontró un historial de importación activo para cancelar para la fuente ${sourceId}`)
         toast({
-          title: "Nada que cancelar",
-          description: "No se encontró una importación activa para cancelar.",
-          variant: "secondary",
+          title: "Importación cancelada",
+          description: "La importación ha sido detenida.",
         })
+
+        loadSources()
         return
       }
 
-      console.log(`[v0] Iniciando cancelación para historyId: ${historyIdToCancel} (sourceId: ${sourceId})`)
+      // Si se pasa un sourceId, cancelar importación en segundo plano
+      if (sourceId) {
+        const bgImport = backgroundImports.get(sourceId)
+        if (bgImport) {
+          console.log(`[v0] Cancelando importación en segundo plano: ${sourceId}`)
 
-      const response = await fetch("/api/inventory/import/cancel", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ historyId: historyIdToCancel }),
-      })
+          const updatedImports = new Map(backgroundImports)
+          updatedImports.delete(sourceId)
+          setBackgroundImports(updatedImports)
 
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "Error al cancelar importación")
+          // Actualizar el historial si existe
+          const { data: runningHistory } = await supabase
+            .from("import_history")
+            .select("id")
+            .eq("source_id", sourceId)
+            .eq("status", "running")
+            .maybeSingle()
+
+          if (runningHistory) {
+            await supabase
+              .from("import_history")
+              .update({
+                status: "cancelled",
+                finished_at: new Date().toISOString(),
+                error_message: "Importación cancelada por el usuario",
+              })
+              .eq("id", runningHistory.id)
+          }
+
+          toast({
+            title: "Importación cancelada",
+            description: "La importación en segundo plano ha sido detenida.",
+          })
+
+          loadSources()
+          return
+        }
       }
 
       toast({
-        title: "Cancelando importación",
-        description: "La importación se detendrá en breve...",
+        title: "Nada que cancelar",
+        description: "No hay importaciones activas.",
+        variant: "secondary",
       })
-
-      // Forzar una actualización para reflejar el estado "cancelled" si es necesario
-      // checkRunningImports() // Esto ya debería manejarse por el polling y loadSources.
-      // Se puede llamar a loadSources() para asegurar la actualización visual de las listas.
-      // Dar un pequeño delay para que la API termine de procesar la cancelación antes de recargar
-      setTimeout(() => {
-        loadSources()
-        checkRunningImports() // Re-verificar el estado de las importaciones
-      }, 1500) // 1.5 segundos de delay
     } catch (error: any) {
       console.error("[v0] Error cancelling import:", error)
       toast({
@@ -1344,33 +1370,47 @@ export default function ImportSourcesPage() {
                 </CardHeader>
                 <CardContent className="flex-1 space-y-4">
                   {/* Indicador de importación en segundo plano */}
-                  {backgroundImports.has(source.id) &&
-                    !showProgressDialog && ( // Solo mostrar si el modal de progreso está cerrado
-                      <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full" />
-                            <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
-                              Importación en progreso (segundo plano)
-                            </span>
-                          </div>
-                          <Button variant="ghost" size="sm" onClick={() => handleReopenImportDialog(source.id)}>
+                  {backgroundImports.has(source.id) && (
+                    <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2 text-sm text-blue-400">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>Importación en progreso</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setImporting(source.id)
+                              setImportProgress(backgroundImports.get(source.id)!)
+                              setShowProgressDialog(true)
+                            }}
+                            className="h-8 text-xs"
+                          >
                             Ver progreso
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleCancelImport(source.id)}
+                            className="h-8 text-xs text-red-400 hover:text-red-300"
+                          >
+                            <X className="h-3 w-3 mr-1" />
+                            Cancelar
+                          </Button>
                         </div>
-                        {(() => {
-                          const bg = backgroundImports.get(source.id)
-                          if (bg && bg.total > 0) {
-                            return (
-                              <div className="mt-2 text-xs text-blue-700 dark:text-blue-300">
-                                {bg.processed} / {bg.total} productos ({Math.round((bg.processed / bg.total) * 100)}%)
-                              </div>
-                            )
-                          }
-                          return null
-                        })()}
                       </div>
-                    )}
+                      <div className="text-xs text-muted-foreground">
+                        {backgroundImports.get(source.id)!.processed} / {backgroundImports.get(source.id)!.total}{" "}
+                        productos (
+                        {Math.round(
+                          (backgroundImports.get(source.id)!.processed / backgroundImports.get(source.id)!.total) * 100,
+                        )}
+                        %)
+                      </div>
+                    </div>
+                  )}
 
                   {/* Configuración expandible */}
                   <div className="space-y-2">
@@ -1511,24 +1551,27 @@ export default function ImportSourcesPage() {
 
                   {/* Botones de acción */}
                   <div className="flex gap-2 pt-4">
-                    <Button
-                      className="flex-1"
-                      onClick={() => handleRunImport(source)}
-                      disabled={
-                        importing === source.id ||
-                        backgroundImports.has(source.id) ||
-                        isRunning ||
-                        isExecutingRef.current
-                      } // Deshabilitar si ya hay una importación en curso (db, background, o configuración iniciada)
-                    >
-                      <Play className="h-4 w-4 mr-2" />
-                      {importing === source.id ||
-                      backgroundImports.has(source.id) ||
-                      isRunning ||
-                      isExecutingRef.current
-                        ? "Importando..."
-                        : "Ejecutar"}
-                    </Button>
+                    {importing === source.id ? (
+                      <Button
+                        variant="ghost"
+                        onClick={() => handleCancelImport(source.id)}
+                        className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                      >
+                        <X className="h-4 w-4 mr-2" />
+                        Cancelar importación
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="secondary"
+                        onClick={() => handleRunImport(source)}
+                        disabled={
+                          !!importing || backgroundImports.has(source.id) || isRunning || isExecutingRef.current
+                        } // Deshabilitar si ya hay una importación en curso (db, background, o configuración iniciada)
+                      >
+                        <Play className="h-4 w-4 mr-2" />
+                        Importar ahora
+                      </Button>
+                    )}
                     <Button
                       variant="outline"
                       onClick={() => handleOpenScheduleDialog(source)}
@@ -1868,13 +1911,15 @@ export default function ImportSourcesPage() {
         open={showProgressDialog}
         onOpenChange={(open) => {
           if (!open) {
-            // Si la importación está corriendo y el modal se cierra, moverla a segundo plano
-            if (importProgress.status === "running" && sourceToImport) {
-              console.log("[v0] Moviendo importación a segundo plano:", sourceToImport.name)
-              setBackgroundImports((prev) => new Map(prev).set(sourceToImport.id, { ...importProgress }))
+            // Mover a segundo plano en lugar de cancelar
+            if (importing && importProgress.status === "running") {
+              const updatedImports = new Map(backgroundImports)
+              updatedImports.set(importing, { ...importProgress })
+              setBackgroundImports(updatedImports)
+
               toast({
                 title: "Importación en segundo plano",
-                description: `La importación de "${sourceToImport.name}" continúa ejecutándose. Haz clic en "Ver progreso" para reabrir el modal.`,
+                description: `La importación de "${sourceToImport?.name}" continúa ejecutándose. Haz clic en "Ver progreso" desde la tarjeta de la fuente para reabrir el modal.`,
               })
             }
             setShowProgressDialog(false)
@@ -1883,19 +1928,31 @@ export default function ImportSourcesPage() {
           }
         }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
-              {importProgress.status === "running" && "⏳ Importación en Curso"}
-              {importProgress.status === "completed" && "✅ Importación Completada"}
-              {importProgress.status === "cancelled" && "⚠️ Importación Cancelada"}
-              {importProgress.status === "error" && "❌ Error en Importación"}
-            </DialogTitle>
+            <div className="flex items-center justify-between">
+              <DialogTitle className="flex items-center gap-2">
+                <Hourglass className="h-5 w-5 animate-pulse" />
+                {importProgress.status === "running" && "Importación en Curso"}
+                {importProgress.status === "completed" && "✅ Importación Completada"}
+                {importProgress.status === "error" && "❌ Error en Importación"}
+                {importProgress.status === "cancelled" && "⚠️ Importación Cancelada"}
+              </DialogTitle>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => handleCancelImport()}
+                disabled={importProgress.status !== "running"}
+              >
+                <X className="h-4 w-4 mr-1" />
+                Cancelar Importación
+              </Button>
+            </div>
             <DialogDescription>
               {importProgress.status === "running" && "Procesando productos..."}
               {importProgress.status === "completed" && "La importación se completó exitosamente"}
-              {importProgress.status === "cancelled" && "La importación fue cancelada"}
               {importProgress.status === "error" && "Ocurrió un error durante la importación"}
+              {importProgress.status === "cancelled" && "La importación fue cancelada"}
             </DialogDescription>
           </DialogHeader>
 
@@ -2058,7 +2115,7 @@ export default function ImportSourcesPage() {
                 variant="destructive"
                 onClick={() => {
                   if (sourceToImport) {
-                    handleCancelImport(sourceToImport.id)
+                    handleCancelImport() // Call without sourceId to target the active modal import
                   }
                 }}
               >
@@ -2070,7 +2127,7 @@ export default function ImportSourcesPage() {
               <Button
                 onClick={() => {
                   setShowProgressDialog(false)
-                  // setCurrentImportHistoryId(null) // No resetear, para permitir reabrir si se mueve a segundo plano
+                  //setCurrentImportHistoryId(null) // No resetear, para permitir reabrir si es necesario
                   setSourceToImport(null) // Resetear la fuente activa
                 }}
               >
