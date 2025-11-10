@@ -287,47 +287,44 @@ export default function ImportSourcesPage() {
   }
 
   const handleCleanupStuckImports = async () => {
+    console.log("[v0] ===== CLEANUP BUTTON CLICKED =====")
+
+    const confirmed = window.confirm("¿Estás seguro de que quieres cancelar todas las importaciones en curso?")
+    if (!confirmed) {
+      console.log("[v0] User cancelled cleanup")
+      return
+    }
+
     try {
-      console.log("[v0] Calling cleanup API endpoint")
+      console.log("[v0] Calling cleanup API endpoint at /api/inventory/import/cleanup")
 
       const response = await fetch("/api/inventory/import/cleanup", {
         method: "POST",
       })
 
+      console.log("[v0] Response status:", response.status)
+
       const data = await response.json()
-      console.log("[v0] Cleanup response:", data)
+      console.log("[v0] Response data:", data)
 
       if (!response.ok) {
-        toast({
-          title: "Error",
-          description: data.error || "No se pudieron limpiar las importaciones.",
-          variant: "destructive",
-        })
+        alert(`Error: ${data.error || "No se pudieron limpiar las importaciones"}`)
         return
       }
 
       if (data.cleaned === 0) {
-        toast({
-          title: "Nada que limpiar",
-          description: data.message,
-          variant: "secondary",
-        })
+        alert(`Nada que limpiar: ${data.message}`)
       } else {
-        toast({
-          title: "Limpieza completada",
-          description: data.message,
-        })
+        alert(`Limpieza completada: ${data.message}`)
       }
 
       // Recargar las fuentes
+      console.log("[v0] Reloading sources...")
       await loadSources()
+      console.log("[v0] Sources reloaded")
     } catch (error) {
       console.error("[v0] Error en handleCleanupStuckImports:", error)
-      toast({
-        title: "Error inesperado",
-        description: "Ocurrió un error al intentar limpiar las importaciones atascadas.",
-        variant: "destructive",
-      })
+      alert(`Error inesperado: ${error}`)
     }
   }
 
