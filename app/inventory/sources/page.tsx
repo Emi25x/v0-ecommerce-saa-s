@@ -286,6 +286,74 @@ export default function ImportSourcesPage() {
     }
   }
 
+  const handleCleanupStuckImports = async () => {
+    try {
+      const supabase = await createClient() // Using createClient for consistency
+
+      // Buscar todas las importaciones en estado "in_progress"
+      const { data: stuckImports, error: fetchError } = await supabase
+        .from("import_history")
+        .select("*")
+        .eq("status", "in_progress")
+
+      if (fetchError) {
+        console.error("[v0] Error al buscar importaciones atascadas:", fetchError)
+        toast({
+          title: "Error",
+          description: "No se pudieron buscar importaciones atascadas.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      if (!stuckImports || stuckImports.length === 0) {
+        toast({
+          title: "Nada que limpiar",
+          description: "No hay importaciones atascadas.",
+          variant: "secondary",
+        })
+        return
+      }
+
+      console.log("[v0] Encontradas", stuckImports.length, "importaciones atascadas")
+
+      // Actualizar todas a "cancelled"
+      const { error: updateError } = await supabase
+        .from("import_history")
+        .update({
+          status: "cancelled",
+          finished_at: new Date().toISOString(), // Assuming finished_at is appropriate for cancellation
+        })
+        .eq("status", "in_progress")
+
+      if (updateError) {
+        console.error("[v0] Error al limpiar importaciones:", updateError)
+        toast({
+          title: "Error",
+          description: "Ocurrió un error al limpiar las importaciones atascadas.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      console.log("[v0] Importaciones limpiadas exitosamente")
+      toast({
+        title: "Limpieza completada",
+        description: `Se cancelaron ${stuckImports.length} importaciones atascadas.`,
+      })
+
+      // Recargar las fuentes
+      await loadSources()
+    } catch (error) {
+      console.error("[v0] Error en handleCleanupStuckImports:", error)
+      toast({
+        title: "Error inesperado",
+        description: "Ocurrió un error al intentar limpiar las importaciones atascadas.",
+        variant: "destructive",
+      })
+    }
+  }
+
   async function handleRunImport(source: SourceWithSchedule) {
     // Prevenir clics duplicados
     if (isExecutingRef.current) {
@@ -1356,6 +1424,10 @@ export default function ImportSourcesPage() {
           <p className="text-muted-foreground mt-1">Administra tus fuentes de importación y sus configuraciones</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={handleCleanupStuckImports} className="gap-2 bg-transparent">
+            <X className="h-4 w-4" />
+            Limpiar atascadas
+          </Button>
           <Button onClick={() => (window.location.href = "/import-sources")}>
             <Upload className="h-4 w-4 mr-2" />
             Nueva Fuente
@@ -1578,14 +1650,17 @@ export default function ImportSourcesPage() {
                   {/* Botones de acción */}
                   <div className="flex gap-2 pt-4">
                     {importing === source.id || source.last_import?.status === "in_progress" ? (
-                      <Button
-                        variant="ghost"
-                        onClick={() => handleCancelImport(source.id)}
-                        className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                      >
-                        <X className="h-4 w-4 mr-2" />
-                        Cancelar importación
-                      </Button>
+                      <>
+                        {console.log("[v0] MOSTRANDO BOTÓN DE CANCELAR para source:", source.id, source.name)}
+                        <Button
+                          variant="ghost"
+                          onClick={() => handleCancelImport(source.id)}
+                          className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                        >
+                          <X className="h-4 w-4 mr-2" />
+                          Cancelar importación
+                        </Button>
+                      </>
                     ) : (
                       <Button
                         variant="secondary"
