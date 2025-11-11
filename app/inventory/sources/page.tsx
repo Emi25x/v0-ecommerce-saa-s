@@ -22,7 +22,7 @@ import {
   X,
   Loader2,
   RefreshCw,
-} from "lucide-react"
+} from "lucide-react" // Importar AlertTriangle y DollarSign
 import {
   Dialog,
   DialogContent,
@@ -40,124 +40,135 @@ import Link from "next/link"
 import Papa from "papaparse" // Importar PapaParse
 import { useRouter } from "next/navigation" // Importar useRouter
 
-// Función auxiliar para detectar el separador CSV
-function detectSeparator(text: string): string {
-  const lines = text.split("\n")
-  if (lines.length === 0) return ","
+// Mover los hooks de estado al nivel superior del componente
+const App = () => {
+  // Envolver la lógica del componente en una función principal
+  const [showDiagnosticDialog, setShowDiagnosticDialog] = useState(false)
+  const [diagnosticData, setDiagnosticData] = useState<any>(null)
+  const [loadingDiagnostic, setLoadingDiagnostic] = useState(false)
 
-  const firstLine = lines[0]
-  const separators = ["|", ";", ",", "\t"]
-  let bestSeparator = ","
-  let maxCount = 0
+  // Función auxiliar para detectar el separador CSV
+  function detectSeparator(text: string): string {
+    const lines = text.split("\n")
+    if (lines.length === 0) return ","
 
-  for (const sep of separators) {
-    const count = (firstLine.match(new RegExp(`\\${sep}`, "g")) || []).length
-    if (count > maxCount) {
-      maxCount = count
-      bestSeparator = sep
+    const firstLine = lines[0]
+    const separators = ["|", ";", ",", "\t"]
+    let bestSeparator = ","
+    let maxCount = 0
+
+    for (const sep of separators) {
+      const count = (firstLine.match(new RegExp(`\\${sep}`, "g")) || []).length
+      if (count > maxCount) {
+        maxCount = count
+        bestSeparator = sep
+      }
+    }
+    return bestSeparator
+  }
+
+  // Función auxiliar para crear cliente Supabase (reutilizada)
+  async function createClient() {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error("Supabase URL and Anon Key must be set in environment variables.")
+    }
+    return createBrowserClient(supabaseUrl, supabaseAnonKey)
+  }
+
+  const extractFieldValue = useCallback(
+    (row: Record<string, any>, fieldName: string, mapping: Record<string, string>) => {
+      // Primero intentar usar el mapeo configurado
+      const mappedColumn = mapping[fieldName]
+      if (mappedColumn && row[mappedColumn] !== undefined && row[mappedColumn] !== null && row[mappedColumn] !== "") {
+        return row[mappedColumn]
+      }
+
+      const commonNames: Record<string, string[]> = {
+        sku: ["sku", "codigo_interno", "codigo", "barcode", "ean", "upc"],
+        title: ["title", "name", "titulo", "product", "nombre", "descripcion"],
+        description: ["description", "descripcion", "detalle", "desc"],
+        category: ["category", "categoria", "rubro", "cat"],
+        brand: ["brand", "marca", "fabricante"],
+        price: ["price", "precio", "pvp", "pventa", "precio_venta"],
+        stock: ["stock", "quantity", "existencia", "qty", "cantidad"],
+      }
+
+      const possibleNames = commonNames[fieldName] || [fieldName]
+      for (const possibleName of possibleNames) {
+        if (row[possibleName] !== undefined && row[possibleName] !== null && row[possibleName] !== "") {
+          return row[possibleName]
+        }
+      }
+
+      return null
+    },
+    [],
+  ) // extractFieldValue no depende de variables externas
+
+  interface ImportSource {
+    id: string
+    name: string
+    description: string | null
+    feed_type: string
+    url_template: string | null
+    column_mapping: Record<string, string>
+    overwrite_duplicates: boolean
+    created_at: string
+    updated_at: string
+  }
+
+  interface ImportSchedule {
+    id: string
+    source_id: string
+    frequency: string
+    timezone: string
+    enabled: boolean
+    hour: number
+    minute: number // Agregando campo minute
+    day_of_week: number | null
+    day_of_month: number | null
+    last_run_at: string | null
+    next_run_at: string | null
+    created_at: string
+  }
+
+  interface SourceWithSchedule extends ImportSource {
+    schedules: ImportSchedule[]
+    last_import?: {
+      started_at: string
+      status: string
+      products_imported: number
+      products_updated: number
+      products_failed: number
     }
   }
-  return bestSeparator
-}
 
-// Función auxiliar para crear cliente Supabase (reutilizada)
-async function createClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error("Supabase URL and Anon Key must be set in environment variables.")
-  }
-  return createBrowserClient(supabaseUrl, supabaseAnonKey)
-}
-
-const extractFieldValue = (row: Record<string, any>, fieldName: string, mapping: Record<string, string>) => {
-  // Primero intentar usar el mapeo configurado
-  const mappedColumn = mapping[fieldName]
-  if (mappedColumn && row[mappedColumn] !== undefined && row[mappedColumn] !== null && row[mappedColumn] !== "") {
-    return row[mappedColumn]
-  }
-
-  const commonNames: Record<string, string[]> = {
-    sku: ["sku", "codigo_interno", "codigo", "barcode", "ean", "upc"],
-    title: ["title", "name", "titulo", "product", "nombre", "descripcion"],
-    description: ["description", "descripcion", "detalle", "desc"],
-    category: ["category", "categoria", "rubro", "cat"],
-    brand: ["brand", "marca", "fabricante"],
-    price: ["price", "precio", "pvp", "pventa", "precio_venta"],
-    stock: ["stock", "quantity", "existencia", "qty", "cantidad"],
-  }
-
-  const possibleNames = commonNames[fieldName] || [fieldName]
-  for (const possibleName of possibleNames) {
-    if (row[possibleName] !== undefined && row[possibleName] !== null && row[possibleName] !== "") {
-      return row[possibleName]
+  // Estado de progreso de importación
+  interface ImportProgressState {
+    total: number
+    processed: number
+    imported: number
+    updated: number
+    failed: number
+    skipped: number // Agregar campo skipped
+    status: "running" | "completed" | "cancelled" | "error"
+    startTime: Date | null
+    lastUpdate: Date | null
+    speed: number
+    errors: Array<{ sku: string; error: string; details?: string }> // details ahora es opcional
+    csvInfo: null | {
+      separator: string
+      headers: string[]
+      firstRow: Record<string, string>
     }
   }
 
-  return null
-}
+  // Asegurarse de que useRouter se llame dentro del componente
+  const router = useRouter()
 
-interface ImportSource {
-  id: string
-  name: string
-  description: string | null
-  feed_type: string
-  url_template: string | null
-  column_mapping: Record<string, string>
-  overwrite_duplicates: boolean
-  created_at: string
-  updated_at: string
-}
-
-interface ImportSchedule {
-  id: string
-  source_id: string
-  frequency: string
-  timezone: string
-  enabled: boolean
-  hour: number
-  minute: number // Agregando campo minute
-  day_of_week: number | null
-  day_of_month: number | null
-  last_run_at: string | null
-  next_run_at: string | null
-  created_at: string
-}
-
-interface SourceWithSchedule extends ImportSource {
-  schedules: ImportSchedule[]
-  last_import?: {
-    started_at: string
-    status: string
-    products_imported: number
-    products_updated: number
-    products_failed: number
-  }
-}
-
-// Estado de progreso de importación
-interface ImportProgressState {
-  total: number
-  processed: number
-  imported: number
-  updated: number
-  failed: number
-  skipped: number // Agregar campo skipped
-  status: "running" | "completed" | "cancelled" | "error"
-  startTime: Date | null
-  lastUpdate: Date | null
-  speed: number
-  errors: Array<{ sku: string; error: string; details?: string }> // details ahora es opcional
-  csvInfo: null | {
-    separator: string
-    headers: string[]
-    firstRow: Record<string, string>
-  }
-}
-
-export default function ImportSourcesPage() {
-  const router = useRouter() // Inicializar useRouter
   const [sources, setSources] = useState<SourceWithSchedule[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedSource, setSelectedSource] = useState<SourceWithSchedule | null>(null)
@@ -575,11 +586,7 @@ export default function ImportSourcesPage() {
                 const parsedStock = Number.parseInt(stockValue)
                 const validStock = !isNaN(parsedStock) ? parsedStock : 0
 
-                const { data: existingProduct } = await supabase
-                  .from("products")
-                  .select("*")
-                  .eq("sku", sku)
-                  .maybeSingle()
+                const existingProduct = existingProductsMap.get(sku)
 
                 if (existingProduct) {
                   // Si es catalog, diferenciar entre Arnoia (respeta importMode) y Arnoia Act (siempre actualiza)
@@ -598,10 +605,6 @@ export default function ImportSourcesPage() {
                       console.log(
                         `[v0] Producto ${sku} existe, actualizando desde catálogo base "Arnoia" (modo: ${importMode})...`,
                       )
-                      const currentSources = Array.isArray(existingProduct.source) ? existingProduct.source : []
-                      if (!currentSources.includes(source.id)) {
-                        currentSources.push(source.id)
-                      }
 
                       const { error: updateError } = await supabase
                         .from("products")
@@ -612,11 +615,15 @@ export default function ImportSourcesPage() {
                           brand: brand || existingProduct.brand,
                           price: validPrice,
                           stock: validStock,
-                          source: currentSources,
+                          updated_at: new Date().toISOString(),
                         })
-                        .eq("id", existingProduct.id)
+                        .eq("sku", sku)
 
-                      if (updateError) throw updateError
+                      if (updateError) {
+                        console.error("[v0] Error actualizando producto:", updateError)
+                        return { type: "error", error: updateError.message, sku }
+                      }
+
                       return { type: "updated", sku }
                     }
 
@@ -637,6 +644,7 @@ export default function ImportSourcesPage() {
                         price: validPrice,
                         stock: validStock,
                         source: currentSources,
+                        updated_at: new Date().toISOString(),
                       })
                       .eq("id", existingProduct.id)
 
@@ -657,6 +665,7 @@ export default function ImportSourcesPage() {
                         price: validPrice,
                         stock: validStock,
                         source: currentSources,
+                        updated_at: new Date().toISOString(),
                       })
                       .eq("id", existingProduct.id)
 
@@ -682,6 +691,7 @@ export default function ImportSourcesPage() {
                   if (!currentSources.includes(source.id)) {
                     productData.source = [...currentSources, source.id]
                   }
+                  productData.updated_at = new Date().toISOString()
 
                   const { error: updateError } = await supabase
                     .from("products")
@@ -706,6 +716,8 @@ export default function ImportSourcesPage() {
                         category: backupProduct.categoria || backupProduct.category || null,
                         brand: backupProduct.marca || backupProduct.brand || null,
                         source: [source.id],
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
                       }
 
                       const { error: insertError } = await supabase.from("products").insert(fullProductData)
@@ -730,6 +742,8 @@ export default function ImportSourcesPage() {
                       price: validPrice,
                       stock: validStock,
                       source: [source.id],
+                      created_at: new Date().toISOString(),
+                      updated_at: new Date().toISOString(),
                     }
 
                     const { error: insertError } = await supabase.from("products").insert(productData)
@@ -749,6 +763,7 @@ export default function ImportSourcesPage() {
                       ?.toString()
                       .trim()
                       .toUpperCase() || "Desconocido",
+                  details: error.stack, // Capturar el stack trace si está disponible
                 }
               }
             }),
@@ -765,7 +780,7 @@ export default function ImportSourcesPage() {
             if (result.status === "fulfilled") {
               const { value } = result as {
                 status: "fulfilled"
-                value: { type: string; sku: string; error?: string; row?: any }
+                value: { type: string; sku: string; error?: string; row?: any; details?: string }
               }
               if (value.type === "inserted") {
                 batchImported++
@@ -779,7 +794,7 @@ export default function ImportSourcesPage() {
               } else if (value.type === "error") {
                 batchFailed++
                 if (value.sku && value.error) {
-                  allErrors.push({ sku: value.sku, error: value.error })
+                  allErrors.push({ sku: value.sku, error: value.error, details: value.details })
                 }
               }
             } else {
@@ -788,10 +803,12 @@ export default function ImportSourcesPage() {
               const errorReason = (result as any).reason
               const errorMessage = errorReason?.message || "Error desconocido"
               const skuFromError = errorReason?.sku || "Desconocido" // Intentar obtener SKU del resultado
+              const details = errorReason?.details || errorReason?.stack || ""
 
               allErrors.push({
                 sku: skuFromError,
                 error: errorMessage,
+                details: details,
               })
             }
           }
@@ -874,6 +891,7 @@ export default function ImportSourcesPage() {
             products_imported: totalImported,
             products_updated: totalUpdated,
             products_failed: totalFailed,
+            products_skipped: totalSkipped, // Guardar el total de skipped
             completed_at: new Date().toISOString(),
             error_message:
               finalStatus === "error"
@@ -968,15 +986,18 @@ export default function ImportSourcesPage() {
       } finally {
         setImporting(null)
         setShowImportConfirmDialog(false)
-        setSourceToImport(null)
+        //setSourceToImport(null) // No resetear aquí, el modal de progreso maneja esto
         //isExecutingRef.current = false // Mover a después del timeout
 
         setTimeout(() => {
-          setShowProgressDialog(false)
+          if (!showProgressDialog) {
+            // Solo cerrar modal de progreso si no está abierto
+            setShowProgressDialog(false)
+          }
           setCurrentImportHistoryId(null) // Resetear el ID del historial al cerrar el modal de progreso
           isExecutingRef.current = false // Liberar el flag después de que el modal se cierre
-          console.log("[v0] Liberando isExecutingRef después de cerrar modal de progreso")
-        }, 2000)
+          console.log("[v0] Liberando isExecutingRef después de cerrar modal de progreso (o timeout)")
+        }, 1000) // Un pequeño delay para que el usuario vea el estado final antes de cerrar
       }
     },
     [
@@ -989,6 +1010,8 @@ export default function ImportSourcesPage() {
       loadSources,
       supabase,
       isExecutingRef,
+      router, // Incluir router si es necesario
+      extractFieldValue, // Asegurarse de incluir extractFieldValue en las dependencias
     ], // Added isExecutingRef here
   )
 
@@ -1192,20 +1215,11 @@ export default function ImportSourcesPage() {
   async function handleCancelImport(sourceId?: string) {
     try {
       // Si hay una importación activa en el diálogo
-      if (importing && showProgressDialog) {
-        // Check if the progress modal is open
+      if (importing && showProgressDialog && sourceToImport?.id === (sourceId || importing)) {
         console.log(`[v0] Cancelando importación activa en diálogo: ${importing}`)
 
-        setImportProgress((prev) => ({ ...prev, status: "cancelled" })) // Update status locally
+        setImportProgress((prev) => ({ ...prev, status: "cancelled" }))
 
-        // Limpiar el estado de importación y cerrar el modal
-        setImporting(null)
-        setShowProgressDialog(false)
-        setShowImportConfirmDialog(false)
-        setSourceToImport(null)
-        //setCurrentImportHistoryId(null) // No resetear para permitir reabrir si se mueve a segundo plano
-
-        // Actualizar el historial si existe
         if (currentImportHistoryId) {
           await supabase
             .from("import_history")
@@ -1213,13 +1227,16 @@ export default function ImportSourcesPage() {
               status: "cancelled",
               completed_at: new Date().toISOString(),
               error_message: "Importación cancelada por el usuario",
+              products_imported: importProgress.imported,
+              products_updated: importProgress.updated,
+              products_failed: importProgress.failed,
             })
             .eq("id", currentImportHistoryId)
         }
 
         toast({
           title: "Importación cancelada",
-          description: "La importación ha sido detenida.",
+          description: `Se procesaron ${importProgress.processed} de ${importProgress.total} productos. Importados: ${importProgress.imported}, Actualizados: ${importProgress.updated}, Fallidos: ${importProgress.failed}`,
         })
 
         loadSources()
@@ -1236,7 +1253,6 @@ export default function ImportSourcesPage() {
           updatedImports.delete(sourceId)
           setBackgroundImports(updatedImports)
 
-          // Actualizar el historial si existe
           const { data: runningHistory } = await supabase
             .from("import_history")
             .select("id")
@@ -1251,13 +1267,16 @@ export default function ImportSourcesPage() {
                 status: "cancelled",
                 completed_at: new Date().toISOString(),
                 error_message: "Importación cancelada por el usuario",
+                products_imported: bgImport.imported,
+                products_updated: bgImport.updated,
+                products_failed: bgImport.failed,
               })
               .eq("id", runningHistory.id)
           }
 
           toast({
             title: "Importación cancelada",
-            description: "La importación en segundo plano ha sido detenida.",
+            description: `Se procesaron ${bgImport.processed} de ${bgImport.total} productos. Importados: ${bgImport.imported}, Actualizados: ${bgImport.updated}, Fallidos: ${bgImport.failed}`,
           })
 
           loadSources()
@@ -1267,7 +1286,7 @@ export default function ImportSourcesPage() {
 
       toast({
         title: "Nada que cancelar",
-        description: "No hay importaciones activas.",
+        description: "No hay importaciones activas o el ID proporcionado no coincide.",
         variant: "secondary",
       })
     } catch (error: any) {
@@ -1282,15 +1301,19 @@ export default function ImportSourcesPage() {
 
   async function checkRunningImports() {
     try {
+      // Obtener todas las importaciones que están 'running' en la DB
       const { data: runningHistory } = await supabase
         .from("import_history")
-        .select("id, source_id")
-        .eq("status", "running")
+        .select("id, source_id, status") // Incluir status para verificar
+        .or("status.eq.running,status.eq.processing") // Considerar ambos estados como activos
 
       if (runningHistory && runningHistory.length > 0) {
         const newRunningImports = new Map<string, string>()
         runningHistory.forEach((h) => {
-          newRunningImports.set(h.source_id, h.id)
+          // Solo agregar si el estado es 'running' o 'processing'
+          if (h.status === "running" || h.status === "processing") {
+            newRunningImports.set(h.source_id, h.id) // Guardar source_id y history_id
+          }
         })
         setRunningImports(newRunningImports)
       } else {
@@ -1337,6 +1360,25 @@ export default function ImportSourcesPage() {
     })
   }
 
+  const handleDiagnostic = async () => {
+    setLoadingDiagnostic(true)
+    try {
+      const response = await fetch("/api/diagnose-products")
+      const data = await response.json()
+      setDiagnosticData(data)
+      setShowDiagnosticDialog(true)
+    } catch (error) {
+      console.error("Error al ejecutar diagnóstico:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo ejecutar el diagnóstico",
+        variant: "destructive",
+      })
+    } finally {
+      setLoadingDiagnostic(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="container mx-auto p-6">
@@ -1355,10 +1397,18 @@ export default function ImportSourcesPage() {
           <h1 className="text-3xl font-bold">Gestor de Importaciones</h1>
           <p className="text-muted-foreground mt-2">Administra tus fuentes de importación y sus configuraciones</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           <Button onClick={handleCleanupStuckImports} variant="outline" size="sm">
             <RefreshCw className="mr-2 h-4 w-4" />
             Limpiar importaciones
+          </Button>
+          <Button onClick={handleDiagnostic} variant="outline" size="sm" disabled={loadingDiagnostic}>
+            {loadingDiagnostic ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <CheckCircle2 className="mr-2 h-4 w-4" />
+            )}
+            Diagnóstico
           </Button>
           <Button onClick={() => router.push("/inventory")}>Volver a Inventario</Button>
         </div>
@@ -1380,6 +1430,7 @@ export default function ImportSourcesPage() {
           {sources.map((source) => {
             const isExpanded = expandedSources.has(source.id)
             const isRunning = runningImports.has(source.id) // Verificación si hay una importación activa en la DB
+            const isInBackground = backgroundImports.has(source.id)
 
             return (
               <Card key={source.id} className="flex flex-col">
@@ -1394,7 +1445,7 @@ export default function ImportSourcesPage() {
                 </CardHeader>
                 <CardContent className="flex-1 space-y-4">
                   {/* Indicador de importación en segundo plano */}
-                  {backgroundImports.has(source.id) && (
+                  {isInBackground && (
                     <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2 text-sm text-blue-400">
@@ -1426,11 +1477,15 @@ export default function ImportSourcesPage() {
                         </div>
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {backgroundImports.get(source.id)!.processed} / {backgroundImports.get(source.id)!.total}{" "}
+                        {backgroundImports.get(source.id)!.processed} /{" "}
+                        {backgroundImports.get(source.id)!.total > 0 ? backgroundImports.get(source.id)!.total : "N/A"}{" "}
                         productos (
-                        {Math.round(
-                          (backgroundImports.get(source.id)!.processed / backgroundImports.get(source.id)!.total) * 100,
-                        )}
+                        {backgroundImports.get(source.id)!.total > 0
+                          ? Math.round(
+                              (backgroundImports.get(source.id)!.processed / backgroundImports.get(source.id)!.total) *
+                                100,
+                            )
+                          : 0}
                         %)
                       </div>
                     </div>
@@ -1575,13 +1630,14 @@ export default function ImportSourcesPage() {
 
                   {/* Botones de acción */}
                   <div className="flex gap-2 pt-4">
-                    {importing === source.id || source.last_import?.status === "in_progress" ? (
+                    {importing === source.id || isRunning || isInBackground ? (
                       <>
                         {console.log("[v0] MOSTRANDO BOTÓN DE CANCELAR para source:", source.id, source.name)}
                         <Button
                           variant="ghost"
                           onClick={() => handleCancelImport(source.id)}
                           className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                          disabled={isExecutingRef.current} // Deshabilitar si otra acción está en curso
                         >
                           <X className="h-4 w-4 mr-2" />
                           Cancelar importación
@@ -1593,9 +1649,7 @@ export default function ImportSourcesPage() {
                         onClick={() => {
                           handleRunImport(source)
                         }}
-                        disabled={
-                          !!importing || backgroundImports.has(source.id) || isRunning || isExecutingRef.current
-                        }
+                        disabled={!!importing || isInBackground || isRunning || isExecutingRef.current}
                       >
                         <Play className="h-4 w-4 mr-2" />
                         Importar ahora
@@ -1607,13 +1661,13 @@ export default function ImportSourcesPage() {
                       title={
                         schedulesTableExists ? "Configurar cronjob" : "Cronjobs no disponibles (ejecuta script SQL 017)"
                       }
-                      disabled={!schedulesTableExists}
+                      disabled={!schedulesTableExists || isExecutingRef.current}
                     >
                       <Clock className="h-4 w-4 mr-2" />
                       Cronjob
                     </Button>
                     <Link href={`/inventory/sources/${source.id}/history`}>
-                      <Button variant="outline" size="icon" title="Ver historial">
+                      <Button variant="outline" size="icon" title="Ver historial" disabled={isExecutingRef.current}>
                         <History className="h-4 w-4" />
                       </Button>
                     </Link>
@@ -1625,6 +1679,7 @@ export default function ImportSourcesPage() {
                         setShowDeleteDialog(true)
                       }}
                       title="Eliminar fuente"
+                      disabled={isExecutingRef.current}
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -1921,10 +1976,6 @@ export default function ImportSourcesPage() {
                   console.log("[v0] Ejecutando executeImport para:", sourceToImport.name)
                   executeImport(sourceToImport).finally(() => {
                     // Mover el reset a finally del executeImport para asegurar que se ejecute
-                    //setTimeout(() => {
-                    //  console.log("[v0] Liberando isExecutingRef después de 2 segundos")
-                    //  isExecutingRef.current = false
-                    //}, 2000)
                   })
                 } else {
                   console.log("[v0] ERROR: sourceToImport es null")
@@ -1945,17 +1996,18 @@ export default function ImportSourcesPage() {
         onOpenChange={(open) => {
           if (!open) {
             // Mover a segundo plano en lugar de cancelar
-            if (importing && importProgress.status === "running") {
+            if (importing && importProgress.status === "running" && sourceToImport) {
               const updatedImports = new Map(backgroundImports)
               updatedImports.set(importing, { ...importProgress })
               setBackgroundImports(updatedImports)
 
               toast({
                 title: "Importación en segundo plano",
-                description: `La importación de "${sourceToImport?.name}" continúa ejecutándose. Haz clic en "Ver progreso" desde la tarjeta de la fuente para reabrir el modal.`,
+                description: `La importación de "${sourceToImport.name}" continúa ejecutándose. Haz clic en "Ver progreso" desde la tarjeta de la fuente para reabrir el modal.`,
               })
             }
-            setShowProgressDialog(false)
+            // No cerrar el modal si se está ejecutando una acción crítica en finally
+            // setShowProgressDialog(false) // El modal maneja su cierre con el botón X o cerrar overlay
             //setCurrentImportHistoryId(null) // No resetear, para permitir reabrir si es necesario
             setSourceToImport(null) // Resetear la fuente activa
             // No resetear isExecutingRef aquí, se hace en el finally de executeImport
@@ -1975,7 +2027,7 @@ export default function ImportSourcesPage() {
               <Button
                 variant="destructive"
                 size="sm"
-                onClick={() => handleCancelImport()}
+                onClick={() => handleCancelImport()} // Llamar sin sourceId para cancelar la importación activa en el modal
                 disabled={importProgress.status !== "running"}
               >
                 <X className="h-4 w-4 mr-1" />
@@ -2090,10 +2142,10 @@ export default function ImportSourcesPage() {
             </div>
 
             {/* Mensaje de estado o tiempo estimado */}
-            {importProgress.status === "running" && importProgress.total > 0 && (
+            {importProgress.status === "running" && importProgress.total > 0 && importProgress.speed > 0 && (
               <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
                 <p className="text-sm text-blue-800 dark:text-blue-200">
-                  {importProgress.speed > 0 && importProgress.total > importProgress.processed ? (
+                  {importProgress.total > importProgress.processed ? (
                     <>
                       Tiempo estimado restante: {(() => {
                         const remainingSeconds = Math.round(
@@ -2134,7 +2186,9 @@ export default function ImportSourcesPage() {
                       <div className="font-medium text-red-800 dark:text-red-200">SKU: {error.sku}</div>
                       <div className="text-red-700 dark:text-red-300 mt-1">{error.error}</div>
                       {error.details && (
-                        <div className="text-red-600 dark:text-red-400 mt-1 text-[10px]">{error.details}</div>
+                        <div className="text-red-600 dark:text-red-400 mt-1 text-[10px] break-words">
+                          {error.details}
+                        </div>
                       )}
                     </div>
                   ))}
@@ -2153,9 +2207,7 @@ export default function ImportSourcesPage() {
               <Button
                 variant="destructive"
                 onClick={() => {
-                  if (sourceToImport) {
-                    handleCancelImport() // Call without sourceId to target the active modal import
-                  }
+                  handleCancelImport() // Call without sourceId to target the active modal import
                 }}
               >
                 <StopCircle className="h-4 w-4 mr-2" />
@@ -2168,6 +2220,8 @@ export default function ImportSourcesPage() {
                   setShowProgressDialog(false)
                   //setCurrentImportHistoryId(null) // No resetear, para permitir reabrir si es necesario
                   setSourceToImport(null) // Resetear la fuente activa
+                  setImporting(null) // Resetear el estado de 'importing'
+                  // El flag isExecutingRef.current se resetea en el finally de executeImport
                 }}
               >
                 Cerrar
@@ -2219,6 +2273,143 @@ export default function ImportSourcesPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Dialog para mostrar datos del diagnóstico */}
+      <Dialog open={showDiagnosticDialog} onOpenChange={setShowDiagnosticDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Diagnóstico de Productos</DialogTitle>
+            <DialogDescription>Análisis del estado actual de la base de datos de productos</DialogDescription>
+          </DialogHeader>
+
+          {loadingDiagnostic ? (
+            <div className="flex items-center justify-center h-64">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : diagnosticData ? (
+            <div className="space-y-4">
+              {/* Estadísticas generales */}
+              <div className="grid grid-cols-2 gap-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">Total de Productos</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{diagnosticData.totalProducts}</div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium">SKUs Duplicados</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-red-600">{diagnosticData.duplicateSKUs?.length || 0}</div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Productos por fuente */}
+              {diagnosticData.productsBySource && diagnosticData.productsBySource.length > 0 && (
+                <div>
+                  <h3 className="font-semibold mb-2">Productos por Fuente</h3>
+                  <div className="space-y-2">
+                    {diagnosticData.productsBySource.map((item: any) => (
+                      <div key={item.source} className="flex justify-between items-center p-2 bg-muted rounded">
+                        <span>{item.source || "Sin fuente"}</span>
+                        <Badge>{item.count} productos</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* SKUs duplicados */}
+              {diagnosticData.duplicateSKUs && diagnosticData.duplicateSKUs.length > 0 && (
+                <div>
+                  <h3 className="font-semibold mb-2 text-red-600">
+                    SKUs Duplicados ({diagnosticData.duplicateSKUs.length})
+                  </h3>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {diagnosticData.duplicateSKUs.slice(0, 10).map((sku: string, index: number) => (
+                      <div key={index} className="p-2 bg-red-50 border border-red-200 rounded text-sm">
+                        SKU: <code className="font-mono">{sku}</code>
+                      </div>
+                    ))}
+                    {diagnosticData.duplicateSKUs.length > 10 && (
+                      <p className="text-sm text-muted-foreground">
+                        ... y {diagnosticData.duplicateSKUs.length - 10} más
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Títulos corruptos */}
+              {diagnosticData.corruptedTitles && diagnosticData.corruptedTitles.length > 0 && (
+                <div>
+                  <h3 className="font-semibold mb-2 text-orange-600">
+                    Títulos Corruptos ({diagnosticData.corruptedTitles.length})
+                  </h3>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {diagnosticData.corruptedTitles.slice(0, 5).map((product: any, index: number) => (
+                      <div key={index} className="p-2 bg-orange-50 border border-orange-200 rounded text-sm">
+                        <div>
+                          <strong>SKU:</strong> {product.sku}
+                        </div>
+                        <div>
+                          <strong>Título:</strong> {product.title}
+                        </div>
+                      </div>
+                    ))}
+                    {diagnosticData.corruptedTitles.length > 5 && (
+                      <p className="text-sm text-muted-foreground">
+                        ... y {diagnosticData.corruptedTitles.length - 5} más
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Mensaje de estado saludable */}
+              {(!diagnosticData.duplicateSKUs || diagnosticData.duplicateSKUs.length === 0) &&
+                (!diagnosticData.corruptedTitles || diagnosticData.corruptedTitles.length === 0) && (
+                  <div className="p-4 bg-green-50 border border-green-200 rounded text-center">
+                    <CheckCircle2 className="h-8 w-8 text-green-600 mx-auto mb-2" />
+                    <p className="font-semibold text-green-800">¡Base de datos saludable!</p>
+                    <p className="text-sm text-green-600">No se detectaron problemas</p>
+                  </div>
+                )}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-64 text-muted-foreground">
+              No se encontraron datos de diagnóstico.
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDiagnosticDialog(false)}>
+              Cerrar
+            </Button>
+            {diagnosticData?.duplicateSKUs && diagnosticData.duplicateSKUs.length > 0 && (
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  setShowDiagnosticDialog(false)
+                  // Aquí podrías agregar lógica para abrir un diálogo de limpieza
+                  toast({
+                    title: "Limpieza de duplicados",
+                    description: "Visita /api/clean-duplicates para limpiar los duplicados",
+                  })
+                }}
+              >
+                Limpiar Duplicados
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
-}
+} // Cierre de la función App
+
+export default App // Exportar el componente App
