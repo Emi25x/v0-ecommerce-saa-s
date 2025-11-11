@@ -78,10 +78,9 @@ const extractFieldValue = (row: Record<string, any>, fieldName: string, mapping:
     return row[mappedColumn]
   }
 
-  // Fallback a nombres comunes normalizados
   const commonNames: Record<string, string[]> = {
     sku: ["sku", "codigo_interno", "codigo", "barcode", "ean", "upc"],
-    name: ["name", "title", "titulo", "product", "nombre", "descripcion"],
+    title: ["title", "name", "titulo", "product", "nombre", "descripcion"],
     description: ["description", "descripcion", "detalle", "desc"],
     category: ["category", "categoria", "rubro", "cat"],
     brand: ["brand", "marca", "fabricante"],
@@ -500,7 +499,7 @@ export default function ImportSourcesPage() {
         }
 
         // Procesar productos en batches
-        const BATCH_SIZE = 50
+        const BATCH_SIZE = 200
         //const batches: Record<string, any>[][] = [] // Explicit type - No longer needed with direct loop
         //for (let i = 0; i < allProducts.length; i += BATCH_SIZE) {
         //  batches.push(allProducts.slice(i, i + BATCH_SIZE))
@@ -563,7 +562,7 @@ export default function ImportSourcesPage() {
                   return { type: "error", error: "Sin SKU válido", row }
                 }
 
-                const name = extractFieldValue(row, "name", source.column_mapping)
+                const title = extractFieldValue(row, "title", source.column_mapping)
                 const description = extractFieldValue(row, "description", source.column_mapping)
                 const category = extractFieldValue(row, "category", source.column_mapping)
                 const brand = extractFieldValue(row, "brand", source.column_mapping)
@@ -607,7 +606,7 @@ export default function ImportSourcesPage() {
                       const { error: updateError } = await supabase
                         .from("products")
                         .update({
-                          name: name || existingProduct.name,
+                          title: title || existingProduct.title,
                           description: description || existingProduct.description,
                           category: category || existingProduct.category,
                           brand: brand || existingProduct.brand,
@@ -631,7 +630,7 @@ export default function ImportSourcesPage() {
                     const { error: updateError } = await supabase
                       .from("products")
                       .update({
-                        name: name || existingProduct.name,
+                        title: title || existingProduct.title,
                         description: description || existingProduct.description,
                         category: category || existingProduct.category,
                         brand: brand || existingProduct.brand,
@@ -671,10 +670,8 @@ export default function ImportSourcesPage() {
                     return { type: "skipped", sku }
                   }
 
-                  // Continuar con la lógica de actualización si no es "skip"
                   const productData: any = {
-                    sku,
-                    title: name || sku, // Asegurar título
+                    title: title || sku,
                     description,
                     category,
                     brand,
@@ -700,12 +697,11 @@ export default function ImportSourcesPage() {
                     if (backupProduct && backupSources.length > 0) {
                       console.log(`[v0] Producto ${sku} no existe, importando desde respaldo...`)
 
-                      // Crear producto completo desde respaldo
                       const fullProductData: any = {
                         sku,
-                        name: backupProduct.nombre || backupProduct.title || backupProduct.name || sku,
+                        title: backupProduct.nombre || backupProduct.title || backupProduct.name || sku,
                         description: backupProduct.descripcion || backupProduct.description || null,
-                        price: validPrice, // Usar precio/stock de la fuente principal si están presentes y válidos
+                        price: validPrice,
                         stock: validStock,
                         category: backupProduct.categoria || backupProduct.category || null,
                         brand: backupProduct.marca || backupProduct.brand || null,
@@ -727,7 +723,7 @@ export default function ImportSourcesPage() {
                   if (source.feed_type === "catalog") {
                     const productData: any = {
                       sku,
-                      name: name || sku, // Asegurar título
+                      title: title || sku,
                       description,
                       category,
                       brand,
@@ -873,24 +869,22 @@ export default function ImportSourcesPage() {
         }
 
         if (historyId) {
-          const { error: updateError } = await supabase
-            .from("import_history")
-            .update({
-              status: finalStatus,
-              products_imported: totalImported,
-              products_updated: totalUpdated,
-              products_failed: totalFailed,
-              products_skipped: totalSkipped, // Agregar contador de saltados
-              completed_at: new Date().toISOString(),
-              error_message:
-                finalStatus === "error"
-                  ? allErrors
-                      .slice(0, 3)
-                      .map((e) => `${e.sku}: ${e.error}`)
-                      .join("; ")
-                  : null,
-            })
-            .eq("id", historyId)
+          const updateData: any = {
+            status: finalStatus,
+            products_imported: totalImported,
+            products_updated: totalUpdated,
+            products_failed: totalFailed,
+            completed_at: new Date().toISOString(),
+            error_message:
+              finalStatus === "error"
+                ? allErrors
+                    .slice(0, 3)
+                    .map((e) => `${e.sku}: ${e.error}`)
+                    .join("; ")
+                : null,
+          }
+
+          const { error: updateError } = await supabase.from("import_history").update(updateData).eq("id", historyId)
 
           if (updateError) {
             console.error("[v0] Error al actualizar registro de historial:", updateError)
