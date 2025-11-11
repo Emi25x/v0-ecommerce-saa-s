@@ -46,6 +46,9 @@ const App = () => {
   const [showDiagnosticDialog, setShowDiagnosticDialog] = useState(false)
   const [diagnosticData, setDiagnosticData] = useState<any>(null)
   const [loadingDiagnostic, setLoadingDiagnostic] = useState(false)
+  const [showResetDialog, setShowResetDialog] = useState(false)
+  const [resetLoading, setResetLoading] = useState(false)
+  const [resetConfirmText, setResetConfirmText] = useState("")
 
   // Función auxiliar para detectar el separador CSV
   function detectSeparator(text: string): string {
@@ -1379,6 +1382,46 @@ const App = () => {
     }
   }
 
+  const handleResetDatabase = async () => {
+    if (resetConfirmText !== "ELIMINAR TODO") {
+      toast({
+        title: "Error",
+        description: "Debes escribir 'ELIMINAR TODO' para confirmar",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setResetLoading(true)
+    try {
+      const response = await fetch("/api/reset-products", {
+        method: "POST",
+      })
+      const result = await response.json()
+
+      if (result.success) {
+        toast({
+          title: "Base de datos reiniciada",
+          description: `Se eliminaron ${result.deleted} productos correctamente`,
+        })
+        setShowResetDialog(false)
+        setResetConfirmText("")
+        await loadSources()
+      } else {
+        throw new Error(result.error)
+      }
+    } catch (error: any) {
+      console.error("[v0] Error reiniciando base de datos:", error)
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo reiniciar la base de datos",
+        variant: "destructive",
+      })
+    } finally {
+      setResetLoading(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="container mx-auto p-6">
@@ -1409,6 +1452,10 @@ const App = () => {
               <CheckCircle2 className="mr-2 h-4 w-4" />
             )}
             Diagnóstico
+          </Button>
+          <Button onClick={() => setShowResetDialog(true)} variant="destructive" size="sm">
+            <Trash2 className="mr-2 h-4 w-4" />
+            Reiniciar Base de Datos
           </Button>
           <Button onClick={() => router.push("/inventory")}>Volver a Inventario</Button>
         </div>
@@ -2405,6 +2452,83 @@ const App = () => {
                 Limpiar Duplicados
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog para reiniciar la base de datos */}
+      <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-destructive">⚠️ Reiniciar Base de Datos</DialogTitle>
+            <DialogDescription>
+              Esta acción eliminará TODOS los productos de la base de datos. Esta acción NO se puede deshacer.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+              <p className="text-sm text-red-800 dark:text-red-200 mb-4">
+                <strong>Advertencia crítica:</strong> Se eliminarán permanently todos los productos.
+              </p>
+              <p className="text-sm text-red-800 dark:text-red-200">
+                Después de eliminar, deberás ejecutar las importaciones en este orden:
+              </p>
+              <ol className="list-decimal list-inside text-sm text-red-800 dark:text-red-200 mt-2 space-y-1">
+                <li>
+                  <strong>Arnoia</strong> - Catálogo completo (base principal)
+                </li>
+                <li>
+                  <strong>Arnoia Act</strong> - Productos nuevos y actualizaciones
+                </li>
+                <li>
+                  <strong>Arnoia Stock</strong> - Actualización de stock y precios
+                </li>
+              </ol>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="confirm-text">
+                Para confirmar, escribe <strong>ELIMINAR TODO</strong> en el campo de abajo:
+              </Label>
+              <Input
+                id="confirm-text"
+                value={resetConfirmText}
+                onChange={(e) => setResetConfirmText(e.target.value)}
+                placeholder="ELIMINAR TODO"
+                className="font-mono"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowResetDialog(false)
+                setResetConfirmText("")
+              }}
+              disabled={resetLoading}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleResetDatabase}
+              variant="destructive"
+              disabled={resetConfirmText !== "ELIMINAR TODO" || resetLoading}
+            >
+              {resetLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Eliminando...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Eliminar Todo
+                </>
+              )}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

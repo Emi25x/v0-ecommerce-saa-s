@@ -34,66 +34,72 @@ export async function GET() {
 
     console.log("[v0] Total productos:", totalProducts)
 
-    // 2. Detectar duplicados usando RPC (función SQL en Supabase)
-    // Como alternativa, obtenemos una muestra y contamos
-    const { data: duplicatesData, error: dupError } = await supabase.rpc("find_duplicate_skus", {}).limit(100)
+    const { data: sampleProducts, error: fetchError } = await supabase
+      .from("products")
+      .select("id, sku, title, source")
+      .limit(30000)
 
-    let duplicatesCount = 0
-    let duplicateExamples: any[] = []
-
-    // Si la función RPC no existe, hacemos una consulta alternativa
-    if (dupError?.code === "42883") {
-      console.log("[v0] RPC no disponible, usando consulta alternativa para duplicados...")
-      // Consulta limitada de productos para análisis
-      const { data: sampleProducts, error: sampleError } = await supabase.from("products").select("sku").limit(10000)
-
-      if (!sampleError && sampleProducts) {
-        const skuMap = new Map<string, number>()
-        sampleProducts.forEach((p: any) => {
-          const normalizedSKU = (p.sku || "").toString().trim().toUpperCase().replace(/\s+/g, "")
-          if (normalizedSKU) {
-            skuMap.set(normalizedSKU, (skuMap.get(normalizedSKU) || 0) + 1)
-          }
-        })
-
-        duplicatesCount = Array.from(skuMap.values()).filter((count) => count > 1).length
-        duplicateExamples = Array.from(skuMap.entries())
-          .filter(([_, count]) => count > 1)
-          .slice(0, 10)
-          .map(([sku, count]) => ({ sku, count }))
-
-        console.log("[v0] Duplicados en muestra de 10k:", duplicatesCount)
-      }
-    } else if (!dupError) {
-      duplicatesCount = duplicatesData?.length || 0
-      duplicateExamples = duplicatesData?.slice(0, 10) || []
+    if (fetchError) {
+      console.error("[v0] Error al obtener muestra:", fetchError)
+      throw new Error(`Error al obtener muestra: ${fetchError.message}`)
     }
 
-    // 3. Títulos corruptos (muestra)
-    const { data: corruptedTitles, error: corruptError } = await supabase
-      .from("products")
-      .select("id, sku, title, source")
-      .or("title.is.null,title.eq.")
-      .limit(50)
+    console.log(`[v0] Analizando muestra de ${sampleProducts?.length || 0} productos...`)
 
-    console.log("[v0] Títulos vacíos encontrados:", corruptedTitles?.length || 0)
+    const skuMap = new Map<string, { count: number; ids: string[]; originalSku: string }>()
 
-    // También buscar títulos que son solo números
-    const { data: numericTitles, error: numericError } = await supabase
-      .from("products")
-      .select("id, sku, title, source")
-      .like("title", "[0-9]%")
-      .limit(50)
+    sampleProducts?.forEach((p: any) => {
+      if (!p.sku) return
 
-    const allCorrupted = [...(corruptedTitles || []), ...(numericTitles || [])]
-    console.log("[v0] Total títulos corruptos (muestra):", allCorrupted.length)
+      const normalizedSKU = p.sku.toString().trim().toUpperCase().replace(/\s+/g, "")
 
-    // 4. Productos por fuente
-    const { data: sourceStats, error: sourceError } = await supabase.from("products").select("source").limit(5000) // Muestra representativa
+      if (normalizedSKU) {
+        const existing = skuMap.get(normalizedSKU)
+        if (existing) {
+          existing.count++
+          existing.ids.push(p.id)
+        } else {
+          skuMap.set(normalizedSKU, {
+            count: 1,
+            ids: [p.id],
+            originalSku: p.sku,
+          })
+        }
+      }
+    })
 
+    const duplicates = Array.from(skuMap.entries())
+      .filter(([_, data]) => data.count > 1)
+      .map(([sku, data]) => ({
+        sku: data.originalSku,
+        count: data.count,
+        productIds: data.ids.slice(0, 3),
+      }))
+      .sort((a, b) => b.count - a.count)
+
+    const duplicatesInSample = duplicates.reduce((sum, d) => sum + (d.count - 1), 0)
+
+    const estimatedTotalDuplicates = Math.round((duplicatesInSample / 30000) * (totalProducts || 0))
+
+    console.log(`[v0] SKUs duplicados en muestra: ${duplicates.length}`)
+    console.log(`[v0] Productos duplicados estimados: ${estimatedTotalDuplicates}`)
+
+    const corruptedTitles =
+      sampleProducts
+        ?.filter((p: any) => {
+          if (!p.title || p.title.trim() === "") return true
+          if (/^\d+(\.\d+)?$/.test(p.title.trim())) return true
+          if (p.title.length < 3) return true
+          return false
+        })
+        .slice(0, 50) || []
+
+    console.log(`[v0] Títulos corruptos en muestra: ${corruptedTitles.length}`)
+
+    // 4. Productos por fuente (muestra)
     const sourceCounts: Record<string, number> = {}
-    sourceStats?.forEach((product: any) => {
-      const source = Array.isArray(product.source) ? product.source.join(", ") : product.source || "Sin fuente"
+    sampleProducts?.forEach((product: any) => {
+      const source = product.source || "Sin fuente"
       sourceCounts[source] = (sourceCounts[source] || 0) + 1
     })
 
@@ -101,17 +107,24 @@ export async function GET() {
       .map(([source, count]) => ({ source, count }))
       .sort((a, b) => b.count - a.count)
 
-    console.log("[v0] Fuentes encontradas:", productsBySource.length)
+    console.log("[v0] Distribución por fuentes (muestra):", productsBySource)
 
     return NextResponse.json({
       success: true,
       totalProducts: totalProducts || 0,
-      duplicatesCount,
-      duplicateExamples,
-      corruptedTitlesCount: allCorrupted.length,
-      corruptedTitles: allCorrupted.slice(0, 20),
+      duplicates: {
+        uniqueSkusInSample: duplicates.length,
+        duplicatesInSample: duplicatesInSample,
+        estimatedTotalDuplicates: estimatedTotalDuplicates,
+        examples: duplicates.slice(0, 10),
+        note: "Basado en muestra de 30,000 productos",
+      },
+      corruptedTitles: {
+        countInSample: corruptedTitles.length,
+        examples: corruptedTitles.slice(0, 20),
+        note: "Basado en muestra de 30,000 productos",
+      },
       productsBySource,
-      note: "Los contadores de duplicados y fuentes se basan en muestras representativas para optimizar el rendimiento",
     })
   } catch (error: any) {
     console.error("[v0] Error en diagnóstico:", error)
