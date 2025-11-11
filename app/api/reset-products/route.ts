@@ -3,9 +3,9 @@ import { NextResponse } from "next/server"
 
 export async function POST() {
   try {
-    const supabase = await createServerClient()
-
     console.log("[v0] Iniciando limpieza total de productos...")
+
+    const supabase = await createServerClient()
 
     // Contar productos antes
     const { count: beforeCount, error: countError } = await supabase
@@ -19,11 +19,10 @@ export async function POST() {
 
     console.log(`[v0] Productos antes de limpieza: ${beforeCount}`)
 
-    // Eliminar TODOS los productos
     const { error: deleteError } = await supabase
       .from("products")
       .delete()
-      .neq("id", "00000000-0000-0000-0000-000000000000") // Elimina todos excepto un ID imposible
+      .neq("id", "00000000-0000-0000-0000-000000000000")
 
     if (deleteError) {
       console.error("[v0] Error al eliminar productos:", deleteError)
@@ -53,7 +52,6 @@ export async function POST() {
   }
 }
 
-// GET para confirmar cuántos productos se eliminarían
 export async function GET() {
   try {
     const supabase = await createServerClient()

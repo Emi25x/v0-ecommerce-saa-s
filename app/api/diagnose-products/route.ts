@@ -1,26 +1,11 @@
-import { createServerClient } from "@supabase/ssr"
-import { cookies } from "next/headers"
+import { createServerClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 
 export async function GET() {
   try {
-    console.log("[v0] Iniciando diagnóstico optimizado de productos...")
+    console.log("[v0] Iniciando diagnóstico de productos...")
 
-    const cookieStore = await cookies()
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() {
-            return cookieStore.getAll()
-          },
-          setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options))
-          },
-        },
-      },
-    )
+    const supabase = await createServerClient()
 
     // 1. Total de productos
     const { count: totalProducts, error: countError } = await supabase
@@ -32,12 +17,12 @@ export async function GET() {
       throw new Error(`Error al contar productos: ${countError.message}`)
     }
 
-    console.log("[v0] Total productos:", totalProducts)
+    console.log(`[v0] Total productos: ${totalProducts}`)
 
     const { data: sampleProducts, error: fetchError } = await supabase
       .from("products")
       .select("id, sku, title, source")
-      .limit(30000)
+      .limit(20000)
 
     if (fetchError) {
       console.error("[v0] Error al obtener muestra:", fetchError)
@@ -50,9 +35,7 @@ export async function GET() {
 
     sampleProducts?.forEach((p: any) => {
       if (!p.sku) return
-
       const normalizedSKU = p.sku.toString().trim().toUpperCase().replace(/\s+/g, "")
-
       if (normalizedSKU) {
         const existing = skuMap.get(normalizedSKU)
         if (existing) {
@@ -77,12 +60,7 @@ export async function GET() {
       }))
       .sort((a, b) => b.count - a.count)
 
-    const duplicatesInSample = duplicates.reduce((sum, d) => sum + (d.count - 1), 0)
-
-    const estimatedTotalDuplicates = Math.round((duplicatesInSample / 30000) * (totalProducts || 0))
-
-    console.log(`[v0] SKUs duplicados en muestra: ${duplicates.length}`)
-    console.log(`[v0] Productos duplicados estimados: ${estimatedTotalDuplicates}`)
+    console.log(`[v0] SKUs duplicados encontrados: ${duplicates.length}`)
 
     const corruptedTitles =
       sampleProducts
@@ -94,9 +72,8 @@ export async function GET() {
         })
         .slice(0, 50) || []
 
-    console.log(`[v0] Títulos corruptos en muestra: ${corruptedTitles.length}`)
+    console.log(`[v0] Títulos corruptos encontrados: ${corruptedTitles.length}`)
 
-    // 4. Productos por fuente (muestra)
     const sourceCounts: Record<string, number> = {}
     sampleProducts?.forEach((product: any) => {
       const source = product.source || "Sin fuente"
@@ -107,32 +84,22 @@ export async function GET() {
       .map(([source, count]) => ({ source, count }))
       .sort((a, b) => b.count - a.count)
 
-    console.log("[v0] Distribución por fuentes (muestra):", productsBySource)
+    console.log("[v0] Distribución por fuentes:", productsBySource)
 
     return NextResponse.json({
-      success: true,
       totalProducts: totalProducts || 0,
-      duplicates: {
-        uniqueSkusInSample: duplicates.length,
-        duplicatesInSample: duplicatesInSample,
-        estimatedTotalDuplicates: estimatedTotalDuplicates,
-        examples: duplicates.slice(0, 10),
-        note: "Basado en muestra de 30,000 productos",
-      },
-      corruptedTitles: {
-        countInSample: corruptedTitles.length,
-        examples: corruptedTitles.slice(0, 20),
-        note: "Basado en muestra de 30,000 productos",
-      },
-      productsBySource,
+      duplicateSKUs: duplicates.length,
+      duplicateExamples: duplicates.slice(0, 10),
+      sourceDistribution: Object.fromEntries(productsBySource.map((s) => [s.source, s.count])),
+      corruptTitles: corruptedTitles.slice(0, 10).map((p: any) => ({ sku: p.sku, title: p.title })),
+      sampleSize: sampleProducts?.length || 0,
+      timestamp: new Date().toISOString(),
     })
   } catch (error: any) {
     console.error("[v0] Error en diagnóstico:", error)
     return NextResponse.json(
       {
-        success: false,
         error: error.message || "Error desconocido al ejecutar diagnóstico",
-        stack: error.stack,
       },
       { status: 500 },
     )
