@@ -503,7 +503,6 @@ export default function ImportSourcesPage() {
           continue
         }
 
-        // Consulta masiva de productos existentes
         const { data: existingProducts } = await supabase.from("products").select("sku, id, source").in("sku", skus)
 
         const existingProductsMap = new Map(existingProducts?.map((p) => [p.sku, p]) || [])
@@ -742,14 +741,14 @@ export default function ImportSourcesPage() {
             products_imported: totalImported,
             products_updated: totalUpdated,
             products_failed: totalFailed,
-            finished_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
             error_message:
               finalStatus === "error"
                 ? allErrors
                     .slice(0, 3)
                     .map((e) => `${e.sku}: ${e.error}`)
                     .join("; ")
-                : null, // Guardar un resumen de los errores
+                : null,
           })
           .eq("id", historyId)
       }
@@ -812,14 +811,13 @@ export default function ImportSourcesPage() {
         variant: "destructive",
       })
 
-      // Intentar actualizar el historial de importación a 'error' si existe
       if (historyId) {
         await supabase
           .from("import_history")
           .update({
             status: "error",
-            finished_at: new Date().toISOString(),
-            error_message: `Error crítico: ${error.message}`,
+            completed_at: new Date().toISOString(),
+            error_message: error.message,
           })
           .eq("id", historyId)
       }
@@ -1038,7 +1036,7 @@ export default function ImportSourcesPage() {
             .from("import_history")
             .update({
               status: "cancelled",
-              finished_at: new Date().toISOString(),
+              completed_at: new Date().toISOString(),
               error_message: "Importación cancelada por el usuario",
             })
             .eq("id", currentImportHistoryId)
@@ -1076,7 +1074,7 @@ export default function ImportSourcesPage() {
               .from("import_history")
               .update({
                 status: "cancelled",
-                finished_at: new Date().toISOString(),
+                completed_at: new Date().toISOString(),
                 error_message: "Importación cancelada por el usuario",
               })
               .eq("id", runningHistory.id)
