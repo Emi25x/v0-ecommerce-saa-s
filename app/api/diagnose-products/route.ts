@@ -4,7 +4,7 @@ import { NextResponse } from "next/server"
 
 export async function GET() {
   try {
-    console.log("[v0] Iniciando diagnóstico de productos...")
+    console.log("[v0] Iniciando diagnóstico optimizado de productos...")
 
     const cookieStore = await cookies()
     const supabase = createServerClient(
@@ -22,6 +22,7 @@ export async function GET() {
       },
     )
 
+    // 1. Total de productos
     const { count: totalProducts, error: countError } = await supabase
       .from("products")
       .select("*", { count: "exact", head: true })
@@ -33,53 +34,65 @@ export async function GET() {
 
     console.log("[v0] Total productos:", totalProducts)
 
-    // Primero intentamos con una consulta que agrupe por SKU
-    const { data: allProducts, error: productsError } = await supabase
-      .from("products")
-      .select("id, sku, title, price, stock, source, created_at")
-      .order("sku")
+    // 2. Detectar duplicados usando RPC (función SQL en Supabase)
+    // Como alternativa, obtenemos una muestra y contamos
+    const { data: duplicatesData, error: dupError } = await supabase.rpc("find_duplicate_skus", {}).limit(100)
 
-    if (productsError) {
-      console.error("[v0] Error al obtener productos:", productsError)
-      throw new Error(`Error al obtener productos: ${productsError.message}`)
+    let duplicatesCount = 0
+    let duplicateExamples: any[] = []
+
+    // Si la función RPC no existe, hacemos una consulta alternativa
+    if (dupError?.code === "42883") {
+      console.log("[v0] RPC no disponible, usando consulta alternativa para duplicados...")
+      // Consulta limitada de productos para análisis
+      const { data: sampleProducts, error: sampleError } = await supabase.from("products").select("sku").limit(10000)
+
+      if (!sampleError && sampleProducts) {
+        const skuMap = new Map<string, number>()
+        sampleProducts.forEach((p: any) => {
+          const normalizedSKU = (p.sku || "").toString().trim().toUpperCase().replace(/\s+/g, "")
+          if (normalizedSKU) {
+            skuMap.set(normalizedSKU, (skuMap.get(normalizedSKU) || 0) + 1)
+          }
+        })
+
+        duplicatesCount = Array.from(skuMap.values()).filter((count) => count > 1).length
+        duplicateExamples = Array.from(skuMap.entries())
+          .filter(([_, count]) => count > 1)
+          .slice(0, 10)
+          .map(([sku, count]) => ({ sku, count }))
+
+        console.log("[v0] Duplicados en muestra de 10k:", duplicatesCount)
+      }
+    } else if (!dupError) {
+      duplicatesCount = duplicatesData?.length || 0
+      duplicateExamples = duplicatesData?.slice(0, 10) || []
     }
 
-    console.log("[v0] Productos obtenidos:", allProducts?.length || 0)
+    // 3. Títulos corruptos (muestra)
+    const { data: corruptedTitles, error: corruptError } = await supabase
+      .from("products")
+      .select("id, sku, title, source")
+      .or("title.is.null,title.eq.")
+      .limit(50)
 
-    const skuMap = new Map<string, any[]>()
-    allProducts?.forEach((product: any) => {
-      // Normalizar SKU: trim, uppercase, sin espacios
-      const normalizedSKU = (product.sku || "").toString().trim().toUpperCase().replace(/\s+/g, "")
-      const existing = skuMap.get(normalizedSKU) || []
-      existing.push(product)
-      skuMap.set(normalizedSKU, existing)
-    })
+    console.log("[v0] Títulos vacíos encontrados:", corruptedTitles?.length || 0)
 
-    // Solo SKUs que tienen más de un producto
-    const duplicates = Array.from(skuMap.entries())
-      .filter(([_, products]) => products.length > 1)
-      .map(([sku, products]) => ({
-        sku,
-        count: products.length,
-        products: products.slice(0, 3), // Solo primeros 3 para no saturar
-      }))
+    // También buscar títulos que son solo números
+    const { data: numericTitles, error: numericError } = await supabase
+      .from("products")
+      .select("id, sku, title, source")
+      .like("title", "[0-9]%")
+      .limit(50)
 
-    console.log("[v0] Duplicados encontrados:", duplicates.length)
+    const allCorrupted = [...(corruptedTitles || []), ...(numericTitles || [])]
+    console.log("[v0] Total títulos corruptos (muestra):", allCorrupted.length)
 
-    const corruptedTitles = allProducts?.filter((product: any) => {
-      const title = product.title || ""
-      return (
-        title.length === 0 ||
-        /^\d+$/.test(title) || // Solo números
-        /^\d+[.,]\d+$/.test(title) || // Decimales (precio)
-        title.length < 3 // Muy cortos
-      )
-    })
-
-    console.log("[v0] Títulos corruptos:", corruptedTitles?.length || 0)
+    // 4. Productos por fuente
+    const { data: sourceStats, error: sourceError } = await supabase.from("products").select("source").limit(5000) // Muestra representativa
 
     const sourceCounts: Record<string, number> = {}
-    allProducts?.forEach((product: any) => {
+    sourceStats?.forEach((product: any) => {
       const source = Array.isArray(product.source) ? product.source.join(", ") : product.source || "Sin fuente"
       sourceCounts[source] = (sourceCounts[source] || 0) + 1
     })
@@ -88,16 +101,17 @@ export async function GET() {
       .map(([source, count]) => ({ source, count }))
       .sort((a, b) => b.count - a.count)
 
-    console.log("[v0] Productos por fuente:", productsBySource)
+    console.log("[v0] Fuentes encontradas:", productsBySource.length)
 
     return NextResponse.json({
       success: true,
       totalProducts: totalProducts || 0,
-      duplicatesCount: duplicates.length,
-      duplicates: duplicates.slice(0, 10), // Solo primeros 10
-      corruptedTitlesCount: corruptedTitles?.length || 0,
-      corruptedTitles: corruptedTitles?.slice(0, 20) || [],
+      duplicatesCount,
+      duplicateExamples,
+      corruptedTitlesCount: allCorrupted.length,
+      corruptedTitles: allCorrupted.slice(0, 20),
       productsBySource,
+      note: "Los contadores de duplicados y fuentes se basan en muestras representativas para optimizar el rendimiento",
     })
   } catch (error: any) {
     console.error("[v0] Error en diagnóstico:", error)
@@ -105,6 +119,7 @@ export async function GET() {
       {
         success: false,
         error: error.message || "Error desconocido al ejecutar diagnóstico",
+        stack: error.stack,
       },
       { status: 500 },
     )
