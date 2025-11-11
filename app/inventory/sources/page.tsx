@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react" // Importar useRef
+import { useCallback, useEffect, useState, useRef } from "react" // Importar useRef
 import { createBrowserClient } from "@supabase/ssr"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -21,6 +21,7 @@ import {
   Hourglass,
   X,
   Loader2,
+  RefreshCw,
 } from "lucide-react"
 import {
   Dialog,
@@ -115,6 +116,7 @@ interface ImportProgressState {
   imported: number
   updated: number
   failed: number
+  skipped: number // Agregar campo skipped
   status: "running" | "completed" | "cancelled" | "error"
   startTime: Date | null
   lastUpdate: Date | null
@@ -148,6 +150,7 @@ export default function ImportSourcesPage() {
     imported: 0,
     updated: 0,
     failed: 0,
+    skipped: 0, // Inicializar skipped
     status: "running",
     startTime: null,
     lastUpdate: null,
@@ -167,7 +170,7 @@ export default function ImportSourcesPage() {
 
   const [importMode, setImportMode] = useState<"update" | "overwrite" | "skip">("update")
 
-  const isExecutingRef = useRef(false)
+  const isExecutingRef = useRef(false) // Renamed from executingRef
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -205,7 +208,7 @@ export default function ImportSourcesPage() {
     }
   }
 
-  async function loadSources() {
+  const loadSources = useCallback(async () => {
     try {
       console.log("[v0] Cargando fuentes de importación...")
       setLoading(true)
@@ -248,7 +251,7 @@ export default function ImportSourcesPage() {
 
       console.log("[v0] Fuentes cargadas:", sourcesWithSchedules.length)
       setSources(sourcesWithSchedules)
-      return sourcesWithSchedules // Retornar para uso en la función executeImport
+      return sourcesWithSchedules
     } catch (error) {
       console.error("[v0] Error loading sources:", error)
       toast({
@@ -260,7 +263,7 @@ export default function ImportSourcesPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [supabase, toast])
 
   async function handleRunImport(source: SourceWithSchedule) {
     if (isExecutingRef.current) {
@@ -272,568 +275,675 @@ export default function ImportSourcesPage() {
     setShowImportConfirmDialog(true)
   }
 
-  async function executeImport(source: SourceWithSchedule) {
-    let historyId: string | undefined
-    try {
-      setImporting(source.id)
-      setShowProgressDialog(true)
-      const now = new Date()
-      setImportProgress({
-        total: 0,
-        processed: 0,
-        imported: 0,
-        updated: 0,
-        failed: 0,
-        status: "running",
-        startTime: now,
-        lastUpdate: now,
-        speed: 0,
-        errors: [],
-        csvInfo: null,
-      })
-
-      console.log("[v0] ===== INICIANDO IMPORTACIÓN DIRECTA DESDE NAVEGADOR =====")
-      console.log("[v0] Fuente:", source.name)
-      console.log("[v0] Modo de importación:", importMode)
-
-      if (!source.url_template) {
-        throw new Error("La fuente no tiene una URL configurada")
-      }
-
-      // Descargar y parsear el CSV
-      console.log("[v0] Descargando CSV desde:", source.url_template)
-      const csvResponse = await fetch(source.url_template)
-      if (!csvResponse.ok) {
-        throw new Error(`Error al descargar el CSV: ${csvResponse.statusText}`)
-      }
-
-      const csvText = await csvResponse.text()
-      console.log("[v0] CSV descargado, tamaño:", csvText.length, "caracteres")
-
-      // Detectar el separador
-      const detectedSeparator = detectSeparator(csvText)
-      console.log("[v0] Separador detectado:", detectedSeparator === "\t" ? "TAB" : detectedSeparator)
-
-      const parsed = Papa.parse<Record<string, any>>(csvText, {
-        header: true,
-        skipEmptyLines: true,
-        delimiter: detectedSeparator,
-        transformHeader: (header) => {
-          // Normalizar nombres de columnas: quitar espacios y convertir a minúsculas
-          return header.trim().toLowerCase().replace(/\s+/g, "_")
-        },
-      })
-
-      if (parsed.errors.length > 0) {
-        console.error("[v0] Errores al parsear CSV:", parsed.errors)
-        // Mostrar solo los primeros 5 errores
-        const errorMessages = parsed.errors
-          .slice(0, 5)
-          .map((err) => `${err.message} (Code: ${err.code}, Row: ${err.row})`)
-          .join("\n")
-        toast({
-          title: "Errores al parsear CSV",
-          description: `Se encontraron ${parsed.errors.length} errores. Primeros 5:\n${errorMessages}`,
-          variant: "destructive",
-        })
-      }
-
-      const products = parsed.data as Record<string, any>[] // Asumiendo que los datos son un array de objetos
-      console.log("[v0] Total de productos en el CSV:", products.length)
-      console.log("[v0] Primera fila de datos:", products[0])
-
-      setImportProgress((prev) => ({
-        ...prev,
-        total: products.length,
-        csvInfo: {
-          separator: detectedSeparator,
-          headers: Object.keys(products[0] || {}),
-          firstRow: products[0] || {},
-        },
-      }))
-
-      const supabase = await createClient()
-
-      // Crear registro de importación
-      const { data: historyRecord, error: historyError } = await supabase
-        .from("import_history")
-        .insert({
-          source_id: source.id,
+  const executeImport = useCallback(
+    async (source: SourceWithSchedule) => {
+      let historyId: string | undefined
+      try {
+        setImporting(source.id)
+        setShowProgressDialog(true)
+        const now = new Date()
+        setImportProgress({
+          total: 0,
+          processed: 0,
+          imported: 0,
+          updated: 0,
+          failed: 0,
+          skipped: 0, // Inicializar skipped
           status: "running",
-          products_imported: 0,
-          products_updated: 0,
-          products_failed: 0,
-          started_at: new Date().toISOString(),
+          startTime: now,
+          lastUpdate: now,
+          speed: 0,
+          errors: [],
+          csvInfo: null,
         })
-        .select()
-        .single()
 
-      if (historyError || !historyRecord) {
-        console.error("[v0] Error al crear registro de historial:", historyError)
-        throw new Error("No se pudo crear el registro de historial")
-      }
+        console.log("[v0] ===== INICIANDO IMPORTACIÓN DIRECTA DESDE NAVEGADOR =====")
+        console.log("[v0] Fuente:", source.name, "| Tipo:", source.feed_type, "| Modo:", importMode)
 
-      historyId = historyRecord.id // Asignar a la variable declarada
-      setCurrentImportHistoryId(historyId) // Guardar el ID del historial para poder cancelarlo
-      console.log("[v0] Registro de historial creado con ID:", historyId)
+        if (!source.url_template) {
+          throw new Error("La fuente no tiene una URL configurada")
+        }
 
-      // Detectar si la fuente solo tiene datos básicos (precio/stock)
-      const firstProduct: any = products[0] || {}
-      const hasName = firstProduct.name || firstProduct.title || firstProduct.descripcion
-      const hasCategory = firstProduct.category || firstProduct.categoria || firstProduct.rubro
-      const hasPrice = firstProduct.price || firstProduct.precio || firstProduct.pventa
-      const hasSku =
-        firstProduct.sku || firstProduct.codigo || firstProduct.barcode || firstProduct.ean || firstProduct.upc
+        // Descargar y parsear el CSV
+        console.log("[v0] Descargando CSV desde:", source.url_template)
+        const csvResponse = await fetch(source.url_template)
+        if (!csvResponse.ok) {
+          throw new Error(`Error al descargar el CSV: ${csvResponse.statusText}`)
+        }
 
-      const hasOnlyBasicData = hasSku && hasPrice && !hasName && !hasCategory
-      console.log("[v0] ¿La fuente solo tiene datos básicos (precio/stock)?", hasOnlyBasicData)
+        const csvText = await csvResponse.text()
+        console.log("[v0] CSV descargado, tamaño:", csvText.length, "caracteres")
 
-      let backupSources: SourceWithSchedule[] = []
-      const backupProducts: Map<string, any> = new Map()
+        // Detectar el separador
+        const detectedSeparator = detectSeparator(csvText)
+        console.log("[v0] Separador detectado:", detectedSeparator === "\t" ? "TAB" : detectedSeparator)
 
-      if (hasOnlyBasicData && hasSku) {
-        console.log("[v0] Buscando fuentes de respaldo para productos faltantes...")
+        const parsed = Papa.parse<Record<string, any>>(csvText, {
+          header: true,
+          skipEmptyLines: true,
+          delimiter: detectedSeparator,
+          transformHeader: (header) => {
+            // Normalizar nombres de columnas: quitar espacios y convertir a minúsculas
+            return header.trim().toLowerCase().replace(/\s+/g, "_")
+          },
+        })
 
-        // Obtener todas las fuentes para buscar las de respaldo
-        const allCurrentSources = await loadSources() // Cargar las fuentes actuales
-
-        backupSources = allCurrentSources
-          .filter((s) => s.id !== source.id && s.url_template && s.name.toLowerCase().includes("arnoia")) // Filtra por URL y nombre que incluya "Arnoia"
-          .sort((a, b) => {
-            // Priorizar "Arnoia" sin "Act" en el nombre
-            const aIsArnoia = a.name.toLowerCase().includes("arnoia") && !a.name.toLowerCase().includes("act")
-            const bIsArnoia = b.name.toLowerCase().includes("arnoia") && !b.name.toLowerCase().includes("act")
-            if (aIsArnoia && !bIsArnoia) return -1
-            if (!aIsArnoia && bIsArnoia) return 1
-            return a.name.localeCompare(b.name)
+        if (parsed.errors.length > 0) {
+          console.error("[v0] Errores al parsear CSV:", parsed.errors)
+          // Mostrar solo los primeros 5 errores
+          const errorMessages = parsed.errors
+            .slice(0, 5)
+            .map((err) => `${err.message} (Code: ${err.code}, Row: ${err.row})`)
+            .join("\n")
+          toast({
+            title: "Errores al parsear CSV",
+            description: `Se encontraron ${parsed.errors.length} errores. Primeros 5:\n${errorMessages}`,
+            variant: "destructive",
           })
+        }
 
-        console.log(
-          "[v0] Fuentes de respaldo encontradas:",
-          backupSources.map((s) => s.name),
-        )
+        const allProducts = parsed.data as Record<string, any>[] // Asumiendo que los datos son un array de objetos
+        console.log("[v0] Total de productos en el CSV:", allProducts.length)
+        console.log("[v0] Primera fila de datos:", allProducts[0])
 
-        // Descargar y parsear CSVs de respaldo
-        for (const backupSource of backupSources) {
-          try {
-            console.log("[v0] Descargando fuente de respaldo:", backupSource.name)
-            const backupCsvResponse = await fetch(backupSource.url_template!)
-            if (!backupCsvResponse.ok) {
-              console.warn(`[v0] No se pudo descargar ${backupSource.name}: ${backupCsvResponse.statusText}`)
-              continue
-            }
+        setImportProgress((prev) => ({
+          ...prev,
+          total: allProducts.length,
+          csvInfo: {
+            separator: detectedSeparator,
+            headers: Object.keys(allProducts[0] || {}),
+            firstRow: allProducts[0] || {},
+          },
+        }))
 
-            const backupCsvText = await backupCsvResponse.text()
-            const backupDetectedSeparator = detectSeparator(backupCsvText)
-            const backupParsed = Papa.parse(backupCsvText, {
-              header: true,
-              delimiter: backupDetectedSeparator,
-              skipEmptyLines: true,
+        const supabase = await createClient()
+
+        // Crear registro de importación
+        const { data: historyRecord, error: historyError } = await supabase
+          .from("import_history")
+          .insert({
+            source_id: source.id,
+            status: "running",
+            products_imported: 0,
+            products_updated: 0,
+            products_failed: 0,
+            products_skipped: 0, // Inicializar skipped
+            started_at: new Date().toISOString(),
+          })
+          .select()
+          .single()
+
+        if (historyError || !historyRecord) {
+          console.error("[v0] Error al crear registro de historial:", historyError)
+          throw new Error("No se pudo crear el registro de historial")
+        }
+
+        historyId = historyRecord.id // Asignar a la variable declarada
+        setCurrentImportHistoryId(historyId) // Guardar el ID del historial para poder cancelarlo
+        console.log("[v0] Registro de historial creado con ID:", historyId)
+
+        let backupSources: SourceWithSchedule[] = []
+        const backupProducts: Map<string, any> = new Map()
+        const missingSkus: string[] = []
+
+        // Solo cargar fuentes de respaldo si es feed_type "stock_price"
+        if (source.feed_type === "stock_price") {
+          console.log("[v0] Fuente tipo stock_price detectada. Cargando fuentes de respaldo...")
+
+          const allCurrentSources = await loadSources()
+          backupSources = allCurrentSources
+            .filter(
+              (s) =>
+                s.id !== source.id &&
+                s.url_template &&
+                s.feed_type === "catalog" &&
+                s.name.toLowerCase().includes("arnoia"),
+            )
+            .sort((a, b) => {
+              const aIsMain = a.name.toLowerCase() === "arnoia"
+              const bIsMain = b.name.toLowerCase() === "arnoia"
+              if (aIsMain && !bIsMain) return -1
+              if (!aIsMain && bIsMain) return 1
+              return a.name.localeCompare(b.name)
             })
 
-            if (backupParsed.errors.length > 0) {
-              console.warn(`[v0] Errores al parsear CSV de ${backupSource.name}:`, backupParsed.errors)
-            }
+          console.log(
+            "[v0] Fuentes de respaldo encontradas:",
+            backupSources.map((s) => s.name),
+          )
 
-            for (const row of backupParsed.data as any[]) {
-              // Normalizar los SKUs de respaldo para asegurar la comparación (toUpperCase, trim)
-              const backupSku = (row.sku || row.codigo || row.barcode || row.ean || row.upc)
+          // Descargar CSVs de respaldo
+          for (const backupSource of backupSources) {
+            try {
+              console.log("[v0] Descargando fuente de respaldo:", backupSource.name)
+              const backupCsvResponse = await fetch(backupSource.url_template!)
+              if (!backupCsvResponse.ok) continue
+
+              const backupCsvText = await backupCsvResponse.text()
+              const backupDetectedSeparator = detectSeparator(backupCsvText)
+              const backupParsed = Papa.parse(backupCsvText, {
+                header: true,
+                delimiter: backupDetectedSeparator,
+                skipEmptyLines: true,
+                transformHeader: (header: string) => header.toLowerCase().trim().replace(/\s+/g, "_"),
+              })
+
+              for (const row of backupParsed.data as any[]) {
+                const backupSku = (row.sku || row.codigo_interno || row.codigo || row.barcode || row.ean || row.upc)
+                  ?.toString()
+                  .trim()
+                  .toUpperCase()
+                if (backupSku) {
+                  backupProducts.set(backupSku, row)
+                }
+              }
+
+              console.log("[v0] Productos de respaldo cargados de", backupSource.name, ":", backupParsed.data.length)
+            } catch (error) {
+              console.error("[v0] Error al cargar fuente de respaldo:", backupSource.name, error)
+            }
+          }
+
+          console.log("[v0] Total de productos de respaldo disponibles:", backupProducts.size)
+        }
+
+        // Procesar productos en batches
+        const BATCH_SIZE = 50
+        //const batches: Record<string, any>[][] = [] // Explicit type - No longer needed with direct loop
+        //for (let i = 0; i < allProducts.length; i += BATCH_SIZE) {
+        //  batches.push(allProducts.slice(i, i + BATCH_SIZE))
+        //}
+
+        console.log("[v0] Total de productos a procesar:", allProducts.length)
+        console.log("[v0] Tamaño de cada batch:", BATCH_SIZE)
+
+        let totalImported = 0
+        let totalUpdated = 0
+        let totalFailed = 0
+        let totalSkipped = 0 // Inicializar contador de saltados
+        let totalFromBackup = 0 // Contador para productos importados desde respaldo
+        const allErrors: Array<{ sku: string; error: string; details?: string }> = [] // details ahora es opcional
+
+        for (let i = 0; i < allProducts.length; i += BATCH_SIZE) {
+          // Verificar si la importación fue cancelada
+          if (importProgress.status === "cancelled") {
+            console.log("[v0] Importación cancelada por el usuario")
+            break
+          }
+
+          const batch = allProducts.slice(i, i + BATCH_SIZE) // Obtener el batch actual
+          console.log(
+            `[v0] Procesando batch ${Math.ceil((i + batch.length) / BATCH_SIZE)}/${Math.ceil(allProducts.length / BATCH_SIZE)}`,
+          )
+
+          // Obtener todos los SKUs del batch para consulta masiva
+          const skusInBatch = batch
+            .map((row: any) => {
+              // Buscar SKU con nombres normalizados (espacios reemplazados por guiones bajos)
+              const sku = (row.sku || row.codigo_interno || row.codigo || row.barcode || row.ean || row.upc)
                 ?.toString()
                 .trim()
                 .toUpperCase()
-              if (backupSku) {
-                backupProducts.set(backupSku, row)
-              }
-            }
+              return sku
+            })
+            .filter(Boolean)
 
-            console.log("[v0] Productos cargados de", backupSource.name, ":", backupParsed.data.length)
-          } catch (error) {
-            console.error("[v0] Error al cargar fuente de respaldo:", backupSource.name, error)
+          // Si no hay SKUs válidos en el batch, continuar al siguiente
+          if (skusInBatch.length === 0) {
+            console.log("[v0] Batch sin SKUs válidos, saltando.")
+            continue
           }
-        }
 
-        console.log("[v0] Total de productos de respaldo disponibles:", backupProducts.size)
-      }
+          // Consultar productos existentes para este batch
+          const { data: existingProducts } = await supabase
+            .from("products")
+            .select("sku, id, source")
+            .in("sku", skusInBatch)
+          const existingProductsMap = new Map(existingProducts?.map((p) => [p.sku, p]) || [])
 
-      // Procesar productos en batches
-      const BATCH_SIZE = 50
-      const batches: Record<string, any>[][] = [] // Explicit type
-      for (let i = 0; i < products.length; i += BATCH_SIZE) {
-        batches.push(products.slice(i, i + BATCH_SIZE))
-      }
+          // Procesar todos los productos del batch en paralelo
+          const results = await Promise.allSettled(
+            batch.map(async (row: any) => {
+              try {
+                // Extract SKU
+                const sku = (row.sku || row.codigo_interno || row.codigo || row.barcode || row.ean || row.upc)
+                  ?.toString()
+                  .trim()
+                  .toUpperCase()
 
-      console.log("[v0] Total de batches a procesar:", batches.length)
-      console.log("[v0] Tamaño de cada batch:", BATCH_SIZE)
-
-      let totalImported = 0
-      let totalUpdated = 0
-      let totalFailed = 0
-      const allErrors: Array<{ sku: string; error: string; details?: string }> = [] // details ahora es opcional
-
-      for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
-        // Verificar si la importación fue cancelada
-        if (importProgress.status === "cancelled") {
-          console.log("[v0] Importación cancelada por el usuario")
-          break
-        }
-
-        const batch = batches[batchIndex]
-        console.log(`[v0] Procesando batch ${batchIndex + 1}/${batches.length}`)
-
-        // Obtener todos los SKUs del batch para consulta masiva
-        const skus = batch
-          .map((row: any) => {
-            // Buscar SKU con nombres normalizados (espacios reemplazados por guiones bajos)
-            const sku = (row.sku || row.codigo || row.codigo_interno || row.barcode || row.ean || row.upc)
-              ?.toString()
-              .trim()
-              .toUpperCase()
-            return sku
-          })
-          .filter(Boolean)
-
-        // Si no hay SKUs válidos en el batch, continuar al siguiente
-        if (skus.length === 0) {
-          console.log("[v0] Batch sin SKUs válidos, saltando.")
-          continue
-        }
-
-        const { data: existingProducts } = await supabase.from("products").select("sku, id, source").in("sku", skus)
-
-        const existingProductsMap = new Map(existingProducts?.map((p) => [p.sku, p]) || [])
-
-        // Procesar todos los productos del batch en paralelo
-        const batchResults = await Promise.allSettled(
-          batch.map(async (row: any) => {
-            const rawSku = row.sku || row.codigo || row.codigo_interno || row.barcode || row.ean || row.upc
-            if (!rawSku) {
-              throw new Error("SKU no encontrado en el producto")
-            }
-            const sku = rawSku.toString().trim().toUpperCase()
-
-            // Mapeo de campos con nombres normalizados
-            const name = row.name || row.title || row.titulo || row.descripcion || row.product
-            const description = row.description || row.descripcion || row.detalle
-            const category = row.category || row.categoria || row.rubro
-            const brand = row.brand || row.marca || row.fabricante
-            const price = row.price || row.precio || row.pvp || row.pventa
-            const stock = row.stock || row.quantity || row.existencia || row.qty
-
-            // Validar si el precio o stock son números válidos
-            const parsedPrice = Number.parseFloat(price)
-            const validPrice = !isNaN(parsedPrice) ? parsedPrice : 0
-            const parsedStock = Number.parseInt(stock)
-            const validStock = !isNaN(parsedStock) ? parsedStock : 0
-
-            const existingProduct = existingProductsMap.get(sku)
-
-            // Si el producto no existe y solo tenemos datos básicos, buscar en fuentes de respaldo
-            if (!existingProduct && hasOnlyBasicData && hasSku) {
-              const backupProductData = backupProducts.get(sku) // Ya normalizado al cargarlo
-
-              if (backupProductData) {
-                console.log(`[v0] Producto ${sku} no existe, encontrado en fuente de respaldo`)
-
-                // Mapeo de campos de la fuente de respaldo
-                const backupName =
-                  backupProductData.name ||
-                  backupProductData.title ||
-                  backupProductData.descripcion ||
-                  backupProductData.product ||
-                  sku
-                const backupDescription =
-                  backupProductData.description || backupProductData.descripcion || backupProductData.detalle
-                const backupCategory =
-                  backupProductData.category || backupProductData.categoria || backupProductData.rubro
-                const backupBrand = backupProductData.brand || backupProductData.marca || backupProductData.fabricante
-                const backupPrice = Number.parseFloat(
-                  backupProductData.price || backupProductData.precio || backupProductData.pventa,
-                )
-                const backupStock = Number.parseInt(
-                  backupProductData.stock ||
-                    backupProductData.quantity ||
-                    backupProductData.existencia ||
-                    backupProductData.qty,
-                )
-
-                const productData = {
-                  sku,
-                  title: backupName || sku, // Asegurar título
-                  description: backupDescription,
-                  category: backupCategory,
-                  brand: backupBrand,
-                  price: isNaN(backupPrice) ? validPrice : backupPrice, // Usar precio de respaldo si es válido, si no, el de la fuente actual
-                  stock: isNaN(backupStock) ? validStock : backupStock, // Usar stock de respaldo si es válido, si no, el de la fuente actual
-                  source: [source.id], // Añadir la fuente actual
+                if (!sku) {
+                  return { type: "error", error: "Sin SKU válido", row }
                 }
 
-                const { error: insertError } = await supabase.from("products").insert(productData)
+                // Mapeo de campos con nombres normalizados
+                const name = row.name || row.title || row.titulo || row.product
+                const description = row.description || row.descripcion || row.detalle
+                const category = row.category || row.categoria || row.rubro
+                const brand = row.brand || row.marca || row.fabricante
+                const price = row.price || row.precio || row.pvp || row.pventa
+                const stock = row.stock || row.quantity || row.existencia || row.qty
 
-                if (insertError) throw insertError
-                return { type: "inserted", sku }
-              } else {
-                // No se encontró en fuentes de respaldo, saltar
-                throw new Error(`Producto ${sku} no encontrado en fuentes de respaldo.`)
+                // Validar si el precio o stock son números válidos
+                const parsedPrice = Number.parseFloat(price)
+                const validPrice = !isNaN(parsedPrice) ? parsedPrice : 0
+                const parsedStock = Number.parseInt(stock)
+                const validStock = !isNaN(parsedStock) ? parsedStock : 0
+
+                const { data: existingProduct } = await supabase
+                  .from("products")
+                  .select("*")
+                  .eq("sku", sku)
+                  .maybeSingle()
+
+                if (existingProduct) {
+                  // Si es catalog, diferenciar entre Arnoia (solo crea nuevos) y Arnoia Act (crea + actualiza)
+                  if (source.feed_type === "catalog") {
+                    // Solo "Arnoia" (base principal) salta productos existentes
+                    // "Arnoia Act" (actualización) debe actualizar productos existentes
+                    const isMainCatalog =
+                      source.name.toLowerCase() === "arnoia" && !source.name.toLowerCase().includes("act")
+
+                    if (isMainCatalog) {
+                      console.log(`[v0] Producto ${sku} ya existe y es catálogo base "Arnoia", saltando.`)
+                      return { type: "skipped", sku }
+                    }
+
+                    // Para "Arnoia Act", actualizar el producto existente
+                    console.log(`[v0] Producto ${sku} existe, actualizando desde "${source.name}"...`)
+                    const currentSources = Array.isArray(existingProduct.source) ? existingProduct.source : []
+                    if (!currentSources.includes(source.id)) {
+                      currentSources.push(source.id)
+                    }
+
+                    const { error: updateError } = await supabase
+                      .from("products")
+                      .update({
+                        name: name || existingProduct.name,
+                        description: description || existingProduct.description,
+                        category: category || existingProduct.category,
+                        brand: brand || existingProduct.brand,
+                        price: validPrice,
+                        stock: validStock,
+                        source: currentSources,
+                      })
+                      .eq("id", existingProduct.id)
+
+                    if (updateError) throw updateError
+                    return { type: "updated", sku }
+                  }
+
+                  // Si es stock_price, actualizar solo precio y stock
+                  if (source.feed_type === "stock_price") {
+                    const currentSources = Array.isArray(existingProduct.source) ? existingProduct.source : []
+                    if (!currentSources.includes(source.id)) {
+                      currentSources.push(source.id)
+                    }
+
+                    const { error: updateError } = await supabase
+                      .from("products")
+                      .update({
+                        price: validPrice,
+                        stock: validStock,
+                        source: currentSources,
+                      })
+                      .eq("id", existingProduct.id)
+
+                    if (updateError) throw updateError
+                    return { type: "updated", sku }
+                  }
+
+                  // Para otros tipos de fuentes, aplicar el modo de importación seleccionado
+                  if (importMode === "skip") {
+                    console.log(`[v0] Producto ${sku} ya existe, saltando (modo skip).`)
+                    return { type: "skipped", sku }
+                  }
+
+                  // Continuar con la lógica de actualización si no es "skip"
+                  const productData: any = {
+                    sku,
+                    title: name || sku, // Asegurar título
+                    description,
+                    category,
+                    brand,
+                    price: validPrice,
+                    stock: validStock,
+                  }
+                  const currentSources = Array.isArray(existingProduct.source) ? existingProduct.source : []
+                  if (!currentSources.includes(source.id)) {
+                    productData.source = [...currentSources, source.id]
+                  }
+
+                  const { error: updateError } = await supabase
+                    .from("products")
+                    .update(productData)
+                    .eq("id", existingProduct.id)
+
+                  if (updateError) throw updateError
+                  return { type: "updated", sku }
+                } else {
+                  if (source.feed_type === "stock_price") {
+                    // Buscar en productos de respaldo
+                    const backupProduct = backupProducts.get(sku)
+                    if (backupProduct && backupSources.length > 0) {
+                      console.log(`[v0] Producto ${sku} no existe, importando desde respaldo...`)
+
+                      // Crear producto completo desde respaldo
+                      const fullProductData: any = {
+                        sku,
+                        name: backupProduct.nombre || backupProduct.title || backupProduct.name || sku,
+                        description: backupProduct.descripcion || backupProduct.description || null,
+                        price: validPrice, // Usar precio/stock de la fuente principal si están presentes y válidos
+                        stock: validStock,
+                        category: backupProduct.categoria || backupProduct.category || null,
+                        brand: backupProduct.marca || backupProduct.brand || null,
+                        source: [source.id],
+                      }
+
+                      const { error: insertError } = await supabase.from("products").insert(fullProductData)
+                      if (insertError) throw insertError
+
+                      return { type: "inserted_from_backup", sku }
+                    } else {
+                      // No se encontró en respaldo, agregar a lista de faltantes
+                      missingSkus.push(sku)
+                      return { type: "error", error: "Producto no encontrado en base ni en respaldo", sku }
+                    }
+                  }
+
+                  // Si es catalog, crear nuevo producto
+                  if (source.feed_type === "catalog") {
+                    const productData: any = {
+                      sku,
+                      name: name || sku, // Asegurar título
+                      description,
+                      category,
+                      brand,
+                      price: validPrice,
+                      stock: validStock,
+                      source: [source.id],
+                    }
+
+                    const { error: insertError } = await supabase.from("products").insert(productData)
+                    if (insertError) throw insertError
+                    return { type: "inserted", sku }
+                  }
+                }
+
+                // Si llegamos aquí, es porque no se aplica ninguna acción (ej. modo skip y no existe)
+                return { type: "skipped", sku }
+              } catch (error: any) {
+                return {
+                  type: "error",
+                  error: error.message || "Error desconocido",
+                  sku:
+                    (row.sku || row.codigo_interno || row.codigo || row.barcode || row.ean || row.upc)
+                      ?.toString()
+                      .trim()
+                      .toUpperCase() || "Desconocido",
+                }
               }
-            }
+            }),
+          )
 
-            const productData: any = {
-              sku,
-              title: name || sku, // Asegurar título
-              description,
-              category,
-              brand,
-              price: validPrice,
-              stock: validStock,
-            }
+          // Contar resultados del batch incluyendo productos desde respaldo
+          let batchImported = 0
+          let batchUpdated = 0
+          let batchSkipped = 0
+          let batchFailed = 0
+          let batchFromBackup = 0
 
-            if (existingProduct) {
-              // Producto existe - Actualizar
-              if (importMode === "skip") {
-                console.log(`[v0] Producto ${sku} ya existe, saltando (modo skip).`)
-                return { type: "skipped", sku } // Marcar como saltado explícitamente
+          for (const result of results) {
+            if (result.status === "fulfilled") {
+              const { value } = result as {
+                status: "fulfilled"
+                value: { type: string; sku: string; error?: string; row?: any }
               }
-
-              const currentSources = Array.isArray(existingProduct.source) ? existingProduct.source : []
-              if (!currentSources.includes(source.id)) {
-                productData.source = [...currentSources, source.id]
+              if (value.type === "inserted") {
+                batchImported++
+              } else if (value.type === "inserted_from_backup") {
+                batchImported++
+                batchFromBackup++
+              } else if (value.type === "updated") {
+                batchUpdated++
+              } else if (value.type === "skipped") {
+                batchSkipped++ // Contar saltados
+              } else if (value.type === "error") {
+                batchFailed++
+                if (value.sku && value.error) {
+                  allErrors.push({ sku: value.sku, error: value.error })
+                }
               }
-
-              const { error: updateError } = await supabase
-                .from("products")
-                .update(productData)
-                .eq("id", existingProduct.id)
-
-              if (updateError) throw updateError
-              return { type: "updated", sku }
             } else {
-              // Producto NO existe - Insertar
-              if (importMode === "skip") {
-                throw new Error(`Producto ${sku} no existe y no se puede crear en modo skip.`)
-              }
-              productData.source = [source.id]
+              // Handle rejected promises
+              batchFailed++
+              const errorReason = (result as any).reason
+              const errorMessage = errorReason?.message || "Error desconocido"
+              const skuFromError = errorReason?.sku || "Desconocido" // Intentar obtener SKU del resultado
 
-              const { error: insertError } = await supabase.from("products").insert(productData)
-
-              if (insertError) throw insertError
-              return { type: "inserted", sku }
-            }
-          }),
-        )
-
-        // Contar resultados del batch
-        let batchImported = 0
-        let batchUpdated = 0
-        let batchFailed = 0
-        let batchSkipped = 0
-
-        for (const result of batchResults) {
-          if (result.status === "fulfilled") {
-            const { value } = result as { status: "fulfilled"; value: { type: string; sku: string } }
-            if (value.type === "inserted") {
-              batchImported++
-            } else if (value.type === "updated") {
-              batchUpdated++
-            } else if (value.type === "skipped") {
-              batchSkipped++
-            }
-          } else {
-            batchFailed++
-            const error = result.reason
-            const errorMessage = error?.message || "Error desconocido"
-            // Intentar obtener el SKU del error si no está en el mensaje
-            let skuFromError = "Desconocido"
-            if (error?.message && error.message.includes("SKU:")) {
-              const match = error.message.match(/SKU:([^,]+)/)
-              if (match && match[1]) {
-                skuFromError = match[1].trim()
-              }
-            } else if (
-              typeof error === "object" &&
-              error !== null &&
-              "details" in error &&
-              typeof error.details === "string" &&
-              error.details.includes("SKU:")
-            ) {
-              const match = error.details.match(/SKU:([^,]+)/)
-              if (match && match[1]) {
-                skuFromError = match[1].trim()
-              }
-            } else if (typeof error === "object" && error !== null && "message" in error) {
-              // Intenta extraer el SKU si está en el mensaje de error de Supabase
-              const supabaseSkuMatch = error.message.match(/DETAIL: Key $$sku$$=$$([^)]+)$$ already exists/)
-              if (supabaseSkuMatch && supabaseSkuMatch[1]) {
-                skuFromError = supabaseSkuMatch[1]
-              }
-            }
-
-            // Registrar error si no es un "saltado" por el modo skip
-            if (
-              !(
-                errorMessage.includes("saltando (modo skip)") || errorMessage.includes("no se puede crear en modo skip")
-              )
-            ) {
               allErrors.push({
-                sku: skuFromError || "Desconocido",
+                sku: skuFromError,
                 error: errorMessage,
-                details: typeof error === "object" && error !== null && "details" in error ? error.details : undefined, // Registrar detalles si existen
               })
             }
           }
+
+          totalImported += batchImported
+          totalUpdated += batchUpdated
+          totalSkipped += batchSkipped
+          totalFailed += batchFailed
+          totalFromBackup += batchFromBackup
+
+          console.log(
+            `[v0] Batch ${Math.ceil((i + batch.length) / BATCH_SIZE)}/${Math.ceil(allProducts.length / BATCH_SIZE)}: ${batchImported} importados (${batchFromBackup} desde respaldo), ${batchUpdated} actualizados, ${batchSkipped} saltados, ${batchFailed} fallidos`,
+          )
+
+          // Actualizar progreso general
+          const processedCount = Math.min(i + batch.length, allProducts.length) // Asegurar que no supere el total
+          const elapsed = (new Date().getTime() - now.getTime()) / 1000
+          const speed = elapsed > 0 ? processedCount / elapsed : 0
+          const currentProgress = {
+            total: allProducts.length,
+            processed: processedCount,
+            imported: totalImported,
+            updated: totalUpdated,
+            failed: totalFailed,
+            skipped: totalSkipped, // Agregar skipped al progreso
+            status: "running" as const,
+            startTime: now,
+            lastUpdate: new Date(),
+            speed: Number.isFinite(speed) ? speed : 0,
+            errors: allErrors.slice(0, 5), // Solo mostrar los primeros 5 errores en el modal
+            csvInfo: importProgress.csvInfo, // Mantener la info del CSV
+          }
+
+          setImportProgress((prev) => ({
+            ...prev,
+            ...currentProgress,
+          }))
+
+          // Actualizar backgroundImports SIEMPRE para que la ficha muestre progreso
+          setBackgroundImports((prev) => {
+            const updated = new Map(prev)
+            updated.set(source.id, currentProgress)
+            return updated
+          })
         }
 
-        totalImported += batchImported
-        totalUpdated += batchUpdated
-        totalFailed += batchFailed
-        // Los skipped no cuentan como failed, son un resultado esperado en algunos modos.
+        // Finalizar importación
+        const finalStatus = importProgress.status === "cancelled" ? "cancelled" : totalFailed > 0 ? "error" : "success"
+        //const finalMessage =
+        //  totalFailed > 0 && importProgress.status !== "cancelled" ? `Se encontraron ${totalFailed} errores.` : ""
 
-        // Actualizar progreso general
-        const processedCount = Math.min((batchIndex + 1) * BATCH_SIZE, products.length) // Asegurar que no supere el total
-        const elapsed = (new Date().getTime() - now.getTime()) / 1000
-        const speed = elapsed > 0 ? processedCount / elapsed : 0
-        const currentProgress = {
-          total: products.length,
-          processed: processedCount,
-          imported: totalImported,
-          updated: totalUpdated,
-          failed: totalFailed,
-          status: "running" as const,
-          startTime: now,
-          lastUpdate: new Date(),
-          speed: Number.isFinite(speed) ? speed : 0,
-          errors: allErrors.slice(0, 5),
-          csvInfo: importProgress.csvInfo, // Mantener la info del CSV
+        console.log("[v0] Finalizando importación...")
+        console.log("[v0] Estado final:", finalStatus)
+        console.log(
+          "[v0] Importados:",
+          totalImported,
+          "Actualizados:",
+          totalUpdated,
+          "Fallidos:",
+          totalFailed,
+          "Saltados:",
+          totalSkipped,
+          `(${totalFromBackup} desde respaldo)`,
+        )
+
+        if (missingSkus.length > 0) {
+          console.warn(
+            `[v0] ⚠️ ${missingSkus.length} productos no encontrados en base ni en respaldo:`,
+            missingSkus.slice(0, 10),
+          )
+          allErrors.push({
+            sku: "Global",
+            error: `${missingSkus.length} productos no encontrados en base ni en respaldo.`,
+          })
+        }
+
+        if (historyId) {
+          const { error: updateError } = await supabase
+            .from("import_history")
+            .update({
+              status: finalStatus,
+              products_imported: totalImported,
+              products_updated: totalUpdated,
+              products_failed: totalFailed,
+              products_skipped: totalSkipped, // Agregar contador de saltados
+              completed_at: new Date().toISOString(),
+              error_message:
+                finalStatus === "error"
+                  ? allErrors
+                      .slice(0, 3)
+                      .map((e) => `${e.sku}: ${e.error}`)
+                      .join("; ")
+                  : null,
+            })
+            .eq("id", historyId)
+
+          if (updateError) {
+            console.error("[v0] Error al actualizar registro de historial:", updateError)
+          } else {
+            console.log("[v0] Registro de historial actualizado correctamente")
+          }
         }
 
         setImportProgress((prev) => ({
           ...prev,
-          ...currentProgress,
+          status: finalStatus,
+          processed: allProducts.length, // Asegurar que el progreso total se actualice
+          failed: totalFailed,
+          skipped: totalSkipped, // Asegurar que skipped se actualice
+          errors: allErrors, // Guardar todos los errores
         }))
 
-        // Actualizar backgroundImports SIEMPRE para que la ficha muestre progreso
         setBackgroundImports((prev) => {
           const updated = new Map(prev)
-          updated.set(source.id, currentProgress)
+          updated.delete(source.id)
           return updated
         })
-      }
 
-      // Finalizar importación
-      const finalStatus = importProgress.status === "cancelled" ? "cancelled" : totalFailed > 0 ? "error" : "success"
-      const finalMessage =
-        totalFailed > 0 && importProgress.status !== "cancelled" ? `Se encontraron ${totalFailed} errores.` : ""
+        // Recargar fuentes para actualizar el estado en la UI
+        await loadSources()
 
-      console.log("[v0] Finalizando importación...")
-      console.log("[v0] Estado final:", finalStatus)
-      console.log("[v0] Importados:", totalImported, "Actualizados:", totalUpdated, "Fallidos:", totalFailed)
-
-      if (historyId) {
-        const { error: updateError } = await supabase
-          .from("import_history")
-          .update({
-            status: finalStatus,
-            products_imported: totalImported,
-            products_updated: totalUpdated,
-            products_failed: totalFailed,
-            completed_at: new Date().toISOString(),
-            error_message:
-              finalStatus === "error"
-                ? allErrors
-                    .slice(0, 3)
-                    .map((e) => `${e.sku}: ${e.error}`)
-                    .join("; ")
-                : null,
-          })
-          .eq("id", historyId)
-
-        if (updateError) {
-          console.error("[v0] Error al actualizar registro de historial:", updateError)
+        if (importProgress.status !== "cancelled") {
+          if (finalStatus === "success") {
+            toast({
+              title: "Importación completada",
+              description: `${totalImported} productos importados (${totalFromBackup} desde respaldo), ${totalUpdated} actualizados. ${totalSkipped} productos saltados.`,
+            })
+          } else if (finalStatus === "error") {
+            toast({
+              title: "Importación con errores",
+              description: `Se completó con ${totalFailed} productos fallidos, ${totalSkipped} saltados. Revisa los detalles en el log.`,
+              variant: "destructive",
+            })
+          }
         } else {
-          console.log("[v0] Registro de historial actualizado correctamente")
-        }
-      }
-
-      setImportProgress((prev) => ({
-        ...prev,
-        status: finalStatus,
-        processed: products.length, // Asegurar que el progreso total se actualice
-        failed: totalFailed,
-        errors: allErrors, // Guardar todos los errores
-      }))
-
-      setBackgroundImports((prev) => {
-        const updated = new Map(prev)
-        updated.delete(source.id)
-        return updated
-      })
-
-      // Recargar fuentes para actualizar el estado en la UI
-      await loadSources()
-
-      if (importProgress.status !== "cancelled") {
-        if (finalStatus === "success") {
           toast({
-            title: "Importación completada",
-            description: `${totalImported} productos importados, ${totalUpdated} actualizados`,
-          })
-        } else if (finalStatus === "error") {
-          toast({
-            title: "Importación con errores",
-            description: `Se completó con ${totalFailed} productos fallidos.`,
+            title: "Importación cancelada",
+            description: "La importación fue cancelada por el usuario.",
             variant: "destructive",
           })
         }
-      } else {
+      } catch (error: any) {
+        console.error("[v0] ===== ERROR EN IMPORTACIÓN =====")
+        console.error("[v0] Error:", error)
+        console.error("Error stack:", error.stack) // Log stack trace for debugging
+
+        setImportProgress((prev) => ({
+          ...prev,
+          status: "error",
+          errors: [{ sku: "Global", error: error.message, details: error.stack || "" }],
+        }))
+
+        setBackgroundImports((prev) => {
+          const updated = new Map(prev)
+          updated.delete(source.id)
+          return updated
+        })
+
         toast({
-          title: "Importación cancelada",
-          description: "La importación fue cancelada por el usuario.",
+          title: "Error crítico",
+          description: error.message || "Ocurrió un error inesperado durante la importación.",
           variant: "destructive",
         })
+
+        if (historyId) {
+          const supabase = await createClient() // Asegurarse de que supabase esté disponible
+          await supabase
+            .from("import_history")
+            .update({
+              status: "error",
+              completed_at: new Date().toISOString(),
+              error_message: error.message,
+            })
+            .eq("id", historyId)
+        }
+      } finally {
+        setImporting(null)
+        setShowImportConfirmDialog(false)
+        setSourceToImport(null)
+        //isExecutingRef.current = false // Mover a después del timeout
+
+        setTimeout(() => {
+          setShowProgressDialog(false)
+          setCurrentImportHistoryId(null) // Resetear el ID del historial al cerrar el modal de progreso
+          isExecutingRef.current = false // Liberar el flag después de que el modal se cierre
+          console.log("[v0] Liberando isExecutingRef después de cerrar modal de progreso")
+        }, 2000)
       }
-    } catch (error: any) {
-      console.error("[v0] ===== ERROR EN IMPORTACIÓN =====")
-      console.error("[v0] Error:", error)
-      console.error("Error stack:", error.stack) // Log stack trace for debugging
+    },
+    [
+      importMode,
+      showProgressDialog,
+      backgroundImports,
+      importProgress,
+      sourceToImport,
+      toast,
+      loadSources,
+      supabase,
+      isExecutingRef,
+    ], // Added isExecutingRef here
+  )
 
-      setImportProgress((prev) => ({
-        ...prev,
-        status: "error",
-        errors: [{ sku: "Global", error: error.message, details: error.stack || "" }],
-      }))
+  async function handleCleanupStuckImports() {
+    try {
+      const response = await fetch("/api/fix-imports")
+      const result = await response.json()
 
-      setBackgroundImports((prev) => {
-        const updated = new Map(prev)
-        updated.delete(source.id)
-        return updated
-      })
-
+      if (result.success) {
+        toast({
+          title: "Limpieza completada",
+          description: `Se cancelaron ${result.fixed} importaciones atascadas.`,
+        })
+        await loadSources() // Recargar fuentes para actualizar UI
+      }
+    } catch (error) {
+      console.error("[v0] Error limpiando importaciones:", error)
       toast({
-        title: "Error crítico",
-        description: error.message || "Ocurrió un error inesperado durante la importación.",
+        title: "Error",
+        description: "No se pudieron limpiar las importaciones atascadas.",
         variant: "destructive",
       })
-
-      if (historyId) {
-        const supabase = await createClient() // Asegurarse de que supabase esté disponible
-        await supabase
-          .from("import_history")
-          .update({
-            status: "error",
-            completed_at: new Date().toISOString(),
-            error_message: error.message,
-          })
-          .eq("id", historyId)
-      }
-    } finally {
-      setImporting(null)
-      setShowImportConfirmDialog(false)
-      setSourceToImport(null)
-      isExecutingRef.current = false
-
-      setTimeout(() => {
-        setShowProgressDialog(false)
-        setCurrentImportHistoryId(null) // Resetear el ID del historial al cerrar el modal de progreso
-      }, 2000)
     }
   }
 
@@ -1172,19 +1282,18 @@ export default function ImportSourcesPage() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between mb-8">
+      {/* Cambios aquí */}
+      <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-4xl font-bold">Gestor de Importaciones</h1>
+          <h1 className="text-3xl font-bold">Gestor de Importaciones</h1>
           <p className="text-muted-foreground mt-2">Administra tus fuentes de importación y sus configuraciones</p>
         </div>
         <div className="flex gap-2">
-          <Button asChild variant="outline">
-            <Link href="/inventory">Volver a Inventario</Link>
+          <Button onClick={handleCleanupStuckImports} variant="outline" size="sm">
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Limpiar importaciones
           </Button>
-          <Button onClick={() => router.push("/inventory/sources/new")}>
-            <Upload className="h-4 w-4 mr-2" />
-            Nueva Fuente
-          </Button>
+          <Button onClick={() => router.push("/inventory")}>Volver a Inventario</Button>
         </div>
       </div>
 
@@ -1744,14 +1853,15 @@ export default function ImportSourcesPage() {
                 if (sourceToImport) {
                   console.log("[v0] Ejecutando executeImport para:", sourceToImport.name)
                   executeImport(sourceToImport).finally(() => {
-                    setTimeout(() => {
-                      console.log("[v0] Liberando isExecutingRef después de 2 segundos")
-                      isExecutingRef.current = false
-                    }, 2000)
+                    // Mover el reset a finally del executeImport para asegurar que se ejecute
+                    //setTimeout(() => {
+                    //  console.log("[v0] Liberando isExecutingRef después de 2 segundos")
+                    //  isExecutingRef.current = false
+                    //}, 2000)
                   })
                 } else {
                   console.log("[v0] ERROR: sourceToImport es null")
-                  isExecutingRef.current = false
+                  isExecutingRef.current = false // Liberar si no hay fuente
                 }
               }}
               variant={importMode === "overwrite" ? "destructive" : "default"}
@@ -1781,6 +1891,7 @@ export default function ImportSourcesPage() {
             setShowProgressDialog(false)
             //setCurrentImportHistoryId(null) // No resetear, para permitir reabrir si es necesario
             setSourceToImport(null) // Resetear la fuente activa
+            // No resetear isExecutingRef aquí, se hace en el finally de executeImport
           }
         }}
       >
@@ -1904,6 +2015,11 @@ export default function ImportSourcesPage() {
                 <div className="text-2xl font-bold text-red-600">{importProgress.failed}</div>
                 <div className="text-xs text-muted-foreground">Fallidos</div>
               </div>
+            </div>
+            {/* Agregar estadistica de skipped */}
+            <div className="space-y-1 text-center">
+              <div className="text-2xl font-bold text-gray-600">{importProgress.skipped}</div>
+              <div className="text-xs text-muted-foreground">Saltados</div>
             </div>
 
             {/* Mensaje de estado o tiempo estimado */}
