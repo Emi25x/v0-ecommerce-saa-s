@@ -71,6 +71,34 @@ async function createClient() {
   return createBrowserClient(supabaseUrl, supabaseAnonKey)
 }
 
+const extractFieldValue = (row: Record<string, any>, fieldName: string, mapping: Record<string, string>) => {
+  // Primero intentar usar el mapeo configurado
+  const mappedColumn = mapping[fieldName]
+  if (mappedColumn && row[mappedColumn] !== undefined && row[mappedColumn] !== null && row[mappedColumn] !== "") {
+    return row[mappedColumn]
+  }
+
+  // Fallback a nombres comunes normalizados
+  const commonNames: Record<string, string[]> = {
+    sku: ["sku", "codigo_interno", "codigo", "barcode", "ean", "upc"],
+    name: ["name", "title", "titulo", "product", "nombre", "descripcion"],
+    description: ["description", "descripcion", "detalle", "desc"],
+    category: ["category", "categoria", "rubro", "cat"],
+    brand: ["brand", "marca", "fabricante"],
+    price: ["price", "precio", "pvp", "pventa", "precio_venta"],
+    stock: ["stock", "quantity", "existencia", "qty", "cantidad"],
+  }
+
+  const possibleNames = commonNames[fieldName] || [fieldName]
+  for (const possibleName of possibleNames) {
+    if (row[possibleName] !== undefined && row[possibleName] !== null && row[possibleName] !== "") {
+      return row[possibleName]
+    }
+  }
+
+  return null
+}
+
 interface ImportSource {
   id: string
   name: string
@@ -529,28 +557,23 @@ export default function ImportSourcesPage() {
           const results = await Promise.allSettled(
             batch.map(async (row: any) => {
               try {
-                // Extract SKU
-                const sku = (row.sku || row.codigo_interno || row.codigo || row.barcode || row.ean || row.upc)
-                  ?.toString()
-                  .trim()
-                  .toUpperCase()
+                const sku = extractFieldValue(row, "sku", source.column_mapping)?.toString().trim().toUpperCase()
 
                 if (!sku) {
                   return { type: "error", error: "Sin SKU válido", row }
                 }
 
-                // Mapeo de campos con nombres normalizados
-                const name = row.name || row.title || row.titulo || row.product
-                const description = row.description || row.descripcion || row.detalle
-                const category = row.category || row.categoria || row.rubro
-                const brand = row.brand || row.marca || row.fabricante
-                const price = row.price || row.precio || row.pvp || row.pventa
-                const stock = row.stock || row.quantity || row.existencia || row.qty
+                const name = extractFieldValue(row, "name", source.column_mapping)
+                const description = extractFieldValue(row, "description", source.column_mapping)
+                const category = extractFieldValue(row, "category", source.column_mapping)
+                const brand = extractFieldValue(row, "brand", source.column_mapping)
+                const priceValue = extractFieldValue(row, "price", source.column_mapping)
+                const stockValue = extractFieldValue(row, "stock", source.column_mapping)
 
                 // Validar si el precio o stock son números válidos
-                const parsedPrice = Number.parseFloat(price)
+                const parsedPrice = Number.parseFloat(priceValue)
                 const validPrice = !isNaN(parsedPrice) ? parsedPrice : 0
-                const parsedStock = Number.parseInt(stock)
+                const parsedStock = Number.parseInt(stockValue)
                 const validStock = !isNaN(parsedStock) ? parsedStock : 0
 
                 const { data: existingProduct } = await supabase
@@ -560,19 +583,45 @@ export default function ImportSourcesPage() {
                   .maybeSingle()
 
                 if (existingProduct) {
-                  // Si es catalog, diferenciar entre Arnoia (solo crea nuevos) y Arnoia Act (crea + actualiza)
+                  // Si es catalog, diferenciar entre Arnoia (respeta importMode) y Arnoia Act (siempre actualiza)
                   if (source.feed_type === "catalog") {
-                    // Solo "Arnoia" (base principal) salta productos existentes
-                    // "Arnoia Act" (actualización) debe actualizar productos existentes
                     const isMainCatalog =
                       source.name.toLowerCase() === "arnoia" && !source.name.toLowerCase().includes("act")
 
                     if (isMainCatalog) {
-                      console.log(`[v0] Producto ${sku} ya existe y es catálogo base "Arnoia", saltando.`)
-                      return { type: "skipped", sku }
+                      // Para "Arnoia" (catálogo base completo), respetar el modo de importación seleccionado
+                      if (importMode === "skip") {
+                        console.log(`[v0] Producto ${sku} ya existe y modo es "skip", saltando.`)
+                        return { type: "skipped", sku }
+                      }
+
+                      // Si el modo es "update" o "overwrite", actualizar el producto
+                      console.log(
+                        `[v0] Producto ${sku} existe, actualizando desde catálogo base "Arnoia" (modo: ${importMode})...`,
+                      )
+                      const currentSources = Array.isArray(existingProduct.source) ? existingProduct.source : []
+                      if (!currentSources.includes(source.id)) {
+                        currentSources.push(source.id)
+                      }
+
+                      const { error: updateError } = await supabase
+                        .from("products")
+                        .update({
+                          name: name || existingProduct.name,
+                          description: description || existingProduct.description,
+                          category: category || existingProduct.category,
+                          brand: brand || existingProduct.brand,
+                          price: validPrice,
+                          stock: validStock,
+                          source: currentSources,
+                        })
+                        .eq("id", existingProduct.id)
+
+                      if (updateError) throw updateError
+                      return { type: "updated", sku }
                     }
 
-                    // Para "Arnoia Act", actualizar el producto existente
+                    // Para "Arnoia Act" (actualización semanal), siempre actualizar productos existentes
                     console.log(`[v0] Producto ${sku} existe, actualizando desde "${source.name}"...`)
                     const currentSources = Array.isArray(existingProduct.source) ? existingProduct.source : []
                     if (!currentSources.includes(source.id)) {
