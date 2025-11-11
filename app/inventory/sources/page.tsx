@@ -358,18 +358,42 @@ export default function ImportSourcesPage() {
 
         const supabase = await createClient()
 
-        // Crear registro de importación
+        const insertData: any = {
+          source_id: source.id,
+          status: "running",
+          products_imported: 0,
+          products_updated: 0,
+          products_failed: 0,
+          started_at: new Date().toISOString(),
+        }
+
+        // Intentar agregar products_skipped solo si la columna existe
+        try {
+          // Verificar si la columna 'products_skipped' existe en la tabla 'import_history'
+          const { data: tableInfo, error: tableInfoError } = await supabase.rpc("get_column_info", {
+            table_name: "import_history",
+            column_name: "products_skipped",
+          })
+
+          if (tableInfoError) {
+            console.warn("[v0] No se pudo verificar la columna 'products_skipped':", tableInfoError.message)
+            // Continuar asumiendo que no existe si hay un error
+          } else if (tableInfo && tableInfo.length > 0) {
+            // La columna existe, agregarla
+            insertData.products_skipped = 0
+            console.log("[v0] Columna 'products_skipped' encontrada y añadida.")
+          } else {
+            console.log("[v0] Columna 'products_skipped' no encontrada en la tabla 'import_history'.")
+          }
+        } catch (e) {
+          // Error al llamar a la función RPC o si la función no existe
+          console.warn("[v0] Error al intentar verificar 'products_skipped' (posiblemente función RPC no definida):", e)
+          // Continuar sin products_skipped
+        }
+
         const { data: historyRecord, error: historyError } = await supabase
           .from("import_history")
-          .insert({
-            source_id: source.id,
-            status: "running",
-            products_imported: 0,
-            products_updated: 0,
-            products_failed: 0,
-            products_skipped: 0, // Inicializar skipped
-            started_at: new Date().toISOString(),
-          })
+          .insert(insertData)
           .select()
           .single()
 
