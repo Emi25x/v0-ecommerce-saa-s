@@ -316,10 +316,14 @@ export default function ImportSourcesPage() {
       const detectedSeparator = detectSeparator(csvText)
       console.log("[v0] Separador detectado:", detectedSeparator === "\t" ? "TAB" : detectedSeparator)
 
-      const parsed = Papa.parse(csvText, {
+      const parsed = Papa.parse<Record<string, any>>(csvText, {
         header: true,
-        delimiter: detectedSeparator,
         skipEmptyLines: true,
+        delimiter: detectedSeparator,
+        transformHeader: (header) => {
+          // Normalizar nombres de columnas: quitar espacios y convertir a minúsculas
+          return header.trim().toLowerCase().replace(/\s+/g, "_")
+        },
       })
 
       if (parsed.errors.length > 0) {
@@ -484,11 +488,14 @@ export default function ImportSourcesPage() {
         // Obtener todos los SKUs del batch para consulta masiva
         const skus = batch
           .map((row: any) => {
-            // Normalizar SKUs para la consulta
-            const sku = (row.sku || row.codigo || row.barcode || row.ean || row.upc)?.toString().trim().toUpperCase()
+            // Buscar SKU con nombres normalizados (espacios reemplazados por guiones bajos)
+            const sku = (row.sku || row.codigo || row.codigo_interno || row.barcode || row.ean || row.upc)
+              ?.toString()
+              .trim()
+              .toUpperCase()
             return sku
           })
-          .filter(Boolean) // Eliminar SKUs nulos o vacíos
+          .filter(Boolean)
 
         // Si no hay SKUs válidos en el batch, continuar al siguiente
         if (skus.length === 0) {
@@ -504,18 +511,18 @@ export default function ImportSourcesPage() {
         // Procesar todos los productos del batch en paralelo
         const batchResults = await Promise.allSettled(
           batch.map(async (row: any) => {
-            const rawSku = row.sku || row.codigo || row.barcode || row.ean || row.upc
+            const rawSku = row.sku || row.codigo || row.codigo_interno || row.barcode || row.ean || row.upc
             if (!rawSku) {
               throw new Error("SKU no encontrado en el producto")
             }
-            const sku = rawSku.toString().trim().toUpperCase() // Normalizar SKU
+            const sku = rawSku.toString().trim().toUpperCase()
 
-            // Mapeo de campos de la fuente actual
-            const name = row.name || row.title || row.descripcion || row.product
+            // Mapeo de campos con nombres normalizados
+            const name = row.name || row.title || row.titulo || row.descripcion || row.product
             const description = row.description || row.descripcion || row.detalle
             const category = row.category || row.categoria || row.rubro
             const brand = row.brand || row.marca || row.fabricante
-            const price = row.price || row.precio || row.pventa
+            const price = row.price || row.precio || row.pvp || row.pventa
             const stock = row.stock || row.quantity || row.existencia || row.qty
 
             // Validar si el precio o stock son números válidos
@@ -1777,6 +1784,7 @@ export default function ImportSourcesPage() {
             }
             setShowProgressDialog(false)
             //setCurrentImportHistoryId(null) // No resetear, para permitir reabrir si es necesario
+            setSourceToImport(null) // Resetear la fuente activa
           }
         }}
       >
