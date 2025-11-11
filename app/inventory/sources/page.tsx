@@ -119,7 +119,7 @@ interface ImportProgressState {
   startTime: Date | null
   lastUpdate: Date | null
   speed: number
-  errors: Array<{ sku: string; message: string; details?: string }> // details ahora es opcional
+  errors: Array<{ sku: string; error: string; details?: string }> // details ahora es opcional
   csvInfo: null | {
     separator: string
     headers: string[]
@@ -273,7 +273,7 @@ export default function ImportSourcesPage() {
   }
 
   async function executeImport(source: SourceWithSchedule) {
-    let historyId: string | undefined // Declarar historyId aquí
+    let historyId: string | undefined
     try {
       setImporting(source.id)
       setShowProgressDialog(true)
@@ -294,9 +294,7 @@ export default function ImportSourcesPage() {
 
       console.log("[v0] ===== INICIANDO IMPORTACIÓN DIRECTA DESDE NAVEGADOR =====")
       console.log("[v0] Fuente:", source.name)
-      console.log("[v0] URL:", source.url_template)
       console.log("[v0] Modo de importación:", importMode)
-      console.log("[v0] Hora de inicio:", now.toLocaleString())
 
       if (!source.url_template) {
         throw new Error("La fuente no tiene una URL configurada")
@@ -370,17 +368,14 @@ export default function ImportSourcesPage() {
         .select()
         .single()
 
-      if (historyError) {
+      if (historyError || !historyRecord) {
         console.error("[v0] Error al crear registro de historial:", historyError)
-        toast({
-          title: "Error de base de datos",
-          description: `No se pudo crear el registro de historial: ${historyError.message}`,
-          variant: "destructive",
-        })
-        return // Salir si no se puede crear el historial
+        throw new Error("No se pudo crear el registro de historial")
       }
 
-      historyId = historyRecord?.id // Asignar a la variable declarada
+      historyId = historyRecord.id // Asignar a la variable declarada
+      setCurrentImportHistoryId(historyId) // Guardar el ID del historial para poder cancelarlo
+      console.log("[v0] Registro de historial creado con ID:", historyId)
 
       // Detectar si la fuente solo tiene datos básicos (precio/stock)
       const firstProduct: any = products[0] || {}
@@ -693,39 +688,34 @@ export default function ImportSourcesPage() {
         // Los skipped no cuentan como failed, son un resultado esperado en algunos modos.
 
         // Actualizar progreso general
-        const processedCount = (batchIndex + 1) * BATCH_SIZE
+        const processedCount = Math.min((batchIndex + 1) * BATCH_SIZE, products.length) // Asegurar que no supere el total
         const elapsed = (new Date().getTime() - now.getTime()) / 1000
         const speed = elapsed > 0 ? processedCount / elapsed : 0
-
-        setImportProgress((prev) => ({
-          ...prev,
-          processed: Math.min(processedCount, products.length),
+        const currentProgress = {
+          total: products.length,
+          processed: processedCount,
           imported: totalImported,
           updated: totalUpdated,
           failed: totalFailed,
-          speed: isFinite(speed) ? speed : 0, // Asegurar que speed sea un número finito
-          errors: allErrors.slice(0, 5), // Mostrar solo los primeros 5 errores
+          status: "running" as const,
+          startTime: now,
           lastUpdate: new Date(),
+          speed: Number.isFinite(speed) ? speed : 0,
+          errors: allErrors.slice(0, 5),
+          csvInfo: importProgress.csvInfo, // Mantener la info del CSV
+        }
+
+        setImportProgress((prev) => ({
+          ...prev,
+          ...currentProgress,
         }))
 
-        // Actualizar estado en segundo plano si el modal está cerrado
-        if (!showProgressDialog) {
-          setBackgroundImports((prev) =>
-            new Map(prev).set(source.id, {
-              total: products.length,
-              processed: Math.min(processedCount, products.length),
-              imported: totalImported,
-              updated: totalUpdated,
-              failed: totalFailed,
-              status: "running",
-              startTime: now,
-              lastUpdate: new Date(),
-              speed: isFinite(speed) ? speed : 0,
-              errors: allErrors.slice(0, 5),
-              csvInfo: null, // No enviar csvInfo al fondo
-            }),
-          )
-        }
+        // Actualizar backgroundImports SIEMPRE para que la ficha muestre progreso
+        setBackgroundImports((prev) => {
+          const updated = new Map(prev)
+          updated.set(source.id, currentProgress)
+          return updated
+        })
       }
 
       // Finalizar importación
@@ -733,8 +723,12 @@ export default function ImportSourcesPage() {
       const finalMessage =
         totalFailed > 0 && importProgress.status !== "cancelled" ? `Se encontraron ${totalFailed} errores.` : ""
 
+      console.log("[v0] Finalizando importación...")
+      console.log("[v0] Estado final:", finalStatus)
+      console.log("[v0] Importados:", totalImported, "Actualizados:", totalUpdated, "Fallidos:", totalFailed)
+
       if (historyId) {
-        await supabase
+        const { error: updateError } = await supabase
           .from("import_history")
           .update({
             status: finalStatus,
@@ -751,21 +745,30 @@ export default function ImportSourcesPage() {
                 : null,
           })
           .eq("id", historyId)
+
+        if (updateError) {
+          console.error("[v0] Error al actualizar registro de historial:", updateError)
+        } else {
+          console.log("[v0] Registro de historial actualizado correctamente")
+        }
       }
 
       setImportProgress((prev) => ({
         ...prev,
         status: finalStatus,
-        failed: totalFailed, // Asegurarse que el estado final refleje los fallos
+        processed: products.length, // Asegurar que el progreso total se actualice
+        failed: totalFailed,
         errors: allErrors, // Guardar todos los errores
       }))
 
-      // Limpiar de segundo plano si ya no está en ejecución
       setBackgroundImports((prev) => {
         const updated = new Map(prev)
         updated.delete(source.id)
         return updated
       })
+
+      // Recargar fuentes para actualizar el estado en la UI
+      await loadSources()
 
       if (importProgress.status !== "cancelled") {
         if (finalStatus === "success") {
@@ -776,7 +779,7 @@ export default function ImportSourcesPage() {
         } else if (finalStatus === "error") {
           toast({
             title: "Importación con errores",
-            description: `Se completó con ${totalFailed} productos fallidos. Verifica los detalles.`,
+            description: `Se completó con ${totalFailed} productos fallidos.`,
             variant: "destructive",
           })
         }
@@ -787,16 +790,15 @@ export default function ImportSourcesPage() {
           variant: "destructive",
         })
       }
-
-      loadSources() // Recargar la lista de fuentes para actualizar el estado
     } catch (error: any) {
       console.error("[v0] ===== ERROR EN IMPORTACIÓN =====")
       console.error("[v0] Error:", error)
       console.error("Error stack:", error.stack) // Log stack trace for debugging
+
       setImportProgress((prev) => ({
         ...prev,
         status: "error",
-        errors: [{ sku: "Global", message: error.message, details: error.stack || "" }],
+        errors: [{ sku: "Global", error: error.message, details: error.stack || "" }],
       }))
 
       setBackgroundImports((prev) => {
@@ -812,6 +814,7 @@ export default function ImportSourcesPage() {
       })
 
       if (historyId) {
+        const supabase = await createClient() // Asegurarse de que supabase esté disponible
         await supabase
           .from("import_history")
           .update({
@@ -825,16 +828,11 @@ export default function ImportSourcesPage() {
       setImporting(null)
       setShowImportConfirmDialog(false)
       setSourceToImport(null)
+      isExecutingRef.current = false
 
-      // Solo cerrar el modal si la importación terminó completamente
-      if (importProgress.status !== "running") {
-        setShowProgressDialog(false)
-        setCurrentImportHistoryId(null)
-      }
-
-      // Asegurar que se puede ejecutar otra importación después de 2 segundos
       setTimeout(() => {
-        isExecutingRef.current = false
+        setShowProgressDialog(false)
+        setCurrentImportHistoryId(null) // Resetear el ID del historial al cerrar el modal de progreso
       }, 2000)
     }
   }
@@ -1951,7 +1949,7 @@ export default function ImportSourcesPage() {
                       className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg p-3 text-xs"
                     >
                       <div className="font-medium text-red-800 dark:text-red-200">SKU: {error.sku}</div>
-                      <div className="text-red-700 dark:text-red-300 mt-1">{error.message}</div>
+                      <div className="text-red-700 dark:text-red-300 mt-1">{error.error}</div>
                       {error.details && (
                         <div className="text-red-600 dark:text-red-400 mt-1 text-[10px]">{error.details}</div>
                       )}
