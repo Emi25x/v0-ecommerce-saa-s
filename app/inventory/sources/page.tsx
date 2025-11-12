@@ -2068,24 +2068,13 @@ const App = () => {
       >
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <div className="flex items-center justify-between">
-              <DialogTitle className="flex items-center gap-2">
-                <Hourglass className="h-5 w-5 animate-pulse" />
-                {importProgress.status === "running" && "Importación en Curso"}
-                {importProgress.status === "completed" && "✅ Importación Completada"}
-                {importProgress.status === "error" && "❌ Error en Importación"}
-                {importProgress.status === "cancelled" && "⚠️ Importación Cancelada"}
-              </DialogTitle>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => handleCancelImport()} // Llamar sin sourceId para cancelar la importación activa en el modal
-                disabled={importProgress.status !== "running"}
-              >
-                <X className="h-4 w-4 mr-1" />
-                Cancelar Importación
-              </Button>
-            </div>
+            <DialogTitle className="flex items-center gap-2">
+              <Hourglass className="h-5 w-5 animate-pulse" />
+              {importProgress.status === "running" && "Importación en Curso"}
+              {importProgress.status === "completed" && "✅ Importación Completada"}
+              {importProgress.status === "error" && "❌ Error en Importación"}
+              {importProgress.status === "cancelled" && "⚠️ Importación Cancelada"}
+            </DialogTitle>
             <DialogDescription>
               {importProgress.status === "running" && "Procesando productos..."}
               {importProgress.status === "completed" && "La importación se completó exitosamente"}
@@ -2380,8 +2369,13 @@ const App = () => {
               {diagnosticData.duplicateSKUs && diagnosticData.duplicateSKUs.length > 0 && (
                 <div>
                   <h3 className="font-semibold mb-2 text-red-600">
-                    SKUs Duplicados ({diagnosticData.duplicateSKUs.length})
+                    SKUs Duplicados ({diagnosticData.totalDuplicateSKUs || diagnosticData.duplicateSKUs.length})
                   </h3>
+                  {diagnosticData.totalDuplicateProducts && (
+                    <p className="text-sm text-red-600 mb-2">
+                      Total de productos duplicados (extras): {diagnosticData.totalDuplicateProducts}
+                    </p>
+                  )}
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {diagnosticData.duplicateSKUs.slice(0, 10).map((sku: string, index: number) => (
                       <div key={index} className="p-2 bg-red-50 border border-red-200 rounded text-sm">
@@ -2405,19 +2399,22 @@ const App = () => {
                   </h3>
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {diagnosticData.corruptedTitles.slice(0, 5).map((product: any, index: number) => (
-                      <div key={index} className="p-2 bg-yellow-50 border border-yellow-200 rounded text-sm">
+                      <div
+                        key={index}
+                        className="p-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-gray-900"
+                      >
                         <div>
-                          <strong>SKU:</strong> {product.sku}
+                          <strong className="text-gray-900">SKU:</strong>{" "}
+                          <span className="text-gray-800">{product.sku}</span>
                         </div>
                         <div>
-                          <strong>Título:</strong> {product.title}
+                          <strong className="text-gray-900">Título:</strong>{" "}
+                          <span className="text-gray-800">{product.title}</span>
                         </div>
                       </div>
                     ))}
                     {diagnosticData.corruptedTitles.length > 5 && (
-                      <p className="text-sm text-muted-foreground">
-                        ... y {diagnosticData.corruptedTitles.length - 5} más
-                      </p>
+                      <p className="text-sm text-gray-600">... y {diagnosticData.corruptedTitles.length - 5} más</p>
                     )}
                   </div>
                 </div>
