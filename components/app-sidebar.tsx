@@ -203,6 +203,10 @@ export function AppSidebar() {
       try {
         const url = `/api/notifications?lastVisitOrders=${lastVisits.orders || ""}&lastVisitProducts=${lastVisits.products || ""}&lastVisitShipments=${lastVisits.shipments || ""}`
         const res = await fetch(url)
+        if (!res.ok) {
+          console.error("[v0] Failed to fetch notifications, status:", res.status)
+          return
+        }
         const data = await res.json()
         setNotifications(data)
       } catch (error) {

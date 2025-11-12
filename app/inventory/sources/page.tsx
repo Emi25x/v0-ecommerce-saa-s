@@ -2400,12 +2400,12 @@ const App = () => {
               {/* Títulos corruptos */}
               {diagnosticData.corruptedTitles && diagnosticData.corruptedTitles.length > 0 && (
                 <div>
-                  <h3 className="font-semibold mb-2 text-orange-600">
+                  <h3 className="font-semibold mb-2 text-yellow-600">
                     Títulos Corruptos ({diagnosticData.corruptedTitles.length})
                   </h3>
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {diagnosticData.corruptedTitles.slice(0, 5).map((product: any, index: number) => (
-                      <div key={index} className="p-2 bg-orange-50 border border-orange-200 rounded text-sm">
+                      <div key={index} className="p-2 bg-yellow-50 border border-yellow-200 rounded text-sm">
                         <div>
                           <strong>SKU:</strong> {product.sku}
                         </div>

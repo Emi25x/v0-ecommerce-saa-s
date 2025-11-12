@@ -16,12 +16,16 @@ export async function GET(request: Request) {
     let newOrdersCount = 0
     if (lastVisitOrders) {
       try {
-        const { count } = await supabase
+        const { count, error } = await supabase
           .from("ml_orders")
           .select("*", { count: "exact", head: true })
           .gte("date_created", lastVisitOrders)
 
-        newOrdersCount = count || 0
+        if (error) {
+          console.log("[v0] ml_orders query error:", error.message)
+        } else {
+          newOrdersCount = count || 0
+        }
       } catch (error) {
         console.log("[v0] ml_orders table not found, skipping")
       }
@@ -31,25 +35,34 @@ export async function GET(request: Request) {
     let newProductsCount = 0
     if (lastVisitProducts) {
       try {
-        const { count } = await supabase
+        const { count, error } = await supabase
           .from("ml_listings")
           .select("*", { count: "exact", head: true })
           .gte("created_at", lastVisitProducts)
 
-        newProductsCount = count || 0
+        if (error) {
+          console.log("[v0] ml_listings query error:", error.message)
+        } else {
+          newProductsCount = count || 0
+        }
       } catch (error) {
         console.log("[v0] ml_listings table not found, skipping")
       }
     }
 
+    // Count ready to ship orders
     let readyToShipCountValue = 0
     try {
-      const { count: readyToShipCount } = await supabase
+      const { count: readyToShipCount, error } = await supabase
         .from("ml_shipments")
         .select("*", { count: "exact", head: true })
         .eq("status", "ready_to_ship")
 
-      readyToShipCountValue = readyToShipCount || 0
+      if (error) {
+        console.log("[v0] ml_shipments query error:", error.message)
+      } else {
+        readyToShipCountValue = readyToShipCount || 0
+      }
     } catch (error) {
       console.log("[v0] ml_shipments table not found, skipping")
     }
