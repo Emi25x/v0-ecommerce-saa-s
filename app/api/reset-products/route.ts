@@ -1,11 +1,24 @@
-import { createServerClient } from "@/lib/supabase/server"
+import { createClient } from "@supabase/supabase-js"
 import { NextResponse } from "next/server"
 
-export async function POST() {
-  try {
-    console.log("[v0] Iniciando limpieza total de productos...")
+export const dynamic = "force-dynamic"
+export const runtime = "nodejs"
 
-    const supabase = await createServerClient()
+export async function POST(request: Request) {
+  try {
+    console.log("[v0] ========================================")
+    console.log("[v0] LIMPIEZA TOTAL DE PRODUCTOS - INICIANDO")
+    console.log("[v0] ========================================")
+
+    const body = await request.json()
+    const { confirmation } = body
+
+    if (confirmation !== "ELIMINAR TODO") {
+      console.log("[v0] Confirmación incorrecta:", confirmation)
+      return NextResponse.json({ error: "Confirmación incorrecta" }, { status: 400 })
+    }
+
+    const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
     // Contar productos antes
     const { count: beforeCount, error: countError } = await supabase
@@ -19,6 +32,7 @@ export async function POST() {
 
     console.log(`[v0] Productos antes de limpieza: ${beforeCount}`)
 
+    // Eliminar TODOS los productos
     const { error: deleteError } = await supabase
       .from("products")
       .delete()
@@ -33,6 +47,9 @@ export async function POST() {
     const { count: afterCount } = await supabase.from("products").select("*", { count: "exact", head: true })
 
     console.log(`[v0] Productos después de limpieza: ${afterCount}`)
+    console.log("[v0] ========================================")
+    console.log("[v0] LIMPIEZA COMPLETADA")
+    console.log("[v0] ========================================")
 
     return NextResponse.json({
       success: true,
@@ -41,7 +58,9 @@ export async function POST() {
       remaining: afterCount || 0,
     })
   } catch (error: any) {
-    console.error("[v0] Error en limpieza total:", error)
+    console.error("[v0] ========================================")
+    console.error("[v0] ERROR EN LIMPIEZA TOTAL:", error)
+    console.error("[v0] ========================================")
     return NextResponse.json(
       {
         success: false,
@@ -54,7 +73,7 @@ export async function POST() {
 
 export async function GET() {
   try {
-    const supabase = await createServerClient()
+    const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
     const { count, error } = await supabase.from("products").select("*", { count: "exact", head: true })
 
