@@ -1,125 +1,127 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@supabase/supabase-js"
 import { NextResponse } from "next/server"
 
-export async function GET() {
-  try {
-    const supabase = await createClient()
-
-    // Encontrar SKUs duplicados
-    const { data: duplicates, error: duplicatesError } = await supabase.rpc("find_duplicate_skus", {})
-
-    if (duplicatesError) {
-      // Si la función no existe, usar consulta manual
-      const { data: products, error: productsError } = await supabase
-        .from("products")
-        .select("sku, id, created_at, title, source")
-        .order("sku")
-
-      if (productsError) throw productsError
-
-      // Agrupar por SKU
-      const skuGroups = new Map<string, any[]>()
-      products?.forEach((p) => {
-        if (!skuGroups.has(p.sku)) {
-          skuGroups.set(p.sku, [])
-        }
-        skuGroups.get(p.sku)!.push(p)
-      })
-
-      // Filtrar solo duplicados
-      const duplicateSkus = Array.from(skuGroups.entries())
-        .filter(([_, products]) => products.length > 1)
-        .map(([sku, products]) => ({
-          sku,
-          count: products.length,
-          products: products.map((p) => ({
-            id: p.id,
-            created_at: p.created_at,
-            title: p.title,
-            source: p.source,
-          })),
-        }))
-
-      return NextResponse.json({
-        success: true,
-        totalDuplicates: duplicateSkus.length,
-        duplicates: duplicateSkus.slice(0, 10), // Primeros 10 ejemplos
-        message: `Se encontraron ${duplicateSkus.length} SKUs duplicados`,
-      })
-    }
-
-    return NextResponse.json({
-      success: true,
-      duplicates: duplicates?.slice(0, 10),
-      totalDuplicates: duplicates?.length || 0,
-    })
-  } catch (error: any) {
-    console.error("[v0] Error detecting duplicates:", error)
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message,
-      },
-      { status: 500 },
-    )
-  }
-}
+export const dynamic = "force-dynamic"
+export const runtime = "nodejs"
+export const maxDuration = 300 // 5 minutos para procesar todos los productos
 
 export async function POST() {
   try {
-    const supabase = await createClient()
+    console.log("[v0] LIMPIEZA DE DUPLICADOS - INICIANDO")
 
-    // Obtener todos los productos ordenados por SKU y fecha de creación
-    const { data: products, error: productsError } = await supabase
-      .from("products")
-      .select("id, sku, created_at")
-      .order("sku")
-      .order("created_at", { ascending: true }) // Mantener el más antiguo
+    const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 
-    if (productsError) throw productsError
+    // Paso 1: Obtener todos los productos y agrupar por SKU normalizado
+    console.log("[v0] Obteniendo todos los productos...")
+    const skuGroups = new Map<string, Array<{ id: string; sku: string; created_at: string }>>()
+    let offset = 0
+    const batchSize = 10000
 
-    // Agrupar por SKU
-    const skuGroups = new Map<string, any[]>()
-    products?.forEach((p) => {
-      if (!skuGroups.has(p.sku)) {
-        skuGroups.set(p.sku, [])
+    while (true) {
+      const { data: batch, error } = await supabase
+        .from("products")
+        .select("id, sku, created_at")
+        .range(offset, offset + batchSize - 1)
+        .order("created_at", { ascending: true }) // Ordenar por fecha, más antiguo primero
+
+      if (error) {
+        console.error("[v0] Error obteniendo productos:", error)
+        throw error
       }
-      skuGroups.get(p.sku)!.push(p)
-    })
 
-    // Identificar productos a eliminar (mantener solo el primero de cada grupo)
-    const toDelete: string[] = []
-    skuGroups.forEach((products) => {
+      if (!batch || batch.length === 0) break
+
+      // Agrupar por SKU normalizado
+      batch.forEach((p) => {
+        if (!p.sku) return
+
+        // Normalizar SKU: trim, uppercase, sin espacios ni guiones
+        const normalized = p.sku.toString().trim().toUpperCase().replace(/[\s-]/g, "")
+        if (!normalized) return
+
+        if (!skuGroups.has(normalized)) {
+          skuGroups.set(normalized, [])
+        }
+        skuGroups.get(normalized)!.push({
+          id: p.id,
+          sku: p.sku,
+          created_at: p.created_at,
+        })
+      })
+
+      console.log(`[v0] Procesados: ${offset + batch.length} productos`)
+      if (batch.length < batchSize) break
+      offset += batchSize
+    }
+
+    console.log(`[v0] Total de productos analizados: ${offset}`)
+    console.log(`[v0] Total de SKUs únicos (normalizados): ${skuGroups.size}`)
+
+    // Paso 2: Identificar IDs a eliminar (todos excepto el primero/más antiguo de cada grupo)
+    const idsToDelete: string[] = []
+    let duplicateSkuCount = 0
+
+    skuGroups.forEach((products, normalizedSKU) => {
       if (products.length > 1) {
-        // Mantener el primero (más antiguo), eliminar los demás
-        toDelete.push(...products.slice(1).map((p) => p.id))
+        duplicateSkuCount++
+        // Los productos ya vienen ordenados por created_at (más antiguo primero)
+        // Mantener el primero, eliminar el resto
+        const toDelete = products.slice(1)
+        idsToDelete.push(...toDelete.map((p) => p.id))
+
+        console.log(
+          `[v0] SKU duplicado: ${products[0].sku} (normalizado: ${normalizedSKU}) - ` +
+            `Manteniendo 1, eliminando ${toDelete.length}`,
+        )
       }
     })
 
-    if (toDelete.length === 0) {
+    console.log(`[v0] SKUs con duplicados encontrados: ${duplicateSkuCount}`)
+    console.log(`[v0] Total de productos duplicados a eliminar: ${idsToDelete.length}`)
+
+    if (idsToDelete.length === 0) {
       return NextResponse.json({
         success: true,
-        deleted: 0,
+        deletedCount: 0,
         message: "No se encontraron duplicados para eliminar",
       })
     }
 
-    // Eliminar productos duplicados
-    const { error: deleteError } = await supabase.from("products").delete().in("id", toDelete)
+    // Paso 3: Eliminar en lotes
+    console.log("[v0] Eliminando productos duplicados en lotes...")
+    let deletedCount = 0
+    const deleteBatchSize = 1000
 
-    if (deleteError) throw deleteError
+    for (let i = 0; i < idsToDelete.length; i += deleteBatchSize) {
+      const batch = idsToDelete.slice(i, i + deleteBatchSize)
+
+      const { error: deleteError } = await supabase.from("products").delete().in("id", batch)
+
+      if (deleteError) {
+        console.error(`[v0] Error eliminando lote ${Math.floor(i / deleteBatchSize) + 1}:`, deleteError)
+        throw deleteError
+      }
+
+      deletedCount += batch.length
+      console.log(`[v0] Progreso: ${deletedCount}/${idsToDelete.length} productos eliminados`)
+    }
+
+    console.log("[v0] LIMPIEZA DE DUPLICADOS - COMPLETADA")
+    console.log(`[v0] Total eliminado: ${deletedCount} productos`)
 
     return NextResponse.json({
       success: true,
-      deleted: toDelete.length,
-      message: `Se eliminaron ${toDelete.length} productos duplicados`,
+      deletedCount,
+      duplicateSkuCount,
+      message: `Se eliminaron ${deletedCount} productos duplicados de ${duplicateSkuCount} SKUs, manteniendo los más antiguos`,
     })
   } catch (error: any) {
-    console.error("[v0] Error cleaning duplicates:", error)
+    console.error("[v0] ERROR en limpieza de duplicados:", error)
+    console.error("[v0] Stack:", error.stack)
     return NextResponse.json(
       {
         success: false,
-        error: error.message,
+        error: error.message || "Error al limpiar duplicados",
       },
       { status: 500 },
     )

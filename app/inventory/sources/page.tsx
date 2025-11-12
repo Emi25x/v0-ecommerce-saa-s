@@ -46,6 +46,7 @@ const App = () => {
   const [showDiagnosticDialog, setShowDiagnosticDialog] = useState(false)
   const [diagnosticData, setDiagnosticData] = useState<any>(null)
   const [loadingDiagnostic, setLoadingDiagnostic] = useState(false)
+  const [cleaningDuplicates, setCleaningDuplicates] = useState(false)
   const [showResetDialog, setShowResetDialog] = useState(false)
   const [resetLoading, setResetLoading] = useState(false)
   const [resetConfirmText, setResetConfirmText] = useState("")
@@ -1382,6 +1383,56 @@ const App = () => {
     }
   }
 
+  const handleCleanDuplicates = async () => {
+    // El totalDuplicateProducts es el número de items que deben ser eliminados
+    if (!diagnosticData?.totalDuplicateProducts || diagnosticData.totalDuplicateProducts <= 0) return
+
+    const confirmed = window.confirm(
+      `¿Estás seguro de que quieres eliminar ${diagnosticData.totalDuplicateProducts} productos duplicados?\n\n` +
+        `Se mantendrán los productos más antiguos de cada SKU duplicado.\n\n` +
+        `Esta acción NO se puede deshacer.`,
+    )
+
+    if (!confirmed) return
+
+    setCleaningDuplicates(true)
+    try {
+      const response = await fetch("/api/clean-duplicates", {
+        method: "POST",
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || "Error al limpiar duplicados")
+      }
+
+      toast({
+        title: "Limpieza completada",
+        description: `Se eliminaron ${data.deletedCount} productos duplicados`,
+      })
+
+      // Cerrar el diálogo y recargar el diagnóstico
+      setShowDiagnosticDialog(false)
+      setDiagnosticData(null)
+
+      // Recargar la lista de productos
+      // loadSources() // Cargar fuentes no recarga productos, necesitamos una función específica
+      // Assuming a function 'loadProducts' exists or needs to be implemented elsewhere
+      // For now, we'll just log and let the user navigate or refresh manually if needed.
+      console.log("Products should be reloaded, but 'loadProducts' function is not defined in this scope.")
+    } catch (error: any) {
+      console.error("Error al limpiar duplicados:", error)
+      toast({
+        title: "Error",
+        description: error.message || "No se pudieron limpiar los duplicados",
+        variant: "destructive",
+      })
+    } finally {
+      setCleaningDuplicates(false)
+    }
+  }
+
   const handleResetDatabase = async () => {
     if (resetConfirmText !== "ELIMINAR TODO") {
       toast({
@@ -2345,7 +2396,12 @@ const App = () => {
                     <CardTitle className="text-sm font-medium">SKUs Duplicados</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold text-red-600">{diagnosticData.duplicateSKUs?.length || 0}</div>
+                    <div className="text-2xl font-bold text-red-600">{diagnosticData.totalDuplicateSKUs || 0}</div>
+                    {diagnosticData.totalDuplicateProducts > 0 && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {diagnosticData.totalDuplicateProducts} productos extras
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
               </div>
@@ -2371,15 +2427,22 @@ const App = () => {
                   <h3 className="font-semibold mb-2 text-red-600">
                     SKUs Duplicados ({diagnosticData.totalDuplicateSKUs || diagnosticData.duplicateSKUs.length})
                   </h3>
-                  {diagnosticData.totalDuplicateProducts && (
-                    <p className="text-sm text-red-600 mb-2">
-                      Total de productos duplicados (extras): {diagnosticData.totalDuplicateProducts}
-                    </p>
+                  {diagnosticData.totalDuplicateProducts > 0 && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded mb-3">
+                      <p className="text-sm font-semibold text-red-800">
+                        ⚠️ Se encontraron {diagnosticData.totalDuplicateProducts} productos duplicados que deben
+                        eliminarse
+                      </p>
+                      <p className="text-xs text-red-600 mt-1">
+                        Se mantendrá el producto más antiguo de cada SKU duplicado
+                      </p>
+                    </div>
                   )}
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {diagnosticData.duplicateSKUs.slice(0, 10).map((sku: string, index: number) => (
                       <div key={index} className="p-2 bg-red-50 border border-red-200 rounded text-sm">
-                        SKU: <code className="font-mono">{sku}</code>
+                        <span className="text-gray-900">SKU: </span>
+                        <code className="font-mono text-gray-800">{sku}</code>
                       </div>
                     ))}
                     {diagnosticData.duplicateSKUs.length > 10 && (
@@ -2439,19 +2502,19 @@ const App = () => {
             <Button variant="outline" onClick={() => setShowDiagnosticDialog(false)}>
               Cerrar
             </Button>
-            {diagnosticData?.duplicateSKUs && diagnosticData.duplicateSKUs.length > 0 && (
-              <Button
-                variant="destructive"
-                onClick={() => {
-                  setShowDiagnosticDialog(false)
-                  // Aquí podrías agregar lógica para abrir un diálogo de limpieza
-                  toast({
-                    title: "Limpieza de duplicados",
-                    description: "Visita /api/clean-duplicates para limpiar los duplicados",
-                  })
-                }}
-              >
-                Limpiar Duplicados
+            {diagnosticData?.totalDuplicateProducts > 0 && (
+              <Button variant="destructive" onClick={handleCleanDuplicates} disabled={cleaningDuplicates}>
+                {cleaningDuplicates ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Limpiando...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Limpiar {diagnosticData.totalDuplicateProducts} Duplicados
+                  </>
+                )}
               </Button>
             )}
           </DialogFooter>
