@@ -5,14 +5,26 @@ export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
 export async function GET() {
-  try {
-    const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  console.log("[v0] ========================================")
+  console.log("[v0] DIAGNÓSTICO - ENDPOINT LLAMADO")
+  console.log("[v0] ========================================")
 
-    console.log("[v0] ========================================")
-    console.log("[v0] DIAGNÓSTICO DE PRODUCTOS - INICIANDO")
-    console.log("[v0] ========================================")
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+    console.log("[v0] Supabase URL disponible:", !!supabaseUrl)
+    console.log("[v0] Supabase Key disponible:", !!supabaseKey)
+
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error("Faltan credenciales de Supabase")
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey)
+    console.log("[v0] Cliente Supabase creado exitosamente")
 
     // 1. Total de productos
+    console.log("[v0] Consultando total de productos...")
     const { count: totalProducts, error: countError } = await supabase
       .from("products")
       .select("*", { count: "exact", head: true })
@@ -24,7 +36,8 @@ export async function GET() {
 
     console.log(`[v0] Total productos en BD: ${totalProducts}`)
 
-    // 2. Obtener muestra de productos para análisis
+    // 2. Obtener muestra de 10,000 productos para análisis
+    console.log("[v0] Obteniendo muestra de productos...")
     const { data: sampleProducts, error: fetchError } = await supabase
       .from("products")
       .select("id, sku, title, source")
@@ -38,6 +51,7 @@ export async function GET() {
     console.log(`[v0] Muestra obtenida: ${sampleProducts?.length || 0} productos`)
 
     // 3. Detectar SKUs duplicados (normalizando: trim + uppercase + sin espacios)
+    console.log("[v0] Analizando duplicados...")
     const skuMap = new Map<string, { count: number; ids: string[]; originalSku: string }>()
 
     sampleProducts?.forEach((p: any) => {
@@ -71,6 +85,7 @@ export async function GET() {
     console.log(`[v0] Productos duplicados (total): ${duplicates.reduce((sum, d) => sum + (d.count - 1), 0)}`)
 
     // 4. Detectar títulos corruptos
+    console.log("[v0] Analizando títulos corruptos...")
     const corruptedTitles =
       sampleProducts
         ?.filter((p: any) => {
@@ -84,6 +99,7 @@ export async function GET() {
     console.log(`[v0] Títulos corruptos encontrados: ${corruptedTitles.length}`)
 
     // 5. Distribución por fuentes
+    console.log("[v0] Calculando distribución por fuentes...")
     const sourceCounts: Record<string, number> = {}
     sampleProducts?.forEach((product: any) => {
       const source = product.source || "Sin fuente"
@@ -97,7 +113,7 @@ export async function GET() {
 
     console.log("[v0] Distribución por fuentes:", productsBySource)
     console.log("[v0] ========================================")
-    console.log("[v0] DIAGNÓSTICO COMPLETADO")
+    console.log("[v0] DIAGNÓSTICO COMPLETADO EXITOSAMENTE")
     console.log("[v0] ========================================")
 
     return NextResponse.json({
@@ -112,10 +128,12 @@ export async function GET() {
   } catch (error: any) {
     console.error("[v0] ========================================")
     console.error("[v0] ERROR EN DIAGNÓSTICO:", error)
+    console.error("[v0] Error stack:", error.stack)
     console.error("[v0] ========================================")
     return NextResponse.json(
       {
         error: error.message || "Error desconocido al ejecutar diagnóstico",
+        details: error.stack,
       },
       { status: 500 },
     )
