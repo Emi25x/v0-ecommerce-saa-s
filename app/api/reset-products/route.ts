@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
+export const maxDuration = 300
 
 export async function POST(request: Request) {
   console.log("[v0] ========================================")
@@ -61,16 +62,46 @@ export async function POST(request: Request) {
       })
     }
 
-    // Eliminar TODOS los productos
-    console.log("[v0] Eliminando todos los productos...")
-    const { error: deleteError } = await supabase
-      .from("products")
-      .delete()
-      .neq("id", "00000000-0000-0000-0000-000000000000")
+    console.log("[v0] Eliminando productos en lotes de 5000...")
+    const BATCH_SIZE = 5000
+    let totalDeleted = 0
+    let batchCount = 0
 
-    if (deleteError) {
-      console.error("[v0] Error al eliminar productos:", deleteError)
-      throw deleteError
+    while (true) {
+      batchCount++
+      console.log(`[v0] Eliminando lote ${batchCount}...`)
+
+      // Obtener IDs del siguiente lote
+      const { data: batchProducts, error: fetchError } = await supabase.from("products").select("id").limit(BATCH_SIZE)
+
+      if (fetchError) {
+        console.error("[v0] Error al obtener lote:", fetchError)
+        throw fetchError
+      }
+
+      if (!batchProducts || batchProducts.length === 0) {
+        console.log("[v0] No hay más productos para eliminar")
+        break
+      }
+
+      // Eliminar el lote
+      const ids = batchProducts.map((p) => p.id)
+      const { error: deleteError } = await supabase.from("products").delete().in("id", ids)
+
+      if (deleteError) {
+        console.error("[v0] Error al eliminar lote:", deleteError)
+        throw deleteError
+      }
+
+      totalDeleted += batchProducts.length
+      console.log(
+        `[v0] Lote ${batchCount} eliminado: ${batchProducts.length} productos (total: ${totalDeleted}/${beforeCount})`,
+      )
+
+      // Si el lote fue menor que BATCH_SIZE, ya terminamos
+      if (batchProducts.length < BATCH_SIZE) {
+        break
+      }
     }
 
     // Verificar que se eliminaron todos
@@ -84,8 +115,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      message: `Se eliminaron ${beforeCount} productos correctamente. Ahora ejecuta las importaciones en orden: Arnoia → Arnoia Act → Arnoia Stock`,
-      deleted: beforeCount,
+      message: `Se eliminaron ${totalDeleted} productos correctamente. Ahora ejecuta las importaciones en orden: Arnoia → Arnoia Act → Arnoia Stock`,
+      deleted: totalDeleted,
       remaining: afterCount || 0,
     })
   } catch (error: any) {

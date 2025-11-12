@@ -3,11 +3,10 @@ import { NextResponse } from "next/server"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
+export const maxDuration = 60
 
 export async function GET() {
-  console.log("[v0] ========================================")
-  console.log("[v0] DIAGNÓSTICO - ENDPOINT LLAMADO")
-  console.log("[v0] ========================================")
+  console.log("[v0] === DIAGNÓSTICO GET STARTED ===")
 
   try {
     const supabaseUrl = process.env.SUPABASE_URL
@@ -36,12 +35,12 @@ export async function GET() {
 
     console.log(`[v0] Total productos en BD: ${totalProducts}`)
 
-    // 2. Obtener muestra de 10,000 productos para análisis
+    // 2. Obtener muestra de 5,000 productos para análisis rápido
     console.log("[v0] Obteniendo muestra de productos...")
     const { data: sampleProducts, error: fetchError } = await supabase
       .from("products")
       .select("id, sku, title, source")
-      .limit(10000)
+      .limit(5000)
 
     if (fetchError) {
       console.error("[v0] Error al obtener muestra:", fetchError)
@@ -50,9 +49,9 @@ export async function GET() {
 
     console.log(`[v0] Muestra obtenida: ${sampleProducts?.length || 0} productos`)
 
-    // 3. Detectar SKUs duplicados (normalizando: trim + uppercase + sin espacios)
+    // 3. Detectar SKUs duplicados
     console.log("[v0] Analizando duplicados...")
-    const skuMap = new Map<string, { count: number; ids: string[]; originalSku: string }>()
+    const skuMap = new Map<string, { count: number; originalSku: string }>()
 
     sampleProducts?.forEach((p: any) => {
       if (!p.sku) return
@@ -61,11 +60,9 @@ export async function GET() {
         const existing = skuMap.get(normalizedSKU)
         if (existing) {
           existing.count++
-          existing.ids.push(p.id)
         } else {
           skuMap.set(normalizedSKU, {
             count: 1,
-            ids: [p.id],
             originalSku: p.sku,
           })
         }
@@ -74,17 +71,11 @@ export async function GET() {
 
     const duplicates = Array.from(skuMap.entries())
       .filter(([_, data]) => data.count > 1)
-      .map(([sku, data]) => ({
-        sku: data.originalSku,
-        count: data.count,
-        productIds: data.ids.slice(0, 3),
-      }))
-      .sort((a, b) => b.count - a.count)
+      .map(([_, data]) => data.originalSku)
 
-    console.log(`[v0] SKUs duplicados encontrados: ${duplicates.length}`)
-    console.log(`[v0] Productos duplicados (total): ${duplicates.reduce((sum, d) => sum + (d.count - 1), 0)}`)
+    console.log("[v0] SKUs duplicados encontrados:", duplicates.length)
 
-    // 4. Detectar títulos corruptos
+    // 4. Títulos corruptos
     console.log("[v0] Analizando títulos corruptos...")
     const corruptedTitles =
       sampleProducts
@@ -94,9 +85,10 @@ export async function GET() {
           if (p.title.length < 3) return true
           return false
         })
-        .slice(0, 50) || []
+        .slice(0, 50)
+        .map((p: any) => ({ sku: p.sku, title: p.title })) || []
 
-    console.log(`[v0] Títulos corruptos encontrados: ${corruptedTitles.length}`)
+    console.log("[v0] Títulos corruptos encontrados:", corruptedTitles.length)
 
     // 5. Distribución por fuentes
     console.log("[v0] Calculando distribución por fuentes...")
@@ -111,31 +103,21 @@ export async function GET() {
       .map(([source, count]) => ({ source, count }))
       .sort((a, b) => b.count - a.count)
 
-    console.log("[v0] Distribución por fuentes:", productsBySource)
-    console.log("[v0] ========================================")
-    console.log("[v0] DIAGNÓSTICO COMPLETADO EXITOSAMENTE")
-    console.log("[v0] ========================================")
+    console.log("[v0] Distribución por fuentes:", productsBySource.length)
+    console.log("[v0] === DIAGNÓSTICO COMPLETED ===")
 
     return NextResponse.json({
       totalProducts: totalProducts || 0,
-      duplicateSKUs: duplicates.length,
-      duplicateExamples: duplicates.slice(0, 10),
-      sourceDistribution: Object.fromEntries(productsBySource.map((s) => [s.source, s.count])),
-      corruptTitles: corruptedTitles.slice(0, 10).map((p: any) => ({ sku: p.sku, title: p.title })),
+      duplicateSKUs: duplicates,
+      productsBySource,
+      corruptedTitles,
       sampleSize: sampleProducts?.length || 0,
       timestamp: new Date().toISOString(),
     })
   } catch (error: any) {
-    console.error("[v0] ========================================")
-    console.error("[v0] ERROR EN DIAGNÓSTICO:", error)
-    console.error("[v0] Error stack:", error.stack)
-    console.error("[v0] ========================================")
-    return NextResponse.json(
-      {
-        error: error.message || "Error desconocido al ejecutar diagnóstico",
-        details: error.stack,
-      },
-      { status: 500 },
-    )
+    console.error("[v0] === DIAGNÓSTICO ERROR ===")
+    console.error("[v0] Error:", error.message)
+    console.error("[v0] Stack:", error.stack)
+    return NextResponse.json({ error: error.message || "Error al ejecutar diagnóstico" }, { status: 500 })
   }
 }

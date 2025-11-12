@@ -2,6 +2,8 @@ import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import { type NextRequest, NextResponse } from "next/server"
 
+export const maxDuration = 300 // 5 minutos para imports grandes
+
 console.log("[v0] ==================== PROCESS IMPORT MODULE LOADED ====================")
 console.log("[v0] Module loaded at:", new Date().toISOString())
 
@@ -105,16 +107,16 @@ export async function POST(request: NextRequest) {
 
     console.log("[v0] Historial creado:", history.id)
 
-    // Procesar productos
     let imported = 0
-    let updated = 0
+    const updated = 0
     let failed = 0
 
     const columnMapping = source.column_mapping || {}
 
-    const skuColumn = columnMapping["sku"] // Nombre de la columna CSV para SKU
-    const stockColumn = columnMapping["stock"] // Nombre de la columna CSV para stock
-    const priceColumn = columnMapping["price"] // Nombre de la columna CSV para price
+    const skuColumn = columnMapping["sku"]
+    const stockColumn = columnMapping["stock"]
+    const priceColumn = columnMapping["price"]
+    const titleColumn = columnMapping["title"]
 
     if (!skuColumn) {
       console.error("[v0] Column mapping:", columnMapping)
@@ -125,14 +127,25 @@ export async function POST(request: NextRequest) {
     const skuIndex = headers.indexOf(skuColumn)
     const stockIndex = stockColumn ? headers.indexOf(stockColumn) : -1
     const priceIndex = priceColumn ? headers.indexOf(priceColumn) : -1
+    const titleIndex = titleColumn ? headers.indexOf(titleColumn) : -1
 
-    console.log("[v0] Columnas mapeadas - SKU:", skuColumn, "Stock:", stockColumn, "Price:", priceColumn)
-    console.log("[v0] Índices - SKU:", skuIndex, "Stock:", stockIndex, "Price:", priceIndex)
+    console.log(
+      "[v0] Columnas mapeadas - SKU:",
+      skuColumn,
+      "Stock:",
+      stockColumn,
+      "Price:",
+      priceColumn,
+      "Title:",
+      titleColumn,
+    )
+    console.log("[v0] Índices - SKU:", skuIndex, "Stock:", stockIndex, "Price:", priceIndex, "Title:", titleIndex)
 
     if (skuIndex === -1) {
       return NextResponse.json({ error: `Columna SKU "${skuColumn}" no encontrada en el CSV` }, { status: 400 })
     }
 
+    const products: any[] = []
     for (let i = 1; i < lines.length; i++) {
       try {
         const values = lines[i].split(separator)
@@ -140,62 +153,72 @@ export async function POST(request: NextRequest) {
 
         if (!sku) continue
 
-        const updateData: any = {}
+        const product: any = {
+          sku,
+          source: [source.id],
+        }
+
+        if (titleIndex >= 0) {
+          product.title = values[titleIndex]?.trim() || sku
+        } else {
+          product.title = sku
+        }
+
         if (stockIndex >= 0) {
           const stockValue = values[stockIndex]?.trim()
-          updateData.stock = stockValue ? Number.parseInt(stockValue) : 0
+          product.stock = stockValue ? Number.parseInt(stockValue) || 0 : 0
         }
+
         if (priceIndex >= 0) {
           const priceValue = values[priceIndex]?.trim()
-          updateData.price = priceValue ? Number.parseFloat(priceValue) : 0
+          product.price = priceValue ? Number.parseFloat(priceValue) || 0 : 0
         }
 
-        // Verificar si existe
-        const { data: existing } = await supabase.from("products").select("id").eq("sku", sku).single()
-
-        if (existing) {
-          // Actualizar
-          const { error: updateError } = await supabase.from("products").update(updateData).eq("sku", sku)
-
-          if (updateError) {
-            console.error("[v0] Error actualizando producto:", sku, updateError)
-            failed++
-          } else {
-            updated++
-          }
-        } else if (importMode !== "skip") {
-          // Insertar nuevo
-          const { error: insertError } = await supabase.from("products").insert({
-            sku,
-            ...updateData,
-            title: sku,
-            source: [source.name],
-          })
-
-          if (insertError) {
-            console.error("[v0] Error insertando producto:", sku, insertError)
-            failed++
-          } else {
-            imported++
-          }
-        }
-
-        // Actualizar progreso cada 100 productos
-        if (i % 100 === 0) {
-          await supabase
-            .from("import_history")
-            .update({
-              products_imported: imported,
-              products_updated: updated,
-              products_failed: failed,
-            })
-            .eq("id", history.id)
-
-          console.log("[v0] Progreso:", i, "/", lines.length - 1, "- Importados:", imported, "Actualizados:", updated)
-        }
+        products.push(product)
       } catch (error) {
-        console.error("[v0] Error procesando línea:", i, error)
+        console.error("[v0] Error parseando línea:", i, error)
         failed++
+      }
+    }
+
+    console.log("[v0] Productos parseados:", products.length)
+
+    const BATCH_SIZE = 1000
+    const totalBatches = Math.ceil(products.length / BATCH_SIZE)
+
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+      const startIdx = batchIndex * BATCH_SIZE
+      const endIdx = Math.min(startIdx + BATCH_SIZE, products.length)
+      const batch = products.slice(startIdx, endIdx)
+
+      console.log(`[v0] Procesando lote ${batchIndex + 1}/${totalBatches} (${batch.length} productos)`)
+
+      try {
+        const { data, error } = await supabase.from("products").upsert(batch, {
+          onConflict: "sku",
+          ignoreDuplicates: false,
+        })
+
+        if (error) {
+          console.error(`[v0] Error en lote ${batchIndex + 1}:`, error)
+          failed += batch.length
+        } else {
+          // Contar como importados (nuevos) o actualizados
+          imported += batch.length
+          console.log(`[v0] Lote ${batchIndex + 1} completado exitosamente`)
+        }
+
+        await supabase
+          .from("import_history")
+          .update({
+            products_imported: imported,
+            products_updated: updated,
+            products_failed: failed,
+          })
+          .eq("id", history.id)
+      } catch (error) {
+        console.error(`[v0] Error procesando lote ${batchIndex + 1}:`, error)
+        failed += batch.length
       }
     }
 
