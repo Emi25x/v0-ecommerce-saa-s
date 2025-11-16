@@ -24,16 +24,16 @@ export async function GET() {
     while (true) {
       console.log(`[v0] 📦 Obteniendo lote ${batchNumber} (offset: ${offset})...`)
       
-      const { data: batch, error: batchError } = await supabase
+      const { data: batch, error: fetchError } = await supabase
         .from("products")
         .select("sku")
         .not("sku", "is", null)
         .neq("sku", "")
         .range(offset, offset + batchSize - 1)
       
-      if (batchError) {
-        console.error(`[v0] ❌ Error obteniendo lote:`, batchError)
-        throw batchError
+      if (fetchError) {
+        console.error(`[v0] ❌ Error obteniendo lote:`, fetchError)
+        throw fetchError
       }
       
       if (!batch || batch.length === 0) {
@@ -44,42 +44,38 @@ export async function GET() {
       allProducts.push(...batch)
       console.log(`[v0] ✅ Lote ${batchNumber}: ${batch.length} productos | Total acumulado: ${allProducts.length}`)
       
-      // Si el lote es menor que batchSize, ya no hay más productos
       if (batch.length < batchSize) {
-        console.log(`[v0] ✅ Último lote recibido (${batch.length} < ${batchSize})`)
+        console.log(`[v0] ✅ Último lote recibido`)
         break
       }
       
       offset += batchSize
       batchNumber++
       
-      // Límite de seguridad para evitar loops infinitos
       if (batchNumber > 500) {
-        console.log(`[v0] ⚠️ Límite de seguridad alcanzado (500 lotes)`)
+        console.log(`[v0] ⚠️ Límite de seguridad alcanzado`)
         break
       }
     }
     
-    console.log(`[v0] 📊 TOTAL DE PRODUCTOS OBTENIDOS: ${allProducts.length}`)
+    console.log(`[v0] ✅ Total productos obtenidos: ${allProducts.length}`)
     
-    // Contar duplicados
     const skuMap = new Map<string, number>()
     
-    allProducts.forEach((p: any) => {
+    allProducts?.forEach((p: any) => {
       const normalizedSku = p.sku?.toString().trim().toUpperCase().replace(/[\s-]/g, "") || ""
       if (normalizedSku) {
         skuMap.set(normalizedSku, (skuMap.get(normalizedSku) || 0) + 1)
       }
     })
     
-    console.log(`[v0] 📊 SKUs únicos normalizados: ${skuMap.size}`)
-    
     const duplicates = Array.from(skuMap.entries()).filter(([_, count]) => count > 1)
     const totalDuplicateSKUs = duplicates.length
     const totalDuplicateProducts = duplicates.reduce((sum, [_, count]) => sum + (count - 1), 0)
     
-    console.log(`[v0] 🔍 SKUs duplicados: ${totalDuplicateSKUs}`)
-    console.log(`[v0] 🔍 Productos duplicados totales: ${totalDuplicateProducts}`)
+    console.log(`[v0] 📊 Total productos analizados: ${allProducts.length}`)
+    console.log(`[v0] 🔍 SKUs duplicados encontrados: ${totalDuplicateSKUs}`)
+    console.log(`[v0] 🗑️ Productos duplicados a eliminar: ${totalDuplicateProducts}`)
     
     return NextResponse.json({
       totalProducts: allProducts.length,

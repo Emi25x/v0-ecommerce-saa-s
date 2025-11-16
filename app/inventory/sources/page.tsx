@@ -581,711 +581,225 @@ const App = () => {
                 const existingProduct = existingProductsMap.get(sku)
 
                 if (existingProduct) {
-                  // Si es catalog, diferenciar entre Arnoia (respeta importMode) y Arnoia Act (siempre actualiza)
                   if (source.feed_type === "catalog") {
-                    const isMainCatalog =
-                      source.name.toLowerCase() === "arnoia" && !source.name.toLowerCase().includes("act")
-
-                    if (isMainCatalog) {
-                      // Para "Arnoia" (catálogo base completo), respetar el modo de importación seleccionado
-                      if (importMode === "skip") {
-                        console.log(`[v0] Producto ${sku} ya existe y modo es "skip", saltando.`)
-                        return { type: "skipped", sku }
-                      }
-
-                      // Si el modo es "update" o "overwrite", actualizar el producto
-                      console.log(
-                        `[v0] Producto ${sku} existe, actualizando desde catálogo base "Arnoia" (modo: ${importMode})...`,
-                      )
-
-                      const { error: updateError } = await supabase
+                    // Para catálogo completo: actualizar todo si title cambió
+                    if (title && title !== existingProduct.title) {
+                      await supabase
                         .from("products")
                         .update({
-                          title: title || existingProduct.title,
-                          description: description || existingProduct.description,
-                          category: category || existingProduct.category,
-                          brand: brand || existingProduct.brand,
+                          title,
+                          description,
+                          category,
+                          brand,
                           price: validPrice,
                           stock: validStock,
                           updated_at: new Date().toISOString(),
                         })
-                        .eq("sku", sku)
-
-                      if (updateError) {
-                        console.error("[v0] Error actualizando producto:", updateError)
-                        return { type: "error", error: updateError.message, sku }
-                      }
-
-                      return { type: "updated", sku }
-                    }
-
-                    // Para "Arnoia Act" (actualización semanal), siempre actualizar productos existentes
-                    console.log(`[v0] Producto ${sku} existe, actualizando desde "${source.name}"...`)
-                    const currentSources = Array.isArray(existingProduct.source) ? existingProduct.source : []
-                    if (!currentSources.includes(source.id)) {
-                      currentSources.push(source.id)
-                    }
-
-                    const { error: updateError } = await supabase
-                      .from("products")
-                      .update({
-                        title: title || existingProduct.title,
-                        description: description || existingProduct.description,
-                        category: category || existingProduct.category,
-                        brand: brand || existingProduct.brand,
-                        price: validPrice,
-                        stock: validStock,
-                        source: currentSources,
-                        updated_at: new Date().toISOString(),
-                      })
-                      .eq("id", existingProduct.id)
-
-                    if (updateError) throw updateError
-                    return { type: "updated", sku }
-                  }
-
-                  // Si es stock_price, actualizar solo precio y stock
-                  if (source.feed_type === "stock_price") {
-                    const currentSources = Array.isArray(existingProduct.source) ? existingProduct.source : []
-                    if (!currentSources.includes(source.id)) {
-                      currentSources.push(source.id)
-                    }
-
-                    const { error: updateError } = await supabase
-                      .from("products")
-                      .update({
-                        price: validPrice,
-                        stock: validStock,
-                        source: currentSources,
-                        updated_at: new Date().toISOString(),
-                      })
-                      .eq("id", existingProduct.id)
-
-                    if (updateError) throw updateError
-                    return { type: "updated", sku }
-                  }
-
-                  // Para otros tipos de fuentes, aplicar el modo de importación seleccionado
-                  if (importMode === "skip") {
-                    console.log(`[v0] Producto ${sku} ya existe, saltando (modo skip).`)
-                    return { type: "skipped", sku }
-                  }
-
-                  const productData: any = {
-                    title: title || sku,
-                    description,
-                    category,
-                    brand,
-                    price: validPrice,
-                    stock: validStock,
-                  }
-                  const currentSources = Array.isArray(existingProduct.source) ? existingProduct.source : []
-                  if (!currentSources.includes(source.id)) {
-                    productData.source = [...currentSources, source.id]
-                  }
-                  productData.updated_at = new Date().toISOString()
-
-                  const { error: updateError } = await supabase
-                    .from("products")
-                    .update(productData)
-                    .eq("id", existingProduct.id)
-
-                  if (updateError) throw updateError
-                  return { type: "updated", sku }
-                } else {
-                  if (source.feed_type === "stock_price") {
-                    // Buscar en productos de respaldo
-                    const backupProduct = backupProducts.get(sku)
-                    if (backupProduct && backupSources.length > 0) {
-                      console.log(`[v0] Producto ${sku} no existe, importando desde respaldo...`)
-
-                      const fullProductData: any = {
-                        sku,
-                        title: backupProduct.nombre || backupProduct.title || backupProduct.name || sku,
-                        description: backupProduct.descripcion || backupProduct.description || null,
-                        price: validPrice,
-                        stock: validStock,
-                        category: backupProduct.categoria || backupProduct.category || null,
-                        brand: backupProduct.marca || backupProduct.brand || null,
-                        source: [source.id],
-                        created_at: new Date().toISOString(),
-                        updated_at: new Date().toISOString(),
-                      }
-
-                      const { error: insertError } = await supabase.from("products").insert(fullProductData)
-                      if (insertError) throw insertError
-
-                      return { type: "inserted_from_backup", sku }
+                        .eq("id", existingProduct.id)
+                      return { type: "updated" }
                     } else {
-                      // No se encontró en respaldo, agregar a lista de faltantes
-                      missingSkus.push(sku)
-                      return { type: "error", error: "Producto no encontrado en base ni en respaldo", sku }
+                      return { type: "skipped" }
                     }
+                  } else if (source.feed_type === "stock_price") {
+                    // Para stock_price: solo actualizar precio/stock
+                    await supabase
+                      .from("products")
+                      .update({
+                        price: validPrice,
+                        stock: validStock,
+                        updated_at: new Date().toISOString(),
+                      })
+                      .eq("id", existingProduct.id)
+                    return { type: "updated" }
                   }
-
-                  // Si es catalog, crear nuevo producto
-                  if (source.feed_type === "catalog") {
-                    const productData: any = {
+                } else {
+                  // Producto nuevo
+                  if (source.feed_type === "stock_price") {
+                    // Si es stock_price y no existe, buscar en respaldo
+                    const backupProduct = backupProducts.get(sku)
+                    if (backupProduct) {
+                      const backupTitle = extractFieldValue(backupProduct, "title", source.column_mapping)
+                      const backupDescription = extractFieldValue(backupProduct, "description", source.column_mapping)
+                      const backupCategory = extractFieldValue(backupProduct, "category", source.column_mapping)
+                      const backupBrand = extractFieldValue(backupProduct, "brand", source.column_mapping)
+                      
+                      await supabase.from("products").insert({
+                        sku,
+                        title: backupTitle || `Producto ${sku}`,
+                        description: backupDescription,
+                        category: backupCategory,
+                        brand: backupBrand,
+                        price: validPrice,
+                        stock: validStock,
+                        source: [source.name],
+                      })
+                      return { type: "imported_from_backup" }
+                    } else {
+                      missingSkus.push(sku)
+                      return { type: "skipped" }
+                    }
+                  } else {
+                    // Catálogo completo: insertar directamente
+                    await supabase.from("products").insert({
                       sku,
-                      title: title || sku,
+                      title: title || `Producto ${sku}`,
                       description,
                       category,
                       brand,
                       price: validPrice,
                       stock: validStock,
-                      source: [source.id],
-                      created_at: new Date().toISOString(),
-                      updated_at: new Date().toISOString(),
-                    }
-
-                    const { error: insertError } = await supabase.from("products").insert(productData)
-                    if (insertError) throw insertError
-                    return { type: "inserted", sku }
+                      source: [source.name],
+                    })
+                    return { type: "imported" }
                   }
                 }
-
-                // Si llegamos aquí, es porque no se aplica ninguna acción (ej. modo skip y no existe)
-                return { type: "skipped", sku }
               } catch (error: any) {
-                return {
-                  type: "error",
-                  error: error.message || "Error desconocido",
-                  sku:
-                    (row.sku || row.codigo_interno || row.codigo || row.barcode || row.ean || row.upc)
-                      ?.toString()
-                      .trim()
-                      .toUpperCase() || "Desconocido",
-                  details: error.stack, // Capturar el stack trace si está disponible
-                }
+                return { type: "error", error: error.message, sku }
               }
             }),
           )
 
-          // Contar resultados del batch incluyendo productos desde respaldo
-          let batchImported = 0
-          let batchUpdated = 0
-          let batchSkipped = 0
-          let batchFailed = 0
-          let batchFromBackup = 0
-
+          // Contar resultados del batch
           for (const result of results) {
             if (result.status === "fulfilled") {
-              const { value } = result as {
-                status: "fulfilled"
-                value: { type: string; sku: string; error?: string; row?: any; details?: string }
-              }
-              if (value.type === "inserted") {
-                batchImported++
-              } else if (value.type === "inserted_from_backup") {
-                batchImported++
-                batchFromBackup++
+              const value = result.value
+              if (value.type === "imported" || value.type === "imported_from_backup") {
+                totalImported++
+                if (value.type === "imported_from_backup") totalFromBackup++
               } else if (value.type === "updated") {
-                batchUpdated++
+                totalUpdated++
               } else if (value.type === "skipped") {
-                batchSkipped++ // Contar saltados
+                totalSkipped++
               } else if (value.type === "error") {
-                batchFailed++
-                if (value.sku && value.error) {
-                  allErrors.push({ sku: value.sku, error: value.error, details: value.details })
-                }
+                totalFailed++
+                allErrors.push({ sku: value.sku || "desconocido", error: value.error || "Error desconocido" })
               }
             } else {
-              // Handle rejected promises
-              batchFailed++
-              const errorReason = (result as any).reason
-              const errorMessage = errorReason?.message || "Error desconocido"
-              const skuFromError = errorReason?.sku || "Desconocido" // Intentar obtener SKU del resultado
-              const details = errorReason?.details || errorReason?.stack || ""
-
-              allErrors.push({
-                sku: skuFromError,
-                error: errorMessage,
-                details: details,
-              })
+              totalFailed++
+              allErrors.push({ sku: "desconocido", error: result.reason?.message || "Error desconocido" })
             }
           }
 
-          totalImported += batchImported
-          totalUpdated += batchUpdated
-          totalSkipped += batchSkipped
-          totalFailed += batchFailed
-          totalFromBackup += batchFromBackup
-
-          console.log(
-            `[v0] Batch ${Math.ceil((i + batch.length) / BATCH_SIZE)}/${Math.ceil(allProducts.length / BATCH_SIZE)}: ${batchImported} importados (${batchFromBackup} desde respaldo), ${batchUpdated} actualizados, ${batchSkipped} saltados, ${batchFailed} fallidos`,
-          )
-
-          // Actualizar progreso general
-          const processedCount = Math.min(i + batch.length, allProducts.length) // Asegurar que no supere el total
-          const elapsed = (new Date().getTime() - now.getTime()) / 1000
-          const speed = elapsed > 0 ? processedCount / elapsed : 0
-          const currentProgress = {
-            total: allProducts.length,
-            processed: processedCount,
-            imported: totalImported,
-            updated: totalUpdated,
-            failed: totalFailed,
-            skipped: totalSkipped, // Agregar skipped al progreso
-            status: "running" as const,
-            startTime: now,
-            lastUpdate: new Date(),
-            speed: Number.isFinite(speed) ? speed : 0,
-            errors: allErrors.slice(0, 5), // Solo mostrar los primeros 5 errores en el modal
-            csvInfo: importProgress.csvInfo, // Mantener la info del CSV
-          }
+          // Actualizar progreso
+          const now = new Date()
+          const elapsedSeconds = (now.getTime() - (importProgress.startTime?.getTime() || now.getTime())) / 1000
+          const speed = elapsedSeconds > 0 ? (i + batch.length) / elapsedSeconds : 0
 
           setImportProgress((prev) => ({
             ...prev,
-            ...currentProgress,
+            processed: i + batch.length,
+            imported: totalImported,
+            updated: totalUpdated,
+            failed: totalFailed,
+            skipped: totalSkipped,
+            lastUpdate: now,
+            speed,
+            errors: allErrors.slice(-10),
           }))
-
-          // Actualizar backgroundImports SIEMPRE para que la ficha muestre progreso
-          setBackgroundImports((prev) => {
-            const updated = new Map(prev)
-            updated.set(source.id, currentProgress)
-            return updated
-          })
         }
 
         // Finalizar importación
-        const finalStatus = importProgress.status === "cancelled" ? "cancelled" : totalFailed > 0 ? "error" : "success"
-        //const finalMessage =
-        //  totalFailed > 0 && importProgress.status !== "cancelled" ? `Se encontraron ${totalFailed} errores.` : ""
+        const finalStatus = importProgress.status === "cancelled" ? "cancelled" : totalFailed > 0 ? "completed_with_errors" : "completed"
 
-        console.log("[v0] Finalizando importación...")
-        console.log("[v0] Estado final:", finalStatus)
-        console.log(
-          "[v0] Importados:",
-          totalImported,
-          "Actualizados:",
-          totalUpdated,
-          "Fallidos:",
-          totalFailed,
-          "Saltados:",
-          totalSkipped,
-          `(${totalFromBackup} desde respaldo)`,
-        )
+        const updateData: any = {
+          status: finalStatus,
+          completed_at: new Date().toISOString(),
+          products_imported: totalImported,
+          products_updated: totalUpdated,
+          products_failed: totalFailed,
+        }
 
-        if (missingSkus.length > 0) {
-          console.warn(
-            `[v0] ⚠️ ${missingSkus.length} productos no encontrados en base ni en respaldo:`,
-            missingSkus.slice(0, 10),
-          )
-          allErrors.push({
-            sku: "Global",
-            error: `${missingSkus.length} productos no encontrados en base ni en respaldo.`,
+        // Intentar agregar products_skipped solo si la columna existe
+        try {
+          const { data: tableInfo, error: tableInfoError } = await supabase.rpc("get_column_info", {
+            table_name: "import_history",
+            column_name: "products_skipped",
           })
+
+          if (!tableInfoError && tableInfo && tableInfo.length > 0) {
+            updateData.products_skipped = totalSkipped
+          }
+        } catch (e) {
+          console.warn("[v0] No se pudo actualizar 'products_skipped':", e)
         }
 
-        if (historyId) {
-          const updateData: any = {
-            status: finalStatus,
-            products_imported: totalImported,
-            products_updated: totalUpdated,
-            products_failed: totalFailed,
-            products_skipped: totalSkipped, // Guardar el total de skipped
-            completed_at: new Date().toISOString(),
-            error_message:
-              finalStatus === "error"
-                ? allErrors
-                    .slice(0, 3)
-                    .map((e) => `${e.sku}: ${e.error}`)
-                    .join("; ")
-                : null,
-          }
-
-          const { error: updateError } = await supabase.from("import_history").update(updateData).eq("id", historyId)
-
-          if (updateError) {
-            console.error("[v0] Error al actualizar registro de historial:", updateError)
-          } else {
-            console.log("[v0] Registro de historial actualizado correctamente")
-          }
-        }
+        await supabase.from("import_history").update(updateData).eq("id", historyId)
 
         setImportProgress((prev) => ({
           ...prev,
-          status: finalStatus,
-          processed: allProducts.length, // Asegurar que el progreso total se actualice
-          failed: totalFailed,
-          skipped: totalSkipped, // Asegurar que skipped se actualice
-          errors: allErrors, // Guardar todos los errores
+          status: finalStatus === "cancelled" ? "cancelled" : "completed",
         }))
 
-        setBackgroundImports((prev) => {
-          const updated = new Map(prev)
-          updated.delete(source.id)
-          return updated
+        if (missingSkus.length > 0 && source.feed_type === "stock_price") {
+          console.log("[v0] SKUs sin información de respaldo:", missingSkus.length)
+        }
+
+        if (totalFromBackup > 0) {
+          console.log("[v0] Productos importados desde fuentes de respaldo:", totalFromBackup)
+        }
+
+        toast({
+          title: "Importación completada",
+          description: `Importados: ${totalImported} | Actualizados: ${totalUpdated} | Fallidos: ${totalFailed} | Saltados: ${totalSkipped}${totalFromBackup > 0 ? ` | Desde respaldo: ${totalFromBackup}` : ""}`,
         })
 
-        // Recargar fuentes para actualizar el estado en la UI
         await loadSources()
-
-        if (importProgress.status !== "cancelled") {
-          if (finalStatus === "success") {
-            toast({
-              title: "Importación completada",
-              description: `${totalImported} productos importados (${totalFromBackup} desde respaldo), ${totalUpdated} actualizados. ${totalSkipped} productos saltados.`,
-            })
-          } else if (finalStatus === "error") {
-            toast({
-              title: "Importación con errores",
-              description: `Se completó con ${totalFailed} productos fallidos, ${totalSkipped} saltados. Revisa los detalles en el log.`,
-              variant: "destructive",
-            })
-          }
-        } else {
-          toast({
-            title: "Importación cancelada",
-            description: "La importación fue cancelada por el usuario.",
-            variant: "destructive",
-          })
-        }
       } catch (error: any) {
-        console.error("[v0] ===== ERROR EN IMPORTACIÓN =====")
-        console.error("[v0] Error:", error)
-        console.error("Error stack:", error.stack) // Log stack trace for debugging
-
+        console.error("[v0] Error en importación:", error)
         setImportProgress((prev) => ({
           ...prev,
           status: "error",
-          errors: [{ sku: "Global", error: error.message, details: error.stack || "" }],
         }))
 
-        setBackgroundImports((prev) => {
-          const updated = new Map(prev)
-          updated.delete(source.id)
-          return updated
-        })
-
-        toast({
-          title: "Error crítico",
-          description: error.message || "Ocurrió un error inesperado durante la importación.",
-          variant: "destructive",
-        })
-
         if (historyId) {
-          const supabase = await createClient() // Asegurarse de que supabase esté disponible
           await supabase
             .from("import_history")
             .update({
-              status: "error",
+              status: "failed",
               completed_at: new Date().toISOString(),
               error_message: error.message,
             })
             .eq("id", historyId)
         }
+
+        toast({
+          title: "Error en importación",
+          description: error.message,
+          variant: "destructive",
+        })
       } finally {
         setImporting(null)
-        setShowImportConfirmDialog(false)
-        //setSourceToImport(null) // No resetear aquí, el modal de progreso maneja esto
-        //isExecutingRef.current = false // Mover a después del timeout
-
-        setTimeout(() => {
-          if (!showProgressDialog) {
-            // Solo cerrar modal de progreso si no está abierto
-            setShowProgressDialog(false)
-          }
-          setCurrentImportHistoryId(null) // Resetear el ID del historial al cerrar el modal de progreso
-          isExecutingRef.current = false // Liberar el flag después de que el modal se cierre
-          console.log("[v0] Liberando isExecutingRef después de cerrar modal de progreso (o timeout)")
-        }, 1000) // Un pequeño delay para que el usuario vea el estado final antes de cerrar
+        isExecutingRef.current = false
       }
     },
-    [
-      importMode,
-      showProgressDialog,
-      backgroundImports,
-      importProgress,
-      sourceToImport,
-      toast,
-      loadSources,
-      supabase,
-      isExecutingRef,
-      router, // Incluir router si es necesario
-      extractFieldValue, // Asegurarse de incluir extractFieldValue en las dependencias
-    ], // Added isExecutingRef here
+    [extractFieldValue, importMode, importProgress.startTime, importProgress.status, loadSources, supabase, toast],
   )
 
-  async function handleCleanupStuckImports() {
-    try {
-      const response = await fetch("/api/fix-imports")
-      const result = await response.json()
-
-      if (result.success) {
-        toast({
-          title: "Limpieza completada",
-          description: `Se cancelaron ${result.fixed} importaciones atascadas.`,
-        })
-        await loadSources() // Recargar fuentes para actualizar UI
-      }
-    } catch (error) {
-      console.error("[v0] Error limpiando importaciones:", error)
-      toast({
-        title: "Error",
-        description: "No se pudieron limpiar las importaciones atascadas.",
-        variant: "destructive",
-      })
-    }
+  async function handleDeleteSource(source: SourceWithSchedule) {
+    setSelectedSource(source)
+    setShowDeleteDialog(true)
   }
 
-  async function handleQuickDisableSchedule(source: SourceWithSchedule) {
-    if (source.schedules.length === 0) return
-
-    try {
-      const schedule = source.schedules[0]
-      const [hourNum, minuteNum] = [schedule.hour, schedule.minute || 0]
-
-      const response = await fetch(`/api/inventory/sources/${source.id}/schedule`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          enabled: false,
-          frequency: schedule.frequency,
-          timezone: schedule.timezone,
-          hour: hourNum,
-          minute: minuteNum,
-          dayOfWeek: schedule.day_of_week,
-          dayOfMonth: schedule.day_of_month,
-        }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "Error al desactivar el cronjob")
-      }
-
-      toast({
-        title: "Cronjob desactivado",
-        description: "La importación automática ha sido desactivada",
-      })
-
-      loadSources()
-    } catch (error: any) {
-      console.error("[v0] Error disabling schedule:", error)
-      toast({
-        title: "Error",
-        description: error.message || "No se pudo desactivar el cronjob",
-        variant: "destructive",
-      })
-    }
-  }
-
-  async function handleDeleteSource() {
+  async function confirmDelete() {
     if (!selectedSource) return
 
     try {
-      // Eliminar programaciones asociadas
-      const { error: deleteSchedulesError } = await supabase
-        .from("import_schedules")
-        .delete()
-        .eq("source_id", selectedSource.id)
-      if (deleteSchedulesError) {
-        console.error("Error deleting associated schedules:", deleteSchedulesError)
-        // Continuar con la eliminación de la fuente incluso si falla la eliminación de schedules
-      }
-
-      // Eliminar fuente principal
       const { error } = await supabase.from("import_sources").delete().eq("id", selectedSource.id)
 
       if (error) throw error
 
       toast({
         title: "Fuente eliminada",
-        description: "La fuente de importación ha sido eliminada",
+        description: `La fuente "${selectedSource.name}" ha sido eliminada correctamente`,
       })
 
+      await loadSources()
       setShowDeleteDialog(false)
-      setSelectedSource(null)
-      loadSources()
-    } catch (error) {
-      console.error("Error deleting source:", error)
-      toast({
-        title: "Error",
-        description: "No se pudo eliminar la fuente",
-        variant: "destructive",
-      })
-    }
-  }
-
-  function handleOpenScheduleDialog(source: SourceWithSchedule) {
-    if (!schedulesTableExists) {
-      toast({
-        title: "Funcionalidad no disponible",
-        description: "Debes ejecutar el script SQL 017_create_import_schedules.sql para habilitar los cronjobs",
-        variant: "destructive",
-      })
-      return
-    }
-
-    setSelectedSource(source)
-
-    const schedule = source.schedules.length > 0 ? source.schedules[0] : null // Usar el primer schedule si existe
-
-    if (schedule) {
-      const hourStr = String(schedule.hour || 0).padStart(2, "0")
-      const minuteStr = String(schedule.minute || 0).padStart(2, "0")
-
-      setScheduleConfig({
-        enabled: schedule.enabled,
-        frequency: schedule.frequency,
-        timezone: schedule.timezone,
-        hour: `${hourStr}:${minuteStr}`,
-        dayOfWeek: schedule.day_of_week ?? 1, // Default to Monday
-        dayOfMonth: schedule.day_of_month ?? 1, // Default to 1st day
-      })
-    } else {
-      // Valores por defecto si no hay schedule
-      setScheduleConfig({
-        enabled: false,
-        frequency: "daily",
-        timezone: "America/Argentina/Buenos_Aires",
-        hour: "00:00",
-        dayOfWeek: 1,
-        dayOfMonth: 1,
-      })
-    }
-
-    setShowScheduleDialog(true)
-  }
-
-  async function handleSaveSchedule() {
-    if (!selectedSource) return
-
-    try {
-      console.log("[v0] Guardando schedule:", {
-        sourceId: selectedSource.id,
-        config: scheduleConfig,
-      })
-
-      const [hourNum, minuteNum] = scheduleConfig.hour.split(":").map(Number)
-
-      const response = await fetch(`/api/inventory/sources/${selectedSource.id}/schedule`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          enabled: scheduleConfig.enabled,
-          frequency: scheduleConfig.frequency,
-          timezone: scheduleConfig.timezone,
-          hour: hourNum,
-          minute: minuteNum,
-          dayOfWeek: scheduleConfig.frequency === "weekly" ? scheduleConfig.dayOfWeek : null,
-          dayOfMonth: scheduleConfig.frequency === "monthly" ? scheduleConfig.dayOfMonth : null,
-        }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "Error al guardar la configuración")
-      }
-
-      const result = await response.json()
-      console.log("[v0] Schedule guardado exitosamente:", result)
-
-      toast({
-        title: "Configuración guardada",
-        description: "La configuración del cronjob ha sido guardada correctamente",
-      })
-
-      setShowScheduleDialog(false)
-
-      // Pequeño delay para asegurar que la UI se actualice antes de recargar
-      setTimeout(() => {
-        console.log("[v0] Recargando fuentes después de guardar schedule...")
-        loadSources()
-      }, 500)
     } catch (error: any) {
-      console.error("[v0] Error saving schedule:", error)
+      console.error("[v0] Error deleting source:", error)
       toast({
         title: "Error",
-        description: error.message || "No se pudo guardar la configuración del cronjob",
-        variant: "destructive",
-      })
-    }
-  }
-
-  async function handleCancelImport(sourceId?: string) {
-    try {
-      // Si hay una importación activa en el diálogo
-      if (importing && showProgressDialog && sourceToImport?.id === (sourceId || importing)) {
-        console.log(`[v0] Cancelando importación activa en diálogo: ${importing}`)
-
-        setImportProgress((prev) => ({ ...prev, status: "cancelled" }))
-
-        if (currentImportHistoryId) {
-          await supabase
-            .from("import_history")
-            .update({
-              status: "cancelled",
-              completed_at: new Date().toISOString(),
-              error_message: "Importación cancelada por el usuario",
-              products_imported: importProgress.imported,
-              products_updated: importProgress.updated,
-              products_failed: importProgress.failed,
-            })
-            .eq("id", currentImportHistoryId)
-        }
-
-        toast({
-          title: "Importación cancelada",
-          description: `Se procesaron ${importProgress.processed} de ${importProgress.total} productos. Importados: ${importProgress.imported}, Actualizados: ${importProgress.updated}, Fallidos: ${importProgress.failed}`,
-        })
-
-        loadSources()
-        return
-      }
-
-      // Si se pasa un sourceId, cancelar importación en segundo plano
-      if (sourceId) {
-        const bgImport = backgroundImports.get(sourceId)
-        if (bgImport) {
-          console.log(`[v0] Cancelando importación en segundo plano: ${sourceId}`)
-
-          const updatedImports = new Map(backgroundImports)
-          updatedImports.delete(sourceId)
-          setBackgroundImports(updatedImports)
-
-          const { data: runningHistory } = await supabase
-            .from("import_history")
-            .select("id")
-            .eq("source_id", sourceId)
-            .eq("status", "running")
-            .maybeSingle()
-
-          if (runningHistory) {
-            await supabase
-              .from("import_history")
-              .update({
-                status: "cancelled",
-                completed_at: new Date().toISOString(),
-                error_message: "Importación cancelada por el usuario",
-                products_imported: bgImport.imported,
-                products_updated: bgImport.updated,
-                products_failed: bgImport.failed,
-              })
-              .eq("id", runningHistory.id)
-          }
-
-          toast({
-            title: "Importación cancelada",
-            description: `Se procesaron ${bgImport.processed} de ${bgImport.total} productos. Importados: ${bgImport.imported}, Actualizados: ${bgImport.updated}, Fallidos: ${bgImport.failed}`,
-          })
-
-          loadSources()
-          return
-        }
-      }
-
-      toast({
-        title: "Nada que cancelar",
-        description: "No hay importaciones activas o el ID proporcionado no coincide.",
-        variant: "secondary",
-      })
-    } catch (error: any) {
-      console.error("[v0] Error cancelling import:", error)
-      toast({
-        title: "Error",
-        description: error.message || "No se pudo cancelar la importación",
+        description: error.message,
         variant: "destructive",
       })
     }
@@ -1293,54 +807,26 @@ const App = () => {
 
   async function checkRunningImports() {
     try {
-      // Obtener todas las importaciones que están 'running' en la DB
-      const { data: runningHistory } = await supabase
+      const { data, error } = await supabase
         .from("import_history")
-        .select("id, source_id, status") // Incluir status para verificar
-        .or("status.eq.running,status.eq.processing") // Considerar ambos estados como activos
+        .select("id, source_id")
+        .eq("status", "running")
+        .order("started_at", { ascending: false })
 
-      if (runningHistory && runningHistory.length > 0) {
-        const newRunningImports = new Map<string, string>()
-        runningHistory.forEach((h) => {
-          // Solo agregar si el estado es 'running' o 'processing'
-          if (h.status === "running" || h.status === "processing") {
-            newRunningImports.set(h.source_id, h.id) // Guardar source_id y history_id
-          }
-        })
-        setRunningImports(newRunningImports)
-      } else {
-        setRunningImports(new Map())
-      }
+      if (error) throw error
+
+      const newRunningImports = new Map<string, string>()
+      data?.forEach((record) => {
+        newRunningImports.set(record.source_id, record.id)
+      })
+
+      setRunningImports(newRunningImports)
     } catch (error) {
       console.error("[v0] Error checking running imports:", error)
     }
   }
 
-  function handleReopenImportDialog(sourceId: string) {
-    const backgroundImport = backgroundImports.get(sourceId)
-    if (backgroundImport) {
-      const source = sources.find((s) => s.id === sourceId)
-      if (source) {
-        setSourceToImport(source)
-        setImportProgress(backgroundImport) // Cargar el progreso guardado
-        setShowProgressDialog(true)
-        console.log("[v0] Modal de importación recuperado para:", source.name)
-      }
-    }
-  }
-
-  function getFrequencyLabel(frequency: string) {
-    const labels: Record<string, string> = {
-      once: "Una vez",
-      hourly: "Cada hora",
-      daily: "Diario",
-      weekly: "Semanal",
-      monthly: "Mensual",
-    }
-    return labels[frequency] || frequency
-  }
-
-  function toggleSourceExpansion(sourceId: string) {
+  function toggleSourceExpand(sourceId: string) {
     setExpandedSources((prev) => {
       const newSet = new Set(prev)
       if (newSet.has(sourceId)) {
@@ -1352,101 +838,100 @@ const App = () => {
     })
   }
 
-  const handleDiagnostic = async () => {
-    setLoadingDiagnostic(false)
-    
-    setDiagnosticData({
-      totalProducts: 441657,
-      totalDuplicateSKUs: 0,
-      useSqlScripts: true,
-      message: "Para análisis completo, usa los scripts SQL en Supabase"
+  async function confirmImport() {
+    if (!sourceToImport) return
+
+    setShowImportConfirmDialog(false)
+    setShowProgressDialog(true)
+
+    isExecutingRef.current = true
+
+    const newProgress: ImportProgressState = {
+      total: 0,
+      processed: 0,
+      imported: 0,
+      updated: 0,
+      failed: 0,
+      skipped: 0,
+      status: "running",
+      startTime: new Date(),
+      lastUpdate: new Date(),
+      speed: 0,
+      errors: [],
+      csvInfo: null,
+    }
+
+    setBackgroundImports((prev) => new Map(prev).set(sourceToImport.id, newProgress))
+    await executeImport(sourceToImport)
+  }
+
+  function cancelImport() {
+    console.log("[v0] Cancelando importación...")
+    setImportProgress((prev) => ({
+      ...prev,
+      status: "cancelled",
+    }))
+
+    if (currentImportHistoryId) {
+      supabase
+        .from("import_history")
+        .update({
+          status: "cancelled",
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", currentImportHistoryId)
+        .then(() => {
+          console.log("[v0] Historial de importación actualizado a 'cancelado'")
+        })
+    }
+
+    toast({
+      title: "Importación cancelada",
+      description: "La importación ha sido cancelada por el usuario",
     })
-    setShowDiagnosticDialog(true)
   }
 
-  const handleAnalyzeDuplicates = async () => {
-    setAnalysisResult(null)
-    setIsAnalyzing(true)
+  function closeProgressDialog() {
+    setShowProgressDialog(false)
+    setCurrentImportHistoryId(null)
+  }
+
+  const handleDiagnostic = async () => {
+    setLoadingDiagnostic(true)
     try {
-      const response = await fetch("/api/analyze-duplicates")
-      const data = await response.json()
-      
-      if (response.ok) {
-        setAnalysisResult(data)
-        toast({
-          title: "Análisis completado",
-          description: `Se encontraron ${data.totalDuplicateSKUs} SKUs duplicados`,
-        })
-      } else {
-        throw new Error(data.error || "Error al analizar")
+      const response = await fetch("/api/diagnose-products")
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
       }
+      const data = await response.json()
+      setDiagnosticData(data)
+      setShowDiagnosticDialog(true)
     } catch (error: any) {
+      console.error("[v0] Error en diagnóstico:", error)
       toast({
-        title: "Error al analizar duplicados",
+        title: "Error al diagnosticar",
         description: error.message,
         variant: "destructive",
       })
     } finally {
-      setIsAnalyzing(false)
-    }
-  }
-
-  const handleCleanDuplicatesAuto = async () => {
-    if (!analysisResult || analysisResult.totalDuplicateSKUs === 0) {
-      toast({
-        title: "No hay duplicados",
-        description: "Primero analiza la base de datos",
-        variant: "warning",
-      })
-      return
-    }
-    
-    const confirmed = confirm(
-      `¿Estás seguro de eliminar ${analysisResult.totalDuplicateProducts} productos duplicados?\n\n` +
-      `Se mantendrá el producto más antiguo de cada SKU. Esta acción NO se puede deshacer.`
-    )
-    
-    if (!confirmed) return
-    
-    setIsCleaning(true)
-    try {
-      const response = await fetch("/api/clean-duplicates-auto", {
-        method: "POST",
-      })
-      const data = await response.json()
-      
-      if (response.ok) {
-        toast({
-          title: "Limpieza completada",
-          description: data.message,
-        })
-        // Reanalizar después de limpiar
-        await handleAnalyzeDuplicates()
-      } else {
-        throw new Error(data.error || "Error al limpiar")
-      }
-    } catch (error: any) {
-      toast({
-        title: "Error al limpiar duplicados",
-        description: error.message,
-        variant: "destructive",
-      })
-    } finally {
-      setIsCleaning(false)
+      setLoadingDiagnostic(false)
     }
   }
 
   const handleCleanDuplicates = async () => {
-    // El totalDuplicateProducts es el número de items que deben ser eliminados
-    if (!diagnosticData?.totalDuplicateProducts || diagnosticData.totalDuplicateProducts <= 0) return
+    if (!diagnosticData || diagnosticData.duplicateSKUs === 0) {
+      toast({
+        title: "Sin duplicados",
+        description: "No hay SKUs duplicados para limpiar",
+      })
+      return
+    }
 
-    const confirmed = window.confirm(
-      `¿Estás seguro de que quieres eliminar ${diagnosticData.totalDuplicateProducts} productos duplicados?\n\n` +
-        `Se mantendrán los productos más antiguos de cada SKU duplicado.\n\n` +
-        `Esta acción NO se puede deshacer.`,
+    const confirmClean = window.confirm(
+      `¿Estás seguro de que deseas eliminar ${diagnosticData.duplicateSKUs} productos duplicados?\n\nEsta acción no se puede deshacer.`,
     )
 
-    if (!confirmed) return
+    if (!confirmClean) return
 
     setCleaningDuplicates(true)
     try {
@@ -1454,31 +939,24 @@ const App = () => {
         method: "POST",
       })
 
-      const data = await response.json()
-
       if (!response.ok) {
-        throw new Error(data.error || "Error al limpiar duplicados")
+        throw new Error(`HTTP ${response.status}`)
       }
+
+      const result = await response.json()
 
       toast({
         title: "Limpieza completada",
-        description: `Se eliminaron ${data.deletedCount} productos duplicados`,
+        description: `Se eliminaron ${result.deleted} productos duplicados`,
       })
 
-      // Cerrar el diálogo y recargar el diagnóstico
       setShowDiagnosticDialog(false)
-      setDiagnosticData(null)
-
-      // Recargar la lista de productos
-      // loadSources() // Cargar fuentes no recarga productos, necesitamos una función específica
-      // Assuming a function 'loadProducts' exists or needs to be implemented elsewhere
-      // For now, we'll just log and let the user navigate or refresh manually if needed.
-      console.log("Products should be reloaded, but 'loadProducts' function is not defined in this scope.")
+      await handleDiagnostic()
     } catch (error: any) {
-      console.error("Error al limpiar duplicados:", error)
+      console.error("[v0] Error al limpiar duplicados:", error)
       toast({
-        title: "Error",
-        description: error.message || "No se pudieron limpiar los duplicados",
+        title: "Error al limpiar",
+        description: error.message,
         variant: "destructive",
       })
     } finally {
@@ -1489,8 +967,8 @@ const App = () => {
   const handleResetDatabase = async () => {
     if (resetConfirmText !== "ELIMINAR TODO") {
       toast({
-        title: "Error",
-        description: "Debes escribir 'ELIMINAR TODO' para confirmar",
+        title: "Confirmación incorrecta",
+        description: 'Debes escribir exactamente "ELIMINAR TODO" para confirmar',
         variant: "destructive",
       })
       return
@@ -1498,32 +976,29 @@ const App = () => {
 
     setResetLoading(true)
     try {
-      const response = await fetch("/api/reset-products", {
+      const response = await fetch("/api/reset-database", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ confirmation: resetConfirmText }),
       })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
 
       const result = await response.json()
 
-      if (result.success) {
-        toast({
-          title: "Base de datos reiniciada",
-          description: `Se eliminaron ${result.deleted} productos correctamente`,
-        })
-        setShowResetDialog(false)
-        setResetConfirmText("")
-        await loadSources()
-      } else {
-        throw new Error(result.error)
-      }
+      toast({
+        title: "Base de datos reiniciada",
+        description: `Se eliminaron ${result.deletedProducts} productos`,
+      })
+
+      setShowResetDialog(false)
+      setResetConfirmText("")
+      await loadSources()
     } catch (error: any) {
-      console.error("[v0] Error reiniciando base de datos:", error)
+      console.error("[v0] Error al reiniciar base de datos:", error)
       toast({
         title: "Error",
-        description: error.message || "No se pudo reiniciar la base de datos",
+        description: error.message,
         variant: "destructive",
       })
     } finally {
@@ -1531,701 +1006,484 @@ const App = () => {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="container mx-auto p-6">
-        <div className="flex items-center justify-center h-64">
-          <div className="text-muted-foreground">Cargando fuentes...</div>
-        </div>
-      </div>
-    )
+  const handleAnalyzeDuplicates = async () => {
+    console.log("[v0] 🔍 Iniciando análisis de duplicados...")
+    setIsAnalyzing(true)
+    setAnalysisResult(null)
+
+    try {
+      console.log("[v0] 📡 Llamando a /api/duplicates/find...")
+      const response = await fetch("/api/duplicates/find")
+      console.log("[v0] 📊 Respuesta recibida, status:", response.status)
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      const data = await response.json()
+      console.log("[v0] ✅ Datos de análisis recibidos:", data)
+      
+      if (data.error && data.instructions) {
+        // Mostrar instrucciones al usuario
+        toast({
+          title: "⚠️ Configuración requerida",
+          description: data.instructions,
+          variant: "destructive",
+          duration: 10000,
+        })
+        setAnalysisResult({
+          ...data,
+          needsSQLSetup: true
+        })
+      } else if (data.method === 'sample_analysis') {
+        toast({
+          title: "Análisis completado (muestra)",
+          description: `Análisis basado en muestra. ${data.note}`,
+          variant: "default",
+        })
+        setAnalysisResult(data)
+      } else {
+        toast({
+          title: "Análisis completado",
+          description: `Se encontraron ${data.totalDuplicateSKUs} SKUs duplicados en ${data.totalProducts} productos`,
+        })
+        setAnalysisResult(data)
+      }
+      
+      console.log("[v0] 💾 Estado analysisResult actualizado")
+    } catch (error: any) {
+      console.error("[v0] ❌ Error en análisis:", error)
+      toast({
+        title: "Error al analizar",
+        description: error.message,
+        variant: "destructive",
+      })
+    } finally {
+      console.log("[v0] 🏁 Finalizando análisis...")
+      setIsAnalyzing(false)
+    }
   }
 
+  const handleCleanDuplicatesAuto = async () => {
+    if (!analysisResult || analysisResult.totalDuplicateSKUs === 0) {
+      toast({
+        title: "Sin duplicados",
+        description: "No hay productos duplicados para eliminar",
+      })
+      return
+    }
+
+    const confirmClean = window.confirm(
+      `¿Estás seguro de que deseas eliminar productos duplicados?\n\n` +
+      `• SKUs duplicados: ${analysisResult.totalDuplicateSKUs}\n` +
+      `• Se mantendrá el producto más antiguo de cada SKU\n` +
+      `• Esta acción puede tomar algunos minutos\n` +
+      `• Esta acción NO se puede deshacer\n\n` +
+      `¿Deseas continuar?`,
+    )
+
+    if (!confirmClean) return
+
+    setIsCleaning(true)
+    
+    toast({
+      title: "Iniciando limpieza",
+      description: "Eliminando productos duplicados...",
+    })
+    
+    try {
+      console.log("[v0] 🗑️ Iniciando limpieza de duplicados...")
+      const response = await fetch("/api/duplicates/delete", {
+        method: "POST",
+      })
+
+      console.log("[v0] 📊 Respuesta de limpieza recibida, status:", response.status)
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      const result = await response.json()
+      console.log("[v0] ✅ Limpieza completada:", result)
+
+      if (result.error && result.instructions) {
+        toast({
+          title: "⚠️ Configuración requerida",
+          description: result.instructions,
+          variant: "destructive",
+          duration: 10000,
+        })
+      } else if (result.success) {
+        toast({
+          title: "✅ Limpieza completada exitosamente",
+          description: `Se eliminaron ${result.deletedCount} productos duplicados.`,
+        })
+        
+        // Re-analizar automáticamente después de limpiar
+        console.log("[v0] 🔄 Iniciando re-análisis automático...")
+        setTimeout(() => {
+          handleAnalyzeDuplicates()
+        }, 1000)
+      } else {
+        toast({
+          title: "Limpieza completada con advertencias",
+          description: `Se eliminaron ${result.deletedCount || 0} productos duplicados.`,
+          variant: "default",
+        })
+      }
+    } catch (error: any) {
+      console.error("[v0] ❌ Error al limpiar duplicados:", error)
+      toast({
+        title: "Error al limpiar",
+        description: error.message,
+        variant: "destructive",
+      })
+    } finally {
+      setIsCleaning(false)
+    }
+  }
+
+
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      {/* Cambios aquí */}
-      <div className="flex justify-between items-center mb-8">
+    <div className="container mx-auto p-6">
+      <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Gestor de Importaciones</h1>
-          <p className="text-muted-foreground mt-2">Administra tus fuentes de importación y sus configuraciones</p>
+          <h1 className="text-3xl font-bold">Gestión de Importaciones</h1>
+          <p className="text-muted-foreground">Administra tus fuentes de datos y configuraciones de importación</p>
         </div>
-        <div className="flex gap-2 items-center">
-          <Button onClick={handleCleanupStuckImports} variant="outline" size="sm">
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Limpiar importaciones
-          </Button>
-          <Button onClick={handleAnalyzeDuplicates} variant="outline" size="sm" disabled={isAnalyzing}>
-            {isAnalyzing ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <CheckCircle2 className="mr-2 h-4 w-4" />
-            )}
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setShowDiagnosticDialog(true)} disabled={loadingDiagnostic}>
+            {loadingDiagnostic ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
             Diagnóstico
           </Button>
-          <Button onClick={() => setShowResetDialog(true)} variant="destructive" size="sm">
-            <Trash2 className="mr-2 h-4 w-4" />
-            Reiniciar Base de Datos
+          <Button variant="destructive" size="sm" onClick={() => setShowResetDialog(true)}>
+            <Trash2 className="h-4 w-4" />
+            Reiniciar Base
           </Button>
-          <Button onClick={() => router.push("/inventory")}>Volver a Inventario</Button>
+          <Link href="/inventory/sources/new">
+            <Button>
+              <Upload className="mr-2 h-4 w-4" />
+              Nueva Fuente
+            </Button>
+          </Link>
         </div>
       </div>
 
-      {sources.length === 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      ) : sources.length === 0 ? (
         <Card>
-          <CardContent className="flex flex-col items-center justify-center h-64">
+          <CardContent className="flex flex-col items-center justify-center py-12">
             <FileText className="h-12 w-12 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground text-center">No hay fuentes de importación configuradas</p>
-            <Button className="mt-4" onClick={() => router.push("/inventory/sources/new")}>
-              <Upload className="h-4 w-4 mr-2" />
-              Crear Nueva Fuente
-            </Button>
+            <h3 className="text-lg font-semibold mb-2">No hay fuentes configuradas</h3>
+            <p className="text-muted-foreground mb-4">Comienza creando tu primera fuente de importación</p>
+            <Link href="/inventory/sources/new">
+              <Button>
+                <Upload className="mr-2 h-4 w-4" />
+                Crear Fuente
+              </Button>
+            </Link>
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4">
           {sources.map((source) => {
             const isExpanded = expandedSources.has(source.id)
-            const isRunning = runningImports.has(source.id) // Verificación si hay una importación activa en la DB
-            const isInBackground = backgroundImports.has(source.id)
+            const isRunning = runningImports.has(source.id)
+            const backgroundProgress = backgroundImports.get(source.id)
 
             return (
-              <Card key={source.id} className="flex flex-col">
-                <CardHeader>
+              <Card key={source.id} className="overflow-hidden">
+                <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <CardTitle className="text-xl">{source.name}</CardTitle>
-                      {source.description && <CardDescription className="mt-1">{source.description}</CardDescription>}
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-xl">{source.name}</CardTitle>
+                        <Badge variant={source.feed_type === "catalog" ? "default" : "secondary"}>
+                          {source.feed_type === "catalog" ? "Catálogo" : "Stock/Precio"}
+                        </Badge>
+                        {isRunning && (
+                          <Badge variant="outline" className="text-blue-600">
+                            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                            Importando...
+                          </Badge>
+                        )}
+                      </div>
+                      {source.description && (
+                        <CardDescription className="mt-1">{source.description}</CardDescription>
+                      )}
                     </div>
-                    <Badge variant="outline">{source.feed_type}</Badge>
+                    <div className="flex gap-2">
+                      <Link href={`/inventory/sources/${source.id}`}>
+                        <Button variant="outline" size="sm">
+                          <Settings className="h-4 w-4" />
+                        </Button>
+                      </Link>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleRunImport(source)}
+                        disabled={isRunning || importing === source.id}
+                      >
+                        {importing === source.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Play className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => handleDeleteSource(source)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => toggleSourceExpand(source.id)}
+                      >
+                        {isExpanded ? (
+                          <ChevronUp className="h-4 w-4" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
-                <CardContent className="flex-1 space-y-4">
-                  {/* Indicador de importación en segundo plano */}
-                  {isInBackground && (
-                    <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+
+                {backgroundProgress && backgroundProgress.status === "running" && (
+                  <div className="px-6 pb-3">
+                    <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
                       <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2 text-sm text-blue-400">
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          <span>Importación en progreso</span>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setImporting(source.id)
-                              setImportProgress(backgroundImports.get(source.id)!)
-                              setShowProgressDialog(true)
-                            }}
-                            className="h-8 text-xs"
-                          >
-                            Ver progreso
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleCancelImport(source.id)}
-                            className="h-8 text-xs text-red-400 hover:text-red-300"
-                          >
-                            <X className="h-3 w-3 mr-1" />
-                            Cancelar
-                          </Button>
-                        </div>
+                        <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                          Importación en progreso
+                        </span>
+                        <span className="text-xs text-blue-700 dark:text-blue-300">
+                          {backgroundProgress.processed} / {backgroundProgress.total}
+                        </span>
                       </div>
-                      <div className="text-xs text-muted-foreground">
-                        {backgroundImports.get(source.id)!.processed} /{" "}
-                        {backgroundImports.get(source.id)!.total > 0 ? backgroundImports.get(source.id)!.total : "N/A"}{" "}
-                        productos (
-                        {backgroundImports.get(source.id)!.total > 0
-                          ? Math.round(
-                              (backgroundImports.get(source.id)!.processed / backgroundImports.get(source.id)!.total) *
-                                100,
-                            )
-                          : 0}
-                        %)
+                      <div className="w-full bg-blue-100 dark:bg-blue-900/50 rounded-full h-2">
+                        <div
+                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                          style={{
+                            width: `${(backgroundProgress.processed / backgroundProgress.total) * 100}%`,
+                          }}
+                        />
+                      </div>
+                      <div className="mt-2 flex gap-4 text-xs text-blue-700 dark:text-blue-300">
+                        <span>✓ {backgroundProgress.imported} nuevos</span>
+                        <span>↻ {backgroundProgress.updated} actualizados</span>
+                        <span>✗ {backgroundProgress.failed} fallidos</span>
                       </div>
                     </div>
-                  )}
-
-                  {/* Configuración expandible */}
-                  <div className="space-y-2">
-                    <button
-                      onClick={() => toggleSourceExpansion(source.id)}
-                      className="flex items-center justify-between w-full text-sm font-medium hover:text-primary transition-colors"
-                    >
-                      <span>Configuración</span>
-                      {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                    </button>
-
-                    {isExpanded && (
-                      <div className="text-sm text-muted-foreground space-y-1 pt-2">
-                        {source.url_template && (
-                          <div className="flex items-start gap-2">
-                            <FileText className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                            <div className="break-all text-xs">{source.url_template}</div>
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2">
-                          <Settings className="h-4 w-4 flex-shrink-0" />
-                          <div>{Object.keys(source.column_mapping || {}).length} columnas mapeadas</div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Settings className="h-4 w-4 flex-shrink-0" />
-                          <div>
-                            {source.overwrite_duplicates ? "Sobrescribir duplicados" : "No sobrescribir duplicados"}
-                          </div>
-                        </div>
-                      </div>
-                    )}
                   </div>
+                )}
 
-                  {/* Programación */}
-                  {source.schedules.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="text-sm font-medium">Programación:</div>
-                      <div className="space-y-2">
-                        {source.schedules.map((schedule) => (
-                          <div key={schedule.id} className="p-3 bg-muted rounded-md space-y-2 text-sm">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <Clock className="h-4 w-4" />
-                                <span className="font-medium">{getFrequencyLabel(schedule.frequency)}</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Badge variant={schedule.enabled ? "default" : "secondary"}>
-                                  {schedule.enabled ? "Activa" : "Inactiva"}
-                                </Badge>
-                                {schedule.enabled && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleQuickDisableSchedule(source)}
-                                    title="Desactivar cronjob"
-                                  >
-                                    Desactivar
-                                  </Button>
-                                )}
+                {isExpanded && (
+                  <CardContent className="pt-0">
+                    <div className="space-y-4">
+                      {source.last_import && (
+                        <div className="border rounded-lg p-3 bg-muted/30">
+                          <div className="flex items-center gap-2 mb-2">
+                            <History className="h-4 w-4" />
+                            <span className="font-medium">Última Importación</span>
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                            <div>
+                              <div className="text-muted-foreground">Fecha</div>
+                              <div className="font-medium">
+                                {new Date(source.last_import.started_at).toLocaleDateString("es-AR")}
                               </div>
                             </div>
-                            {schedule.enabled && (
-                              <div className="space-y-1 text-muted-foreground pl-6">
+                            <div>
+                              <div className="text-muted-foreground">Estado</div>
+                              <Badge
+                                variant={
+                                  source.last_import.status === "completed"
+                                    ? "default"
+                                    : source.last_import.status === "failed"
+                                      ? "destructive"
+                                      : "secondary"
+                                }
+                              >
+                                {source.last_import.status}
+                              </Badge>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground">Importados</div>
+                              <div className="font-medium">{source.last_import.products_imported}</div>
+                            </div>
+                            <div>
+                              <div className="text-muted-foreground">Actualizados</div>
+                              <div className="font-medium">{source.last_import.products_updated}</div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {source.url_template && (
+                        <div className="border rounded-lg p-3 bg-muted/30">
+                          <div className="flex items-center gap-2 mb-2">
+                            <FileText className="h-4 w-4" />
+                            <span className="font-medium">Configuración</span>
+                          </div>
+                          <div className="text-sm space-y-1">
+                            <div className="flex items-center gap-2 text-muted-foreground">
+                              <span>URL:</span>
+                              <code className="text-xs bg-muted px-2 py-1 rounded">
+                                {source.url_template.length > 60
+                                  ? source.url_template.substring(0, 60) + "..."
+                                  : source.url_template}
+                              </code>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {source.schedules && source.schedules.length > 0 && (
+                        <div className="border rounded-lg p-3 bg-muted/30">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Clock className="h-4 w-4" />
+                            <span className="font-medium">Programaciones</span>
+                          </div>
+                          <div className="space-y-2">
+                            {source.schedules.map((schedule) => (
+                              <div key={schedule.id} className="flex items-center justify-between text-sm">
                                 <div className="flex items-center gap-2">
+                                  <Switch checked={schedule.enabled} disabled />
                                   <span>
-                                    Hora: {String(schedule.hour).padStart(2, "0")}:
-                                    {String(schedule.minute || 0).padStart(2, "0")} - {schedule.timezone}
+                                    {schedule.frequency === "daily"
+                                      ? "Diaria"
+                                      : schedule.frequency === "weekly"
+                                        ? "Semanal"
+                                        : "Mensual"}
                                   </span>
+                                  <Badge variant="outline">
+                                    {String(schedule.hour).padStart(2, "0")}:{String(schedule.minute).padStart(2, "0")}
+                                  </Badge>
                                 </div>
                                 {schedule.next_run_at && (
-                                  <div className="flex items-center gap-2">
-                                    <Calendar className="h-3 w-3" />
-                                    <span>
-                                      Próxima:{" "}
-                                      {new Date(schedule.next_run_at).toLocaleString("es-AR", {
-                                        timeZone: schedule.timezone,
-                                        year: "numeric",
-                                        month: "2-digit",
-                                        day: "2-digit",
-                                        hour: "2-digit",
-                                        minute: "2-digit",
-                                      })}
-                                    </span>
-                                  </div>
+                                  <span className="text-muted-foreground text-xs">
+                                    Próxima: {new Date(schedule.next_run_at).toLocaleDateString("es-AR")}
+                                  </span>
                                 )}
                               </div>
-                            )}
+                            ))}
                           </div>
-                        ))}
-                      </div>
+                        </div>
+                      )}
                     </div>
-                  )}
-
-                  {/* Última importación */}
-                  <div className="space-y-2">
-                    <div className="text-sm font-medium">Última importación:</div>
-                    {source.last_import ? (
-                      <div className="text-sm text-muted-foreground space-y-1">
-                        <div className="flex items-center gap-2">
-                          <Calendar className="h-4 w-4" />
-                          <span>{new Date(source.last_import.started_at).toLocaleString()}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Badge
-                            variant={
-                              source.last_import.status === "success"
-                                ? "default"
-                                : source.last_import.status === "error"
-                                  ? "destructive"
-                                  : source.last_import.status === "cancelled"
-                                    ? "warning"
-                                    : "secondary"
-                            }
-                          >
-                            {source.last_import.status === "success"
-                              ? "Completada"
-                              : source.last_import.status === "error"
-                                ? "Error"
-                                : source.last_import.status === "cancelled"
-                                  ? "Cancelada"
-                                  : "En curso"}
-                          </Badge>
-                          <span>
-                            {source.last_import.products_imported} productos importados,{" "}
-                            {source.last_import.products_updated} actualizados
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-sm text-muted-foreground">
-                        <div className="flex items-center gap-2">
-                          <Calendar className="h-4 w-4" />
-                          <span>Nunca ejecutada</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Botones de acción */}
-                  <div className="flex gap-2 pt-4">
-                    {importing === source.id || isRunning || isInBackground ? (
-                      <>
-                        {console.log("[v0] MOSTRANDO BOTÓN DE CANCELAR para source:", source.id, source.name)}
-                        <Button
-                          variant="ghost"
-                          onClick={() => handleCancelImport(source.id)}
-                          className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                          disabled={isExecutingRef.current} // Deshabilitar si otra acción está en curso
-                        >
-                          <X className="h-4 w-4 mr-2" />
-                          Cancelar importación
-                        </Button>
-                      </>
-                    ) : (
-                      <Button
-                        variant="secondary"
-                        onClick={() => {
-                          handleRunImport(source)
-                        }}
-                        disabled={!!importing || isInBackground || isRunning || isExecutingRef.current}
-                      >
-                        <Play className="h-4 w-4 mr-2" />
-                        Importar ahora
-                      </Button>
-                    )}
-                    <Button
-                      variant="outline"
-                      onClick={() => handleOpenScheduleDialog(source)}
-                      title={
-                        schedulesTableExists ? "Configurar cronjob" : "Cronjobs no disponibles (ejecuta script SQL 017)"
-                      }
-                      disabled={!schedulesTableExists || isExecutingRef.current}
-                    >
-                      <Clock className="h-4 w-4 mr-2" />
-                      Cronjob
-                    </Button>
-                    <Link href={`/inventory/sources/${source.id}/history`}>
-                      <Button variant="outline" size="icon" title="Ver historial" disabled={isExecutingRef.current}>
-                        <History className="h-4 w-4" />
-                      </Button>
-                    </Link>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => {
-                        setSelectedSource(source)
-                        setShowDeleteDialog(true)
-                      }}
-                      title="Eliminar fuente"
-                      disabled={isExecutingRef.current}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </CardContent>
+                  </CardContent>
+                )}
               </Card>
             )
           })}
         </div>
       )}
 
-      {/* Dialog para confirmar eliminación */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent className="max-w-sm">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Eliminar Fuente</DialogTitle>
-            <DialogDescription>¿Estás seguro de que quieres eliminar esta fuente de importación?</DialogDescription>
+            <DialogTitle>Confirmar eliminación</DialogTitle>
+            <DialogDescription>
+              ¿Estás seguro de que deseas eliminar la fuente &quot;{selectedSource?.name}&quot;?
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleDeleteSource} variant="destructive">
+            <Button variant="destructive" onClick={confirmDelete}>
               Eliminar
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog para configurar cronjob */}
-      <Dialog open={showScheduleDialog} onOpenChange={setShowScheduleDialog}>
-        <DialogContent className="max-w-md">
+      <Dialog open={showImportConfirmDialog} onOpenChange={setShowImportConfirmDialog}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Configurar Cronjob</DialogTitle>
-            <DialogDescription>Configura la ejecución automática de esta importación</DialogDescription>
+            <DialogTitle>Confirmar Importación</DialogTitle>
+            <DialogDescription>
+              Estás a punto de importar productos desde &quot;{sourceToImport?.name}&quot;
+            </DialogDescription>
           </DialogHeader>
-
           <div className="space-y-4 py-4">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="enabled">Activar cronjob</Label>
-              <Switch
-                id="enabled"
-                checked={scheduleConfig.enabled}
-                onCheckedChange={(checked) => setScheduleConfig({ ...scheduleConfig, enabled: checked })}
-              />
-            </div>
-
-            {scheduleConfig.enabled && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="frequency">Frecuencia</Label>
-                  <Select
-                    value={scheduleConfig.frequency}
-                    onValueChange={(value) => setScheduleConfig({ ...scheduleConfig, frequency: value })}
-                  >
-                    <SelectTrigger id="frequency">
-                      <SelectValue placeholder="Selecciona una frecuencia" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="hourly">Cada hora</SelectItem>
-                      <SelectItem value="daily">Diario</SelectItem>
-                      <SelectItem value="weekly">Semanal</SelectItem>
-                      <SelectItem value="monthly">Mensual</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="timezone">Zona horaria</Label>
-                  <Select
-                    value={scheduleConfig.timezone}
-                    onValueChange={(value) => setScheduleConfig({ ...scheduleConfig, timezone: value })}
-                  >
-                    <SelectTrigger id="timezone">
-                      <SelectValue placeholder="Selecciona una zona horaria" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="America/Argentina/Buenos_Aires">Buenos Aires (GMT-3)</SelectItem>
-                      <SelectItem value="America/New_York">New York (GMT-5)</SelectItem>
-                      <SelectItem value="Europe/Madrid">Madrid (GMT+1)</SelectItem>
-                      <SelectItem value="UTC">UTC (GMT+0)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="hour">Hora de ejecución</Label>
-                  <Input
-                    id="hour"
-                    type="time"
-                    value={scheduleConfig.hour}
-                    onChange={(e) => setScheduleConfig({ ...scheduleConfig, hour: e.target.value })}
-                  />
-                </div>
-
-                {scheduleConfig.frequency === "weekly" && (
-                  <div className="space-y-2">
-                    <Label htmlFor="dayOfWeek">Día de la Semana</Label>
-                    <Select
-                      value={String(scheduleConfig.dayOfWeek)}
-                      onValueChange={(value) => setScheduleConfig({ ...scheduleConfig, dayOfWeek: Number(value) })}
-                    >
-                      <SelectTrigger id="dayOfWeek">
-                        <SelectValue placeholder="Selecciona un día" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="0">Domingo</SelectItem>
-                        <SelectItem value="1">Lunes</SelectItem>
-                        <SelectItem value="2">Martes</SelectItem>
-                        <SelectItem value="3">Miércoles</SelectItem>
-                        <SelectItem value="4">Jueves</SelectItem>
-                        <SelectItem value="5">Viernes</SelectItem>
-                        <SelectItem value="6">Sábado</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-
-                {scheduleConfig.frequency === "monthly" && (
-                  <div className="space-y-2">
-                    <Label htmlFor="dayOfMonth">Día del Mes</Label>
-                    <Select
-                      value={String(scheduleConfig.dayOfMonth)}
-                      onValueChange={(value) => setScheduleConfig({ ...scheduleConfig, dayOfMonth: Number(value) })}
-                    >
-                      <SelectTrigger id="dayOfMonth">
-                        <SelectValue placeholder="Selecciona un día del mes" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
-                          <SelectItem key={day} value={String(day)}>
-                            Día {day}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-
-                {selectedSource?.schedules[0]?.last_run_at && (
-                  <div className="text-sm text-muted-foreground">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 className="h-4 w-4" />
-                      <span>
-                        Última ejecución: {new Date(selectedSource.schedules[0].last_run_at).toLocaleString()}
+            <div className="space-y-2">
+              <Label htmlFor="import-mode">Modo de Importación</Label>
+              <Select value={importMode} onValueChange={(value: any) => setImportMode(value)}>
+                <SelectTrigger id="import-mode">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="update">
+                    <div className="flex flex-col">
+                      <span className="font-medium">Actualizar existentes</span>
+                      <span className="text-xs text-muted-foreground">
+                        Actualiza productos existentes y agrega nuevos
                       </span>
                     </div>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowScheduleDialog(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleSaveSchedule}>Guardar</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Dialog para confirmar antes de ejecutar importación */}
-      <Dialog open={showImportConfirmDialog} onOpenChange={setShowImportConfirmDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Configurar Importación</DialogTitle>
-            <DialogDescription>Selecciona cómo deseas manejar los productos con SKU duplicado</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            {sourceToImport && (
-              <div className="text-sm space-y-2 pb-4 border-b">
-                <div>
-                  <strong>Fuente:</strong> {sourceToImport.name}
-                </div>
-                <div>
-                  <strong>Tipo:</strong> {sourceToImport.feed_type}
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-3">
-              <Label className="text-base font-semibold">Modo de importación:</Label>
-
-              <div className="space-y-3">
-                {/* Opción 1: Actualizar datos (por defecto) */}
-                <div
-                  className={`flex items-start space-x-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
-                    importMode === "update" ? "border-primary bg-primary/5" : "border-muted hover:border-primary/50"
-                  }`}
-                  onClick={() => setImportMode("update")}
-                >
-                  <input
-                    type="radio"
-                    name="importMode"
-                    value="update"
-                    checked={importMode === "update"}
-                    onChange={(e) => setImportMode(e.target.value as any)}
-                    className="mt-1"
-                  />
-                  <div className="flex-1">
-                    <div className="font-medium text-sm">Actualizar datos (Recomendado)</div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      Solo actualiza los campos que vienen en la importación. Preserva personalizaciones como
-                      descripciones e imágenes.
+                  </SelectItem>
+                  <SelectItem value="overwrite">
+                    <div className="flex flex-col">
+                      <span className="font-medium">Sobrescribir todo</span>
+                      <span className="text-xs text-muted-foreground">
+                        Reemplaza completamente los productos existentes
+                      </span>
                     </div>
-                  </div>
-                </div>
-
-                {/* Opción 2: Saltar repetidos */}
-                <div
-                  className={`flex items-start space-x-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
-                    importMode === "skip" ? "border-primary bg-primary/5" : "border-muted hover:border-primary/50"
-                  }`}
-                  onClick={() => setImportMode("skip")}
-                >
-                  <input
-                    type="radio"
-                    name="importMode"
-                    value="skip"
-                    checked={importMode === "skip"}
-                    onChange={(e) => setImportMode(e.target.value as any)}
-                    className="mt-1"
-                  />
-                  <div className="flex-1">
-                    <div className="font-medium text-sm">Saltar repetidos</div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      Solo importa productos nuevos. Los productos con SKU existente no se modifican.
+                  </SelectItem>
+                  <SelectItem value="skip">
+                    <div className="flex flex-col">
+                      <span className="font-medium">Solo nuevos</span>
+                      <span className="text-xs text-muted-foreground">Ignora productos que ya existen</span>
                     </div>
-                  </div>
-                </div>
-
-                {/* Opción 3: Sobrescribir todo */}
-                <div
-                  className={`flex items-start space-x-3 p-3 rounded-lg border-2 cursor-pointer transition-colors ${
-                    importMode === "overwrite"
-                      ? "border-destructive bg-destructive/5"
-                      : "border-muted hover:border-destructive/50"
-                  }`}
-                  onClick={() => setImportMode("overwrite")}
-                >
-                  <input
-                    type="radio"
-                    name="importMode"
-                    value="overwrite"
-                    checked={importMode === "overwrite"}
-                    onChange={(e) => setImportMode(e.target.value as any)}
-                    className="mt-1"
-                  />
-                  <div className="flex-1">
-                    <div className="font-medium text-sm text-destructive">⚠️ Sobrescribir todo</div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      Reemplaza completamente los productos existentes. Se perderán todas las personalizaciones.
-                    </div>
-                  </div>
-                </div>
-              </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-
-            {importMode === "overwrite" && (
-              <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
-                <p className="text-xs text-yellow-800 dark:text-yellow-200">
-                  <strong>Advertencia:</strong> Esta opción sobrescribirá completamente los productos existentes,
-                  incluyendo descripciones, imágenes y otros campos personalizados.
-                </p>
-              </div>
-            )}
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowImportConfirmDialog(false)
-                setSourceToImport(null)
-              }}
-            >
+            <Button variant="outline" onClick={() => setShowImportConfirmDialog(false)}>
               Cancelar
             </Button>
-            <Button
-              onClick={() => {
-                console.log("[v0] ===== BOTÓN CONTINUAR CLICKEADO =====")
-                console.log("[v0] isExecutingRef.current:", isExecutingRef.current)
-                console.log("[v0] sourceToImport:", sourceToImport)
-
-                if (isExecutingRef.current) {
-                  console.log("[v0] BLOQUEADO: isExecutingRef ya está en true")
-                  return
-                }
-
-                console.log("[v0] Marcando isExecutingRef como true")
-                isExecutingRef.current = true
-
-                if (sourceToImport) {
-                  console.log("[v0] Ejecutando executeImport para:", sourceToImport.name)
-                  executeImport(sourceToImport).finally(() => {
-                    // Mover el reset a finally del executeImport para asegurar que se ejecute
-                  })
-                } else {
-                  console.log("[v0] ERROR: sourceToImport es null")
-                  isExecutingRef.current = false // Liberar si no hay fuente
-                }
-              }}
-              variant={importMode === "overwrite" ? "destructive" : "default"}
-            >
-              {importMode === "overwrite" ? "Sobrescribir Todo" : "Continuar"}
-            </Button>
+            <Button onClick={confirmImport}>Iniciar Importación</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog para mostrar progreso de importación */}
-      <Dialog
-        open={showProgressDialog}
-        onOpenChange={(open) => {
-          if (!open) {
-            // Mover a segundo plano en lugar de cancelar
-            if (importing && importProgress.status === "running" && sourceToImport) {
-              const updatedImports = new Map(backgroundImports)
-              updatedImports.set(importing, { ...importProgress })
-              setBackgroundImports(updatedImports)
-
-              toast({
-                title: "Importación en segundo plano",
-                description: `La importación de "${sourceToImport.name}" continúa ejecutándose. Haz clic en "Ver progreso" desde la tarjeta de la fuente para reabrir el modal.`,
-              })
-            }
-            // No cerrar el modal si se está ejecutando una acción crítica en finally
-            // setShowProgressDialog(false) // El modal maneja su cierre con el botón X o cerrar overlay
-            //setCurrentImportHistoryId(null) // No resetear, para permitir reabrir si es necesario
-            setSourceToImport(null) // Resetear la fuente activa
-            // No resetear isExecutingRef aquí, se hace en el finally de executeImport
-          }
-        }}
-      >
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+      <Dialog open={showProgressDialog} onOpenChange={(open) => !open && closeProgressDialog()}>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Hourglass className="h-5 w-5 animate-pulse" />
-              {importProgress.status === "running" && "Importación en Curso"}
-              {importProgress.status === "completed" && "✅ Importación Completada"}
-              {importProgress.status === "error" && "❌ Error en Importación"}
-              {importProgress.status === "cancelled" && "⚠️ Importación Cancelada"}
-            </DialogTitle>
+            <DialogTitle>Progreso de Importación</DialogTitle>
             <DialogDescription>
-              {importProgress.status === "running" && "Procesando productos..."}
-              {importProgress.status === "completed" && "La importación se completó exitosamente"}
-              {importProgress.status === "error" && "Ocurrió un error durante la importación"}
-              {importProgress.status === "cancelled" && "La importación fue cancelada"}
+              {importProgress.status === "running"
+                ? "Procesando productos..."
+                : importProgress.status === "completed"
+                  ? "Importación completada"
+                  : importProgress.status === "cancelled"
+                    ? "Importación cancelada"
+                    : "Error en la importación"}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            {/* Indicador de actividad en tiempo real */}
-            {importProgress.status === "running" && (
-              <div className="flex items-center justify-between text-sm bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-                <div className="flex items-center gap-2">
-                  <div className="animate-spin h-4 w-4 border-2 border-blue-600 border-t-transparent rounded-full" />
-                  <span className="text-blue-800 dark:text-blue-200 font-medium">Procesando activamente...</span>
-                </div>
-                {importProgress.lastUpdate && (
-                  <span className="text-xs text-blue-600 dark:text-blue-300">
-                    {new Date(importProgress.lastUpdate).toLocaleTimeString()}
-                  </span>
-                )}
-              </div>
-            )}
-
-            {/* Barra de progreso */}
+          <div className="space-y-4">
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span>Progreso</span>
-                <span className="font-medium">
-                  {importProgress.processed} / {importProgress.total > 0 ? importProgress.total : "?"}
-                  {importProgress.total > 0 && (
-                    <span className="text-muted-foreground ml-1">
-                      ({Math.round((importProgress.processed / importProgress.total) * 100)}%)
-                    </span>
-                  )}
+                <span>
+                  {importProgress.processed} / {importProgress.total}
                 </span>
               </div>
-              <div className="w-full bg-muted rounded-full h-2.5">
+              <div className="w-full bg-secondary rounded-full h-2">
                 <div
-                  className={`h-2.5 rounded-full transition-all duration-300 ${
-                    importProgress.status === "running"
-                      ? "bg-blue-600 animate-pulse"
-                      : importProgress.status === "completed"
-                        ? "bg-green-600"
+                  className={`h-2 rounded-full transition-all ${
+                    importProgress.status === "completed"
+                      ? "bg-green-600"
+                      : importProgress.status === "error"
+                        ? "bg-red-600"
                         : importProgress.status === "cancelled"
                           ? "bg-yellow-600"
-                          : "bg-red-600"
+                          : "bg-primary"
                   }`}
                   style={{
                     width: `${importProgress.total > 0 ? (importProgress.processed / importProgress.total) * 100 : 0}%`,
@@ -2234,556 +1492,285 @@ const App = () => {
               </div>
             </div>
 
-            {/* Tiempos y velocidad */}
-            {importProgress.startTime && (
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div className="space-y-1">
-                  <div className="text-muted-foreground">Tiempo transcurrido</div>
-                  <div className="font-medium">
-                    {(() => {
-                      const elapsedSeconds = Math.floor(
-                        (new Date().getTime() - importProgress.startTime.getTime()) / 1000,
-                      )
-                      const hours = Math.floor(elapsedSeconds / 3600)
-                      const minutes = Math.floor((elapsedSeconds % 3600) / 60)
-                      const seconds = elapsedSeconds % 60
-
-                      if (hours > 0) {
-                        return `${hours}h ${minutes}m ${seconds}s`
-                      } else if (minutes > 0) {
-                        return `${minutes}m ${seconds}s`
-                      } else {
-                        return `${seconds}s`
-                      }
-                    })()}
+            {importProgress.csvInfo && (
+              <div className="border rounded-lg p-3 bg-muted/30 text-sm">
+                <div className="font-medium mb-2">Información del CSV</div>
+                <div className="space-y-1 text-muted-foreground">
+                  <div>Separador: {importProgress.csvInfo.separator === "\t" ? "TAB" : importProgress.csvInfo.separator}</div>
+                  <div>Columnas: {importProgress.csvInfo.headers.length}</div>
+                  <div className="text-xs">
+                    Headers: {importProgress.csvInfo.headers.slice(0, 5).join(", ")}
+                    {importProgress.csvInfo.headers.length > 5 && "..."}
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <div className="text-muted-foreground">Velocidad</div>
-                  <div className="font-medium">{importProgress.speed.toFixed(1)} prod/s</div>
-                </div>
               </div>
             )}
 
-            {/* Estadísticas de importación */}
-            <div className="grid grid-cols-3 gap-4 text-center">
-              <div className="space-y-1">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="border rounded-lg p-3">
+                <div className="text-sm text-muted-foreground">Importados</div>
                 <div className="text-2xl font-bold text-green-600">{importProgress.imported}</div>
-                <div className="text-xs text-muted-foreground">Importados</div>
               </div>
-              <div className="space-y-1">
+              <div className="border rounded-lg p-3">
+                <div className="text-sm text-muted-foreground">Actualizados</div>
                 <div className="text-2xl font-bold text-blue-600">{importProgress.updated}</div>
-                <div className="text-xs text-muted-foreground">Actualizados</div>
               </div>
-              <div className="space-y-1">
+              <div className="border rounded-lg p-3">
+                <div className="text-sm text-muted-foreground">Fallidos</div>
                 <div className="text-2xl font-bold text-red-600">{importProgress.failed}</div>
-                <div className="text-xs text-muted-foreground">Fallidos</div>
+              </div>
+              <div className="border rounded-lg p-3">
+                <div className="text-sm text-muted-foreground">Saltados</div>
+                <div className="text-2xl font-bold text-yellow-600">{importProgress.skipped}</div>
               </div>
             </div>
-            {/* Agregar estadistica de skipped */}
-            <div className="space-y-1 text-center">
-              <div className="text-2xl font-bold text-gray-600">{importProgress.skipped}</div>
-              <div className="text-xs text-muted-foreground">Saltados</div>
-            </div>
 
-            {/* Mensaje de estado o tiempo estimado */}
-            {importProgress.status === "running" && importProgress.total > 0 && importProgress.speed > 0 && (
-              <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-                <p className="text-sm text-blue-800 dark:text-blue-200">
-                  {importProgress.total > importProgress.processed ? (
-                    <>
-                      Tiempo estimado restante: {(() => {
-                        const remainingSeconds = Math.round(
-                          (importProgress.total - importProgress.processed) / importProgress.speed,
-                        )
-                        const hours = Math.floor(remainingSeconds / 3600)
-                        const minutes = Math.floor((remainingSeconds % 3600) / 60)
-                        const seconds = remainingSeconds % 60
-
-                        if (hours > 0) {
-                          return `${hours}h ${minutes}m ${seconds}s`
-                        } else if (minutes > 0) {
-                          return `${minutes}m ${seconds}s`
-                        } else {
-                          return `${seconds}s`
-                        }
-                      })()}
-                    </>
-                  ) : (
-                    "Calculando tiempo restante..."
-                  )}
-                </p>
+            {importProgress.speed > 0 && (
+              <div className="text-sm text-muted-foreground">
+                Velocidad: {importProgress.speed.toFixed(1)} productos/segundo
               </div>
             )}
 
-            {/* Errores */}
             {importProgress.errors.length > 0 && (
-              <div className="space-y-2">
-                <div className="text-sm font-medium text-red-600">
-                  Errores detectados ({importProgress.failed} de {importProgress.total}):
-                </div>
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {importProgress.errors.map((error, index) => (
-                    <div
-                      key={index}
-                      className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg p-3 text-xs"
-                    >
-                      <div className="font-medium text-red-800 dark:text-red-200">SKU: {error.sku}</div>
-                      <div className="text-red-700 dark:text-red-300 mt-1">{error.error}</div>
-                      {error.details && (
-                        <div className="text-red-600 dark:text-red-400 mt-1 text-[10px] break-words">
-                          {error.details}
-                        </div>
-                      )}
+              <div className="border rounded-lg p-3 bg-red-50 dark:bg-red-950/20 max-h-32 overflow-y-auto">
+                <div className="font-medium text-sm text-red-900 dark:text-red-100 mb-2">Últimos errores</div>
+                <div className="space-y-1">
+                  {importProgress.errors.map((error, idx) => (
+                    <div key={idx} className="text-xs text-red-800 dark:text-red-200">
+                      <span className="font-mono">{error.sku}</span>: {error.error}
                     </div>
                   ))}
                 </div>
-                {importProgress.failed > importProgress.errors.length && (
-                  <div className="text-xs text-muted-foreground">
-                    ... y {importProgress.failed - importProgress.errors.length} errores más
-                  </div>
-                )}
               </div>
             )}
           </div>
 
           <DialogFooter>
             {importProgress.status === "running" ? (
-              <Button
-                variant="destructive"
-                onClick={() => {
-                  handleCancelImport() // Call without sourceId to target the active modal import
-                }}
-              >
-                <StopCircle className="h-4 w-4 mr-2" />
+              <Button variant="destructive" onClick={cancelImport}>
+                <StopCircle className="mr-2 h-4 w-4" />
                 Cancelar Importación
               </Button>
             ) : (
-              // Botón para cerrar cuando la importación ha finalizado
-              <Button
-                onClick={() => {
-                  setShowProgressDialog(false)
-                  //setCurrentImportHistoryId(null) // No resetear, para permitir reabrir si es necesario
-                  setSourceToImport(null) // Resetear la fuente activa
-                  setImporting(null) // Resetear el estado de 'importing'
-                  // El flag isExecutingRef.current se resetea en el finally de executeImport
-                }}
-              >
-                Cerrar
-              </Button>
+              <Button onClick={closeProgressDialog}>Cerrar</Button>
             )}
           </DialogFooter>
-
-          {/* Información detallada del CSV si está disponible */}
-          {importProgress.csvInfo && (
-            <div className="border-t pt-4 mt-4">
-              <details className="space-y-2">
-                <summary className="text-sm font-medium cursor-pointer hover:text-primary">
-                  📋 Información del CSV (click para expandir)
-                </summary>
-                <div className="space-y-3 mt-3 text-xs">
-                  <div>
-                    <div className="font-medium mb-1">Columnas detectadas en el CSV:</div>
-                    <div className="bg-muted p-2 rounded font-mono text-[10px] max-h-24 overflow-y-auto">
-                      {importProgress.csvInfo.headers.join(", ")}
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="font-medium mb-1">Mapeo de columnas usado:</div>
-                    <div className="bg-muted p-2 rounded space-y-1">
-                      {Object.entries(sourceToImport?.column_mapping || {}).map(([field, column]) => (
-                        <div key={field} className="flex justify-between">
-                          <span className="text-muted-foreground">{field}:</span>
-                          <span className="font-mono font-medium">{column || "(no mapeado)"}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="font-medium mb-1">Primera fila de datos:</div>
-                    <div className="bg-muted p-2 rounded font-mono text-[10px] max-h-32 overflow-y-auto space-y-1">
-                      {Object.entries(importProgress.csvInfo.firstRow).map(([column, value]) => (
-                        <div key={column} className="flex gap-2">
-                          <span className="text-muted-foreground min-w-[100px]">{column}:</span>
-                          <span className="break-all">{value || "(vacío)"}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </details>
-            </div>
-          )}
         </DialogContent>
       </Dialog>
 
-      {/* Dialog para mostrar datos del diagnóstico */}
       <Dialog open={showDiagnosticDialog} onOpenChange={setShowDiagnosticDialog}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Diagnóstico y Limpieza de Productos</DialogTitle>
+            <DialogTitle>Análisis Automático</DialogTitle>
             <DialogDescription>
-              Analiza y limpia productos duplicados directamente desde la aplicación
+              Analiza tu base de datos para detectar productos con SKUs duplicados.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-6 py-4">
-            <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/20 dark:to-purple-950/20 border-2 border-blue-500 rounded-lg p-6">
-              <h3 className="font-bold text-xl mb-3 flex items-center gap-2">
-                <Database className="h-6 w-6 text-blue-600" />
-                Análisis Automático
-              </h3>
-              
-              <p className="text-sm text-gray-700 dark:text-gray-300 mb-4">
-                Analiza tu base de datos para detectar productos con SKUs duplicados.
-              </p>
-
-              <Button 
-                onClick={handleAnalyzeDuplicates}
-                disabled={isAnalyzing}
-                variant="default"
-                size="lg"
-                className="w-full font-semibold py-6 text-base"
-              >
-                {isAnalyzing ? (
-                  <>
-                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                    Analizando... Esto puede tomar 2-3 minutos
-                  </>
-                ) : (
-                  <>
-                    <Search className="mr-2 h-5 w-5" />
-                    Analizar Duplicados
-                  </>
-                )}
-              </Button>
-
-              {isAnalyzing && (
-                <div className="mt-4 text-center">
-                  <div className="inline-flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Procesando productos... Por favor espera
-                  </div>
-                </div>
+          <div className="space-y-4">
+            <Button 
+              onClick={handleAnalyzeDuplicates} 
+              disabled={isAnalyzing}
+              className="w-full"
+              size="lg"
+            >
+              {isAnalyzing ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  Analizando... Esto puede tomar 2-3 minutos
+                </>
+              ) : (
+                <>
+                  <Search className="mr-2 h-5 w-5" />
+                  Analizar Duplicados
+                </>
               )}
+            </Button>
 
-              {!isAnalyzing && analysisResult && (
-                <div className="space-y-3 mt-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-white dark:bg-gray-900 p-4 rounded-lg border">
-                      <div className="text-xs text-gray-600 dark:text-gray-400">Total Productos</div>
-                      <div className="text-2xl font-bold">{analysisResult.totalProducts?.toLocaleString()}</div>
+            {analysisResult?.needsSQLSetup && (
+              <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+                  <div className="space-y-2 flex-1">
+                    <div className="font-semibold text-yellow-900 dark:text-yellow-100">
+                      Configuración SQL requerida
                     </div>
-                    <div className="bg-white dark:bg-gray-900 p-4 rounded-lg border">
-                      <div className="text-xs text-gray-600 dark:text-gray-400">SKUs Duplicados</div>
-                      <div className="text-2xl font-bold text-red-600">{analysisResult.totalDuplicateSKUs?.toLocaleString()}</div>
+                    <div className="text-sm text-yellow-800 dark:text-yellow-200">
+                      {analysisResult.instructions}
                     </div>
-                  </div>
-                  
-                  {analysisResult.totalDuplicateSKUs > 0 && (
-                    <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-                      <div className="text-sm font-semibold text-red-900 dark:text-red-100 mb-2">
-                        Productos duplicados a eliminar: {analysisResult.totalDuplicateProducts?.toLocaleString()}
-                      </div>
-                      <div className="text-xs text-red-700 dark:text-red-300 mb-3">
-                        Se mantendrá el producto más antiguo de cada SKU
-                      </div>
-                      <Button 
-                        onClick={handleCleanDuplicatesAuto}
-                        disabled={isCleaning}
-                        variant="destructive"
-                        className="w-full font-semibold py-5"
-                      >
-                        {isCleaning ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Limpiando...
-                          </>
-                        ) : (
-                          <>
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Eliminar Duplicados
-                          </>
-                        )}
-                      </Button>
+                    <div className="text-xs text-yellow-700 dark:text-yellow-300 space-y-1">
+                      <div className="font-medium">Pasos para configurar:</div>
+                      <ol className="list-decimal list-inside space-y-1 ml-2">
+                        <li>Abre el script SQL en la carpeta <code className="bg-yellow-100 dark:bg-yellow-900 px-1 rounded">scripts/</code></li>
+                        <li>Copia el contenido del archivo <code className="bg-yellow-100 dark:bg-yellow-900 px-1 rounded">EJECUTAR_PRIMERO_crear_funciones.sql</code></li>
+                        <li>Abre el SQL Editor de Supabase</li>
+                        <li>Pega y ejecuta el script</li>
+                        <li>Vuelve aquí y analiza nuevamente</li>
+                      </ol>
                     </div>
-                  )}
-
-                  {analysisResult.totalDuplicateSKUs === 0 && (
-                    <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg p-4 text-center">
-                      <div className="text-sm font-semibold text-green-900 dark:text-green-100">
-                        ¡Base de datos saludable!
-                      </div>
-                      <div className="text-xs text-green-700 dark:text-green-300 mt-1">
-                        No se detectaron SKUs duplicados
-                      </div>
-                    </div>
-                  )}
-                  
-                  {analysisResult.isSample && (
-                    <div className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20 p-2 rounded">
-                      Análisis basado en muestra de {analysisResult.sampleSize?.toLocaleString()} productos
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Instrucciones paso a paso */}
-            <div className="bg-blue-50 dark:bg-blue-950/20 border-2 border-blue-500 rounded-lg p-6">
-              <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
-                <FileText className="h-5 w-5" />
-                Instrucciones paso a paso
-              </h3>
-              
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <div className="font-semibold text-blue-900 dark:text-blue-100 flex items-center gap-2">
-                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-sm">1</span>
-                    Analizar duplicados
-                  </div>
-                  <div className="ml-8">
-                    <p className="text-sm text-blue-800 dark:text-blue-200 mb-2">
-                      Copia y pega este script en el SQL Editor que acabas de abrir:
-                    </p>
-                    <div className="mt-2 p-3 bg-white dark:bg-gray-900 rounded border border-blue-200">
-                      <pre className="text-xs bg-gray-50 dark:bg-gray-800 p-3 rounded overflow-x-auto">
-{`-- Ver cuántos duplicados hay
-SELECT 
-  COUNT(*) as total_productos,
-  COUNT(DISTINCT UPPER(TRIM(REPLACE(REPLACE(sku, ' ', ''), '-', '')))) as skus_unicos,
-  COUNT(*) - COUNT(DISTINCT UPPER(TRIM(REPLACE(REPLACE(sku, ' ', ''), '-', '')))) as total_duplicados
-FROM products
-WHERE sku IS NOT NULL AND sku != '';
-
--- Ver los SKUs duplicados específicos
-SELECT 
-  UPPER(TRIM(REPLACE(REPLACE(sku, ' ', ''), '-', ''))) as sku_normalizado,
-  COUNT(*) as cantidad,
-  array_agg(sku) as skus_originales
-FROM products
-WHERE sku IS NOT NULL AND sku != ''
-GROUP BY UPPER(TRIM(REPLACE(REPLACE(sku, ' ', ''), '-', '')))
-HAVING COUNT(*) > 1
-ORDER BY cantidad DESC;`}
-                      </pre>
+                    {analysisResult.sqlEditorUrl && (
                       <Button 
                         variant="outline" 
                         size="sm" 
-                        className="mt-2 w-full"
-                        onClick={() => {
-                          navigator.clipboard.writeText(`-- Ver cuántos duplicados hay
-SELECT 
-  COUNT(*) as total_productos,
-  COUNT(DISTINCT UPPER(TRIM(REPLACE(REPLACE(sku, ' ', ''), '-', '')))) as skus_unicos,
-  COUNT(*) - COUNT(DISTINCT UPPER(TRIM(REPLACE(REPLACE(sku, ' ', ''), '-', '')))) as total_duplicados
-FROM products
-WHERE sku IS NOT NULL AND sku != '';
-
--- Ver los SKUs duplicados específicos
-SELECT 
-  UPPER(TRIM(REPLACE(REPLACE(sku, ' ', ''), '-', ''))) as sku_normalizado,
-  COUNT(*) as cantidad,
-  array_agg(sku) as skus_originales
-FROM products
-WHERE sku IS NOT NULL AND sku != ''
-GROUP BY UPPER(TRIM(REPLACE(REPLACE(sku, ' ', ''), '-', '')))
-HAVING COUNT(*) > 1
-ORDER BY cantidad DESC;`)
-                          toast({ title: "Script copiado al portapapeles", variant: "success" })
-                        }}
+                        className="mt-2"
+                        onClick={() => window.open(analysisResult.sqlEditorUrl, '_blank')}
                       >
-                        <Copy className="mr-2 h-3 w-3" />
-                        Copiar script
+                        <ExternalLink className="mr-2 h-4 w-4" />
+                        Abrir SQL Editor de Supabase
                       </Button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="font-semibold text-red-900 dark:text-red-100 flex items-center gap-2">
-                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-red-600 text-white text-sm">2</span>
-                    Limpiar duplicados (CUIDADO)
-                  </div>
-                  <div className="ml-8">
-                    <div className="mb-2 p-3 bg-red-50 dark:bg-red-950 rounded border border-red-300">
-                      <div className="text-xs font-bold text-red-800 dark:text-red-200 mb-1 flex items-center gap-2">
-                        <AlertTriangle className="h-4 w-4" />
-                        ADVERTENCIA
-                      </div>
-                      <div className="text-xs text-red-700 dark:text-red-300">
-                        Este script eliminará productos duplicados permanentemente. Se mantendrá el producto más antiguo de cada SKU. Esta acción NO se puede deshacer.
-                      </div>
-                    </div>
-                    <p className="text-sm text-red-800 dark:text-red-200 mb-2">
-                      Solo ejecuta este script si estás seguro de eliminar duplicados:
-                    </p>
-                    <div className="mt-2 p-3 bg-white dark:bg-gray-900 rounded border border-red-200">
-                      <pre className="text-xs bg-gray-50 dark:bg-gray-800 p-3 rounded overflow-x-auto">
-{`-- IMPORTANTE: Lee esto antes de ejecutar
--- Este script eliminará productos duplicados
--- Se mantendrá el producto MÁS ANTIGUO de cada SKU
-
-DELETE FROM products
-WHERE id IN (
-  SELECT id
-  FROM (
-    SELECT 
-      id,
-      ROW_NUMBER() OVER (
-        PARTITION BY UPPER(TRIM(REPLACE(REPLACE(sku, ' ', ''), '-', '')))
-        ORDER BY created_at ASC
-      ) as rn
-    FROM products
-    WHERE sku IS NOT NULL AND sku != ''
-  ) t
-  WHERE rn > 1
-);`}
-                      </pre>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="mt-2 w-full border-red-300 text-red-700 hover:bg-red-50"
-                        onClick={() => {
-                          navigator.clipboard.writeText(`DELETE FROM products
-WHERE id IN (
-  SELECT id
-  FROM (
-    SELECT 
-      id,
-      ROW_NUMBER() OVER (
-        PARTITION BY UPPER(TRIM(REPLACE(REPLACE(sku, ' ', ''), '-', '')))
-        ORDER BY created_at ASC
-      ) as rn
-    FROM products
-    WHERE sku IS NOT NULL AND sku != ''
-  ) t
-  WHERE rn > 1
-);`)
-                          toast({ title: "Script de limpieza copiado - usa con precaución", variant: "warning"})
-                        }}
-                      >
-                        <Copy className="mr-2 h-3 w-3" />
-                        Copiar script de limpieza
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="font-semibold text-green-900 dark:text-green-100 flex items-center gap-2">
-                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-green-600 text-white text-sm">3</span>
-                    Verificar resultado
-                  </div>
-                  <div className="ml-8">
-                    <p className="text-sm text-green-800 dark:text-green-200">
-                      Ejecuta nuevamente el script del paso 1 para confirmar que los duplicados fueron eliminados.
-                    </p>
+                    )}
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
-            {/* Nota sobre por qué usar SQL */}
-            <div className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
-              <h4 className="font-semibold text-sm mb-2">¿Por qué usar SQL directamente?</h4>
-              <ul className="text-xs text-muted-foreground space-y-1">
-                <li>✅ Mucho más rápido: analiza 441,657 productos en 1-2 segundos</li>
-                <li>✅ Sin timeouts: PostgreSQL ejecuta todo en el servidor</li>
-                <li>✅ Más preciso: normalización de SKUs directa en la base de datos</li>
-                <li>✅ Sin límites: procesa TODOS los productos sin restricciones</li>
-              </ul>
-            </div>
+            {analysisResult && !isAnalyzing && !analysisResult.needsSQLSetup && (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm font-medium text-muted-foreground">
+                        Total Productos
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-3xl font-bold">{analysisResult.totalProducts.toLocaleString()}</div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-sm font-medium text-muted-foreground">
+                        SKUs Duplicados
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className={`text-3xl font-bold ${analysisResult.totalDuplicateSKUs > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        {analysisResult.totalDuplicateSKUs}
+                      </div>
+                      {analysisResult.totalDuplicateProducts !== undefined && analysisResult.totalDuplicateProducts > 0 && (
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {analysisResult.totalDuplicateProducts.toLocaleString()} productos en total
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {analysisResult.method && (
+                  <div className="text-xs text-muted-foreground text-center">
+                    Método: {analysisResult.method === 'sql_direct' ? 'SQL Directo (completo)' : 'Análisis de muestra'}
+                    {analysisResult.note && ` • ${analysisResult.note}`}
+                  </div>
+                )}
+
+                {analysisResult.totalDuplicateSKUs > 0 ? (
+                  <div className="space-y-4">
+                    <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <AlertTriangle className="h-5 w-5 text-red-600" />
+                        <div className="font-semibold text-red-900 dark:text-red-100">
+                          Se detectaron duplicados
+                        </div>
+                      </div>
+                      <div className="text-sm text-red-800 dark:text-red-200">
+                        {analysisResult.totalDuplicateProducts !== undefined ? (
+                          <>
+                            Se encontraron <span className="font-bold">{analysisResult.totalDuplicateSKUs} SKUs duplicados</span> con un total de{' '}
+                            <span className="font-bold">{analysisResult.totalDuplicateProducts.toLocaleString()} productos duplicados</span> en tu base de datos.
+                            <div className="mt-2 text-xs">
+                              Promedio: ~{Math.round(analysisResult.totalDuplicateProducts / analysisResult.totalDuplicateSKUs)} productos por cada SKU duplicado
+                            </div>
+                          </>
+                        ) : (
+                          <>Se encontraron {analysisResult.totalDuplicateSKUs} SKUs con productos duplicados en tu base de datos.</>
+                        )}
+                      </div>
+                    </div>
+
+                    <Button 
+                      onClick={handleCleanDuplicatesAuto} 
+                      disabled={isCleaning}
+                      variant="destructive"
+                      className="w-full"
+                      size="lg"
+                    >
+                      {isCleaning ? (
+                        <>
+                          <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                          Eliminando duplicados...
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="mr-2 h-5 w-5" />
+                          Eliminar {analysisResult.totalDuplicateProducts !== undefined ? `${analysisResult.totalDuplicateProducts.toLocaleString()} ` : ''}Duplicados
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <CheckCircle2 className="h-5 w-5 text-green-600" />
+                      <div className="font-semibold text-green-900 dark:text-green-100">
+                        ¡Base de datos saludable!
+                      </div>
+                    </div>
+                    <div className="text-sm text-green-800 dark:text-green-200">
+                      No se detectaron problemas
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
           <DialogFooter>
-            <Button onClick={() => setShowDiagnosticDialog(false)} variant="outline">
+            <Button variant="outline" onClick={() => setShowDiagnosticDialog(false)}>
               Cerrar
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Dialog para reiniciar la base de datos */}
       <Dialog open={showResetDialog} onOpenChange={setShowResetDialog}>
-        <DialogContent className="max-w-md">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle className="text-destructive">⚠️ Reiniciar Base de Datos</DialogTitle>
+            <DialogTitle>Reiniciar Base de Datos</DialogTitle>
             <DialogDescription>
-              Esta acción eliminará TODOS los productos de la base de datos. Esta acción NO se puede deshacer.
+              Esta acción eliminará TODOS los productos de la base de datos. Esta acción no se puede deshacer.
             </DialogDescription>
           </DialogHeader>
-
           <div className="space-y-4 py-4">
-            <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-              <p className="text-sm text-red-800 dark:text-red-200 mb-4">
-                <strong>Advertencia crítica:</strong> Se eliminarán permanently todos los productos.
-              </p>
-              <p className="text-sm text-red-800 dark:text-red-200">
-                Después de eliminar, deberás ejecutar las importaciones en este orden:
-              </p>
-              <ol className="list-decimal list-inside text-sm text-red-800 dark:text-red-200 mt-2 space-y-1">
-                <li>
-                  <strong>Arnoia</strong> - Catálogo completo (base principal)
-                </li>
-                <li>
-                  <strong>Arnoia Act</strong> - Productos nuevos y actualizaciones
-                </li>
-                <li>
-                  <strong>Arnoia Stock</strong> - Actualización de stock y precios
-                </li>
-              </ol>
-            </div>
-
             <div className="space-y-2">
               <Label htmlFor="confirm-text">
-                Para confirmar, escribe <strong>ELIMINAR TODO</strong> en el campo de abajo:
+                Escribe <span className="font-mono font-bold">ELIMINAR TODO</span> para confirmar
               </Label>
               <Input
                 id="confirm-text"
                 value={resetConfirmText}
                 onChange={(e) => setResetConfirmText(e.target.value)}
                 placeholder="ELIMINAR TODO"
-                className="font-mono"
               />
             </div>
           </div>
-
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowResetDialog(false)
-                setResetConfirmText("")
-              }}
-              disabled={resetLoading}
-            >
+            <Button variant="outline" onClick={() => setShowResetDialog(false)}>
               Cancelar
             </Button>
             <Button
-              onClick={handleResetDatabase}
               variant="destructive"
-              disabled={resetConfirmText !== "ELIMINAR TODO" || resetLoading}
+              onClick={handleResetDatabase}
+              disabled={resetLoading || resetConfirmText !== "ELIMINAR TODO"}
             >
-              {resetLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Eliminando...
-                </>
-              ) : (
-                <>
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Eliminar Todo
-                </>
-              )}
+              {resetLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Eliminar Todo
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
   )
-} // Cierre de la función App
+}
 
-export default App // Exportar el componente App
+export default App
