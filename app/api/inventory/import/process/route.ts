@@ -125,6 +125,19 @@ export async function POST(request: NextRequest) {
     // Función para normalizar valores (quitar ceros a la izquierda y espacios)
     const normalizeValue = (val: string) => String(val).trim().replace(/^0+/, "") || val
 
+    // Función para obtener valor de una columna de forma case-insensitive
+    const getColumnValue = (row: Record<string, any>, columnName: string): any => {
+      // Primero intentar con el nombre exacto
+      if (row[columnName] !== undefined) return row[columnName]
+      
+      // Buscar case-insensitive
+      const lowerColumnName = columnName.toLowerCase()
+      const keys = Object.keys(row)
+      const matchingKey = keys.find(k => k.toLowerCase() === lowerColumnName)
+      
+      return matchingKey ? row[matchingKey] : undefined
+    }
+
     // Determinar si debemos hacer match por EAN en lugar de SKU
     const matchField = mapping.match_field || "sku" // "sku" o "ean"
     const matchColumn = matchField === "ean" ? (mapping.ean || "ean") : (mapping.sku || "sku")
@@ -134,7 +147,7 @@ export async function POST(request: NextRequest) {
       
       // Obtener los valores para hacer match (EAN o SKU según configuración)
       const batchMatchValues = batch
-        .map((p) => p[matchColumn])
+        .map((p) => getColumnValue(p, matchColumn))
         .filter(Boolean)
         .map(normalizeValue)
 
@@ -158,22 +171,15 @@ export async function POST(request: NextRequest) {
           const skuColumn = mapping.sku || "sku"
           const eanColumn = mapping.ean || "ean"
           
-          let sku = row[skuColumn]
-          const ean = row[eanColumn]
-          const price = row[mapping.price || "price"]
-          const stock = row[mapping.stock || "stock"]
-
-          // Debug: log primeras filas para ver qué columnas hay
-          if (i === 0 && batch.indexOf(row) < 2) {
-            console.log("[v0] Row keys:", Object.keys(row))
-            console.log("[v0] SKU column:", skuColumn, "value:", sku)
-            console.log("[v0] EAN column:", eanColumn, "value:", ean)
-            console.log("[v0] Mapping:", JSON.stringify(mapping))
-          }
+          // Usar getColumnValue para búsqueda case-insensitive
+          let sku = getColumnValue(row, skuColumn)
+          const ean = getColumnValue(row, eanColumn)
+          const price = getColumnValue(row, mapping.price || "price")
+          const stock = getColumnValue(row, mapping.stock || "stock")
 
           // Normalizar valores
-          const normalizedSku = sku ? normalizeValue(sku) : null
-          const normalizedEan = ean ? normalizeValue(ean) : null
+          const normalizedSku = sku ? normalizeValue(String(sku)) : null
+          const normalizedEan = ean ? normalizeValue(String(ean)) : null
           
           // El valor para hacer match
           const matchValue = matchField === "ean" ? normalizedEan : normalizedSku
@@ -226,10 +232,14 @@ export async function POST(request: NextRequest) {
           } else if (!exists) {
             // New product with complete data
             productData.sku = normalizedSku || normalizedEan
-            productData.title = row[mapping.name || mapping.title || "name"] || normalizedSku || normalizedEan
-            productData.description = row[mapping.description || "description"]
-            productData.category = row[mapping.category || "category"]
-            productData.brand = row[mapping.brand || "brand"]
+            productData.title = getColumnValue(row, mapping.name || mapping.title || "name") || normalizedSku || normalizedEan
+            productData.description = getColumnValue(row, mapping.description || "description")
+            productData.category = getColumnValue(row, mapping.category || "category")
+            productData.brand = getColumnValue(row, mapping.brand || "brand")
+            
+            // Campos adicionales si están mapeados
+            if (mapping.author) productData.author = getColumnValue(row, mapping.author)
+            if (mapping.image_url) productData.image_url = getColumnValue(row, mapping.image_url)
           }
 
           // Si existe, actualizar por el campo de match
