@@ -155,10 +155,21 @@ export async function POST(request: NextRequest) {
 
       const upsertPromises = batch.map(async (row) => {
         try {
-          let sku = row[mapping.sku || "sku"]
-          const ean = row[mapping.ean || "ean"]
+          const skuColumn = mapping.sku || "sku"
+          const eanColumn = mapping.ean || "ean"
+          
+          let sku = row[skuColumn]
+          const ean = row[eanColumn]
           const price = row[mapping.price || "price"]
           const stock = row[mapping.stock || "stock"]
+
+          // Debug: log primeras filas para ver qué columnas hay
+          if (i === 0 && batch.indexOf(row) < 2) {
+            console.log("[v0] Row keys:", Object.keys(row))
+            console.log("[v0] SKU column:", skuColumn, "value:", sku)
+            console.log("[v0] EAN column:", eanColumn, "value:", ean)
+            console.log("[v0] Mapping:", JSON.stringify(mapping))
+          }
 
           // Normalizar valores
           const normalizedSku = sku ? normalizeValue(sku) : null
