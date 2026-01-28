@@ -1295,9 +1295,43 @@ const App = () => {
                         <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
                           Importación en progreso
                         </span>
-                        <span className="text-xs text-blue-700 dark:text-blue-300">
-                          {backgroundProgress.processed} / {backgroundProgress.total}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-blue-700 dark:text-blue-300">
+                            {backgroundProgress.processed} / {backgroundProgress.total}
+                          </span>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            className="h-6 px-2 text-xs"
+                            onClick={() => {
+                              if (sourceToImport?.id === source.id) {
+                                cancelImport()
+                              } else {
+                                // Cancelar importación de esta fuente específica
+                                setBackgroundImports((prev) => {
+                                  const updated = new Map(prev)
+                                  const current = updated.get(source.id)
+                                  if (current) {
+                                    updated.set(source.id, { ...current, status: "cancelled" })
+                                  }
+                                  return updated
+                                })
+                                setRunningImports((prev) => {
+                                  const updated = new Set(prev)
+                                  updated.delete(source.id)
+                                  return updated
+                                })
+                                toast({
+                                  title: "Importación cancelada",
+                                  description: `La importación de ${source.name} ha sido cancelada`,
+                                })
+                              }
+                            }}
+                          >
+                            <StopCircle className="h-3 w-3 mr-1" />
+                            Cancelar
+                          </Button>
+                        </div>
                       </div>
                       <div className="w-full bg-blue-100 dark:bg-blue-900/50 rounded-full h-2">
                         <div
@@ -1308,9 +1342,9 @@ const App = () => {
                         />
                       </div>
                       <div className="mt-2 flex gap-4 text-xs text-blue-700 dark:text-blue-300">
-                        <span>✓ {backgroundProgress.imported} nuevos</span>
-                        <span>↻ {backgroundProgress.updated} actualizados</span>
-                        <span>✗ {backgroundProgress.failed} fallidos</span>
+                        <span>Nuevos: {backgroundProgress.imported}</span>
+                        <span>Actualizados: {backgroundProgress.updated}</span>
+                        <span>Fallidos: {backgroundProgress.failed}</span>
                       </div>
                     </div>
                   </div>
