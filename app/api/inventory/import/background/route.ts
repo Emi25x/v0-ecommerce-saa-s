@@ -57,15 +57,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Error creando registro de importación" }, { status: 500 })
     }
 
-    // Ejecutar la importación en background (no bloqueante)
-    // El proceso continúa aunque la respuesta ya se envió
-    processImportInBackground(sourceId, fileUrl, mode, importRecord.id, source, supabase)
+    // Ejecutar la importación (ahora síncrona)
+    console.log("[v0] Background import: Iniciando importación para", source.name)
+    const result = await processImportInBackground(sourceId, fileUrl, mode, importRecord.id, source, supabase)
 
-    // Retornar inmediatamente con el ID de la importación
     return NextResponse.json({ 
       success: true, 
       importId: importRecord.id,
-      message: "Importación iniciada en segundo plano"
+      message: "Importación completada",
+      summary: result
     })
 
   } catch (error) {
@@ -87,15 +87,18 @@ async function processImportInBackground(
   const mapping = source.column_mapping || {}
 
   try {
+    console.log("[v0] Background import: Descargando archivo desde", fileUrl)
+    
     // Descargar el archivo CSV
     const fileResponse = await fetch(fileUrl)
     if (!fileResponse.ok) {
-      await supabase.from("import_history").update({ status: "failed" }).eq("id", importId)
-      console.error("[v0] Error descargando archivo:", fileResponse.status)
-      return
+      await supabase.from("import_history").update({ status: "failed", completed_at: new Date().toISOString() }).eq("id", importId)
+      console.error("[v0] Error descargando archivo:", fileResponse.status, fileResponse.statusText)
+      return { total: 0, imported: 0, updated: 0, failed: 0, error: `Error descargando: ${fileResponse.status}` }
     }
 
     const csvText = await fileResponse.text()
+    console.log("[v0] Background import: Archivo descargado, tamaño:", csvText.length, "caracteres")
     
     // Parsear CSV
     const parseResult = Papa.parse(csvText, {
@@ -243,6 +246,13 @@ async function processImportInBackground(
       .eq("id", sourceId)
 
     console.log(`[v0] Importación completada: ${importedCount} importados, ${updatedCount} actualizados, ${failedCount} fallidos`)
+    
+    return {
+      total: totalRows,
+      imported: importedCount,
+      updated: updatedCount,
+      failed: failedCount,
+    }
   } catch (error) {
     console.error("[v0] Error en importación background:", error)
     // Marcar como fallido
@@ -251,6 +261,8 @@ async function processImportInBackground(
       status: "failed",
       completed_at: new Date().toISOString(),
     }).eq("id", importId)
+    
+    return { total: 0, imported: 0, updated: 0, failed: 0, error: String(error) }
   }
 }
 
