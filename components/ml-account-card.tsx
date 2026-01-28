@@ -45,7 +45,7 @@ const Settings = () => (
       strokeLinecap="round"
       strokeLinejoin="round"
       strokeWidth={2}
-      d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37.996.608 2.296.07 2.572-1.065z"
+      d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37.996.608 2.296.07 2.572-1.065z"
     />
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
   </svg>
@@ -130,6 +130,7 @@ export function MLAccountCard({
   const [browserPreference, setBrowserPreference] = useState("")
   const [customBrowser, setCustomBrowser] = useState("")
   const [isSavingBrowser, setIsSavingBrowser] = useState(false)
+  const [authLinkCopied, setAuthLinkCopied] = useState(false)
 
   useEffect(() => {
     const stored = localStorage.getItem(`ml_browser_${account.id}`)
@@ -227,13 +228,10 @@ export function MLAccountCard({
     setWebhookUrl(url)
   }
 
-  const [authLinkCopied, setAuthLinkCopied] = useState(false)
-  
   const copyAuthLink = () => {
-    const url = `${window.location.origin}/api/mercadolibre/auth`
-    navigator.clipboard.writeText(url)
+    const authLink = `${window.location.origin}/api/mercadolibre/auth`
+    navigator.clipboard.writeText(authLink)
     setAuthLinkCopied(true)
-    setTimeout(() => setAuthLinkCopied(false), 2000)
   }
 
   const isConnected = account.connected && !account.tokenExpired
@@ -416,38 +414,7 @@ export function MLAccountCard({
           </Alert>
         )}
 
-        {/* Botón para copiar link de autorización */}
-        <div className="pt-2 border-t">
-          <div className="flex items-center gap-2">
-            <Input 
-              value={`${typeof window !== 'undefined' ? window.location.origin : ''}/api/mercadolibre/auth`}
-              readOnly
-              className="font-mono text-xs flex-1"
-            />
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={copyAuthLink}
-              className="shrink-0 bg-transparent"
-            >
-              {authLinkCopied ? (
-                <>
-                  <Check />
-                  <span className="ml-1">Copiado</span>
-                </>
-              ) : (
-                <>
-                  <ExternalLink />
-                  <span className="ml-1">Copiar Link</span>
-                </>
-              )}
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            Link de autorización para conectar cuentas de MercadoLibre
-          </p>
-        </div>
-      </CardContent>
+        </CardContent>
     </Card>
   )
 }

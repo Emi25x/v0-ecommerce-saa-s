@@ -1,5 +1,9 @@
 "use client"
 
+import { Input } from "@/components/ui/input"
+import { toast } from "@/components/ui/use-toast" // Import toast
+import { Copy } from "@/components/ui/icons/copy" // Import Copy icon
+
 const Package = ({ className }: { className?: string }) => (
   <svg
     className={className}
@@ -423,6 +427,34 @@ export default function IntegrationsPage() {
                     <ExternalLink className="h-4 w-4" />
                   </a>
                 </Button>
+              </div>
+              
+              {/* Link de autorización para copiar */}
+              <div className="pt-3 border-t">
+                <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                  Link de autorización (para conectar cualquier cuenta)
+                </label>
+                <div className="flex items-center gap-2">
+                  <Input 
+                    value={typeof window !== 'undefined' ? `${window.location.origin}/api/mercadolibre/auth` : '/api/mercadolibre/auth'}
+                    readOnly
+                    className="font-mono text-xs"
+                  />
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      const url = `${window.location.origin}/api/mercadolibre/auth`
+                      navigator.clipboard.writeText(url)
+                      toast({
+                        title: "Link copiado",
+                        description: "El link de autorización fue copiado al portapapeles",
+                      })
+                    }}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
