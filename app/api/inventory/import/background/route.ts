@@ -57,11 +57,42 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Error creando registro de importación" }, { status: 500 })
     }
 
+    // Ejecutar la importación en background (no bloqueante)
+    // El proceso continúa aunque la respuesta ya se envió
+    processImportInBackground(sourceId, fileUrl, mode, importRecord.id, source, supabase)
+
+    // Retornar inmediatamente con el ID de la importación
+    return NextResponse.json({ 
+      success: true, 
+      importId: importRecord.id,
+      message: "Importación iniciada en segundo plano"
+    })
+
+  } catch (error) {
+    console.error("[v0] Error en background import:", error)
+    return NextResponse.json({ error: "Error interno" }, { status: 500 })
+  }
+}
+
+// Función que procesa la importación en background
+async function processImportInBackground(
+  sourceId: string,
+  fileUrl: string,
+  mode: string,
+  importId: string,
+  source: any,
+  supabaseClient: any
+) {
+  const supabase = supabaseClient
+  const mapping = source.column_mapping || {}
+
+  try {
     // Descargar el archivo CSV
     const fileResponse = await fetch(fileUrl)
     if (!fileResponse.ok) {
-      await supabase.from("import_history").update({ status: "failed" }).eq("id", importRecord.id)
-      return NextResponse.json({ error: "Error descargando archivo" }, { status: 500 })
+      await supabase.from("import_history").update({ status: "failed" }).eq("id", importId)
+      console.error("[v0] Error descargando archivo:", fileResponse.status)
+      return
     }
 
     const csvText = await fileResponse.text()
@@ -78,6 +109,11 @@ export async function POST(request: NextRequest) {
     let importedCount = 0
     let updatedCount = 0
     let failedCount = 0
+
+    // Actualizar total en import_history
+    await supabase.from("import_history").update({ 
+      products_total: totalRows 
+    }).eq("id", importId)
 
     // Procesar en batches
     for (let i = 0; i < data.length; i += BATCH_SIZE) {
@@ -185,7 +221,7 @@ export async function POST(request: NextRequest) {
           products_updated: updatedCount,
           products_failed: failedCount,
         })
-        .eq("id", importRecord.id)
+        .eq("id", importId)
     }
 
     // Marcar como completado
@@ -198,7 +234,7 @@ export async function POST(request: NextRequest) {
         products_failed: failedCount,
         completed_at: new Date().toISOString(),
       })
-      .eq("id", importRecord.id)
+      .eq("id", importId)
 
     // Actualizar última importación de la fuente
     await supabase
@@ -206,19 +242,15 @@ export async function POST(request: NextRequest) {
       .update({ last_import: new Date().toISOString() })
       .eq("id", sourceId)
 
-    return NextResponse.json({
-      success: true,
-      importId: importRecord.id,
-      summary: {
-        total: totalRows,
-        imported: importedCount,
-        updated: updatedCount,
-        failed: failedCount,
-      },
-    })
+    console.log(`[v0] Importación completada: ${importedCount} importados, ${updatedCount} actualizados, ${failedCount} fallidos`)
   } catch (error) {
     console.error("[v0] Error en importación background:", error)
-    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 })
+    // Marcar como fallido
+    const supabase = await createClient()
+    await supabase.from("import_history").update({ 
+      status: "failed",
+      completed_at: new Date().toISOString(),
+    }).eq("id", importId)
   }
 }
 
