@@ -217,6 +217,17 @@ const App = () => {
     }
   }, [])
 
+  // Sincronizar backgroundImports con importProgress en tiempo real
+  useEffect(() => {
+    if (sourceToImport?.id && (importProgress.processed > 0 || importProgress.imported > 0 || importProgress.updated > 0)) {
+      setBackgroundImports((prev) => {
+        const updated = new Map(prev)
+        updated.set(sourceToImport.id, { ...importProgress })
+        return updated
+      })
+    }
+  }, [importProgress, sourceToImport?.id])
+
   async function updateBackgroundImportsProgress() {
     if (backgroundImports.size === 0) return
 
@@ -224,12 +235,13 @@ const App = () => {
     let hasUpdates = false
 
     for (const [sourceId, progress] of backgroundImports.entries()) {
-      if (progress.status !== "running") continue
-
       // Copiar el progreso actual de importProgress si es la misma fuente
-      if (sourceToImport?.id === sourceId && importProgress.status === "running") {
-        updatedImports.set(sourceId, { ...importProgress })
-        hasUpdates = true
+      if (sourceToImport?.id === sourceId) {
+        // Siempre sincronizar mientras haya una importación activa o recién finalizada
+        if (importProgress.total > 0 || importProgress.processed > 0 || importProgress.imported > 0 || importProgress.updated > 0) {
+          updatedImports.set(sourceId, { ...importProgress })
+          hasUpdates = true
+        }
       }
     }
 
