@@ -7,27 +7,32 @@ const ML_API_BASE = "https://api.mercadolibre.com"
 // Sincroniza órdenes, productos y preguntas de una cuenta de MercadoLibre
 export async function POST(request: NextRequest) {
   try {
-    const { accountId } = await request.json()
+    const { accountId, ml_user_id } = await request.json()
     
-    if (!accountId) {
-      return NextResponse.json({ error: "accountId es requerido" }, { status: 400 })
+    if (!accountId && !ml_user_id) {
+      return NextResponse.json({ error: "accountId o ml_user_id es requerido" }, { status: 400 })
     }
 
     const supabase = await createClient()
 
-    // Obtener la cuenta de ML
-    const { data: account, error: accountError } = await supabase
-      .from("ml_accounts")
-      .select("*")
-      .eq("id", accountId)
-      .single()
+    // Obtener la cuenta de ML por id o ml_user_id
+    let query = supabase.from("ml_accounts").select("*")
+    
+    if (accountId) {
+      query = query.eq("id", accountId)
+    } else if (ml_user_id) {
+      query = query.eq("ml_user_id", ml_user_id.toString())
+    }
+    
+    const { data: account, error: accountError } = await query.single()
 
     if (accountError || !account) {
       return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
     }
 
     // Refrescar token si es necesario
-    const accessToken = await refreshTokenIfNeeded(account)
+    const validAccount = await refreshTokenIfNeeded(account)
+    const accessToken = validAccount.access_token
 
     const results = {
       orders: { synced: 0, errors: 0 },

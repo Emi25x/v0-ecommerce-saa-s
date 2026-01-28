@@ -79,6 +79,12 @@ const Check = () => (
   </svg>
 )
 
+const RefreshCw = () => (
+  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+  </svg>
+)
+
 const X = () => (
   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -131,6 +137,8 @@ export function MLAccountCard({
   const [customBrowser, setCustomBrowser] = useState("")
   const [isSavingBrowser, setIsSavingBrowser] = useState(false)
   const [authLinkCopied, setAuthLinkCopied] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [lastSyncResult, setLastSyncResult] = useState<{ success: boolean; message: string } | null>(null)
 
   useEffect(() => {
     const stored = localStorage.getItem(`ml_browser_${account.id}`)
@@ -158,6 +166,39 @@ export function MLAccountCard({
     { value: "safari-default", label: "Safari - Perfil Principal" },
     { value: "custom", label: "Personalizado..." },
   ]
+
+  const handleSync = async () => {
+    setIsSyncing(true)
+    setLastSyncResult(null)
+    try {
+      const response = await fetch("/api/mercadolibre/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ml_user_id: account.ml_user_id }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        setLastSyncResult({
+          success: true,
+          message: `Sincronizado: ${data.summary?.orders || 0} ordenes, ${data.summary?.items || 0} productos`,
+        })
+      } else {
+        setLastSyncResult({
+          success: false,
+          message: data.error || "Error al sincronizar",
+        })
+      }
+    } catch (error) {
+      setLastSyncResult({
+        success: false,
+        message: "Error de conexion",
+      })
+    } finally {
+      setIsSyncing(false)
+    }
+  }
 
   const handleSaveNickname = async () => {
     try {
@@ -393,28 +434,49 @@ export function MLAccountCard({
             </DialogContent>
           </Dialog>
 
-          {!isConnected && (
-            <Button variant="default" asChild className="flex-1">
-              <a href={`/api/mercadolibre/auth?account_id=${account.id}`}>
-                {account.tokenExpired ? "Reconectar" : "Conectar"}
-              </a>
-            </Button>
-          )}
-
-          <Button variant="destructive" size="icon" onClick={handleDelete} disabled={isDeleting}>
+{!isConnected && (
+  <Button variant="default" asChild className="flex-1">
+  <a href={`/api/mercadolibre/auth?account_id=${account.id}`}>
+    {account.tokenExpired ? "Reconectar" : "Conectar"}
+  </a>
+  </Button>
+  )}
+  
+  {isConnected && (
+    <Button 
+      variant="outline" 
+      size="sm" 
+      onClick={handleSync} 
+      disabled={isSyncing}
+      className="bg-transparent"
+    >
+      <RefreshCw className={isSyncing ? "animate-spin" : ""} />
+      <span className="ml-1">{isSyncing ? "Sincronizando..." : "Sincronizar"}</span>
+    </Button>
+  )}
+  
+  <Button variant="destructive" size="icon" onClick={handleDelete} disabled={isDeleting}>
             <Trash />
           </Button>
         </div>
 
-        {account.tokenExpired && (
-          <Alert variant="destructive">
-            <AlertDescription className="text-xs">
-              El token ha expirado. Haz clic en "Reconectar" para renovar la conexión.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        </CardContent>
+{account.tokenExpired && (
+  <Alert variant="destructive">
+  <AlertDescription className="text-xs">
+    El token ha expirado. Haz clic en Reconectar para renovar la conexion.
+  </AlertDescription>
+  </Alert>
+  )}
+  
+  {lastSyncResult && (
+    <Alert variant={lastSyncResult.success ? "default" : "destructive"}>
+      <AlertDescription className="text-xs">
+        {lastSyncResult.message}
+      </AlertDescription>
+    </Alert>
+  )}
+  
+  </CardContent>
     </Card>
   )
 }

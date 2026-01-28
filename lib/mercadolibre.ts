@@ -158,6 +158,54 @@ export async function refreshAccessToken(refreshToken: string): Promise<MLAuthTo
 }
 
 /**
+ * Refresh token if needed - takes an account object and returns it with a valid token
+ * This is useful when you already have the account object from the database
+ */
+export async function refreshTokenIfNeeded(account: {
+  id: string
+  access_token: string
+  refresh_token: string
+  token_expires_at: string
+}): Promise<{ id: string; access_token: string; refresh_token: string; token_expires_at: string }> {
+  const { createClient } = await import("@/lib/supabase/server")
+  const supabase = await createClient()
+
+  // Check if token is expired or will expire in the next 5 minutes
+  const expiresAt = new Date(account.token_expires_at)
+  const now = new Date()
+  const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000)
+
+  if (expiresAt > fiveMinutesFromNow) {
+    // Token is still valid
+    return account
+  }
+
+  // Token is expired or about to expire, refresh it
+  console.log("[v0] ML Token - Refreshing expired token for account:", account.id)
+  const tokens = await refreshAccessToken(account.refresh_token)
+
+  // Update database with new tokens
+  const newExpiresAt = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString()
+  await supabase
+    .from("ml_accounts")
+    .update({
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      token_expires_at: newExpiresAt,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", account.id)
+
+  console.log("[v0] ML Token - Refreshed successfully")
+  return {
+    ...account,
+    access_token: tokens.access_token,
+    refresh_token: tokens.refresh_token,
+    token_expires_at: newExpiresAt,
+  }
+}
+
+/**
  * Get a valid access token for a user, refreshing if necessary
  * This function checks the database for the token and refreshes it if expired
  */

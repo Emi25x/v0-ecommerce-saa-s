@@ -33,6 +33,7 @@ const App = () => {
   const [showResetDialog, setShowResetDialog] = useState(false)
   const [resetLoading, setResetLoading] = useState(false)
   const [resetConfirmText, setResetConfirmText] = useState("")
+  const [runInBackground, setRunInBackground] = useState(true) // Por defecto en background
 
   // Estado para el análisis de duplicados
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -879,8 +880,52 @@ const App = () => {
     if (!sourceToImport) return
 
     setShowImportConfirmDialog(false)
-    setShowProgressDialog(true)
 
+    // Si es importación en background (servidor)
+    if (runInBackground && sourceToImport.file_url) {
+      toast({
+        title: "Importación iniciada en segundo plano",
+        description: "La importación continuará aunque cierres esta página. Podés verificar el progreso en el historial.",
+      })
+
+      try {
+        const response = await fetch("/api/inventory/import/background", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sourceId: sourceToImport.id,
+            fileUrl: sourceToImport.file_url,
+            mode: importMode,
+          }),
+        })
+
+        if (response.ok) {
+          const result = await response.json()
+          toast({
+            title: "Importación completada",
+            description: `Importados: ${result.summary?.imported || 0}, Actualizados: ${result.summary?.updated || 0}, Fallidos: ${result.summary?.failed || 0}`,
+          })
+          loadSources() // Refrescar fuentes
+        } else {
+          const error = await response.json()
+          toast({
+            title: "Error en importación",
+            description: error.error || "Error desconocido",
+            variant: "destructive",
+          })
+        }
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "No se pudo iniciar la importación en segundo plano",
+          variant: "destructive",
+        })
+      }
+      return
+    }
+
+    // Importación en cliente (como antes)
+    setShowProgressDialog(true)
     isExecutingRef.current = true
 
     const newProgress: ImportProgressState = {
@@ -1512,12 +1557,31 @@ const App = () => {
                 </SelectContent>
               </Select>
             </div>
+            
+            {/* Opción de ejecutar en segundo plano */}
+            {sourceToImport?.file_url && (
+              <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/50">
+                <div className="space-y-0.5">
+                  <Label htmlFor="background-mode" className="font-medium">Ejecutar en segundo plano</Label>
+                  <p className="text-xs text-muted-foreground">
+                    La importación continuará aunque cierres la página (recomendado para archivos grandes)
+                  </p>
+                </div>
+                <Switch
+                  id="background-mode"
+                  checked={runInBackground}
+                  onCheckedChange={setRunInBackground}
+                />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowImportConfirmDialog(false)}>
               Cancelar
             </Button>
-            <Button onClick={confirmImport}>Iniciar Importación</Button>
+            <Button onClick={confirmImport}>
+              {runInBackground && sourceToImport?.file_url ? "Iniciar en Segundo Plano" : "Iniciar Importación"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

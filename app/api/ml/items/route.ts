@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createServerClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/supabase/server"
+import { createServerClient } from "@/lib/supabase/server" // Declared the variable here
 
 export async function GET(request: NextRequest) {
   console.log("[v0] ========================================")
@@ -19,11 +20,11 @@ export async function GET(request: NextRequest) {
 
   try {
     console.log("[v0] Creating Supabase client...")
-    const supabase = await createServerClient()
+    const supabase = await createClient()
     console.log("[v0] Supabase client created successfully")
 
-    console.log("[v0] Querying mercadolibre_accounts...")
-    let accountsQuery = supabase.from("mercadolibre_accounts").select("*")
+    console.log("[v0] Querying ml_accounts...")
+    let accountsQuery = supabase.from("ml_accounts").select("*")
 
     if (accountId && accountId !== "all") {
       accountsQuery = accountsQuery.eq("id", accountId)
