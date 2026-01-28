@@ -227,6 +227,15 @@ export function MLAccountCard({
     setWebhookUrl(url)
   }
 
+  const [authLinkCopied, setAuthLinkCopied] = useState(false)
+  
+  const copyAuthLink = () => {
+    const url = `${window.location.origin}/api/mercadolibre/auth`
+    navigator.clipboard.writeText(url)
+    setAuthLinkCopied(true)
+    setTimeout(() => setAuthLinkCopied(false), 2000)
+  }
+
   const isConnected = account.connected && !account.tokenExpired
 
   return (
@@ -406,6 +415,38 @@ export function MLAccountCard({
             </AlertDescription>
           </Alert>
         )}
+
+        {/* Botón para copiar link de autorización */}
+        <div className="pt-2 border-t">
+          <div className="flex items-center gap-2">
+            <Input 
+              value={`${typeof window !== 'undefined' ? window.location.origin : ''}/api/mercadolibre/auth`}
+              readOnly
+              className="font-mono text-xs flex-1"
+            />
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={copyAuthLink}
+              className="shrink-0 bg-transparent"
+            >
+              {authLinkCopied ? (
+                <>
+                  <Check />
+                  <span className="ml-1">Copiado</span>
+                </>
+              ) : (
+                <>
+                  <ExternalLink />
+                  <span className="ml-1">Copiar Link</span>
+                </>
+              )}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">
+            Link de autorización para conectar cuentas de MercadoLibre
+          </p>
+        </div>
       </CardContent>
     </Card>
   )

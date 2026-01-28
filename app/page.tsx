@@ -3,7 +3,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useState, useEffect } from "react"
-import { AppSidebar } from "@/components/app-sidebar"
+
 
 const PackageIcon = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -224,190 +224,186 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <div className="flex flex-1">
-        <AppSidebar />
+      <main className="flex-1 p-6">
+        <div className="mb-8">
+          <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
+          <p className="text-muted-foreground">
+            Gestiona tus productos y sincroniza entre plataformas
+            {lastSync && <span className="ml-2 text-xs">• Última actualización: {lastSync}</span>}
+          </p>
+        </div>
 
-        <main className="flex-1 p-6">
-          <div className="mb-8">
-            <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
-            <p className="text-muted-foreground">
-              Gestiona tus productos y sincroniza entre plataformas
-              {lastSync && <span className="ml-2 text-xs">• Última actualización: {lastSync}</span>}
-            </p>
-          </div>
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Cuentas ML</CardTitle>
+              <PackageIcon className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{loading ? "..." : mlAccounts.length}</div>
+              <p className="text-xs text-muted-foreground">
+                {mlAccounts.length === 0 ? "No hay cuentas conectadas" : "Cuentas activas"}
+              </p>
+            </CardContent>
+          </Card>
 
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Cuentas ML</CardTitle>
-                <PackageIcon className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{loading ? "..." : mlAccounts.length}</div>
-                <p className="text-xs text-muted-foreground">
-                  {mlAccounts.length === 0 ? "No hay cuentas conectadas" : "Cuentas activas"}
-                </p>
-              </CardContent>
-            </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Publicaciones ML</CardTitle>
+              <PackageIcon className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{loading ? "..." : mlProductsCount.toLocaleString()}</div>
+              <p className="text-xs text-muted-foreground">Total en todas las cuentas</p>
+            </CardContent>
+          </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Publicaciones ML</CardTitle>
-                <PackageIcon className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{loading ? "..." : mlProductsCount.toLocaleString()}</div>
-                <p className="text-xs text-muted-foreground">Total en todas las cuentas</p>
-              </CardContent>
-            </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Productos Sincronizados</CardTitle>
+              <RefreshIcon className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{syncedLoading ? "..." : syncedProductsCount.toLocaleString()}</div>
+              <p className="text-xs text-muted-foreground">
+                {syncedData?.libralSynced ? `${syncedData.libralSynced} desde Libral` : "Desde fuentes externas"}
+              </p>
+            </CardContent>
+          </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Productos Sincronizados</CardTitle>
-                <RefreshIcon className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{syncedLoading ? "..." : syncedProductsCount.toLocaleString()}</div>
-                <p className="text-xs text-muted-foreground">
-                  {syncedData?.libralSynced ? `${syncedData.libralSynced} desde Libral` : "Desde fuentes externas"}
-                </p>
-              </CardContent>
-            </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Competencia</CardTitle>
+              <TrendingUpIcon className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{competitionStats?.winning || 0}</div>
+              <p className="text-xs text-muted-foreground">
+                Productos ganando • {competitionStats?.losing || 0} perdiendo
+              </p>
+            </CardContent>
+          </Card>
+        </div>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Competencia</CardTitle>
-                <TrendingUpIcon className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{competitionStats?.winning || 0}</div>
-                <p className="text-xs text-muted-foreground">
-                  Productos ganando • {competitionStats?.losing || 0} perdiendo
-                </p>
-              </CardContent>
-            </Card>
-          </div>
+        <div className="mt-6 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Alertas</CardTitle>
+              <AlertCircleIcon className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{competitionStats?.penalized || 0}</div>
+              <p className="text-xs text-muted-foreground">Productos penalizados</p>
+            </CardContent>
+          </Card>
+        </div>
 
-          <div className="mt-6 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Alertas</CardTitle>
-                <AlertCircleIcon className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{competitionStats?.penalized || 0}</div>
-                <p className="text-xs text-muted-foreground">Productos penalizados</p>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="mt-6 grid gap-6 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Cuentas de Mercado Libre</CardTitle>
-                <CardDescription>Gestiona tus cuentas conectadas</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {loading ? (
-                  <div className="text-sm text-muted-foreground">Cargando...</div>
-                ) : mlAccounts.length === 0 ? (
-                  <div className="text-center py-4">
-                    <p className="text-sm text-muted-foreground mb-4">No hay cuentas conectadas</p>
-                    <Button asChild>
-                      <a href="/integrations">Conectar Cuenta</a>
-                    </Button>
-                  </div>
-                ) : (
-                  <>
-                    {mlAccounts.slice(0, 3).map((account: any) => (
-                      <div
-                        key={account.id}
-                        className="flex items-center justify-between rounded-lg border border-border p-4"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                            <PackageIcon className="h-5 w-5" />
-                          </div>
-                          <div>
-                            <p className="font-medium">{account.nickname || account.ml_user_id}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {account.expired ? (
-                                <span className="text-red-500">Token expirado</span>
-                              ) : (
-                                <span className="text-green-500">Conectado</span>
-                              )}
-                            </p>
-                          </div>
+        <div className="mt-6 grid gap-6 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Cuentas de Mercado Libre</CardTitle>
+              <CardDescription>Gestiona tus cuentas conectadas</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {loading ? (
+                <div className="text-sm text-muted-foreground">Cargando...</div>
+              ) : mlAccounts.length === 0 ? (
+                <div className="text-center py-4">
+                  <p className="text-sm text-muted-foreground mb-4">No hay cuentas conectadas</p>
+                  <Button asChild>
+                    <a href="/integrations">Conectar Cuenta</a>
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  {mlAccounts.slice(0, 3).map((account: any) => (
+                    <div
+                      key={account.id}
+                      className="flex items-center justify-between rounded-lg border border-border p-4"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                          <PackageIcon className="h-5 w-5" />
                         </div>
-                        <Button variant="outline" size="sm" asChild>
-                          <a href="/integrations">Ver</a>
-                        </Button>
-                      </div>
-                    ))}
-                    {mlAccounts.length > 3 && (
-                      <Button variant="outline" className="w-full bg-transparent" asChild>
-                        <a href="/integrations">Ver todas las cuentas ({mlAccounts.length})</a>
-                      </Button>
-                    )}
-                  </>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Actividad Reciente</CardTitle>
-                <CardDescription>Últimas sincronizaciones y cambios</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {lastSync || mlProductsCount > 0 ? (
-                  <div className="space-y-3">
-                    {lastSync && (
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
-                          <RefreshIcon className="h-4 w-4 text-primary" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium">Sincronización completada</p>
-                          <p className="text-xs text-muted-foreground">{lastSync}</p>
-                        </div>
-                      </div>
-                    )}
-                    {mlProductsCount > 0 && (
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
-                          <PackageIcon className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium">{mlProductsCount.toLocaleString()} productos activos</p>
-                          <p className="text-xs text-muted-foreground">En Mercado Libre</p>
-                        </div>
-                      </div>
-                    )}
-                    {competitionStats && competitionStats.analyzed > 0 && (
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-500/10">
-                          <TrendingUpIcon className="h-4 w-4 text-green-500" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium">{competitionStats.analyzed} productos analizados</p>
-                          <p className="text-xs text-muted-foreground">
-                            {competitionStats.winning} ganando, {competitionStats.losing} perdiendo
+                        <div>
+                          <p className="font-medium">{account.nickname || account.ml_user_id}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {account.expired ? (
+                              <span className="text-red-500">Token expirado</span>
+                            ) : (
+                              <span className="text-green-500">Conectado</span>
+                            )}
                           </p>
                         </div>
                       </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
-                    No hay actividad reciente
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </main>
-      </div>
+                      <Button variant="outline" size="sm" asChild>
+                        <a href="/integrations">Ver</a>
+                      </Button>
+                    </div>
+                  ))}
+                  {mlAccounts.length > 3 && (
+                    <Button variant="outline" className="w-full bg-transparent" asChild>
+                      <a href="/integrations">Ver todas las cuentas ({mlAccounts.length})</a>
+                    </Button>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Actividad Reciente</CardTitle>
+              <CardDescription>Últimas sincronizaciones y cambios</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {lastSync || mlProductsCount > 0 || competitionStats?.analyzed > 0 ? (
+                <div className="space-y-3">
+                  {lastSync && (
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
+                        <RefreshIcon className="h-4 w-4 text-primary" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">Sincronización completada</p>
+                        <p className="text-xs text-muted-foreground">{lastSync}</p>
+                      </div>
+                    </div>
+                  )}
+                  {mlProductsCount > 0 && (
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
+                        <PackageIcon className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{mlProductsCount.toLocaleString()} productos activos</p>
+                        <p className="text-xs text-muted-foreground">En Mercado Libre</p>
+                      </div>
+                    </div>
+                  )}
+                  {competitionStats && competitionStats.analyzed > 0 && (
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-500/10">
+                        <TrendingUpIcon className="h-4 w-4 text-green-500" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">{competitionStats.analyzed} productos analizados</p>
+                        <p className="text-xs text-muted-foreground">
+                          {competitionStats.winning} ganando, {competitionStats.losing} perdiendo
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
+                  No hay actividad reciente
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </main>
     </div>
   )
 }

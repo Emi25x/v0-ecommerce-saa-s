@@ -84,7 +84,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { LibralConfigDialog } from "@/components/integrations/libral-config-dialog"
 import { WebhookStatusCard } from "@/components/webhook-status-card"
 import { MLAccountCard } from "@/components/ml-account-card"
-import { AppSidebar } from "@/components/app-sidebar"
+
 
 export default function IntegrationsPage() {
   const [shopifyConnected, setShopifyConnected] = useState(false)
@@ -277,281 +277,276 @@ export default function IntegrationsPage() {
         </div>
       </header>
 
-      <div className="flex flex-1">
-        {/* CHANGE: Usando el sidebar unificado */}
-        <AppSidebar />
+      <main className="flex-1 p-6">
+        <div className="mb-8">
+          <h2 className="text-3xl font-bold tracking-tight">Integraciones</h2>
+          <p className="text-muted-foreground">Conecta y gestiona tus plataformas de ecommerce</p>
+        </div>
 
-        <main className="flex-1 p-6">
-          <div className="mb-8">
-            <h2 className="text-3xl font-bold tracking-tight">Integraciones</h2>
-            <p className="text-muted-foreground">Conecta y gestiona tus plataformas de ecommerce</p>
-          </div>
+        {successMessage && (
+          <Alert className="mb-6 border-green-500/50 bg-green-500/10">
+            <CheckCircle2 className="h-4 w-4 text-green-500" />
+            <AlertDescription className="text-green-500">{successMessage}</AlertDescription>
+          </Alert>
+        )}
 
-          {successMessage && (
-            <Alert className="mb-6 border-green-500/50 bg-green-500/10">
-              <CheckCircle2 className="h-4 w-4 text-green-500" />
-              <AlertDescription className="text-green-500">{successMessage}</AlertDescription>
-            </Alert>
-          )}
+        {errorMessage && (
+          <Alert className="mb-6 border-destructive/50 bg-destructive/10">
+            <XCircle className="h-4 w-4 text-destructive" />
+            <AlertDescription className="text-destructive">{errorMessage}</AlertDescription>
+          </Alert>
+        )}
 
-          {errorMessage && (
-            <Alert className="mb-6 border-destructive/50 bg-destructive/10">
-              <XCircle className="h-4 w-4 text-destructive" />
-              <AlertDescription className="text-destructive">{errorMessage}</AlertDescription>
-            </Alert>
-          )}
-
-          <div className="grid gap-6 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
-                      <Package className="h-6 w-6" />
-                    </div>
-                    <div>
-                      <CardTitle>Libral ERP</CardTitle>
-                      <CardDescription>Sistema de gestión interno</CardDescription>
-                    </div>
+        <div className="grid gap-6 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
+                    <Package className="h-6 w-6" />
                   </div>
-                  <Badge variant={libralConnected ? "default" : "secondary"} className="gap-1">
-                    {libralConnected ? (
-                      <>
-                        <CheckCircle2 className="h-3 w-3" />
-                        Conectado
-                      </>
-                    ) : (
-                      <>
-                        <XCircle className="h-3 w-3" />
-                        Desconectado
-                      </>
-                    )}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Conecta tu ERP Libral para importar productos, sincronizar stock y gestionar pedidos automáticamente.
-                </p>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm">
-                    <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-                    <span>Importación de productos</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-                    <span>Sincronización de stock</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-                    <span>Gestión de pedidos</span>
+                  <div>
+                    <CardTitle>Libral ERP</CardTitle>
+                    <CardDescription>Sistema de gestión interno</CardDescription>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button onClick={() => setShowLibralConfig(true)} className="flex-1">
-                    {libralConnected ? "Reconfigurar" : "Conectar"}
-                  </Button>
-                  <Button onClick={runDiagnosis} disabled={testingDiagnosis} variant="outline">
-                    {testingDiagnosis ? "Diagnosticando..." : "Diagnosticar"}
-                  </Button>
+                <Badge variant={libralConnected ? "default" : "secondary"} className="gap-1">
+                  {libralConnected ? (
+                    <>
+                      <CheckCircle2 className="h-3 w-3" />
+                      Conectado
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="h-3 w-3" />
+                      Desconectado
+                    </>
+                  )}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Conecta tu ERP Libral para importar productos, sincronizar stock y gestionar pedidos automáticamente.
+              </p>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                  <span>Importación de productos</span>
                 </div>
-                {diagnosisResults && (
-                  <div className="rounded-lg bg-muted p-4">
-                    <p className="mb-2 text-sm font-medium">Resultados de diagnóstico:</p>
-                    <pre className="max-h-96 overflow-auto text-xs">{diagnosisResults}</pre>
-                  </div>
-                )}
-                {authTestResults && (
-                  <div className="rounded-lg bg-muted p-4">
-                    <p className="mb-2 text-sm font-medium">Resultados de prueba:</p>
-                    <pre className="overflow-auto text-xs">{authTestResults}</pre>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
-                      <svg className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M14.867 5.166l-4.24 13.668h3.155l4.24-13.668h-3.155zm-6.84 0L3.787 18.834h3.155l4.24-13.668H8.027z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <CardTitle>Mercado Libre</CardTitle>
-                      <CardDescription>API de Mercado Libre</CardDescription>
-                    </div>
-                  </div>
-                  <Badge variant={mlConnected ? "default" : "secondary"} className="gap-1">
-                    {mlConnected ? (
-                      <>
-                        <CheckCircle2 className="h-3 w-3" />
-                        Conectado
-                      </>
-                    ) : (
-                      <>
-                        <XCircle className="h-3 w-3" />
-                        Desconectado
-                      </>
-                    )}
-                  </Badge>
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                  <span>Sincronización de stock</span>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Conecta tu cuenta de Mercado Libre para sincronizar productos, gestionar inventario y actualizar
-                  precios automáticamente.
-                </p>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm">
-                    <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-                    <span>Sincronización de productos</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-                    <span>Gestión de inventario</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-                    <span>Actualización de precios</span>
-                  </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                  <span>Gestión de pedidos</span>
                 </div>
-                <div className="flex gap-2">
-                  <Button asChild className="flex-1">
-                    <a href="/api/mercadolibre/auth">{mlConnected ? "Reconectar" : "Conectar"}</a>
-                  </Button>
-                  <Button variant="outline" size="icon" asChild>
-                    <a href="https://developers.mercadolibre.com.ar" target="_blank" rel="noopener noreferrer">
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
-                      <svg className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M15.337 2.126c-.011-.016-.023-.031-.037-.044a.095.095 0 0 0-.065-.027c-.011 0-1.195.054-1.195.054s-.93-.905-1.032-1.006c-.102-.102-.3-.073-.377-.05 0 0-.188.058-.5.155-.07-.203-.178-.454-.327-.708-.456-.776-1.122-1.185-1.926-1.185h-.06c-.29-.367-.647-.53-.908-.53C8.683-1.215 8.5-.99 8.37-.67c-.326.8-.6 1.797-.77 2.43-.53.164-1.006.31-1.337.413-.515.16-.53.176-.597.664-.05.37-1.368 10.533-1.368 10.533l10.639 2.005 4.813-1.19S15.348 2.142 15.337 2.126zm-3.13-.49l-.84.26c0-.01.002-1.17.002-1.17.405.03.68.48.838.91zm-1.376.425l-1.607.497c.156-.59.447-1.176.795-1.563.12-.133.285-.296.48-.43.002.51.01 1.23.332 1.496zm-.87-2.09c.11 0 .22.036.325.11-.47.23-.94.65-1.29 1.27-.43.76-.67 1.61-.76 2.25l-1.32.41c.17-.77 1.04-3.81 3.04-4.04z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <CardTitle>Shopify</CardTitle>
-                      <CardDescription>API de Shopify</CardDescription>
-                    </div>
-                  </div>
-                  <Badge variant={shopifyConnected ? "default" : "secondary"} className="gap-1">
-                    {shopifyConnected ? (
-                      <>
-                        <CheckCircle2 className="h-3 w-3" />
-                        Conectado
-                      </>
-                    ) : (
-                      <>
-                        <XCircle className="h-3 w-3" />
-                        Desconectado
-                      </>
-                    )}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  Conecta tu tienda Shopify para sincronizar productos, gestionar inventario y mantener todo
-                  actualizado.
-                </p>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm">
-                    <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-                    <span>Sincronización de productos</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-                    <span>Gestión de inventario</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-                    <span>Actualización de precios</span>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button onClick={testShopifyConnection} disabled={testingShopify} className="flex-1">
-                    {testingShopify ? "Probando..." : shopifyConnected ? "Reconectar" : "Probar Conexión"}
-                  </Button>
-                  <Button variant="outline" size="icon" asChild>
-                    <a href="https://shopify.dev" target="_blank" rel="noopener noreferrer">
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="mt-8">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h3 className="text-2xl font-semibold">Cuentas de Mercado Libre</h3>
-                <p className="text-sm text-muted-foreground">Gestiona múltiples cuentas de Mercado Libre</p>
               </div>
               <div className="flex gap-2">
-                <Button onClick={runMigration} disabled={runningMigration} variant="outline">
-                  {runningMigration ? "Ejecutando..." : "Actualizar BD"}
+                <Button onClick={() => setShowLibralConfig(true)} className="flex-1">
+                  {libralConnected ? "Reconfigurar" : "Conectar"}
                 </Button>
-                <Button asChild>
-                  <a href="/api/mercadolibre/auth">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Agregar Cuenta
+                <Button onClick={runDiagnosis} disabled={testingDiagnosis} variant="outline">
+                  {testingDiagnosis ? "Diagnosticando..." : "Diagnosticar"}
+                </Button>
+              </div>
+              {diagnosisResults && (
+                <div className="rounded-lg bg-muted p-4">
+                  <p className="mb-2 text-sm font-medium">Resultados de diagnóstico:</p>
+                  <pre className="max-h-96 overflow-auto text-xs">{diagnosisResults}</pre>
+                </div>
+              )}
+              {authTestResults && (
+                <div className="rounded-lg bg-muted p-4">
+                  <p className="mb-2 text-sm font-medium">Resultados de prueba:</p>
+                  <pre className="overflow-auto text-xs">{authTestResults}</pre>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
+                    <svg className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M14.867 5.166l-4.24 13.668h3.155l4.24-13.668h-3.155zm-6.84 0L3.787 18.834h3.155l4.24-13.668H8.027z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <CardTitle>Mercado Libre</CardTitle>
+                    <CardDescription>API de Mercado Libre</CardDescription>
+                  </div>
+                </div>
+                <Badge variant={mlConnected ? "default" : "secondary"} className="gap-1">
+                  {mlConnected ? (
+                    <>
+                      <CheckCircle2 className="h-3 w-3" />
+                      Conectado
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="h-3 w-3" />
+                      Desconectado
+                    </>
+                  )}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Conecta tu cuenta de Mercado Libre para sincronizar productos, gestionar inventario y actualizar
+                precios automáticamente.
+              </p>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                  <span>Sincronización de productos</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                  <span>Gestión de inventario</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                  <span>Actualización de precios</span>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button asChild className="flex-1">
+                  <a href="/api/mercadolibre/auth">{mlConnected ? "Reconectar" : "Conectar"}</a>
+                </Button>
+                <Button variant="outline" size="icon" asChild>
+                  <a href="https://developers.mercadolibre.com.ar" target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="h-4 w-4" />
                   </a>
                 </Button>
               </div>
-            </div>
+            </CardContent>
+          </Card>
 
-            {migrationMessage && (
-              <Alert className="mb-4">
-                <AlertDescription>{migrationMessage}</AlertDescription>
-              </Alert>
-            )}
-
-            {loadingAccounts ? (
-              <div className="text-center py-8 text-muted-foreground">Cargando cuentas...</div>
-            ) : mlAccounts.length === 0 ? (
-              <Card>
-                <CardContent className="py-8 text-center">
-                  <p className="text-muted-foreground mb-4">No hay cuentas de Mercado Libre conectadas</p>
-                  <Button asChild>
-                    <a href="/api/mercadolibre/auth">
-                      <Plus className="mr-2 h-4 w-4" />
-                      Conectar Primera Cuenta
-                    </a>
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {mlAccounts.map((account, index) => (
-                  <MLAccountCard
-                    key={account.id || index}
-                    account={account}
-                    onUpdate={fetchMlAccounts}
-                    onDelete={fetchMlAccounts}
-                  />
-                ))}
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
+                    <svg className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M15.337 2.126c-.011-.016-.023-.031-.037-.044a.095.095 0 0 0-.065-.027c-.011 0-1.195.054-1.195.054s-.93-.905-1.032-1.006c-.102-.102-.3-.073-.377-.05 0 0-.188.058-.5.155-.07-.203-.178-.454-.327-.708-.456-.776-1.122-1.185-1.926-1.185h-.06c-.29-.367-.647-.53-.908-.53C8.683-1.215 8.5-.99 8.37-.67c-.326.8-.6 1.797-.77 2.43-.53.164-1.006.31-1.337.413-.515.16-.53.176-.597.664-.05.37-1.368 10.533-1.368 10.533l10.639 2.005 4.813-1.19S15.348 2.142 15.337 2.126zm-3.13-.49l-.84.26c0-.01.002-1.17.002-1.17.405.03.68.48.838.91zm-1.376.425l-1.607.497c.156-.59.447-1.176.795-1.563.12-.133.285-.296.48-.43.002.51.01 1.23.332 1.496zm-.87-2.09c.11 0 .22.036.325.11-.47.23-.94.65-1.29 1.27-.43.76-.67 1.61-.76 2.25l-1.32.41c.17-.77 1.04-3.81 3.04-4.04z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <CardTitle>Shopify</CardTitle>
+                    <CardDescription>API de Shopify</CardDescription>
+                  </div>
+                </div>
+                <Badge variant={shopifyConnected ? "default" : "secondary"} className="gap-1">
+                  {shopifyConnected ? (
+                    <>
+                      <CheckCircle2 className="h-3 w-3" />
+                      Conectado
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="h-3 w-3" />
+                      Desconectado
+                    </>
+                  )}
+                </Badge>
               </div>
-            )}
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Conecta tu tienda Shopify para sincronizar productos, gestionar inventario y mantener todo
+                actualizado.
+              </p>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                  <span>Sincronización de productos</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                  <span>Gestión de inventario</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                  <span>Actualización de precios</span>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={testShopifyConnection} disabled={testingShopify} className="flex-1">
+                  {testingShopify ? "Probando..." : shopifyConnected ? "Reconectar" : "Probar Conexión"}
+                </Button>
+                <Button variant="outline" size="icon" asChild>
+                  <a href="https://shopify.dev" target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="h-4 w-4" />
+                  </a>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="mt-8">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-2xl font-semibold">Cuentas de Mercado Libre</h3>
+              <p className="text-sm text-muted-foreground">Gestiona múltiples cuentas de Mercado Libre</p>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={runMigration} disabled={runningMigration} variant="outline">
+                {runningMigration ? "Ejecutando..." : "Actualizar BD"}
+              </Button>
+              <Button asChild>
+                <a href="/api/mercadolibre/auth">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Agregar Cuenta
+                </a>
+              </Button>
+            </div>
           </div>
 
-          <div className="mt-6">
-            <h3 className="mb-4 text-xl font-semibold">Notificaciones en Tiempo Real</h3>
-            <WebhookStatusCard />
-          </div>
-        </main>
-      </div>
+          {migrationMessage && (
+            <Alert className="mb-4">
+              <AlertDescription>{migrationMessage}</AlertDescription>
+            </Alert>
+          )}
+
+          {loadingAccounts ? (
+            <div className="text-center py-8 text-muted-foreground">Cargando cuentas...</div>
+          ) : mlAccounts.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <p className="text-muted-foreground mb-4">No hay cuentas de Mercado Libre conectadas</p>
+                <Button asChild>
+                  <a href="/api/mercadolibre/auth">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Conectar Primera Cuenta
+                  </a>
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {mlAccounts.map((account, index) => (
+                <MLAccountCard
+                  key={account.id || index}
+                  account={account}
+                  onUpdate={fetchMlAccounts}
+                  onDelete={fetchMlAccounts}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-6">
+          <h3 className="mb-4 text-xl font-semibold">Notificaciones en Tiempo Real</h3>
+          <WebhookStatusCard />
+        </div>
+      </main>
 
       <LibralConfigDialog
         open={showLibralConfig}

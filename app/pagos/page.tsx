@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { AdvancedPagination } from "@/components/advanced-pagination"
-import { AppSidebar } from "@/components/app-sidebar"
+
 import { MLConnectionStatus } from "@/components/ml-connection-status"
 import { LastUpdated } from "@/components/last-updated"
 import { SortSelector } from "@/components/sort-selector"
@@ -60,7 +60,6 @@ const ExternalLink = ({ className }: { className?: string }) => (
     <line x1="10" x2="21" y1="14" y2="3" />
   </svg>
 )
-// </CHANGE>
 
 const RefreshCw = ({ className }: { className?: string }) => (
   <svg
@@ -433,7 +432,6 @@ export default function PagosPage() {
         console.error("[v0] No order found with ID:", orderId)
         alert("No se encontró la orden")
       }
-      // </CHANGE>
     } catch (error) {
       console.error("[v0] Error fetching order details:", error)
       alert("Error al cargar los detalles de la orden")
@@ -573,768 +571,442 @@ export default function PagosPage() {
         </div>
       </header>
 
-      <div className="flex flex-1">
-        <AppSidebar />
-
-        <main className="flex-1 p-6">
-          <div className="mb-8 flex items-center justify-between">
-            <div>
-              <h2 className="text-3xl font-bold tracking-tight">Pagos</h2>
-              <p className="text-muted-foreground">
-                {filteredPayments.length > 0
-                  ? `${filteredPayments.length.toLocaleString()} pagos en total`
-                  : "Gestiona tus pagos de Mercado Libre"}
-                {selectedAccount !== "all" && mlAccounts[selectedAccount] && (
-                  <span className="ml-2">
-                    •{" "}
-                    <span className="font-medium">
-                      {mlAccounts[selectedAccount]?.nickname || "Cuenta seleccionada"}
-                    </span>
+      <main className="flex-1 p-6">
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight">Pagos</h2>
+            <p className="text-muted-foreground">
+              {filteredPayments.length > 0
+                ? `${filteredPayments.length.toLocaleString()} pagos en total`
+                : "Gestiona tus pagos de Mercado Libre"}
+              {selectedAccount !== "all" && mlAccounts[selectedAccount] && (
+                <span className="ml-2">
+                  •{" "}
+                  <span className="font-medium">
+                    {mlAccounts[selectedAccount]?.nickname || "Cuenta seleccionada"}
                   </span>
-                )}
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <Button onClick={loadPayments} disabled={loading} variant="outline" className="shadow-sm bg-transparent">
-                <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-                Actualizar
-              </Button>
-              <Button
-                variant="outline"
-                onClick={exportToCSV}
-                disabled={filteredPayments.length === 0}
-                className="shadow-sm bg-transparent"
-              >
-                <Download className="mr-2 h-4 w-4" />
-                Exportar
-              </Button>
-            </div>
+                </span>
+              )}
+            </p>
           </div>
-
-          {/* Stats Cards */}
-          <div className="mb-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Cobrado</CardTitle>
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {(stats.total_amount || 0).toLocaleString("es-AR", { style: "currency", currency: "ARS" })}
-                </div>
-                <p className="text-xs text-muted-foreground">{stats.approved_payments || 0} pagos aprobados</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Dinero Liberado</CardTitle>
-                <TrendingUp className="h-4 w-4 text-green-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-green-600">
-                  {(stats.released_amount || 0).toLocaleString("es-AR", { style: "currency", currency: "ARS" })}
-                </div>
-                <p className="text-xs text-muted-foreground">Disponible en tu cuenta</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Pendiente de Liberar</CardTitle>
-                <Clock className="h-4 w-4 text-orange-600" />
-              </CardHeader>
-              <CardContent>
-                <p className="text-xs text-muted-foreground mb-2">
-                  {payments.filter((p) => p.money_release_status === "pending" && filterByTimeRange(p)).length} pagos
-                  pendientes
-                </p>
-                <div className="text-2xl font-bold text-orange-600">
-                  {(stats.pending_release_amount || 0).toLocaleString("es-AR", { style: "currency", currency: "ARS" })}
-                </div>
-                <p className="text-xs text-muted-foreground">En proceso de liberación</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Comisiones</CardTitle>
-                <CreditCard className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {(stats.total_fees || 0).toLocaleString("es-AR", { style: "currency", currency: "ARS" })}
-                </div>
-                <p className="text-xs text-muted-foreground">Total de comisiones</p>
-              </CardContent>
-            </Card>
+          <div className="flex gap-3">
+            <Button onClick={loadPayments} disabled={loading} variant="outline" className="shadow-sm bg-transparent">
+              <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              Actualizar
+            </Button>
+            <Button
+              variant="outline"
+              onClick={exportToCSV}
+              disabled={filteredPayments.length === 0}
+              className="shadow-sm bg-transparent"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Exportar
+            </Button>
           </div>
+        </div>
 
-          <Card className="mb-6 border-border/50 shadow-sm hover:shadow-md transition-shadow">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <Label className="text-sm font-semibold text-foreground">Filtrar por cuenta:</Label>
-                  <Select value={selectedAccount} onValueChange={setSelectedAccount}>
-                    <SelectTrigger className="w-[300px] shadow-sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">
-                        <span className="font-medium">Todas las cuentas</span> ({Object.keys(mlAccounts).length})
-                      </SelectItem>
-                      {Object.entries(mlAccounts).map(([id, account]) => (
-                        <SelectItem key={id} value={id}>
-                          {account.nickname || id}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {Object.keys(mlAccounts).length === 0 && (
-                    <Button variant="outline" size="sm" asChild className="shadow-sm bg-transparent">
-                      <a href="/integrations">Conectar Cuenta</a>
-                    </Button>
-                  )}
-                </div>
-                <div className="flex items-center gap-4">
-                  <LastUpdated timestamp={lastUpdated} isLoading={loading} onRefresh={loadPayments} />
-                  <MLConnectionStatus accountId={selectedAccount} onRefresh={loadPayments} refreshing={loading} />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="mb-6 space-y-4">
-            <Card className="border-border/50 shadow-sm hover:shadow-md transition-shadow">
-              <CardHeader className="bg-gradient-to-r from-muted/50 to-muted/30">
-                <CardTitle className="text-base font-semibold">Período de Tiempo</CardTitle>
-              </CardHeader>
-              <CardContent className="pt-4">
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant={filters.timeFilter === "all" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setFilters({ ...filters, timeFilter: "all" })}
-                    className="shadow-sm"
-                  >
-                    {filters.timeFilter === "all" && <Check className="mr-2 h-4 w-4" />}
-                    Todas
-                  </Button>
-                  <Button
-                    variant={filters.timeFilter === "1month" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setFilters({ ...filters, timeFilter: "1month" })}
-                    className="shadow-sm"
-                  >
-                    {filters.timeFilter === "1month" && <Check className="mr-2 h-4 w-4" />}1 mes
-                  </Button>
-                  <Button
-                    variant={filters.timeFilter === "2months" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setFilters({ ...filters, timeFilter: "2months" })}
-                    className="shadow-sm"
-                  >
-                    {filters.timeFilter === "2months" && <Check className="mr-2 h-4 w-4" />}2 meses
-                  </Button>
-                  <Button
-                    variant={filters.timeFilter === "6months" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setFilters({ ...filters, timeFilter: "6months" })}
-                    className="shadow-sm"
-                  >
-                    {filters.timeFilter === "6months" && <Check className="mr-2 h-4 w-4" />}6 meses
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-border/50 shadow-sm hover:shadow-md transition-shadow">
-              <CardHeader className="bg-gradient-to-r from-muted/50 to-muted/30">
-                <CardTitle className="text-base font-semibold">Filtro Avanzado</CardTitle>
-              </CardHeader>
-              <CardContent className="pt-4">
-                <Collapsible open={advancedFiltersOpen} onOpenChange={setAdvancedFiltersOpen}>
-                  <CollapsibleTrigger asChild>
-                    <Button variant="outline" size="sm" className="w-full justify-between bg-transparent">
-                      Filtros adicionales
-                      <ChevronDown
-                        className={`h-4 w-4 transition-transform ${advancedFiltersOpen ? "rotate-180" : ""}`}
-                      />
-                    </Button>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="mt-4 space-y-4">
-                    <div className="space-y-2">
-                      <Label className="text-sm font-medium">Rango de fechas específico</Label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Desde</Label>
-                          <Input
-                            type="date"
-                            value={filters.date_from}
-                            onChange={(e) => setFilters({ ...filters, date_from: e.target.value })}
-                            className="text-sm"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs text-muted-foreground">Hasta</Label>
-                          <Input
-                            type="date"
-                            value={filters.date_to}
-                            onChange={(e) => setFilters({ ...filters, date_to: e.target.value })}
-                            className="text-sm"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    <div className="space-y-2">
-                      <Label className="text-sm font-medium">Estado del Pago</Label>
-                      <Select value={filters.status} onValueChange={(v) => setFilters({ ...filters, status: v })}>
-                        <SelectTrigger className="text-sm">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Todos los estados</SelectItem>
-                          <SelectItem value="approved">Aprobado</SelectItem>
-                          <SelectItem value="pending">Pendiente</SelectItem>
-                          <SelectItem value="in_process">En Proceso</SelectItem>
-                          <SelectItem value="rejected">Rechazado</SelectItem>
-                          <SelectItem value="cancelled">Cancelado</SelectItem>
-                          <SelectItem value="refunded">Reembolsado</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <Separator />
-
-                    <div className="space-y-2">
-                      <Label className="text-sm font-medium">Estado de Liberación</Label>
-                      <Select
-                        value={filters.release_status}
-                        onValueChange={(v) => setFilters({ ...filters, release_status: v })}
-                      >
-                        <SelectTrigger className="text-sm">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Todos</SelectItem>
-                          <SelectItem value="released">Liberado</SelectItem>
-                          <SelectItem value="pending">Pendiente</SelectItem>
-                          <SelectItem value="blocked">Retenido</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <Separator />
-
-                    <div className="space-y-2">
-                      <Label className="text-sm font-medium">Método de Pago</Label>
-                      <Select
-                        value={filters.payment_method}
-                        onValueChange={(v) => setFilters({ ...filters, payment_method: v })}
-                      >
-                        <SelectTrigger className="text-sm">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Todos</SelectItem>
-                          <SelectItem value="credit_card">Tarjeta de Crédito</SelectItem>
-                          <SelectItem value="debit_card">Tarjeta de Débito</SelectItem>
-                          <SelectItem value="account_money">Dinero en Cuenta</SelectItem>
-                          <SelectItem value="ticket">Efectivo</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </CollapsibleContent>
-                </Collapsible>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Payments Table */}
+        {/* Stats Cards */}
+        <div className="mb-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Lista de Pagos</CardTitle>
-                  <CardDescription>
-                    {loading
-                      ? "Cargando..."
-                      : `Mostrando ${sortedPayments.length} pagos (Página ${currentPage} de ${totalPages})`}
-                  </CardDescription>
-                </div>
-                <SortSelector
-                  options={sortOptions}
-                  value={sortConfig.key}
-                  direction={sortConfig.direction}
-                  onSortChange={handleSortChange}
-                />
-              </div>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Cobrado</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              {loading ? (
-                <div className="flex h-[400px] items-center justify-center text-sm text-muted-foreground">
-                  Cargando pagos...
-                </div>
-              ) : sortedPayments.length === 0 ? (
-                <div className="flex h-[400px] flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
-                  <CreditCard className="h-12 w-12 opacity-20" />
-                  <p>No hay pagos disponibles.</p>
-                  <p className="text-xs">Los pagos aparecerán aquí cuando realices ventas.</p>
-                </div>
-              ) : (
-                <>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>ID Pago</TableHead>
-                        <TableHead>Orden</TableHead>
-                        <TableHead>Cuenta</TableHead>
-                        <TableHead>Monto Bruto</TableHead>
-                        <TableHead>Comisión ML</TableHead>
-                        <TableHead>Envío</TableHead>
-                        <TableHead>Impuestos</TableHead>
-                        <TableHead>Reembolsos</TableHead>
-                        <TableHead className="font-semibold">Neto</TableHead>
-                        {/* </CHANGE> */}
-                        <TableHead>Estado</TableHead>
-                        <TableHead>Liberación</TableHead>
-                        <TableHead>Fecha Liberación</TableHead>
-                        <TableHead className="text-right">Acciones</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {sortedPayments.map((payment) => (
-                        <TableRow key={payment.id}>
-                          <TableCell className="font-medium">#{payment.id}</TableCell>
-                          <TableCell>
-                            <button
-                              onClick={() => viewOrderDetails(payment.order_id)}
-                              className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline font-medium"
-                            >
-                              #{payment.order_id}
-                              <Eye className="h-3 w-3" />
-                            </button>
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-sm">{payment._account?.nickname || "N/A"}</span>
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium">
-                              {(payment.transaction_amount || 0).toLocaleString("es-AR", {
-                                style: "currency",
-                                currency: payment.currency_id || "ARS",
-                              })}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm text-red-600">
-                              -{" "}
-                              {(payment.marketplace_fee || 0).toLocaleString("es-AR", {
-                                style: "currency",
-                                currency: payment.currency_id || "ARS",
-                              })}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm text-muted-foreground">
-                              {payment.shipping_cost > 0
-                                ? (payment.shipping_cost || 0).toLocaleString("es-AR", {
-                                    style: "currency",
-                                    currency: payment.currency_id || "ARS",
-                                  })
-                                : "-"}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm text-red-600">
-                              {payment.taxes_amount > 0
-                                ? `- ${(payment.taxes_amount || 0).toLocaleString("es-AR", {
-                                    style: "currency",
-                                    currency: payment.currency_id || "ARS",
-                                  })}`
-                                : "-"}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm text-red-600">
-                              {payment.transaction_amount_refunded > 0
-                                ? `- ${(payment.transaction_amount_refunded || 0).toLocaleString("es-AR", {
-                                    style: "currency",
-                                    currency: payment.currency_id || "ARS",
-                                  })}`
-                                : "-"}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-semibold text-green-600">
-                              {(payment.net_received_amount || 0).toLocaleString("es-AR", {
-                                style: "currency",
-                                currency: payment.currency_id || "ARS",
-                              })}
-                            </div>
-                          </TableCell>
-                          {/* </CHANGE> */}
-                          <TableCell>{getPaymentStatusBadge(payment.status)}</TableCell>
-                          <TableCell>{getReleaseStatusBadge(payment.money_release_status)}</TableCell>
-                          <TableCell>
-                            {payment.money_release_date ? (
-                              <div className="text-sm">
-                                <div>{new Date(payment.money_release_date).toLocaleDateString()}</div>
-                                <div className="text-xs text-muted-foreground">
-                                  {new Date(payment.money_release_date).toLocaleTimeString()}
-                                </div>
-                              </div>
-                            ) : (
-                              <span className="text-sm text-muted-foreground">Pendiente</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button variant="ghost" size="icon" onClick={() => viewPaymentDetails(payment)}>
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-
-                  {totalPages > 1 && (
-                    <AdvancedPagination
-                      currentPage={currentPage}
-                      totalPages={totalPages}
-                      onPageChange={setCurrentPage}
-                      disabled={loading}
-                      itemsPerPage={50}
-                      totalItems={filteredPayments.length}
-                      offset={(currentPage - 1) * 50}
-                    />
-                  )}
-                </>
-              )}
+              <div className="text-2xl font-bold">
+                {(stats.total_amount || 0).toLocaleString("es-AR", { style: "currency", currency: "ARS" })}
+              </div>
+              <p className="text-xs text-muted-foreground">{stats.approved_payments || 0} pagos aprobados</p>
             </CardContent>
           </Card>
-        </main>
-      </div>
-
-      {/* Payment Details Dialog */}
-      <Dialog open={showPaymentDetails} onOpenChange={setShowPaymentDetails}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Detalles del Pago #{selectedPayment?.id}</DialogTitle>
-            <DialogDescription>Información completa del pago y liberación de dinero</DialogDescription>
-          </DialogHeader>
-
-          {selectedPayment && (
-            <div className="space-y-6">
-              {/* Payment Status */}
-              <div>
-                <h3 className="font-semibold mb-3">Estado del Pago</h3>
-                <div className="grid gap-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Estado:</span>
-                    {getPaymentStatusBadge(selectedPayment.status)}
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Detalle:</span>
-                    <span className="font-medium">{selectedPayment.status_detail || "N/A"}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Método de Pago:</span>
-                    <span className="font-medium">{selectedPayment.payment_method_id}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Tipo:</span>
-                    <span className="font-medium">{selectedPayment.payment_type_id}</span>
-                  </div>
-                  {selectedPayment.installments > 1 && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Cuotas:</span>
-                      <span className="font-medium">{selectedPayment.installments}x</span>
-                    </div>
-                  )}
-                </div>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Dinero Liberado</CardTitle>
+              <TrendingUp className="h-4 w-4 text-green-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">
+                {(stats.released_amount || 0).toLocaleString("es-AR", { style: "currency", currency: "ARS" })}
               </div>
-
-              <Separator />
-
-              {/* Money Release */}
-              <div>
-                <h3 className="font-semibold mb-3">Liberación de Dinero</h3>
-                <div className="grid gap-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Estado de Liberación:</span>
-                    {getReleaseStatusBadge(selectedPayment.money_release_status)}
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Fecha de Liberación:</span>
-                    <span className="font-medium">
-                      {selectedPayment.money_release_date
-                        ? new Date(selectedPayment.money_release_date).toLocaleString()
-                        : "Pendiente"}
-                    </span>
-                  </div>
-                </div>
+              <p className="text-xs text-muted-foreground">Disponible en tu cuenta</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Pendiente de Liberar</CardTitle>
+              <Clock className="h-4 w-4 text-orange-600" />
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-muted-foreground mb-2">
+                {payments.filter((p) => p.money_release_status === "pending" && filterByTimeRange(p)).length} pagos
+                pendientes
+              </p>
+              <div className="text-2xl font-bold text-orange-600">
+                {(stats.pending_release_amount || 0).toLocaleString("es-AR", { style: "currency", currency: "ARS" })}
               </div>
-
-              <Separator />
-
-              {/* Amounts */}
-              <div>
-                <h3 className="font-semibold mb-3">Montos</h3>
-                <div className="grid gap-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Monto Total:</span>
-                    <span className="font-medium">
-                      {selectedPayment.transaction_amount.toLocaleString("es-AR", {
-                        style: "currency",
-                        currency: selectedPayment.currency_id || "ARS",
-                      })}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Comisión ML:</span>
-                    <span className="font-medium text-red-600">
-                      -{" "}
-                      {selectedPayment.marketplace_fee.toLocaleString("es-AR", {
-                        style: "currency",
-                        currency: selectedPayment.currency_id || "ARS",
-                      })}
-                    </span>
-                  </div>
-                  {selectedPayment.shipping_cost > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Costo de Envío:</span>
-                      <span className="font-medium">
-                        {selectedPayment.shipping_cost.toLocaleString("es-AR", {
-                          style: "currency",
-                          currency: selectedPayment.currency_id || "ARS",
-                        })}
-                      </span>
-                    </div>
-                  )}
-                  {selectedPayment.taxes_amount > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Impuestos:</span>
-                      <span className="font-medium text-red-600">
-                        -{" "}
-                        {selectedPayment.taxes_amount.toLocaleString("es-AR", {
-                          style: "currency",
-                          currency: selectedPayment.currency_id || "ARS",
-                        })}
-                      </span>
-                    </div>
-                  )}
-                  {selectedPayment.transaction_amount_refunded > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Reembolsado:</span>
-                      <span className="font-medium text-red-600">
-                        -{" "}
-                        {selectedPayment.transaction_amount_refunded.toLocaleString("es-AR", {
-                          style: "currency",
-                          currency: selectedPayment.currency_id || "ARS",
-                        })}
-                      </span>
-                    </div>
-                  )}
-                  <Separator />
-                  <div className="flex justify-between text-base">
-                    <span className="font-semibold">Neto Recibido:</span>
-                    <span className="font-bold text-green-600">
-                      {selectedPayment.net_received_amount.toLocaleString("es-AR", {
-                        style: "currency",
-                        currency: selectedPayment.currency_id || "ARS",
-                      })}
-                    </span>
-                  </div>
-                </div>
+              <p className="text-xs text-muted-foreground">En proceso de liberación</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Comisiones</CardTitle>
+              <CreditCard className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {(stats.total_fees || 0).toLocaleString("es-AR", { style: "currency", currency: "ARS" })}
               </div>
+              <p className="text-xs text-muted-foreground">Total de comisiones</p>
+            </CardContent>
+          </Card>
+        </div>
 
-              {/* Payer Info */}
-              {selectedPayment.payer && (
-                <>
-                  <Separator />
-                  <div>
-                    <h3 className="font-semibold mb-3">Información del Comprador</h3>
-                    <div className="grid gap-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Nickname:</span>
-                        <span className="font-medium">{selectedPayment.payer.nickname}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Email:</span>
-                        <span className="font-medium">{selectedPayment.payer.email}</span>
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <div className="flex justify-end gap-2 border-t pt-4">
-                <Button variant="outline" onClick={() => setShowPaymentDetails(false)}>
-                  Cerrar
-                </Button>
+        <Card className="mb-6 border-border/50 shadow-sm hover:shadow-md transition-shadow">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <Label className="text-sm font-semibold text-foreground">Filtrar por cuenta:</Label>
+                <Select value={selectedAccount} onValueChange={setSelectedAccount}>
+                  <SelectTrigger className="w-[300px] shadow-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">
+                      <span className="font-medium">Todas las cuentas</span> ({Object.keys(mlAccounts).length})
+                    </SelectItem>
+                    {Object.entries(mlAccounts).map(([id, account]) => (
+                      <SelectItem key={id} value={id}>
+                        {account.nickname || id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {Object.keys(mlAccounts).length === 0 && (
+                  <Button variant="outline" size="sm" asChild className="shadow-sm bg-transparent">
+                    <a href="/integrations">Conectar Cuenta</a>
+                  </Button>
+                )}
+              </div>
+              <div className="flex items-center gap-4">
+                <LastUpdated timestamp={lastUpdated} isLoading={loading} onRefresh={loadPayments} />
+                <MLConnectionStatus accountId={selectedAccount} onRefresh={loadPayments} refreshing={loading} />
               </div>
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
+          </CardContent>
+        </Card>
 
-      <Dialog open={showOrderDetails} onOpenChange={setShowOrderDetails}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="text-xl">Orden #{selectedOrder?.id}</DialogTitle>
-            <DialogDescription>Detalles completos de la orden</DialogDescription>
-          </DialogHeader>
-
-          {selectedOrder && (
-            <div className="flex-1 overflow-y-auto space-y-4">
-              {/* Estado de la Orden */}
-              <div className="bg-muted/50 p-4 rounded-lg">
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-primary"></div>
-                  Estado de la Orden
-                </h3>
-                <div className="grid gap-3 text-sm">
-                  <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Estado:</span>
-                    <Badge>{selectedOrder.status}</Badge>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Fecha de Creación:</span>
-                    <span className="font-medium">{new Date(selectedOrder.date_created).toLocaleString()}</span>
-                  </div>
-                  {selectedOrder.date_closed && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Fecha de Cierre:</span>
-                      <span className="font-medium">{new Date(selectedOrder.date_closed).toLocaleString()}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Información de Pago */}
-              {selectedOrder.payments && selectedOrder.payments.length > 0 && (
-                <div className="bg-muted/50 p-4 rounded-lg">
-                  <h3 className="font-semibold mb-3 flex items-center gap-2">
-                    <div className="h-2 w-2 rounded-full bg-green-500"></div>
-                    Información de Pago
-                  </h3>
-                  <div className="grid gap-3 text-sm">
-                    <div className="flex justify-between items-center">
-                      <span className="text-muted-foreground">Estado:</span>
-                      <Badge>{selectedOrder.payments[0].status}</Badge>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Método:</span>
-                      <span className="font-medium capitalize">
-                        {selectedOrder.payments[0].payment_type_id?.replace("_", " ")}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-base font-semibold pt-2 border-t">
-                      <span>Monto Total:</span>
-                      <span className="text-green-600">
-                        {selectedOrder.currency_id} ${selectedOrder.payments[0].transaction_amount.toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Datos del Comprador */}
-              {selectedOrder.buyer && (
-                <div className="bg-muted/50 p-4 rounded-lg">
-                  <h3 className="font-semibold mb-3 flex items-center gap-2">
-                    <div className="h-2 w-2 rounded-full bg-blue-500"></div>
-                    Datos del Comprador
-                  </h3>
-                  <div className="grid gap-3 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Usuario:</span>
-                      <span className="font-medium">@{selectedOrder.buyer.nickname}</span>
-                    </div>
-                    {selectedOrder.buyer.email && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Email:</span>
-                        <span className="font-medium">{selectedOrder.buyer.email}</span>
-                      </div>
-                    )}
-                    {selectedOrder.buyer.phone && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Teléfono:</span>
-                        <span className="font-medium">
-                          {selectedOrder.buyer.phone.area_code && `(${selectedOrder.buyer.phone.area_code}) `}
-                          {selectedOrder.buyer.phone.number}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Items de la Orden */}
-              {selectedOrder.order_items && selectedOrder.order_items.length > 0 && (
-                <div className="space-y-3">
-                  <h3 className="font-semibold">Items de la Orden</h3>
-                  {selectedOrder.order_items.map((item: any, index: number) => (
-                    <div key={index} className="bg-muted/50 p-4 rounded-lg">
-                      <div className="flex gap-4">
-                        {item.item.thumbnail && (
-                          <img
-                            src={item.item.thumbnail || "/placeholder.svg"}
-                            alt={item.item.title}
-                            className="w-20 h-20 object-cover rounded"
-                          />
-                        )}
-                        <div className="flex-1">
-                          <h4 className="font-semibold mb-1">{item.item.title}</h4>
-                          <div className="flex items-center gap-2 mb-2">
-                            <p className="text-sm text-muted-foreground">MLA: {item.item.id}</p>
-                            {item.item.seller_sku && (
-                              <>
-                                <span className="text-muted-foreground">•</span>
-                                <code className="rounded bg-background px-2 py-0.5 text-xs font-mono border border-border/50">
-                                  SKU: {item.item.seller_sku}
-                                </code>
-                              </>
-                            )}
-                          </div>
-                          <div className="grid grid-cols-2 gap-2 text-sm">
-                            <div>
-                              <span className="text-muted-foreground">Precio Unitario:</span>
-                              <p className="font-medium">
-                                {selectedOrder.currency_id} ${item.unit_price.toLocaleString()}
-                              </p>
-                            </div>
-                            <div>
-                              <span className="text-muted-foreground">Cantidad:</span>
-                              <p className="font-medium">{item.quantity}</p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2 border-t pt-4">
+        <div className="mb-6 space-y-4">
+          <Card className="border-border/50 shadow-sm hover:shadow-md transition-shadow">
+            <CardHeader className="bg-gradient-to-r from-muted/50 to-muted/30">
+              <CardTitle className="text-base font-semibold">Período de Tiempo</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <div className="flex flex-wrap gap-2">
                 <Button
-                  variant="outline"
-                  onClick={() =>
-                    window.open(`https://www.mercadolibre.com.ar/ventas/${selectedOrder.id}/detalle`, "_blank")
-                  }
+                  variant={filters.timeFilter === "all" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setFilters({ ...filters, timeFilter: "all" })}
+                  className="shadow-sm"
                 >
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  Ver en MercadoLibre
+                  {filters.timeFilter === "all" && <Check className="mr-2 h-4 w-4" />}
+                  Todas
                 </Button>
-                <Button variant="outline" onClick={() => setShowOrderDetails(false)}>
-                  Cerrar
+                <Button
+                  variant={filters.timeFilter === "1month" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setFilters({ ...filters, timeFilter: "1month" })}
+                  className="shadow-sm"
+                >
+                  {filters.timeFilter === "1month" && <Check className="mr-2 h-4 w-4" />}1 mes
+                </Button>
+                <Button
+                  variant={filters.timeFilter === "2months" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setFilters({ ...filters, timeFilter: "2months" })}
+                  className="shadow-sm"
+                >
+                  {filters.timeFilter === "2months" && <Check className="mr-2 h-4 w-4" />}2 meses
+                </Button>
+                <Button
+                  variant={filters.timeFilter === "6months" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setFilters({ ...filters, timeFilter: "6months" })}
+                  className="shadow-sm"
+                >
+                  {filters.timeFilter === "6months" && <Check className="mr-2 h-4 w-4" />}6 meses
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/50 shadow-sm hover:shadow-md transition-shadow">
+            <CardHeader className="bg-gradient-to-r from-muted/50 to-muted/30">
+              <CardTitle className="text-base font-semibold">Filtro Avanzado</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <Collapsible open={advancedFiltersOpen} onOpenChange={setAdvancedFiltersOpen}>
+                <CollapsibleTrigger asChild>
+                  <Button variant="outline" size="sm" className="w-full justify-between bg-transparent">
+                    Filtros adicionales
+                    <ChevronDown
+                      className={`h-4 w-4 transition-transform ${advancedFiltersOpen ? "rotate-180" : ""}`}
+                    />
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-4 space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Rango de fechas específico</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Desde</Label>
+                        <Input
+                          type="date"
+                          value={filters.date_from}
+                          onChange={(e) => setFilters({ ...filters, date_from: e.target.value })}
+                          className="text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Hasta</Label>
+                        <Input
+                          type="date"
+                          value={filters.date_to}
+                          onChange={(e) => setFilters({ ...filters, date_to: e.target.value })}
+                          className="text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Estado del Pago</Label>
+                    <Select value={filters.status} onValueChange={(v) => setFilters({ ...filters, status: v })}>
+                      <SelectTrigger className="text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos los estados</SelectItem>
+                        <SelectItem value="approved">Aprobado</SelectItem>
+                        <SelectItem value="pending">Pendiente</SelectItem>
+                        <SelectItem value="in_process">En Proceso</SelectItem>
+                        <SelectItem value="rejected">Rechazado</SelectItem>
+                        <SelectItem value="cancelled">Cancelado</SelectItem>
+                        <SelectItem value="refunded">Reembolsado</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <Separator />
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Estado de Liberación</Label>
+                    <Select
+                      value={filters.release_status}
+                      onValueChange={(v) => setFilters({ ...filters, release_status: v })}
+                    >
+                      <SelectTrigger className="text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        <SelectItem value="released">Liberado</SelectItem>
+                        <SelectItem value="pending">Pendiente</SelectItem>
+                        <SelectItem value="blocked">Retenido</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <Separator />
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Método de Pago</Label>
+                    <Select
+                      value={filters.payment_method}
+                      onValueChange={(v) => setFilters({ ...filters, payment_method: v })}
+                    >
+                      <SelectTrigger className="text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos</SelectItem>
+                        <SelectItem value="credit_card">Tarjeta de Crédito</SelectItem>
+                        <SelectItem value="debit_card">Tarjeta de Débito</SelectItem>
+                        <SelectItem value="account_money">Dinero en Cuenta</SelectItem>
+                        <SelectItem value="ticket">Efectivo</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Payments Table */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Lista de Pagos</CardTitle>
+                <CardDescription>
+                  {loading
+                    ? "Cargando..."
+                    : `Mostrando ${sortedPayments.length} pagos (Página ${currentPage} de ${totalPages})`}
+                </CardDescription>
+              </div>
+              <SortSelector
+                options={sortOptions}
+                value={sortConfig.key}
+                direction={sortConfig.direction}
+                onSortChange={handleSortChange}
+              />
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="flex h-[400px] items-center justify-center text-sm text-muted-foreground">
+                Cargando pagos...
+              </div>
+            ) : sortedPayments.length === 0 ? (
+              <div className="flex h-[400px] flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+                <CreditCard className="h-12 w-12 opacity-20" />
+                <p>No hay pagos disponibles.</p>
+                <p className="text-xs">Los pagos aparecerán aquí cuando realices ventas.</p>
+              </div>
+            ) : (
+              <>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>ID Pago</TableHead>
+                      <TableHead>Orden</TableHead>
+                      <TableHead>Cuenta</TableHead>
+                      <TableHead>Monto Bruto</TableHead>
+                      <TableHead>Comisión ML</TableHead>
+                      <TableHead>Envío</TableHead>
+                      <TableHead>Impuestos</TableHead>
+                      <TableHead>Reembolsos</TableHead>
+                      <TableHead className="font-semibold">Neto</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead>Liberación</TableHead>
+                      <TableHead>Fecha Liberación</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sortedPayments.map((payment) => (
+                      <TableRow key={payment.id}>
+                        <TableCell className="font-medium">#{payment.id}</TableCell>
+                        <TableCell>
+                          <button
+                            onClick={() => viewOrderDetails(payment.order_id)}
+                            className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                          >
+                            #{payment.order_id}
+                            <Eye className="h-3 w-3" />
+                          </button>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-sm">{payment._account?.nickname || "N/A"}</span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">
+                            {(payment.transaction_amount || 0).toLocaleString("es-AR", {
+                              style: "currency",
+                              currency: payment.currency_id || "ARS",
+                            })}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm text-red-600">
+                            -{" "}
+                            {(payment.marketplace_fee || 0).toLocaleString("es-AR", {
+                              style: "currency",
+                              currency: payment.currency_id || "ARS",
+                            })}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm text-muted-foreground">
+                            {payment.shipping_cost > 0
+                              ? (payment.shipping_cost || 0).toLocaleString("es-AR", {
+                                  style: "currency",
+                                  currency: payment.currency_id || "ARS",
+                                })
+                              : "-"}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm text-red-600">
+                            {payment.taxes_amount > 0
+                              ? `- ${(payment.taxes_amount || 0).toLocaleString("es-AR", {
+                                  style: "currency",
+                                  currency: payment.currency_id || "ARS",
+                                })}`
+                              : "-"}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm text-red-600">
+                            {payment.transaction_amount_refunded > 0
+                              ? `- ${(payment.transaction_amount_refunded || 0).toLocaleString("es-AR", {
+                                  style: "currency",
+                                  currency: payment.currency_id || "ARS",
+                                })}`
+                              : "-"}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-semibold text-green-600">
+                            {(payment.net_received_amount || 0).toLocaleString("es-AR", {
+                              style: "currency",
+                              currency: payment.currency_id || "ARS",
+                            })}
+                          </div>
+                        </TableCell>
+                        <TableCell>{getPaymentStatusBadge(payment.status)}</TableCell>
+                        <TableCell>{getReleaseStatusBadge(payment.money_release_status)}</TableCell>
+                        <TableCell>
+                          {payment.money_release_date ? (
+                            <div className="text-sm">
+                              <div>{new Date(payment.money_release_date).toLocaleDateString()}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {new Date(payment.money_release_date).toLocaleTimeString()}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">Pendiente</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="icon" onClick={() => viewPaymentDetails(payment)}>
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+
+                {totalPages > 1 && (
+                  <AdvancedPagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={setCurrentPage}
+                    disabled={loading}
+                    itemsPerPage={50}
+                    totalItems={filteredPayments.length}
+                    offset={(currentPage - 1) * 50}
+                  />
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </main>
     </div>
   )
 }
