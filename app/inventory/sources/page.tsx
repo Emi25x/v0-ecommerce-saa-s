@@ -883,11 +883,6 @@ const App = () => {
 
     // Si es importación en background (servidor)
     if (runInBackground && sourceToImport.url_template) {
-      toast({
-        title: "Importación iniciada en segundo plano",
-        description: "La importación continuará aunque cierres esta página. Podés verificar el progreso en el historial.",
-      })
-
       try {
         const response = await fetch("/api/inventory/import/background", {
           method: "POST",
@@ -902,14 +897,20 @@ const App = () => {
         if (response.ok) {
           const result = await response.json()
           toast({
-            title: "Importación completada",
-            description: `Importados: ${result.summary?.imported || 0}, Actualizados: ${result.summary?.updated || 0}, Fallidos: ${result.summary?.failed || 0}`,
+            title: "Importación iniciada en segundo plano",
+            description: "El proceso continuará aunque cierres esta página. Podés verificar el progreso en el historial de la fuente.",
           })
-          loadSources() // Refrescar fuentes
+          // Marcar que hay una importación corriendo para esta fuente
+          setRunningImports((prev) => {
+            const updated = new Map(prev)
+            updated.set(sourceToImport.id, result.importId || "background")
+            return updated
+          })
+          loadSources() // Refrescar fuentes para ver el estado
         } else {
           const error = await response.json()
           toast({
-            title: "Error en importación",
+            title: "Error al iniciar importación",
             description: error.error || "Error desconocido",
             variant: "destructive",
           })
@@ -1333,7 +1334,8 @@ const App = () => {
                   </div>
                 </CardHeader>
 
-                {backgroundProgress && backgroundProgress.status === "running" && (
+                {/* Panel de progreso solo para importaciones del cliente (con total > 0) */}
+                {backgroundProgress && backgroundProgress.status === "running" && backgroundProgress.total > 0 && (
                   <div className="px-6 pb-3">
                     <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
                       <div className="flex items-center justify-between mb-2">
@@ -1362,7 +1364,7 @@ const App = () => {
                                   return updated
                                 })
                                 setRunningImports((prev) => {
-                                  const updated = new Set(prev)
+                                  const updated = new Map(prev)
                                   updated.delete(source.id)
                                   return updated
                                 })
