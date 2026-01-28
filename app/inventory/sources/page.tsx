@@ -310,10 +310,15 @@ const App = () => {
   }, [supabase, toast])
 
   async function handleRunImport(source: SourceWithSchedule) {
+    console.log("[v0] handleRunImport called for:", source.name)
+    console.log("[v0] isExecutingRef.current:", isExecutingRef.current)
+    
     if (isExecutingRef.current) {
+      console.log("[v0] Blocked by isExecutingRef, returning early")
       return
     }
 
+    console.log("[v0] Opening import confirm dialog")
     setSourceToImport(source)
     // Para catálogos base (Arnoia), usar modo "skip" por defecto (solo importar nuevos)
     // Para actualizaciones de stock/precio, usar modo "update"
