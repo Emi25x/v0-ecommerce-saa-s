@@ -220,7 +220,7 @@ const App = () => {
 
   // Sincronizar backgroundImports con importProgress en tiempo real
   useEffect(() => {
-    if (sourceToImport?.id && (importProgress.processed > 0 || importProgress.imported > 0 || importProgress.updated > 0)) {
+    if (sourceToImport?.id && (importProgress.status === "running" || importProgress.processed > 0 || importProgress.imported > 0 || importProgress.updated > 0)) {
       setBackgroundImports((prev) => {
         const updated = new Map(prev)
         updated.set(sourceToImport.id, { ...importProgress })
