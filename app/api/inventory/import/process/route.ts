@@ -247,6 +247,13 @@ export async function POST(request: NextRequest) {
             const updateField = matchField === "ean" ? "ean" : "sku"
             const updateValue = matchField === "ean" ? normalizedEan : existingSku || normalizedSku
             
+            // Debug: log datos de actualización para primeros productos
+            if (i === 0 && batch.indexOf(row) < 3) {
+              console.log("[v0] UPDATE - EAN:", normalizedEan, "SKU:", normalizedSku)
+              console.log("[v0] UPDATE - productData.ean:", productData.ean)
+              console.log("[v0] UPDATE - updateField:", updateField, "updateValue:", updateValue)
+            }
+            
             const { error } = await supabase
               .from("products")
               .update(productData)
