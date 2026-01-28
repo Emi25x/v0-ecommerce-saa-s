@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { historyId, sourceId } = body
+    const { historyId, sourceId, importMode = "update" } = body
 
     const supabase = await createClient()
 
@@ -137,6 +137,11 @@ export async function POST(request: NextRequest) {
 
           const exists = existingSkusSet.has(sku)
 
+          // Si el modo es "skip" y el producto ya existe, saltarlo
+          if (importMode === "skip" && exists) {
+            return { success: true, skipped: true, sku }
+          }
+
           let productData: any = {
             sku,
             price: Number.parseFloat(price) || 0,
@@ -166,11 +171,20 @@ export async function POST(request: NextRequest) {
             productData.brand = row[mapping.brand || "brand"]
           }
 
-          const { error } = await supabase.from("products").upsert(productData, {
-            onConflict: "sku",
-          })
-
-          if (error) throw error
+          // Si existe y modo es "skip", ya lo saltamos arriba
+          // Si existe y modo es "update" o "overwrite", actualizamos
+          if (exists) {
+            const { error } = await supabase
+              .from("products")
+              .update(productData)
+              .eq("sku", sku)
+            if (error) throw error
+          } else {
+            const { error } = await supabase
+              .from("products")
+              .insert(productData)
+            if (error) throw error
+          }
 
           return { success: true, exists, sku }
         } catch (error: any) {
@@ -183,6 +197,10 @@ export async function POST(request: NextRequest) {
       results.forEach((result) => {
         if (result === null) return
         if (result.success) {
+          if (result.skipped) {
+            // Producto saltado porque ya existe (modo skip)
+            return
+          }
           if (result.exists) updatedCount++
           else importedCount++
         } else {

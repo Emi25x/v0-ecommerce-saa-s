@@ -301,7 +301,15 @@ const App = () => {
     }
 
     setSourceToImport(source)
-    setImportMode("update")
+    // Para catálogos base (Arnoia), usar modo "skip" por defecto (solo importar nuevos)
+    // Para actualizaciones de stock/precio, usar modo "update"
+    if (source.feed_type === "catalog" && source.name.toLowerCase().includes("arnoia") && !source.name.toLowerCase().includes("act")) {
+      setImportMode("skip")
+    } else if (source.feed_type === "stock_price") {
+      setImportMode("update")
+    } else {
+      setImportMode("update")
+    }
     setShowImportConfirmDialog(true)
   }
 
@@ -558,8 +566,9 @@ const App = () => {
           // Procesar todos los productos del batch en paralelo
           const results = await Promise.allSettled(
             batch.map(async (row: any) => {
+              let sku: string | undefined
               try {
-                const sku = extractFieldValue(row, "sku", source.column_mapping)?.toString().trim().toUpperCase()
+                sku = extractFieldValue(row, "sku", source.column_mapping)?.toString().trim().toUpperCase()
 
                 if (!sku) {
                   return { type: "error", error: "Sin SKU válido", row }
@@ -654,7 +663,7 @@ const App = () => {
                   }
                 }
               } catch (error: any) {
-                return { type: "error", error: error.message, sku }
+                return { type: "error", error: error.message, sku: sku || "desconocido" }
               }
             }),
           )
@@ -1612,7 +1621,7 @@ const App = () => {
                       <Button 
                         variant="outline" 
                         size="sm" 
-                        className="mt-2"
+                        className="mt-2 bg-transparent"
                         onClick={() => window.open(analysisResult.sqlEditorUrl, '_blank')}
                       >
                         <ExternalLink className="mr-2 h-4 w-4" />
