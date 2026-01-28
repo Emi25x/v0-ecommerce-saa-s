@@ -79,7 +79,8 @@ const App = () => {
       }
 
       const commonNames: Record<string, string[]> = {
-        sku: ["sku", "codigo_interno", "codigo", "barcode", "ean", "upc"],
+        sku: ["sku", "codigo_interno", "codigo", "barcode", "upc"],
+        ean: ["ean", "ean13", "isbn", "codigo_barras", "barcode"],
         title: ["title", "name", "titulo", "product", "nombre", "descripcion"],
         description: ["description", "descripcion", "detalle", "desc"],
         category: ["category", "categoria", "rubro", "cat"],
@@ -592,6 +593,12 @@ const App = () => {
                 const brand = extractFieldValue(row, "brand", source.column_mapping)
                 const priceValue = extractFieldValue(row, "price", source.column_mapping)
                 const stockValue = extractFieldValue(row, "stock", source.column_mapping)
+                
+                // Extraer EAN y normalizarlo (quitar espacios y ceros a la izquierda)
+                let ean = extractFieldValue(row, "ean", source.column_mapping)
+                if (ean) {
+                  ean = String(ean).trim().replace(/^0+/, "") || ean
+                }
 
                 // Validar si el precio o stock son números válidos
                 const parsedPrice = Number.parseFloat(priceValue)
@@ -603,24 +610,31 @@ const App = () => {
 
                 if (existingProduct) {
                   if (source.feed_type === "catalog") {
-                    // Para catálogo completo: actualizar todo si title cambió
-                    if (title && title !== existingProduct.title) {
-                      await supabase
-                        .from("products")
-                        .update({
-                          title,
-                          description,
-                          category,
-                          brand,
-                          price: validPrice,
-                          stock: validStock,
-                          updated_at: new Date().toISOString(),
-                        })
-                        .eq("id", existingProduct.id)
-                      return { type: "updated" }
-                    } else {
-                      return { type: "skipped" }
+                    // Para catálogo completo: actualizar datos del producto incluyendo EAN
+                    const updateData: any = {
+                      price: validPrice,
+                      stock: validStock,
+                      updated_at: new Date().toISOString(),
                     }
+                    
+                    // Siempre actualizar EAN si viene en el CSV
+                    if (ean) {
+                      updateData.ean = ean
+                    }
+                    
+                    // Actualizar otros campos si el title cambió
+                    if (title && title !== existingProduct.title) {
+                      updateData.title = title
+                      updateData.description = description
+                      updateData.category = category
+                      updateData.brand = brand
+                    }
+                    
+                    await supabase
+                      .from("products")
+                      .update(updateData)
+                      .eq("id", existingProduct.id)
+                    return { type: "updated" }
                   } else if (source.feed_type === "stock_price") {
                     // Para stock_price: solo actualizar precio/stock
                     await supabase
@@ -646,6 +660,7 @@ const App = () => {
                       
                       await supabase.from("products").insert({
                         sku,
+                        ean: ean || null,
                         title: backupTitle || `Producto ${sku}`,
                         description: backupDescription,
                         category: backupCategory,
@@ -659,19 +674,20 @@ const App = () => {
                       missingSkus.push(sku)
                       return { type: "skipped" }
                     }
-                  } else {
-                    // Catálogo completo: insertar directamente
-                    await supabase.from("products").insert({
-                      sku,
-                      title: title || `Producto ${sku}`,
-                      description,
-                      category,
-                      brand,
-                      price: validPrice,
-                      stock: validStock,
-                      source: [source.name],
-                    })
-                    return { type: "imported" }
+} else {
+                  // Catálogo completo: insertar directamente
+                  await supabase.from("products").insert({
+                    sku,
+                    ean: ean || null,
+                    title: title || `Producto ${sku}`,
+                    description,
+                    category,
+                    brand,
+                    price: validPrice,
+                    stock: validStock,
+                    source: [source.name],
+                  })
+                  return { type: "imported" }
                   }
                 }
               } catch (error: any) {
