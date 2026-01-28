@@ -882,7 +882,7 @@ const App = () => {
     setShowImportConfirmDialog(false)
 
     // Si es importación en background (servidor)
-    if (runInBackground && sourceToImport.file_url) {
+    if (runInBackground && sourceToImport.url_template) {
       toast({
         title: "Importación iniciada en segundo plano",
         description: "La importación continuará aunque cierres esta página. Podés verificar el progreso en el historial.",
@@ -894,7 +894,7 @@ const App = () => {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             sourceId: sourceToImport.id,
-            fileUrl: sourceToImport.file_url,
+            fileUrl: sourceToImport.url_template,
             mode: importMode,
           }),
         })
@@ -1559,7 +1559,7 @@ const App = () => {
             </div>
             
             {/* Opción de ejecutar en segundo plano */}
-            {sourceToImport?.file_url && (
+            {sourceToImport?.url_template && (
               <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/50">
                 <div className="space-y-0.5">
                   <Label htmlFor="background-mode" className="font-medium">Ejecutar en segundo plano</Label>
@@ -1580,7 +1580,7 @@ const App = () => {
               Cancelar
             </Button>
             <Button onClick={confirmImport}>
-              {runInBackground && sourceToImport?.file_url ? "Iniciar en Segundo Plano" : "Iniciar Importación"}
+              {runInBackground && sourceToImport?.url_template ? "Iniciar en Segundo Plano" : "Iniciar Importación"}
             </Button>
           </DialogFooter>
         </DialogContent>
