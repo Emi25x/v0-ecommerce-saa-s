@@ -1243,12 +1243,18 @@ const App = () => {
             <Trash2 className="h-4 w-4" />
             Reiniciar Base
           </Button>
-          <Link href="/inventory/sources/new">
-            <Button>
-              <Upload className="mr-2 h-4 w-4" />
-              Nueva Fuente
-            </Button>
-          </Link>
+<Link href="/inventory/sources/batch-import">
+  <Button variant="outline">
+  <RefreshCw className="mr-2 h-4 w-4" />
+  Importacion Masiva
+  </Button>
+  </Link>
+  <Link href="/inventory/sources/new">
+  <Button>
+  <Upload className="mr-2 h-4 w-4" />
+  Nueva Fuente
+  </Button>
+  </Link>
         </div>
       </div>
 
