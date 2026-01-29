@@ -4,13 +4,17 @@ import { useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Label } from "@/components/ui/label"
 
 export default function BatchImportPage() {
   const [isRunning, setIsRunning] = useState(false)
+  const [importMode, setImportMode] = useState<string>("update")
   const [progress, setProgress] = useState(0)
   const [total, setTotal] = useState(0)
   const [processed, setProcessed] = useState(0)
   const [updated, setUpdated] = useState(0)
+  const [created, setCreated] = useState(0)
   const [status, setStatus] = useState<string>("")
   const [logs, setLogs] = useState<string[]>([])
   const abortRef = useRef(false)
@@ -28,11 +32,13 @@ export default function BatchImportPage() {
     setTotal(0)
     setProcessed(0)
     setUpdated(0)
+    setCreated(0)
     setLogs([])
     abortRef.current = false
 
     let offset = 0
     let totalUpdated = 0
+    let totalCreated = 0
     let done = false
 
     addLog("Iniciando importacion por lotes de Arnoia...")
@@ -45,7 +51,7 @@ export default function BatchImportPage() {
         const response = await fetch("/api/inventory/import/batch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sourceId, offset }),
+          body: JSON.stringify({ sourceId, offset, mode: importMode }),
         })
 
         if (!response.ok) {
@@ -61,14 +67,16 @@ export default function BatchImportPage() {
         setProcessed(result.processed)
         setProgress(result.progress || 0)
         totalUpdated += result.updated || 0
+        totalCreated += result.created || 0
         setUpdated(totalUpdated)
+        setCreated(totalCreated)
 
-        addLog(`Lote completado: ${result.updated} actualizados, progreso ${result.progress}%`)
+        addLog(`Lote completado: ${result.created || 0} creados, ${result.updated || 0} actualizados, progreso ${result.progress}%`)
 
         if (result.done) {
           done = true
           setStatus("Importacion completada")
-          addLog(`Importacion completada. Total actualizados: ${totalUpdated}`)
+          addLog(`Importacion completada. Creados: ${totalCreated}, Actualizados: ${totalUpdated}`)
         } else {
           offset = result.nextOffset
           // Pequeña pausa entre lotes
@@ -105,6 +113,26 @@ export default function BatchImportPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* Selector de modo de importación */}
+          <div className="space-y-2">
+            <Label htmlFor="import-mode">Modo de importacion</Label>
+            <Select value={importMode} onValueChange={setImportMode} disabled={isRunning}>
+              <SelectTrigger id="import-mode" className="w-full max-w-xs">
+                <SelectValue placeholder="Seleccionar modo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="update">Solo actualizar existentes</SelectItem>
+                <SelectItem value="create">Solo crear nuevos</SelectItem>
+                <SelectItem value="upsert">Crear y actualizar</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {importMode === "update" && "Solo actualiza productos que ya existen en tu base de datos (por SKU)"}
+              {importMode === "create" && "Solo crea productos nuevos, no modifica los existentes"}
+              {importMode === "upsert" && "Crea productos nuevos y actualiza los existentes"}
+            </p>
+          </div>
+
           <div className="flex gap-4">
             <Button onClick={startBatchImport} disabled={isRunning}>
               {isRunning ? "Ejecutando..." : "Iniciar Importacion"}
@@ -125,9 +153,13 @@ export default function BatchImportPage() {
                 </span>
               </div>
               <Progress value={progress} />
-              <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="grid grid-cols-3 gap-4 text-sm">
                 <div className="p-3 bg-muted rounded">
-                  <div className="font-medium">EANs Actualizados</div>
+                  <div className="font-medium">Creados</div>
+                  <div className="text-2xl font-bold text-blue-600">{created.toLocaleString()}</div>
+                </div>
+                <div className="p-3 bg-muted rounded">
+                  <div className="font-medium">Actualizados</div>
                   <div className="text-2xl font-bold text-green-600">{updated.toLocaleString()}</div>
                 </div>
                 <div className="p-3 bg-muted rounded">

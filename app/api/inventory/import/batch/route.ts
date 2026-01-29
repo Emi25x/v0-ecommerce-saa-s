@@ -8,11 +8,13 @@ export const maxDuration = 60 // Máximo tiempo permitido en Vercel
 
 export async function POST(request: NextRequest) {
   try {
-    const { sourceId, offset = 0 } = await request.json()
+    const { sourceId, offset = 0, mode = "update" } = await request.json()
 
     if (!sourceId) {
       return NextResponse.json({ error: "sourceId es requerido" }, { status: 400 })
     }
+
+    console.log(`[v0] Batch import: Modo = ${mode}, Offset = ${offset}`)
 
     const supabase = await createClient()
 
@@ -70,25 +72,84 @@ export async function POST(request: NextRequest) {
     const mapping = source.column_mapping || {}
 
     let updatedCount = 0
+    let createdCount = 0
     let failedCount = 0
 
-    // Procesar el lote
+    // Procesar el lote según el modo
     for (const row of batch) {
       try {
         const sku = row[mapping.sku || "SKU"]?.trim()
         const ean = row[mapping.ean || "EAN"]?.trim()
+        const title = row[mapping.title || "TITULO"]?.trim()
+        const price = parseFloat(row[mapping.price || "PRECIO"]?.replace(",", ".") || "0")
 
-        if (!sku || !ean) continue
+        if (!sku) continue
 
-        // Actualizar el producto por SKU
-        const { error: updateError, count } = await supabase
-          .from("products")
-          .update({ ean, updated_at: new Date().toISOString() })
-          .eq("sku", sku)
-          .is("ean", null) // Solo actualizar si no tiene EAN
+        if (mode === "update") {
+          // Solo actualizar existentes (por SKU) - actualizar EAN si no tiene
+          if (ean) {
+            const { count } = await supabase
+              .from("products")
+              .update({ ean, updated_at: new Date().toISOString() })
+              .eq("sku", sku)
+              .is("ean", null)
 
-        if (!updateError && count && count > 0) {
-          updatedCount++
+            if (count && count > 0) updatedCount++
+          }
+        } else if (mode === "create") {
+          // Solo crear nuevos - verificar si no existe
+          const { data: existing } = await supabase
+            .from("products")
+            .select("id")
+            .eq("sku", sku)
+            .single()
+
+          if (!existing) {
+            const { error } = await supabase.from("products").insert({
+              sku,
+              ean: ean || null,
+              name: title || sku,
+              price: price || 0,
+              source_id: sourceId,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            if (!error) createdCount++
+          }
+        } else if (mode === "upsert") {
+          // Crear o actualizar
+          const { data: existing } = await supabase
+            .from("products")
+            .select("id")
+            .eq("sku", sku)
+            .single()
+
+          if (existing) {
+            // Actualizar
+            const updateData: Record<string, any> = { updated_at: new Date().toISOString() }
+            if (ean) updateData.ean = ean
+            if (title) updateData.name = title
+            if (price > 0) updateData.price = price
+
+            const { error } = await supabase
+              .from("products")
+              .update(updateData)
+              .eq("sku", sku)
+
+            if (!error) updatedCount++
+          } else {
+            // Crear
+            const { error } = await supabase.from("products").insert({
+              sku,
+              ean: ean || null,
+              name: title || sku,
+              price: price || 0,
+              source_id: sourceId,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            if (!error) createdCount++
+          }
         }
       } catch {
         failedCount++
@@ -99,13 +160,14 @@ export async function POST(request: NextRequest) {
     const done = newOffset >= totalRows
     const progress = Math.round((newOffset / totalRows) * 100)
 
-    console.log(`[v0] Batch import: Lote procesado. Actualizados: ${updatedCount}, Fallidos: ${failedCount}, Progreso: ${progress}%`)
+    console.log(`[v0] Batch import: Lote procesado. Creados: ${createdCount}, Actualizados: ${updatedCount}, Fallidos: ${failedCount}, Progreso: ${progress}%`)
 
     return NextResponse.json({
       success: true,
       done,
       total: totalRows,
       processed: newOffset,
+      created: createdCount,
       updated: updatedCount,
       failed: failedCount,
       nextOffset: done ? null : newOffset,
