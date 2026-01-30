@@ -8,7 +8,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     const { data, error } = await supabase
       .from("import_sources")
-      .select("id, name, source_type, feed_type")
+      .select("id, name, feed_type")
       .eq("id", id)
       .single()
 
