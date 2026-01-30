@@ -1529,57 +1529,53 @@ const App = () => {
           <DialogHeader>
             <DialogTitle>Confirmar Importación</DialogTitle>
             <DialogDescription>
-              Estás a punto de importar productos desde &quot;{sourceToImport?.name}&quot;
+              Estás a punto de importar desde &quot;{sourceToImport?.name}&quot;
+              {sourceToImport?.source_type === "stock" && " (solo stock y precios)"}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="import-mode">Modo de Importación</Label>
-              <Select value={importMode} onValueChange={(value: any) => setImportMode(value)}>
-                <SelectTrigger id="import-mode">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="update">
-                    <div className="flex flex-col">
-                      <span className="font-medium">Actualizar existentes</span>
-                      <span className="text-xs text-muted-foreground">
-                        Actualiza productos existentes y agrega nuevos
-                      </span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="overwrite">
-                    <div className="flex flex-col">
-                      <span className="font-medium">Sobrescribir todo</span>
-                      <span className="text-xs text-muted-foreground">
-                        Reemplaza completamente los productos existentes
-                      </span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="skip">
-                    <div className="flex flex-col">
-                      <span className="font-medium">Solo nuevos</span>
-                      <span className="text-xs text-muted-foreground">Ignora productos que ya existen</span>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Solo mostrar selector de modo si NO es tipo stock */}
+            {sourceToImport?.source_type !== "stock" && (
+              <div className="space-y-2">
+                <Label htmlFor="import-mode">Modo de Importación</Label>
+                <Select value={importMode} onValueChange={(value: any) => setImportMode(value)}>
+                  <SelectTrigger id="import-mode">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="update">
+                      <div className="flex flex-col">
+                        <span className="font-medium">Actualizar existentes</span>
+                        <span className="text-xs text-muted-foreground">
+                          Actualiza productos existentes por EAN
+                        </span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="overwrite">
+                      <div className="flex flex-col">
+                        <span className="font-medium">Sobrescribir todo</span>
+                        <span className="text-xs text-muted-foreground">
+                          Reemplaza completamente los productos existentes
+                        </span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="skip">
+                      <div className="flex flex-col">
+                        <span className="font-medium">Solo nuevos</span>
+                        <span className="text-xs text-muted-foreground">Ignora productos que ya existen</span>
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             
-            {/* Opción de ejecutar en segundo plano */}
-            {sourceToImport?.url_template && (
-              <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/50">
-                <div className="space-y-0.5">
-                  <Label htmlFor="background-mode" className="font-medium">Ejecutar en segundo plano</Label>
-                  <p className="text-xs text-muted-foreground">
-                    La importación continuará aunque cierres la página (recomendado para archivos grandes)
-                  </p>
-                </div>
-                <Switch
-                  id="background-mode"
-                  checked={runInBackground}
-                  onCheckedChange={setRunInBackground}
-                />
+            {/* Mensaje informativo para tipo stock */}
+            {sourceToImport?.source_type === "stock" && (
+              <div className="rounded-lg border p-3 bg-muted/50">
+                <p className="text-sm text-muted-foreground">
+                  Se actualizará el stock y precio de los productos existentes que coincidan por EAN.
+                </p>
               </div>
             )}
           </div>
@@ -1588,7 +1584,7 @@ const App = () => {
               Cancelar
             </Button>
             <Button onClick={confirmImport}>
-              {runInBackground && sourceToImport?.url_template ? "Iniciar en Segundo Plano" : "Iniciar Importación"}
+              Iniciar Importación
             </Button>
           </DialogFooter>
         </DialogContent>
