@@ -127,9 +127,9 @@ export default function BatchImportPage() {
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              {importMode === "update" && "Solo actualiza productos que ya existen en tu base de datos (por SKU)"}
-              {importMode === "create" && "Solo crea productos nuevos, no modifica los existentes"}
-              {importMode === "upsert" && "Crea productos nuevos y actualiza los existentes"}
+              {importMode === "update" && "Solo actualiza productos que ya existen en tu base de datos (por EAN)"}
+              {importMode === "create" && "Solo crea productos nuevos (por EAN), no modifica los existentes"}
+              {importMode === "upsert" && "Crea productos nuevos y actualiza los existentes (por EAN)"}
             </p>
           </div>
 
