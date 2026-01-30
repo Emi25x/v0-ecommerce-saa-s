@@ -108,8 +108,14 @@ export async function POST(request: NextRequest) {
       const category = row[mapping.category]?.trim() || null
       const stock = parseInt(row[mapping.stock] || "0", 10)
       const internalCode = row[mapping.internal_code]?.trim() || null
+      const imageUrl = row[mapping.image_url]?.trim() || null
+      const author = row[mapping.author]?.trim() || null
 
       if (!sku) continue
+
+      // Guardar author en custom_fields ya que no hay columna dedicada
+      const customFields: Record<string, any> = {}
+      if (author) customFields.author = author
 
       productsToInsert.push({
         sku,
@@ -121,6 +127,8 @@ export async function POST(request: NextRequest) {
         category,
         stock,
         internal_code: internalCode,
+        image_url: imageUrl,
+        custom_fields: Object.keys(customFields).length > 0 ? customFields : null,
         source: [sourceId],
         created_at: now,
         updated_at: now,
