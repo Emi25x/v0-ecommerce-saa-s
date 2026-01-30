@@ -115,26 +115,39 @@ const parseResult = Papa.parse(csvText, {
       const chunk = productsToInsert.slice(i, i + CHUNK_SIZE)
       
       if (mode === "create" || mode === "upsert") {
-        const { error, count } = await supabase
-          .from("products")
-          .upsert(chunk, { onConflict: "sku", ignoreDuplicates: mode === "create" })
+        // Filtrar productos sin EAN para el upsert por EAN
+        const chunkWithEan = chunk.filter(p => p.ean)
         
-        if (error) {
-          console.error("[v0] Error insertando chunk:", error.message)
-          failedCount += chunk.length
-        } else {
-          createdCount += chunk.length
+        if (chunkWithEan.length > 0) {
+          const { error } = await supabase
+            .from("products")
+            .upsert(chunkWithEan, { onConflict: "ean", ignoreDuplicates: mode === "create" })
+          
+          if (error) {
+            console.error("[v0] Error insertando chunk:", error.message)
+            failedCount += chunkWithEan.length
+          } else {
+            createdCount += chunkWithEan.length
+          }
         }
       } else if (mode === "update") {
-        // Para update, solo actualizamos EAN donde no existe
+        // Para update, actualizamos por EAN
         for (const product of chunk) {
           if (product.ean) {
-            const { count } = await supabase
+            const { error } = await supabase
               .from("products")
-              .update({ ean: product.ean, updated_at: now })
-              .eq("sku", product.sku)
-              .is("ean", null)
-            if (count && count > 0) updatedCount++
+              .update({ 
+                title: product.title,
+                price: product.price,
+                description: product.description,
+                brand: product.brand,
+                category: product.category,
+                stock: product.stock,
+                internal_code: product.internal_code,
+                updated_at: now 
+              })
+              .eq("ean", product.ean)
+            if (!error) updatedCount++
           }
         }
       }
