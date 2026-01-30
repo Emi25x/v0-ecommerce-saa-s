@@ -76,15 +76,7 @@ const parseResult = Papa.parse(csvText, {
     let failedCount = 0
 
     // Preparar productos para inserción masiva
-    const productsToInsert: Array<{
-      sku: string
-      ean: string | null
-      title: string
-      price: number
-      source: string[]
-      created_at: string
-      updated_at: string
-    }> = []
+    const productsToInsert: Array<Record<string, any>> = []
 
     const now = new Date().toISOString()
 
@@ -93,6 +85,11 @@ const parseResult = Papa.parse(csvText, {
       const ean = row[mapping.ean || "EAN"]?.trim()
       const title = row[mapping.title || "TITULO"]?.trim()
       const price = parseFloat(row[mapping.price || "PRECIO"]?.replace(",", ".") || "0")
+      const description = row[mapping.description]?.trim() || null
+      const brand = row[mapping.brand]?.trim() || null
+      const category = row[mapping.category]?.trim() || null
+      const stock = parseInt(row[mapping.stock] || "0", 10)
+      const internalCode = row[mapping.internal_code]?.trim() || null
 
       if (!sku) continue
 
@@ -101,6 +98,11 @@ const parseResult = Papa.parse(csvText, {
         ean: ean || null,
         title: title || sku,
         price: price || 0,
+        description,
+        brand,
+        category,
+        stock,
+        internal_code: internalCode,
         source: [sourceId],
         created_at: now,
         updated_at: now,
