@@ -32,15 +32,19 @@ export default function BatchImportPage() {
     const urlSourceId = searchParams.get("sourceId")
     const urlMode = searchParams.get("mode")
     
+    console.log("[v0] URL params - sourceId:", urlSourceId, "mode:", urlMode)
+    
     if (urlSourceId) {
+      console.log("[v0] Setting sourceId to:", urlSourceId)
       setSourceId(urlSourceId)
       // Cargar nombre de la fuente
       fetch(`/api/import-sources/${urlSourceId}`)
         .then(res => res.json())
         .then(data => {
+          console.log("[v0] Source data loaded:", data)
           if (data.name) setSourceName(data.name)
         })
-        .catch(() => {})
+        .catch((err) => console.log("[v0] Error loading source:", err))
     }
     
     if (urlMode && ["update", "create", "upsert"].includes(urlMode)) {
@@ -49,7 +53,8 @@ export default function BatchImportPage() {
   }, [searchParams])
 
   const startBatchImport = async () => {
-
+    console.log("[v0] Starting batch import with sourceId:", sourceId, "mode:", importMode)
+    
     setIsRunning(true)
     setProgress(0)
     setTotal(0)
