@@ -75,84 +75,66 @@ const parseResult = Papa.parse(csvText, {
     let createdCount = 0
     let failedCount = 0
 
-    // Procesar el lote según el modo
+    // Preparar productos para inserción masiva
+    const productsToInsert: Array<{
+      sku: string
+      ean: string | null
+      title: string
+      price: number
+      source: string[]
+      created_at: string
+      updated_at: string
+    }> = []
+
+    const now = new Date().toISOString()
+
     for (const row of batch) {
-      try {
-        const sku = row[mapping.sku || "SKU"]?.trim()
-        const ean = row[mapping.ean || "EAN"]?.trim()
-        const title = row[mapping.title || "TITULO"]?.trim()
-        const price = parseFloat(row[mapping.price || "PRECIO"]?.replace(",", ".") || "0")
+      const sku = row[mapping.sku || "SKU"]?.trim()
+      const ean = row[mapping.ean || "EAN"]?.trim()
+      const title = row[mapping.title || "TITULO"]?.trim()
+      const price = parseFloat(row[mapping.price || "PRECIO"]?.replace(",", ".") || "0")
 
-        if (!sku) continue
+      if (!sku) continue
 
-        if (mode === "update") {
-          // Solo actualizar existentes (por SKU) - actualizar EAN si no tiene
-          if (ean) {
+      productsToInsert.push({
+        sku,
+        ean: ean || null,
+        title: title || sku,
+        price: price || 0,
+        source: [sourceId],
+        created_at: now,
+        updated_at: now,
+      })
+    }
+
+    // Inserción masiva en chunks de 500
+    const CHUNK_SIZE = 500
+    for (let i = 0; i < productsToInsert.length; i += CHUNK_SIZE) {
+      const chunk = productsToInsert.slice(i, i + CHUNK_SIZE)
+      
+      if (mode === "create" || mode === "upsert") {
+        const { error, count } = await supabase
+          .from("products")
+          .upsert(chunk, { onConflict: "sku", ignoreDuplicates: mode === "create" })
+        
+        if (error) {
+          console.error("[v0] Error insertando chunk:", error.message)
+          failedCount += chunk.length
+        } else {
+          createdCount += chunk.length
+        }
+      } else if (mode === "update") {
+        // Para update, solo actualizamos EAN donde no existe
+        for (const product of chunk) {
+          if (product.ean) {
             const { count } = await supabase
               .from("products")
-              .update({ ean, updated_at: new Date().toISOString() })
-              .eq("sku", sku)
+              .update({ ean: product.ean, updated_at: now })
+              .eq("sku", product.sku)
               .is("ean", null)
-
             if (count && count > 0) updatedCount++
           }
-        } else if (mode === "create") {
-          // Solo crear nuevos - verificar si no existe
-          const { data: existing } = await supabase
-            .from("products")
-            .select("id")
-            .eq("sku", sku)
-            .maybeSingle()
-
-          if (!existing) {
-            const { error } = await supabase.from("products").insert({
-              sku,
-              ean: ean || null,
-              title: title || sku,
-              price: price || 0,
-              source: [sourceId],
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            if (!error) createdCount++
-          }
-        } else if (mode === "upsert") {
-          // Crear o actualizar
-          const { data: existing } = await supabase
-            .from("products")
-            .select("id")
-            .eq("sku", sku)
-            .maybeSingle()
-
-          if (existing) {
-            // Actualizar
-            const updateData: Record<string, any> = { updated_at: new Date().toISOString() }
-            if (ean) updateData.ean = ean
-            if (title) updateData.title = title
-            if (price > 0) updateData.price = price
-
-            const { error } = await supabase
-              .from("products")
-              .update(updateData)
-              .eq("sku", sku)
-
-            if (!error) updatedCount++
-          } else {
-            // Crear
-            const { error } = await supabase.from("products").insert({
-              sku,
-              ean: ean || null,
-              title: title || sku,
-              price: price || 0,
-              source: [sourceId],
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            if (!error) createdCount++
-          }
         }
-      } catch {
-        failedCount++
       }
     }
 
