@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "sourceId es requerido" }, { status: 400 })
     }
 
-    console.log(`[v0] Batch import: Modo = ${mode}, Offset = ${offset}`)
+    console.log(`[v0] Batch import: sourceId = ${sourceId}, Modo = ${mode}, Offset = ${offset}`)
 
     const supabase = await createClient()
 
@@ -29,8 +29,10 @@ export async function POST(request: NextRequest) {
       .eq("id", sourceId)
       .single()
 
+    console.log(`[v0] Batch import: source =`, source?.name, "error =", sourceError?.message)
+
     if (sourceError || !source) {
-      return NextResponse.json({ error: "Fuente no encontrada" }, { status: 404 })
+      return NextResponse.json({ error: `Fuente no encontrada: ${sourceId}` }, { status: 404 })
     }
 
     const fileUrl = source.url_template
