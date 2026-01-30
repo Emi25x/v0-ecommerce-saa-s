@@ -880,11 +880,12 @@ const App = () => {
 
     setShowImportConfirmDialog(false)
 
-    // Redirigir a la página de batch-import con el sourceId
+    // Redirigir a la página de batch-import con el sourceId y nombre
     // Esta página maneja el progreso correctamente
     if (sourceToImport.url_template) {
       const mode = sourceToImport.feed_type === "stock_price" ? "update" : importMode
-      window.location.href = `/inventory/sources/batch-import?sourceId=${sourceToImport.id}&mode=${mode}`
+      const encodedName = encodeURIComponent(sourceToImport.name)
+      window.location.href = `/inventory/sources/batch-import?sourceId=${sourceToImport.id}&mode=${mode}&name=${encodedName}`
       return
     }
 

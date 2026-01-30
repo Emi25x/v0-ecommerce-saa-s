@@ -31,20 +31,14 @@ export default function BatchImportPage() {
   useEffect(() => {
     const urlSourceId = searchParams.get("sourceId")
     const urlMode = searchParams.get("mode")
-    
-    console.log("[v0] URL params - sourceId:", urlSourceId, "mode:", urlMode)
+    const urlName = searchParams.get("name")
     
     if (urlSourceId) {
-      console.log("[v0] Setting sourceId to:", urlSourceId)
       setSourceId(urlSourceId)
-      // Cargar nombre de la fuente
-      fetch(`/api/import-sources/${urlSourceId}`)
-        .then(res => res.json())
-        .then(data => {
-          console.log("[v0] Source data loaded:", data)
-          if (data.name) setSourceName(data.name)
-        })
-        .catch((err) => console.log("[v0] Error loading source:", err))
+    }
+    
+    if (urlName) {
+      setSourceName(decodeURIComponent(urlName))
     }
     
     if (urlMode && ["update", "create", "upsert"].includes(urlMode)) {
