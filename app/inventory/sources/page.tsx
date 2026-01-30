@@ -33,7 +33,6 @@ const App = () => {
   const [showResetDialog, setShowResetDialog] = useState(false)
   const [resetLoading, setResetLoading] = useState(false)
   const [resetConfirmText, setResetConfirmText] = useState("")
-  const [runInBackground, setRunInBackground] = useState(true) // Por defecto en background
 
   // Estado para el análisis de duplicados
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -881,51 +880,15 @@ const App = () => {
 
     setShowImportConfirmDialog(false)
 
-    // Si es importación en background (servidor)
-    if (runInBackground && sourceToImport.url_template) {
-      try {
-        const response = await fetch("/api/inventory/import/background", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sourceId: sourceToImport.id,
-            fileUrl: sourceToImport.url_template,
-            mode: importMode,
-          }),
-        })
-
-        if (response.ok) {
-          const result = await response.json()
-          toast({
-            title: "Importación iniciada en segundo plano",
-            description: "El proceso continuará aunque cierres esta página. Podés verificar el progreso en el historial de la fuente.",
-          })
-          // Marcar que hay una importación corriendo para esta fuente
-          setRunningImports((prev) => {
-            const updated = new Map(prev)
-            updated.set(sourceToImport.id, result.importId || "background")
-            return updated
-          })
-          loadSources() // Refrescar fuentes para ver el estado
-        } else {
-          const error = await response.json()
-          toast({
-            title: "Error al iniciar importación",
-            description: error.error || "Error desconocido",
-            variant: "destructive",
-          })
-        }
-      } catch (error) {
-        toast({
-          title: "Error",
-          description: "No se pudo iniciar la importación en segundo plano",
-          variant: "destructive",
-        })
-      }
+    // Redirigir a la página de batch-import con el sourceId
+    // Esta página maneja el progreso correctamente
+    if (sourceToImport.url_template) {
+      const mode = sourceToImport.source_type === "stock" ? "update" : importMode
+      window.location.href = `/inventory/sources/batch-import?sourceId=${sourceToImport.id}&mode=${mode}`
       return
     }
 
-    // Importación en cliente (como antes)
+    // Importación sin URL (subida de archivo manual)
     setShowProgressDialog(true)
     isExecutingRef.current = true
 

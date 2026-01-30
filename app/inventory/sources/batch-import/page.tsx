@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
@@ -8,7 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label"
 
 export default function BatchImportPage() {
+  const searchParams = useSearchParams()
   const [isRunning, setIsRunning] = useState(false)
+  const [sourceId, setSourceId] = useState<string>("0477aa50-1c71-40b2-9530-9c794eb32793") // Default Arnoia
+  const [sourceName, setSourceName] = useState<string>("Arnoia")
   const [importMode, setImportMode] = useState<string>("update")
   const [progress, setProgress] = useState(0)
   const [total, setTotal] = useState(0)
@@ -23,9 +27,28 @@ export default function BatchImportPage() {
     setLogs((prev) => [...prev.slice(-50), `${new Date().toLocaleTimeString()} - ${message}`])
   }
 
+  // Leer parámetros de URL al cargar
+  useEffect(() => {
+    const urlSourceId = searchParams.get("sourceId")
+    const urlMode = searchParams.get("mode")
+    
+    if (urlSourceId) {
+      setSourceId(urlSourceId)
+      // Cargar nombre de la fuente
+      fetch(`/api/import-sources/${urlSourceId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.name) setSourceName(data.name)
+        })
+        .catch(() => {})
+    }
+    
+    if (urlMode && ["update", "create", "upsert"].includes(urlMode)) {
+      setImportMode(urlMode)
+    }
+  }, [searchParams])
+
   const startBatchImport = async () => {
-    // ID de Arnoia (hardcodeado por ahora)
-    const sourceId = "0477aa50-1c71-40b2-9530-9c794eb32793"
 
     setIsRunning(true)
     setProgress(0)
@@ -41,7 +64,7 @@ export default function BatchImportPage() {
     let totalCreated = 0
     let done = false
 
-    addLog("Iniciando importacion por lotes de Arnoia...")
+    addLog(`Iniciando importacion por lotes de ${sourceName}...`)
 
     while (!done && !abortRef.current) {
       try {
@@ -106,9 +129,9 @@ export default function BatchImportPage() {
     <div className="container mx-auto py-8 max-w-4xl">
       <Card>
         <CardHeader>
-          <CardTitle>Importacion por Lotes - Arnoia</CardTitle>
-          <CardDescription>
-            Importa los EANs de Arnoia procesando en lotes de 3000 productos.
+<CardTitle>Importacion por Lotes - {sourceName}</CardTitle>
+  <CardDescription>
+  Importa productos procesando en lotes. Mantené esta página abierta durante el proceso.
             El proceso puede tardar varios minutos pero no se interrumpira si cambias de pagina.
           </CardDescription>
         </CardHeader>
