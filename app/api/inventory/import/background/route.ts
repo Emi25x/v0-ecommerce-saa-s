@@ -100,10 +100,11 @@ async function processImportInBackground(
     const csvText = await fileResponse.text()
     console.log("[v0] Background import: Archivo descargado, tamaño:", csvText.length, "caracteres")
     
-    // Parsear CSV
+    // Parsear CSV con delimitador pipe
     const parseResult = Papa.parse(csvText, {
       header: true,
       skipEmptyLines: true,
+      delimiter: "|",
     })
 
     const data = parseResult.data as Record<string, any>[]

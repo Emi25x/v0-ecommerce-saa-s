@@ -46,11 +46,11 @@ export async function POST(request: NextRequest) {
     console.log(`[v0] Batch import: Archivo descargado, ${csvText.length} caracteres`)
 
     // Parsear CSV
-    const parseResult = Papa.parse(csvText, {
-      header: true,
-      skipEmptyLines: true,
-      delimiter: ";",
-    })
+const parseResult = Papa.parse(csvText, {
+  header: true,
+  skipEmptyLines: true,
+  delimiter: "|",
+  })
 
     const data = parseResult.data as Record<string, string>[]
     const totalRows = data.length
@@ -102,15 +102,15 @@ export async function POST(request: NextRequest) {
             .from("products")
             .select("id")
             .eq("sku", sku)
-            .single()
+            .maybeSingle()
 
           if (!existing) {
             const { error } = await supabase.from("products").insert({
               sku,
               ean: ean || null,
-              name: title || sku,
+              title: title || sku,
               price: price || 0,
-              source_id: sourceId,
+              source: [sourceId],
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             })
@@ -122,13 +122,13 @@ export async function POST(request: NextRequest) {
             .from("products")
             .select("id")
             .eq("sku", sku)
-            .single()
+            .maybeSingle()
 
           if (existing) {
             // Actualizar
             const updateData: Record<string, any> = { updated_at: new Date().toISOString() }
             if (ean) updateData.ean = ean
-            if (title) updateData.name = title
+            if (title) updateData.title = title
             if (price > 0) updateData.price = price
 
             const { error } = await supabase
@@ -142,9 +142,9 @@ export async function POST(request: NextRequest) {
             const { error } = await supabase.from("products").insert({
               sku,
               ean: ean || null,
-              name: title || sku,
+              title: title || sku,
               price: price || 0,
-              source_id: sourceId,
+              source: [sourceId],
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             })
