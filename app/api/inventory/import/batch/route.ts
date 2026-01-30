@@ -110,12 +110,21 @@ export async function POST(request: NextRequest) {
       const internalCode = row[mapping.internal_code]?.trim() || null
       const imageUrl = row[mapping.image_url]?.trim() || null
       const author = row[mapping.author]?.trim() || null
+      const language = row[mapping.language]?.trim() || null
+      const yearEdition = row[mapping.year_edition]?.trim() || null
+      const subject = row[mapping.subject]?.trim() || null
+      const course = row[mapping.course]?.trim() || null
+      const binding = row[mapping.binding]?.trim() || null
+      const pages = parseInt(row[mapping.pages] || "0", 10) || null
+      const height = parseFloat(row[mapping.height]?.replace(",", ".") || "0") || null
+      const width = parseFloat(row[mapping.width]?.replace(",", ".") || "0") || null
+      const thickness = parseFloat(row[mapping.thickness]?.replace(",", ".") || "0") || null
+      const costPrice = parseFloat(row[mapping.cost_price]?.replace(",", ".") || "0") || null
+      const vat = parseFloat(row[mapping.vat]?.replace(",", ".") || "0") || null
+      const editionDate = row[mapping.edition_date]?.trim() || null
+      const ibicSubjects = row[mapping.ibic_subjects]?.trim() || null
 
       if (!sku) continue
-
-      // Guardar author en custom_fields ya que no hay columna dedicada
-      const customFields: Record<string, any> = {}
-      if (author) customFields.author = author
 
       productsToInsert.push({
         sku,
@@ -128,7 +137,20 @@ export async function POST(request: NextRequest) {
         stock,
         internal_code: internalCode,
         image_url: imageUrl,
-        custom_fields: Object.keys(customFields).length > 0 ? customFields : null,
+        author,
+        language,
+        year_edition: yearEdition,
+        subject,
+        course,
+        binding,
+        pages,
+        height,
+        width,
+        thickness,
+        cost_price: costPrice,
+        vat,
+        edition_date: editionDate,
+        ibic_subjects: ibicSubjects,
         source: [sourceId],
         created_at: now,
         updated_at: now,
