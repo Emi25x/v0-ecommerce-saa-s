@@ -149,23 +149,19 @@ export async function POST(request: NextRequest) {
           }
         }
       } else if (mode === "update") {
-        // Para update, actualizamos por EAN
-        for (const product of chunk) {
-          if (product.ean) {
-            const { error } = await supabase
-              .from("products")
-              .update({ 
-                title: product.title,
-                price: product.price,
-                description: product.description,
-                brand: product.brand,
-                category: product.category,
-                stock: product.stock,
-                internal_code: product.internal_code,
-                updated_at: now 
-              })
-              .eq("ean", product.ean)
-            if (!error) updatedCount++
+        // Para update, usamos upsert que actualiza si existe (por EAN)
+        const chunkWithEan = chunk.filter(p => p.ean)
+        
+        if (chunkWithEan.length > 0) {
+          const { error } = await supabase
+            .from("products")
+            .upsert(chunkWithEan, { onConflict: "ean", ignoreDuplicates: false })
+          
+          if (error) {
+            console.error("[v0] Error actualizando chunk:", error.message)
+            failedCount += chunkWithEan.length
+          } else {
+            updatedCount += chunkWithEan.length
           }
         }
       }
