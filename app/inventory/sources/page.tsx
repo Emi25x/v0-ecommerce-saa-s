@@ -883,7 +883,7 @@ const App = () => {
     // Redirigir a la página de batch-import con el sourceId
     // Esta página maneja el progreso correctamente
     if (sourceToImport.url_template) {
-      const mode = sourceToImport.source_type === "stock" ? "update" : importMode
+      const mode = sourceToImport.feed_type === "stock_price" ? "update" : importMode
       window.location.href = `/inventory/sources/batch-import?sourceId=${sourceToImport.id}&mode=${mode}`
       return
     }
@@ -1493,12 +1493,12 @@ const App = () => {
             <DialogTitle>Confirmar Importación</DialogTitle>
             <DialogDescription>
               Estás a punto de importar desde &quot;{sourceToImport?.name}&quot;
-              {sourceToImport?.source_type === "stock" && " (solo stock y precios)"}
+              {sourceToImport?.feed_type === "stock_price" && " (solo stock y precios)"}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             {/* Solo mostrar selector de modo si NO es tipo stock */}
-            {sourceToImport?.source_type !== "stock" && (
+            {sourceToImport?.feed_type !== "stock_price" && (
               <div className="space-y-2">
                 <Label htmlFor="import-mode">Modo de Importación</Label>
                 <Select value={importMode} onValueChange={(value: any) => setImportMode(value)}>
@@ -1534,7 +1534,7 @@ const App = () => {
             )}
             
             {/* Mensaje informativo para tipo stock */}
-            {sourceToImport?.source_type === "stock" && (
+            {sourceToImport?.feed_type === "stock_price" && (
               <div className="rounded-lg border p-3 bg-muted/50">
                 <p className="text-sm text-muted-foreground">
                   Se actualizará el stock y precio de los productos existentes que coincidan por EAN.
