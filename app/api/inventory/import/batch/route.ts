@@ -6,6 +6,10 @@ const BATCH_SIZE = 3000 // Procesar 3000 productos por request
 
 export const maxDuration = 60 // Máximo tiempo permitido en Vercel
 
+// Cache global para el archivo CSV parseado (evita re-descarga en cada request)
+const csvCache: Map<string, { data: Record<string, string>[], timestamp: number }> = new Map()
+const CACHE_TTL = 10 * 60 * 1000 // 10 minutos
+
 export async function POST(request: NextRequest) {
   try {
     const { sourceId, offset = 0, mode = "update" } = await request.json()
@@ -34,25 +38,39 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "URL no configurada" }, { status: 400 })
     }
 
-    console.log(`[v0] Batch import: Descargando archivo desde ${fileUrl}`)
+    // Verificar si tenemos el CSV en cache
+    let data: Record<string, string>[]
+    const cached = csvCache.get(sourceId)
+    
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      console.log(`[v0] Batch import: Usando CSV desde cache`)
+      data = cached.data
+    } else {
+      console.log(`[v0] Batch import: Descargando archivo desde ${fileUrl}`)
 
-    // Descargar el archivo CSV
-    const fileResponse = await fetch(fileUrl)
-    if (!fileResponse.ok) {
-      return NextResponse.json({ error: `Error descargando: ${fileResponse.status}` }, { status: 500 })
+      // Descargar el archivo CSV
+      const fileResponse = await fetch(fileUrl)
+      if (!fileResponse.ok) {
+        return NextResponse.json({ error: `Error descargando: ${fileResponse.status}` }, { status: 500 })
+      }
+
+      const csvText = await fileResponse.text()
+      console.log(`[v0] Batch import: Archivo descargado, ${csvText.length} caracteres`)
+
+      // Parsear CSV
+      const parseResult = Papa.parse(csvText, {
+        header: true,
+        skipEmptyLines: true,
+        delimiter: "|",
+      })
+
+      data = parseResult.data as Record<string, string>[]
+      
+      // Guardar en cache
+      csvCache.set(sourceId, { data, timestamp: Date.now() })
+      console.log(`[v0] Batch import: CSV guardado en cache`)
     }
 
-    const csvText = await fileResponse.text()
-    console.log(`[v0] Batch import: Archivo descargado, ${csvText.length} caracteres`)
-
-    // Parsear CSV
-const parseResult = Papa.parse(csvText, {
-  header: true,
-  skipEmptyLines: true,
-  delimiter: "|",
-  })
-
-    const data = parseResult.data as Record<string, string>[]
     const totalRows = data.length
 
     console.log(`[v0] Batch import: ${totalRows} filas totales, procesando desde offset ${offset}`)
