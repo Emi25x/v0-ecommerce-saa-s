@@ -53,7 +53,9 @@ export default function BatchImportPage() {
   }, [searchParams])
 
   const startBatchImport = async () => {
-    console.log("[v0] Starting batch import with sourceId:", sourceId, "mode:", importMode)
+    // Obtener sourceId directamente de la URL para evitar problemas de timing con el estado
+    const urlSourceId = searchParams.get("sourceId") || sourceId
+    console.log("[v0] Starting batch import with sourceId:", urlSourceId, "mode:", importMode)
     
     setIsRunning(true)
     setProgress(0)
@@ -79,7 +81,7 @@ export default function BatchImportPage() {
         const response = await fetch("/api/inventory/import/batch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sourceId, offset, mode: importMode }),
+          body: JSON.stringify({ sourceId: urlSourceId, offset, mode: importMode }),
         })
 
         if (!response.ok) {
