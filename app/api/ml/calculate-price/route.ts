@@ -44,7 +44,7 @@ export async function POST(request: Request) {
     const supabase = await createClient()
     const { data: account } = await supabase
       .from("ml_accounts")
-      .select("access_token, token_expires_at, refresh_token")
+      .select("access_token, token_expires_at, refresh_token, ml_user_id")
       .limit(1)
       .single()
 
@@ -55,10 +55,11 @@ export async function POST(request: Request) {
     // - $25,000 a $33,000: $2,810
     // - Más de $33,000: $0
     let mlFixedFee = 0 // Se calcula dinámicamente según el precio
+    let accessToken = ""; // Declare accessToken variable
 
     if (account?.access_token) {
       // Verificar y refrescar token si es necesario
-      let accessToken = account.access_token
+      accessToken = account.access_token
       const expiresAt = new Date(account.token_expires_at)
       if (expiresAt < new Date() && account.refresh_token) {
         const refreshResponse = await fetch("https://api.mercadolibre.com/oauth/token", {
@@ -116,16 +117,37 @@ export async function POST(request: Request) {
     }
     
     // Costo de envio gratis (obligatorio para productos > $33,000)
-    // Para libros: peso promedio ~500g, costo aprox basado en tabla ML
-    // Tabla de costos envio gratis 2025 (MercadoLider/verde):
-    // - Hasta 500g: ~$2,500
-    // - 500g a 1kg: ~$3,000
-    // - 1kg a 2kg: ~$3,500
-    // - 2kg a 5kg: ~$5,000
+    // Consultar API de ML para obtener costo real
     let shippingCost = 0
-    if (estimatedFinalPrice >= 33000) {
-      // Envio gratis obligatorio - el vendedor paga
-      shippingCost = 2500 // Costo promedio para libros (~500g)
+    if (estimatedFinalPrice >= 33000 && accessToken) {
+      try {
+        // Consultar costo de envio gratis usando API de ML
+        // Usamos un item_id de ejemplo o consultamos shipping_options
+        const shippingResponse = await fetch(
+          `https://api.mercadolibre.com/users/${account?.ml_user_id || 'me'}/shipping_options/free?price=${Math.round(estimatedFinalPrice)}&listing_type_id=${listing_type_id}&category_id=MLA3025`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        )
+        
+        if (shippingResponse.ok) {
+          const shippingData = await shippingResponse.json()
+          // El costo de envio para el vendedor esta en coverage.list_cost
+          if (shippingData?.coverage?.list_cost) {
+            shippingCost = shippingData.coverage.list_cost
+          } else if (shippingData?.options?.[0]?.list_cost) {
+            shippingCost = shippingData.options[0].list_cost
+          } else {
+            // Fallback: usar estimacion basada en peso promedio libro (500g)
+            shippingCost = 5500 // Costo actualizado 2026
+          }
+        } else {
+          shippingCost = 5500 // Fallback
+        }
+      } catch {
+        shippingCost = 5500 // Fallback si falla la API
+      }
+    } else if (estimatedFinalPrice >= 33000) {
+      // Sin token, usar estimacion
+      shippingCost = 5500 // Costo estimado envio gratis 2026 (~500g)
     }
     
     // Recalcular precio final con cargo fijo y envio
