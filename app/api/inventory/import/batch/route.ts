@@ -80,6 +80,12 @@ export async function POST(request: NextRequest) {
     }
 
     const totalRows = data.length
+    
+    // Log de las columnas del CSV para verificar que es el archivo correcto
+    if (offset === 0 && data.length > 0) {
+      const columns = Object.keys(data[0])
+      console.log(`[v0] Batch import: Columnas del CSV: ${columns.join(", ")}`)
+    }
 
     console.log(`[v0] Batch import: ${totalRows} filas totales, procesando desde offset ${offset}`)
 
@@ -106,7 +112,9 @@ export async function POST(request: NextRequest) {
     // LÓGICA ESPECIAL PARA FEEDS TIPO STOCK_PRICE
     // Solo actualiza stock y precio por EAN, no crea productos nuevos
     if (source.feed_type === "stock_price") {
-      const stockUpdates: Array<{ ean: string; stock: number; price: number }> = []
+      // Recopilar los EANs del batch para buscar productos existentes
+      const batchEans: string[] = []
+      const stockMap = new Map<string, { stock: number; price: number }>()
       
       for (const row of batch) {
         const ean = row[mapping.ean || "EAN"]?.trim()
@@ -114,24 +122,42 @@ export async function POST(request: NextRequest) {
         const price = parseFloat(row[mapping.price || "PRECIO"]?.replace(",", ".") || "0")
         
         if (!ean) continue
-        stockUpdates.push({ ean, stock, price })
+        batchEans.push(ean)
+        stockMap.set(ean, { stock, price })
       }
       
-      // Actualizar en chunks de 100 para evitar queries muy grandes
-      const CHUNK_SIZE = 100
-      for (let i = 0; i < stockUpdates.length; i += CHUNK_SIZE) {
-        const chunk = stockUpdates.slice(i, i + CHUNK_SIZE)
+      // Buscar productos existentes por EAN en chunks de 500
+      const CHUNK_SIZE = 500
+      for (let i = 0; i < batchEans.length; i += CHUNK_SIZE) {
+        const chunkEans = batchEans.slice(i, i + CHUNK_SIZE)
         
-        for (const item of chunk) {
+        // Buscar productos existentes
+        const { data: existingProducts } = await supabase
+          .from("products")
+          .select("id, ean")
+          .in("ean", chunkEans)
+        
+        if (existingProducts && existingProducts.length > 0) {
+          // Preparar updates masivos
+          const updates = existingProducts.map(p => {
+            const stockData = stockMap.get(p.ean!)
+            return {
+              id: p.id,
+              stock: stockData?.stock || 0,
+              price: stockData?.price || 0,
+              updated_at: now,
+            }
+          })
+          
+          // Actualizar en batch usando upsert
           const { error } = await supabase
             .from("products")
-            .update({ stock: item.stock, price: item.price, updated_at: now })
-            .eq("ean", item.ean)
+            .upsert(updates, { onConflict: "id" })
           
           if (!error) {
-            updatedCount++
+            updatedCount += updates.length
           } else {
-            failedCount++
+            failedCount += updates.length
           }
         }
       }
