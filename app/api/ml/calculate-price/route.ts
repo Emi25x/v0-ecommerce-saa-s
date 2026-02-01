@@ -115,13 +115,26 @@ export async function POST(request: Request) {
       mlFixedFee = 0
     }
     
-    // Recalcular precio final con cargo fijo correcto
-    const priceWithFees = (costWithMargin + mlFixedFee) / (1 - mlFeePercent)
+    // Costo de envio gratis (obligatorio para productos > $33,000)
+    // Para libros: peso promedio ~500g, costo aprox basado en tabla ML
+    // Tabla de costos envio gratis 2025 (MercadoLider/verde):
+    // - Hasta 500g: ~$2,500
+    // - 500g a 1kg: ~$3,000
+    // - 1kg a 2kg: ~$3,500
+    // - 2kg a 5kg: ~$5,000
+    let shippingCost = 0
+    if (estimatedFinalPrice >= 33000) {
+      // Envio gratis obligatorio - el vendedor paga
+      shippingCost = 2500 // Costo promedio para libros (~500g)
+    }
+    
+    // Recalcular precio final con cargo fijo y envio
+    const priceWithFees = (costWithMargin + mlFixedFee + shippingCost) / (1 - mlFeePercent)
     const finalPrice = Math.ceil(priceWithFees / 10) * 10 // Redondear a decena
 
     // Verificación inversa
     const mlCommission = finalPrice * mlFeePercent + mlFixedFee
-    const netReceived = finalPrice - mlCommission
+    const netReceived = finalPrice - mlCommission - shippingCost
     const actualMargin = ((netReceived - costInArs) / costInArs) * 100
 
     return NextResponse.json({
@@ -134,10 +147,13 @@ export async function POST(request: Request) {
         listing_type_id,
         ml_fee_percent: Math.round(mlFeePercent * 100 * 10) / 10,
         ml_fixed_fee: mlFixedFee,
+        shipping_cost: shippingCost,
         final_price_ars: finalPrice,
         // Verificación
         verification: {
           ml_commission: Math.round(mlCommission),
+          shipping_cost: shippingCost,
+          total_costs: Math.round(mlCommission + shippingCost),
           net_received: Math.round(netReceived),
           actual_margin_percent: Math.round(actualMargin * 10) / 10,
           profit_ars: Math.round(netReceived - costInArs)
