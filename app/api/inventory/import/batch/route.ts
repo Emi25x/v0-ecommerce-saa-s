@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import Papa from "papaparse"
 
-const BATCH_SIZE = 3000 // Procesar 3000 productos por request
+const BATCH_SIZE = 1000 // Procesar 1000 productos por request (reducido para evitar timeouts)
 
 export const maxDuration = 60 // Máximo tiempo permitido en Vercel
 
