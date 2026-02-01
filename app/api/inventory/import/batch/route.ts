@@ -148,35 +148,29 @@ export async function POST(request: NextRequest) {
       const done = newOffset >= totalRows
       const progress = Math.round((newOffset / totalRows) * 100)
       
-      // Si terminamos, poner stock=0 en productos que no están en el archivo
+      // Si terminamos, poner stock=0 en TODOS los productos que no están en el archivo
       let zeroStockCount = 0
       if (done) {
         console.log(`[v0] Stock import: Poniendo stock=0 en productos que no están en el archivo...`)
         
-        const eansInFile = new Set(
-          data
-            .map(row => row[mapping.ean || "EAN"]?.trim())
-            .filter(Boolean)
-        )
+        // Recopilar todos los EANs del archivo
+        const eansInFile = data
+          .map(row => row[mapping.ean || "EAN"]?.trim())
+          .filter(Boolean)
         
-        const { data: allProducts } = await supabase
-          .from("products")
-          .select("id, ean")
-          .not("ean", "is", null)
+        console.log(`[v0] Stock import: ${eansInFile.length} EANs en el archivo de stock`)
         
-        if (allProducts) {
-          const productsToZero = allProducts.filter(p => p.ean && !eansInFile.has(p.ean))
-          console.log(`[v0] Stock import: ${productsToZero.length} productos a poner en stock=0`)
-          
-          for (let i = 0; i < productsToZero.length; i += 1000) {
-            const ids = productsToZero.slice(i, i + 1000).map(p => p.id)
-            const { error } = await supabase
-              .from("products")
-              .update({ stock: 0, updated_at: now })
-              .in("id", ids)
-            
-            if (!error) zeroStockCount += ids.length
-          }
+        // Usar función SQL para poner stock=0 a los que NO están en la lista
+        // Esto es más robusto que cargar todos los productos en memoria
+        const { data: rpcResult, error: rpcError } = await supabase.rpc('zero_stock_not_in_list', {
+          ean_list: eansInFile
+        })
+        
+        if (!rpcError && rpcResult) {
+          zeroStockCount = rpcResult.zeroed || 0
+          console.log(`[v0] Stock import: ${zeroStockCount} productos puestos a stock=0`)
+        } else {
+          console.error(`[v0] Stock import: Error al poner stock=0:`, rpcError)
         }
       }
       
