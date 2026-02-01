@@ -260,6 +260,17 @@ export async function POST(request: NextRequest) {
         const chunkWithEan = chunk.filter(p => p.ean)
         
         if (chunkWithEan.length > 0) {
+          // En modo "create", contar cuántos EANs ya existen para calcular los realmente nuevos
+          let existingCount = 0
+          if (mode === "create") {
+            const eans = chunkWithEan.map(p => p.ean)
+            const { count } = await supabase
+              .from("products")
+              .select("ean", { count: "exact", head: true })
+              .in("ean", eans)
+            existingCount = count || 0
+          }
+          
           const { error } = await supabase
             .from("products")
             .upsert(chunkWithEan, { onConflict: "ean", ignoreDuplicates: mode === "create" })
@@ -268,7 +279,12 @@ export async function POST(request: NextRequest) {
             console.error("[v0] Error insertando chunk:", error.message)
             failedCount += chunkWithEan.length
           } else {
-            createdCount += chunkWithEan.length
+            if (mode === "create") {
+              // Solo contar los que realmente se crearon (no existían antes)
+              createdCount += chunkWithEan.length - existingCount
+            } else {
+              createdCount += chunkWithEan.length
+            }
           }
         }
       } else if (mode === "update") {
