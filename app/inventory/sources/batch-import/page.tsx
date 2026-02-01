@@ -102,6 +102,9 @@ export default function BatchImportPage() {
         if (result.done) {
           done = true
           setStatus("Importacion completada")
+          if (result.zeroStock && result.zeroStock > 0) {
+            addLog(`${result.zeroStock} productos sin stock en archivo puestos a stock=0`)
+          }
           addLog(`Importacion completada. Creados: ${totalCreated}, Actualizados: ${totalUpdated}`)
         } else {
           offset = result.nextOffset

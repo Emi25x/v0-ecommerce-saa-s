@@ -18,10 +18,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "sourceId es requerido" }, { status: 400 })
     }
     
-    // Limpiar cache si se fuerza recarga (primera llamada de una importación)
-    if (forceReload && csvCache.has(sourceId)) {
-      console.log(`[v0] Batch import: Limpiando cache para sourceId ${sourceId}`)
-      csvCache.delete(sourceId)
+    // Limpiar TODO el cache si se fuerza recarga (primera llamada de una importación)
+    if (forceReload) {
+      console.log(`[v0] Batch import: Limpiando TODO el cache`)
+      csvCache.clear()
     }
 
     console.log(`[v0] Batch import: sourceId = ${sourceId}, Modo = ${mode}, Offset = ${offset}`)
@@ -211,6 +211,50 @@ export async function POST(request: NextRequest) {
 
     console.log(`[v0] Batch import: Lote procesado. Creados: ${createdCount}, Actualizados: ${updatedCount}, Fallidos: ${failedCount}, Progreso: ${progress}%`)
 
+    // Si es feed tipo stock_price y ya terminamos, poner stock=0 en productos que no están en el archivo
+    let zeroStockCount = 0
+    if (done && source.feed_type === "stock_price") {
+      console.log(`[v0] Batch import: Poniendo stock=0 en productos que no están en el archivo...`)
+      
+      // Obtener todos los EANs del archivo
+      const eansInFile = new Set(
+        data
+          .map(row => row[mapping.ean || "EAN"]?.trim())
+          .filter(Boolean)
+      )
+      
+      console.log(`[v0] Batch import: ${eansInFile.size} EANs en el archivo de stock`)
+      
+      // Actualizar stock=0 para productos que NO están en el archivo
+      // Hacerlo en chunks para evitar timeout
+      const { data: allProducts } = await supabase
+        .from("products")
+        .select("id, ean")
+        .not("ean", "is", null)
+      
+      if (allProducts) {
+        const productsToZero = allProducts.filter(p => p.ean && !eansInFile.has(p.ean))
+        console.log(`[v0] Batch import: ${productsToZero.length} productos a poner en stock=0`)
+        
+        // Actualizar en chunks de 1000
+        for (let i = 0; i < productsToZero.length; i += 1000) {
+          const chunk = productsToZero.slice(i, i + 1000)
+          const ids = chunk.map(p => p.id)
+          
+          const { error } = await supabase
+            .from("products")
+            .update({ stock: 0, updated_at: now })
+            .in("id", ids)
+          
+          if (!error) {
+            zeroStockCount += chunk.length
+          }
+        }
+        
+        console.log(`[v0] Batch import: ${zeroStockCount} productos actualizados a stock=0`)
+      }
+    }
+
     return NextResponse.json({
       success: true,
       done,
@@ -219,6 +263,7 @@ export async function POST(request: NextRequest) {
       created: createdCount,
       updated: updatedCount,
       failed: failedCount,
+      zeroStock: zeroStockCount,
       nextOffset: done ? null : newOffset,
       progress,
     })
