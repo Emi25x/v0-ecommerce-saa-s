@@ -48,6 +48,7 @@ interface Template {
   free_shipping: boolean
   local_pick_up: boolean
   warranty?: string
+  description_template?: string
   fixed_attributes: any[]
   attribute_mapping: Record<string, string>
   is_default: boolean
@@ -92,6 +93,7 @@ export default function MLTemplatesPage() {
     free_shipping: false,
     local_pick_up: false,
     warranty: "30 días de garantía",
+    description_template: "",
     is_default: true,
     attribute_mapping: {} as Record<string, string>,
   })
@@ -246,6 +248,7 @@ export default function MLTemplatesPage() {
       free_shipping: template.free_shipping,
       local_pick_up: template.local_pick_up,
       warranty: template.warranty || "",
+      description_template: template.description_template || "",
       is_default: template.is_default,
       attribute_mapping: template.attribute_mapping || {},
     })
@@ -366,6 +369,15 @@ export default function MLTemplatesPage() {
                         <span className="text-muted-foreground">Formula de precio:</span>{" "}
                         <code className="rounded bg-muted px-1">{template.price_formula}</code>
                       </div>
+                      {template.description_template && (
+                        <div className="text-sm">
+                          <span className="text-muted-foreground">Plantilla de descripcion:</span>
+                          <pre className="mt-1 max-h-32 overflow-auto rounded bg-muted p-2 text-xs whitespace-pre-wrap">
+                            {template.description_template.substring(0, 200)}
+                            {template.description_template.length > 200 ? "..." : ""}
+                          </pre>
+                        </div>
+                      )}
                       <div className="flex gap-2">
                         <Button variant="outline" size="sm" onClick={() => editTemplate(template)}>
                           Editar
@@ -630,6 +642,20 @@ export default function MLTemplatesPage() {
                   onChange={(e) => setTemplateForm({ ...templateForm, warranty: e.target.value })}
                   placeholder="30 días de garantía"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Plantilla de Descripcion</Label>
+                <Textarea
+                  value={templateForm.description_template}
+                  onChange={(e) => setTemplateForm({ ...templateForm, description_template: e.target.value })}
+                  placeholder="Descripcion de la publicacion con variables como {title}, {author}, {brand}, {description}, {ean}, {pages}, {language}, {binding}, {subject}"
+                  rows={12}
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Variables disponibles: {"{title}"}, {"{author}"}, {"{brand}"}, {"{description}"}, {"{ean}"}, {"{pages}"}, {"{language}"}, {"{binding}"}, {"{subject}"}, {"{category}"}, {"{year_edition}"}
+                </p>
               </div>
 
               <div className="flex justify-end gap-2 pt-4">
