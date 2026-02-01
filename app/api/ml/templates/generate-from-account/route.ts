@@ -222,6 +222,64 @@ export async function POST() {
       '$1{year_edition}'
     )
     
+    // Páginas
+    descriptionTemplate = descriptionTemplate.replace(
+      /(P[AÁ]GINAS:?\s*)[^\n]+/gi, 
+      '$1{pages}'
+    )
+    descriptionTemplate = descriptionTemplate.replace(
+      /(N[UÚ]MERO DE P[AÁ]GINAS:?\s*)[^\n]+/gi, 
+      '$1{pages}'
+    )
+    
+    // Encuadernación
+    descriptionTemplate = descriptionTemplate.replace(
+      /(ENCUADERNACI[OÓ]N:?\s*)[^\n]+/gi, 
+      '$1{binding}'
+    )
+    descriptionTemplate = descriptionTemplate.replace(
+      /(FORMATO:?\s*)[^\n]+/gi, 
+      '$1{binding}'
+    )
+    descriptionTemplate = descriptionTemplate.replace(
+      /(TAPA:?\s*)[^\n]+/gi, 
+      '$1{binding}'
+    )
+    
+    // Dimensiones
+    descriptionTemplate = descriptionTemplate.replace(
+      /(DIMENSIONES:?\s*)[^\n]+/gi, 
+      '$1{width} x {height} x {thickness}'
+    )
+    descriptionTemplate = descriptionTemplate.replace(
+      /(MEDIDAS:?\s*)[^\n]+/gi, 
+      '$1{width} x {height} x {thickness}'
+    )
+    
+    // Categoría
+    descriptionTemplate = descriptionTemplate.replace(
+      /(CATEGOR[IÍ]A:?\s*)[^\n]+/gi, 
+      '$1{category}'
+    )
+    descriptionTemplate = descriptionTemplate.replace(
+      /(G[EÉ]NERO:?\s*)[^\n]+/gi, 
+      '$1{subject}'
+    )
+    descriptionTemplate = descriptionTemplate.replace(
+      /(MATERIA:?\s*)[^\n]+/gi, 
+      '$1{subject}'
+    )
+    descriptionTemplate = descriptionTemplate.replace(
+      /(TEM[AÁ]TICA:?\s*)[^\n]+/gi, 
+      '$1{subject}'
+    )
+    
+    // Idioma
+    descriptionTemplate = descriptionTemplate.replace(
+      /(IDIOMA:?\s*)[^\n]+/gi, 
+      '$1{language}'
+    )
+    
     // Reemplazar la reseña/sinopsis específica por variable
     descriptionTemplate = descriptionTemplate.replace(
       /(RESE[NÑ]A:?\s*)[^]+$/gi, 
@@ -252,6 +310,13 @@ export async function POST() {
       "AUTHOR": "author",
       "PUBLISHER": "brand",
       "LANGUAGE": "language",
+      "PAGES": "pages",
+      "BOOK_COVER_TYPE": "binding",
+      "HEIGHT": "height",
+      "WIDTH": "width",
+      "DEPTH": "thickness",
+      "GENRE": "subject",
+      "ITEM_CONDITION": "condition",
       "PAGES": "pages",
       "BOOK_COVER_TYPE": "binding"
     }
