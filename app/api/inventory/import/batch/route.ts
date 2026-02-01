@@ -101,10 +101,93 @@ export async function POST(request: NextRequest) {
     let createdCount = 0
     let failedCount = 0
 
-    // Preparar productos para inserción masiva
-    const productsToInsert: Array<Record<string, any>> = []
-
     const now = new Date().toISOString()
+
+    // LÓGICA ESPECIAL PARA FEEDS TIPO STOCK_PRICE
+    // Solo actualiza stock y precio por EAN, no crea productos nuevos
+    if (source.feed_type === "stock_price") {
+      const stockUpdates: Array<{ ean: string; stock: number; price: number }> = []
+      
+      for (const row of batch) {
+        const ean = row[mapping.ean || "EAN"]?.trim()
+        const stock = parseInt(row[mapping.stock] || "0", 10)
+        const price = parseFloat(row[mapping.price || "PRECIO"]?.replace(",", ".") || "0")
+        
+        if (!ean) continue
+        stockUpdates.push({ ean, stock, price })
+      }
+      
+      // Actualizar en chunks de 100 para evitar queries muy grandes
+      const CHUNK_SIZE = 100
+      for (let i = 0; i < stockUpdates.length; i += CHUNK_SIZE) {
+        const chunk = stockUpdates.slice(i, i + CHUNK_SIZE)
+        
+        for (const item of chunk) {
+          const { error } = await supabase
+            .from("products")
+            .update({ stock: item.stock, price: item.price, updated_at: now })
+            .eq("ean", item.ean)
+          
+          if (!error) {
+            updatedCount++
+          } else {
+            failedCount++
+          }
+        }
+      }
+      
+      const newOffset = offset + batch.length
+      const done = newOffset >= totalRows
+      const progress = Math.round((newOffset / totalRows) * 100)
+      
+      // Si terminamos, poner stock=0 en productos que no están en el archivo
+      let zeroStockCount = 0
+      if (done) {
+        console.log(`[v0] Stock import: Poniendo stock=0 en productos que no están en el archivo...`)
+        
+        const eansInFile = new Set(
+          data
+            .map(row => row[mapping.ean || "EAN"]?.trim())
+            .filter(Boolean)
+        )
+        
+        const { data: allProducts } = await supabase
+          .from("products")
+          .select("id, ean")
+          .not("ean", "is", null)
+        
+        if (allProducts) {
+          const productsToZero = allProducts.filter(p => p.ean && !eansInFile.has(p.ean))
+          console.log(`[v0] Stock import: ${productsToZero.length} productos a poner en stock=0`)
+          
+          for (let i = 0; i < productsToZero.length; i += 1000) {
+            const ids = productsToZero.slice(i, i + 1000).map(p => p.id)
+            const { error } = await supabase
+              .from("products")
+              .update({ stock: 0, updated_at: now })
+              .in("id", ids)
+            
+            if (!error) zeroStockCount += ids.length
+          }
+        }
+      }
+      
+      return NextResponse.json({
+        success: true,
+        done,
+        total: totalRows,
+        processed: newOffset,
+        created: 0,
+        updated: updatedCount,
+        failed: failedCount,
+        zeroStock: zeroStockCount,
+        nextOffset: done ? null : newOffset,
+        progress,
+      })
+    }
+
+    // LÓGICA NORMAL PARA CATÁLOGO COMPLETO
+    const productsToInsert: Array<Record<string, any>> = []
 
     for (const row of batch) {
       const sku = row[mapping.sku || "SKU"]?.trim()
@@ -211,50 +294,6 @@ export async function POST(request: NextRequest) {
 
     console.log(`[v0] Batch import: Lote procesado. Creados: ${createdCount}, Actualizados: ${updatedCount}, Fallidos: ${failedCount}, Progreso: ${progress}%`)
 
-    // Si es feed tipo stock_price y ya terminamos, poner stock=0 en productos que no están en el archivo
-    let zeroStockCount = 0
-    if (done && source.feed_type === "stock_price") {
-      console.log(`[v0] Batch import: Poniendo stock=0 en productos que no están en el archivo...`)
-      
-      // Obtener todos los EANs del archivo
-      const eansInFile = new Set(
-        data
-          .map(row => row[mapping.ean || "EAN"]?.trim())
-          .filter(Boolean)
-      )
-      
-      console.log(`[v0] Batch import: ${eansInFile.size} EANs en el archivo de stock`)
-      
-      // Actualizar stock=0 para productos que NO están en el archivo
-      // Hacerlo en chunks para evitar timeout
-      const { data: allProducts } = await supabase
-        .from("products")
-        .select("id, ean")
-        .not("ean", "is", null)
-      
-      if (allProducts) {
-        const productsToZero = allProducts.filter(p => p.ean && !eansInFile.has(p.ean))
-        console.log(`[v0] Batch import: ${productsToZero.length} productos a poner en stock=0`)
-        
-        // Actualizar en chunks de 1000
-        for (let i = 0; i < productsToZero.length; i += 1000) {
-          const chunk = productsToZero.slice(i, i + 1000)
-          const ids = chunk.map(p => p.id)
-          
-          const { error } = await supabase
-            .from("products")
-            .update({ stock: 0, updated_at: now })
-            .in("id", ids)
-          
-          if (!error) {
-            zeroStockCount += chunk.length
-          }
-        }
-        
-        console.log(`[v0] Batch import: ${zeroStockCount} productos actualizados a stock=0`)
-      }
-    }
-
     return NextResponse.json({
       success: true,
       done,
@@ -263,7 +302,6 @@ export async function POST(request: NextRequest) {
       created: createdCount,
       updated: updatedCount,
       failed: failedCount,
-      zeroStock: zeroStockCount,
       nextOffset: done ? null : newOffset,
       progress,
     })
