@@ -314,6 +314,33 @@ export default function MLTemplatesPage() {
               </SelectContent>
             </Select>
             <Button onClick={newTemplate}>Nueva Plantilla</Button>
+            <Button 
+              variant="outline"
+              onClick={async () => {
+                try {
+                  toast({ title: "Analizando publicaciones de ML...", description: "Esto puede tomar unos segundos" })
+                  const res = await fetch("/api/ml/templates/generate-from-account", { method: "POST" })
+                  const data = await res.json()
+                  if (res.ok) {
+                    toast({ 
+                      title: "Plantilla generada", 
+                      description: `Se analizaron ${data.analysis?.matches_found || 0} publicaciones` 
+                    })
+                    fetchTemplates()
+                  } else {
+                    toast({ 
+                      title: "Error", 
+                      description: data.error || "No se pudo generar la plantilla",
+                      variant: "destructive"
+                    })
+                  }
+                } catch {
+                  toast({ title: "Error", description: "Error al generar plantilla", variant: "destructive" })
+                }
+              }}
+            >
+              Generar desde ML
+            </Button>
           </div>
         </div>
 

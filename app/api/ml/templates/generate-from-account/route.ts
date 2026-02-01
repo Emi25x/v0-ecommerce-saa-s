@@ -16,10 +16,38 @@ export async function POST() {
       return NextResponse.json({ error: "No hay cuenta de ML conectada" }, { status: 400 })
     }
     
+    // Verificar y refrescar token si está expirado
+    let accessToken = account.access_token
+    const expiresAt = new Date(account.token_expires_at)
+    if (expiresAt < new Date() && account.refresh_token) {
+      console.log("[v0] Token expirado, refrescando...")
+      const refreshResponse = await fetch("https://api.mercadolibre.com/oauth/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          client_id: process.env.MERCADOLIBRE_CLIENT_ID!,
+          client_secret: process.env.MERCADOLIBRE_CLIENT_SECRET!,
+          refresh_token: account.refresh_token,
+        }),
+      })
+      
+      if (refreshResponse.ok) {
+        const tokens = await refreshResponse.json()
+        accessToken = tokens.access_token
+        await supabase.from("ml_accounts").update({
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token,
+          token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
+        }).eq("id", account.id)
+        console.log("[v0] Token refrescado")
+      }
+    }
+    
     // 2. Obtener publicaciones activas
     const itemsResponse = await fetch(
       `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?status=active&limit=50`,
-      { headers: { Authorization: `Bearer ${account.access_token}` } }
+      { headers: { Authorization: `Bearer ${accessToken}` } }
     )
     const itemsData = await itemsResponse.json()
     
@@ -33,7 +61,7 @@ export async function POST() {
     const itemIds = itemsData.results.slice(0, 20).join(",")
     const detailsResponse = await fetch(
       `https://api.mercadolibre.com/items?ids=${itemIds}`,
-      { headers: { Authorization: `Bearer ${account.access_token}` } }
+      { headers: { Authorization: `Bearer ${accessToken}` } }
     )
     const detailsData = await detailsResponse.json()
     
@@ -69,7 +97,7 @@ export async function POST() {
       // Obtener descripción de la publicación
       const descResponse = await fetch(
         `https://api.mercadolibre.com/items/${item.id}/description`,
-        { headers: { Authorization: `Bearer ${account.access_token}` } }
+        { headers: { Authorization: `Bearer ${accessToken}` } }
       )
       const descData = await descResponse.json()
       
