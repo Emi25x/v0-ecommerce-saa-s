@@ -27,22 +27,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "cost_price_eur es requerido" }, { status: 400 })
     }
 
-    // Obtener tipo de cambio EUR -> ARS (Euro vendedor BNA)
+    // Obtener tipo de cambio EUR -> ARS (Euro BILLETES vendedor BNA)
     let rate = exchange_rate
     if (!rate) {
       try {
-        // Usar API dolarapi.com para obtener Euro oficial BNA
+        // Usar API dolarapi.com para obtener Euro oficial BNA (divisas)
         const rateResponse = await fetch("https://dolarapi.com/v1/cotizaciones/eur")
         if (rateResponse.ok) {
           const rateData = await rateResponse.json()
-          // Euro vendedor oficial BNA
-          rate = rateData.venta || 1718
-          console.log("[v0] Euro BNA vendedor:", rate)
+          // Euro divisas vendedor BNA
+          const euroDivisas = rateData.venta || 1718
+          // Euro BILLETES es aprox 2.7% mas que divisas
+          rate = Math.round(euroDivisas * 1.027)
+          console.log("[v0] Euro BNA divisas:", euroDivisas, "-> billetes:", rate)
         } else {
-          rate = 1718 // Fallback Euro BNA
+          rate = 1765 // Fallback Euro BILLETES BNA
         }
       } catch {
-        rate = 1718 // Fallback Euro BNA
+        rate = 1765 // Fallback Euro BILLETES BNA
       }
     }
 
