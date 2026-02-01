@@ -9,10 +9,6 @@ import { NextResponse } from "next/server"
 
 export async function POST(request: Request) {
   try {
-    console.log("[v0] ========================================")
-    console.log("[v0] POST /api/ml/calculate-price - STARTING")
-    console.log("[v0] ========================================")
-    
     const body = await request.json()
     const { 
       cost_price_eur, 
@@ -20,8 +16,6 @@ export async function POST(request: Request) {
       listing_type_id = "gold_special",
       exchange_rate // opcional, si no se envia se obtiene automaticamente
     } = body
-
-    console.log("[v0] Input:", { cost_price_eur, margin_percent, listing_type_id, exchange_rate })
 
     if (!cost_price_eur || cost_price_eur <= 0) {
       return NextResponse.json({ error: "cost_price_eur es requerido" }, { status: 400 })
@@ -39,7 +33,6 @@ export async function POST(request: Request) {
           const euroDivisas = rateData.venta || 1718
           // Euro BILLETES es aprox 2.7% mas que divisas
           rate = Math.round(euroDivisas * 1.027)
-          console.log("[v0] Euro BNA divisas:", euroDivisas, "-> billetes:", rate)
         } else {
           rate = 1765 // Fallback Euro BILLETES BNA
         }
@@ -110,10 +103,6 @@ export async function POST(request: Request) {
     const costInArs = cost_price_eur * rate
     const costWithMargin = costInArs * (1 + margin_percent / 100)
     
-    console.log("[v0] Tipo de cambio EUR->ARS:", rate)
-    console.log("[v0] Costo en ARS:", costInArs)
-    console.log("[v0] Costo con margen:", costWithMargin)
-    
     // Calcular precio iterativamente porque agregar costos puede cambiar el rango
     // y eso cambia los costos aplicables (cargo fijo vs envio)
     let shippingCost = 5500 // Costo envio gratis estimado
@@ -154,8 +143,6 @@ export async function POST(request: Request) {
       const currentShipping = costs.shipping
       
       currentPrice = (costWithMargin + mlFixedFee + currentShipping) / (1 - mlFeePercent)
-      
-      console.log(`[v0] Iteracion ${iterations}: precio=$${Math.round(currentPrice)}, cargo_fijo=$${mlFixedFee}, envio=$${currentShipping}`)
     }
     
     // Obtener costos finales basados en precio estabilizado
@@ -184,14 +171,9 @@ export async function POST(request: Request) {
       }
     }
     
-    console.log("[v0] Cargo fijo ML final:", mlFixedFee)
-    console.log("[v0] Costo envio final:", shippingCost)
-    
     // Calcular precio final con costos definitivos
     const priceWithFees = (costWithMargin + mlFixedFee + shippingCost) / (1 - mlFeePercent)
     finalPrice = Math.ceil(priceWithFees / 10) * 10 // Redondear a decena
-    
-    console.log("[v0] Precio final ARS:", finalPrice)
 
     // Verificacion inversa
     const mlCommission = finalPrice * mlFeePercent + mlFixedFee

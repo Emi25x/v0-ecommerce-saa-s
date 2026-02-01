@@ -80,6 +80,29 @@ export default function MLTemplatesPage() {
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
   const [showEditor, setShowEditor] = useState(false)
   
+  // Estado para calculadora de precios
+  const [marginPercent, setMarginPercent] = useState(20)
+  const [testCostEur, setTestCostEur] = useState(10)
+  const [calculating, setCalculating] = useState(false)
+  const [priceCalculation, setPriceCalculation] = useState<{
+    cost_price_eur: number
+    exchange_rate: number
+    cost_in_ars: number
+    margin_percent: number
+    ml_fee_percent: number
+    ml_fixed_fee: number
+    shipping_cost: number
+    final_price_ars: number
+    verification: {
+      ml_commission: number
+      shipping_cost: number
+      total_costs: number
+      net_received: number
+      actual_margin_percent: number
+      profit_ars: number
+    }
+  } | null>(null)
+  
   // Campos de la plantilla
   const [templateForm, setTemplateForm] = useState({
     name: "Plantilla Principal",
@@ -234,6 +257,50 @@ export default function MLTemplatesPage() {
     }
   }
 
+  const calculatePrice = async () => {
+    setCalculating(true)
+    try {
+      const response = await fetch("/api/ml/calculate-price", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cost_price_eur: testCostEur,
+          margin_percent: marginPercent,
+          listing_type_id: "gold_special"
+        })
+      })
+      
+      const data = await response.json()
+      if (data.success) {
+        setPriceCalculation(data.calculation)
+      } else {
+        toast({ title: "Error", description: data.error || "Error al calcular", variant: "destructive" })
+      }
+    } catch (error) {
+      toast({ title: "Error", description: "Error al calcular precio", variant: "destructive" })
+    } finally {
+      setCalculating(false)
+    }
+  }
+  
+  const applyMarginToTemplate = async () => {
+    if (!priceCalculation) return
+    
+    // Calcular el multiplicador basado en el calculo
+    const multiplier = priceCalculation.final_price_ars / priceCalculation.cost_in_ars
+    const formula = `cost_price * ${multiplier.toFixed(2)}`
+    
+    setTemplateForm(prev => ({
+      ...prev,
+      price_formula: `margin:${marginPercent}%`
+    }))
+    
+    toast({ 
+      title: "Margen aplicado", 
+      description: `Formula actualizada: ${marginPercent}% de margen` 
+    })
+  }
+
   const editTemplate = (template: Template) => {
     setEditingTemplate(template)
     setTemplateForm({
@@ -347,6 +414,7 @@ export default function MLTemplatesPage() {
         <Tabs defaultValue="templates" className="space-y-4">
           <TabsList>
             <TabsTrigger value="templates">Plantillas</TabsTrigger>
+            <TabsTrigger value="calculator">Calculadora de Precios</TabsTrigger>
             <TabsTrigger value="analyze">Analizar Publicacion</TabsTrigger>
           </TabsList>
 
@@ -418,6 +486,168 @@ export default function MLTemplatesPage() {
                 ))}
               </div>
             )}
+          </TabsContent>
+
+          <TabsContent value="calculator" className="space-y-4">
+            <div className="grid gap-6 lg:grid-cols-2">
+              {/* Panel de configuracion */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Configurar Margen</CardTitle>
+                  <CardDescription>
+                    Define el margen de ganancia deseado y el sistema calculara el precio final
+                    considerando todos los costos de Mercado Libre.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="margin">Margen de ganancia deseado (%)</Label>
+                      <div className="flex items-center gap-4">
+                        <Input
+                          id="margin"
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={marginPercent}
+                          onChange={(e) => setMarginPercent(Number(e.target.value))}
+                          className="w-24"
+                        />
+                        <span className="text-2xl font-bold text-primary">{marginPercent}%</span>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="testCost">Costo de prueba (EUR)</Label>
+                      <div className="flex items-center gap-4">
+                        <Input
+                          id="testCost"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={testCostEur}
+                          onChange={(e) => setTestCostEur(Number(e.target.value))}
+                          className="w-24"
+                        />
+                        <span className="text-muted-foreground">EUR {testCostEur.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <Button 
+                    onClick={calculatePrice} 
+                    disabled={calculating}
+                    className="w-full"
+                    size="lg"
+                  >
+                    {calculating ? "Calculando..." : "Calcular Precio"}
+                  </Button>
+                </CardContent>
+              </Card>
+
+              {/* Panel de resultados */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Desglose de Costos</CardTitle>
+                  <CardDescription>
+                    Valores utilizados en la formula de precio
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {priceCalculation ? (
+                    <div className="space-y-6">
+                      {/* Precio final destacado */}
+                      <div className="rounded-lg bg-primary/10 p-4 text-center">
+                        <p className="text-sm text-muted-foreground">Precio de venta en ML</p>
+                        <p className="text-4xl font-bold text-primary">
+                          ${priceCalculation.final_price_ars.toLocaleString("es-AR")}
+                        </p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Multiplicador: {(priceCalculation.final_price_ars / priceCalculation.cost_in_ars).toFixed(2)}x
+                        </p>
+                      </div>
+
+                      {/* Tabla de costos */}
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Concepto</TableHead>
+                            <TableHead className="text-right">Valor</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          <TableRow>
+                            <TableCell className="font-medium">Costo producto</TableCell>
+                            <TableCell className="text-right">EUR {priceCalculation.cost_price_eur.toFixed(2)}</TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="font-medium">Tipo de cambio (EUR billetes BNA)</TableCell>
+                            <TableCell className="text-right">${priceCalculation.exchange_rate.toLocaleString("es-AR")}</TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="font-medium">Costo en ARS</TableCell>
+                            <TableCell className="text-right">${priceCalculation.cost_in_ars.toLocaleString("es-AR")}</TableCell>
+                          </TableRow>
+                          <TableRow className="bg-muted/50">
+                            <TableCell className="font-medium">Margen deseado</TableCell>
+                            <TableCell className="text-right">{priceCalculation.margin_percent}%</TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="font-medium">Comision ML</TableCell>
+                            <TableCell className="text-right">{priceCalculation.ml_fee_percent}%</TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="font-medium">Cargo fijo ML</TableCell>
+                            <TableCell className="text-right">${priceCalculation.ml_fixed_fee.toLocaleString("es-AR")}</TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell className="font-medium">Costo envio gratis</TableCell>
+                            <TableCell className="text-right">${priceCalculation.shipping_cost.toLocaleString("es-AR")}</TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+
+                      {/* Verificacion */}
+                      <div className="rounded-lg border p-4 space-y-2">
+                        <h4 className="font-semibold text-sm">Verificacion</h4>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <span className="text-muted-foreground">Comision ML:</span>
+                          <span className="text-right">-${priceCalculation.verification.ml_commission.toLocaleString("es-AR")}</span>
+                          
+                          <span className="text-muted-foreground">Costo envio:</span>
+                          <span className="text-right">-${priceCalculation.verification.shipping_cost.toLocaleString("es-AR")}</span>
+                          
+                          <span className="text-muted-foreground">Total costos ML:</span>
+                          <span className="text-right font-medium">-${priceCalculation.verification.total_costs.toLocaleString("es-AR")}</span>
+                          
+                          <span className="text-muted-foreground">Neto recibido:</span>
+                          <span className="text-right">${priceCalculation.verification.net_received.toLocaleString("es-AR")}</span>
+                          
+                          <span className="text-muted-foreground">Ganancia:</span>
+                          <span className="text-right text-green-600 font-medium">+${priceCalculation.verification.profit_ars.toLocaleString("es-AR")}</span>
+                          
+                          <span className="text-muted-foreground">Margen real:</span>
+                          <span className="text-right font-bold text-primary">{priceCalculation.verification.actual_margin_percent}%</span>
+                        </div>
+                      </div>
+
+                      {/* Boton aplicar */}
+                      <Button 
+                        onClick={applyMarginToTemplate}
+                        variant="outline"
+                        className="w-full bg-transparent"
+                      >
+                        Aplicar margen a plantilla activa
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex h-64 items-center justify-center text-muted-foreground">
+                      <p>Configura el margen y haz clic en Calcular</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           <TabsContent value="analyze" className="space-y-4">
