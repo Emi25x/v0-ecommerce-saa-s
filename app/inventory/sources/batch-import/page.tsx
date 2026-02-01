@@ -72,10 +72,12 @@ export default function BatchImportPage() {
         setStatus(`Procesando lote desde posicion ${offset}...`)
         addLog(`Procesando lote desde offset ${offset}`)
 
+        // forceReload solo en la primera llamada para limpiar cache
+        const isFirstBatch = offset === 0
         const response = await fetch("/api/inventory/import/batch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sourceId: urlSourceId, offset, mode: importMode }),
+          body: JSON.stringify({ sourceId: urlSourceId, offset, mode: importMode, forceReload: isFirstBatch }),
         })
 
         if (!response.ok) {

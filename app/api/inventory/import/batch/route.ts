@@ -12,10 +12,16 @@ const CACHE_TTL = 10 * 60 * 1000 // 10 minutos
 
 export async function POST(request: NextRequest) {
   try {
-    const { sourceId, offset = 0, mode = "update" } = await request.json()
+    const { sourceId, offset = 0, mode = "update", forceReload = false } = await request.json()
 
     if (!sourceId) {
       return NextResponse.json({ error: "sourceId es requerido" }, { status: 400 })
+    }
+    
+    // Limpiar cache si se fuerza recarga (primera llamada de una importación)
+    if (forceReload && csvCache.has(sourceId)) {
+      console.log(`[v0] Batch import: Limpiando cache para sourceId ${sourceId}`)
+      csvCache.delete(sourceId)
     }
 
     console.log(`[v0] Batch import: sourceId = ${sourceId}, Modo = ${mode}, Offset = ${offset}`)
