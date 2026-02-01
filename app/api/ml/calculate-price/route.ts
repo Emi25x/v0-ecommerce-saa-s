@@ -9,13 +9,19 @@ import { NextResponse } from "next/server"
 
 export async function POST(request: Request) {
   try {
+    console.log("[v0] ========================================")
+    console.log("[v0] POST /api/ml/calculate-price - STARTING")
+    console.log("[v0] ========================================")
+    
     const body = await request.json()
     const { 
       cost_price_eur, 
       margin_percent = 20, 
       listing_type_id = "gold_special",
-      exchange_rate // opcional, si no se envía se obtiene automáticamente
+      exchange_rate // opcional, si no se envia se obtiene automaticamente
     } = body
+
+    console.log("[v0] Input:", { cost_price_eur, margin_percent, listing_type_id, exchange_rate })
 
     if (!cost_price_eur || cost_price_eur <= 0) {
       return NextResponse.json({ error: "cost_price_eur es requerido" }, { status: 400 })
@@ -98,12 +104,17 @@ export async function POST(request: Request) {
     }
 
     // Calcular precio de venta en ARS
-    // Fórmula: (Costo EUR * TipoCambio * (1 + Margen) + CargoFijo) / (1 - ComisionML)
+    // Formula: (Costo EUR * TipoCambio * (1 + Margen) + CargoFijo) / (1 - ComisionML)
     const costInArs = cost_price_eur * rate
     const costWithMargin = costInArs * (1 + margin_percent / 100)
     
+    console.log("[v0] Tipo de cambio EUR->ARS:", rate)
+    console.log("[v0] Costo en ARS:", costInArs)
+    console.log("[v0] Costo con margen:", costWithMargin)
+    
     // Primera estimacion sin cargo fijo para determinar rango de precio
     let estimatedFinalPrice = costWithMargin / (1 - mlFeePercent)
+    console.log("[v0] Precio estimado inicial:", estimatedFinalPrice)
     
     // Determinar cargo fijo segun rango de precio (2025)
     if (estimatedFinalPrice < 15000) {
@@ -150,11 +161,16 @@ export async function POST(request: Request) {
       shippingCost = 5500 // Costo estimado envio gratis 2026 (~500g)
     }
     
+    console.log("[v0] Cargo fijo ML:", mlFixedFee)
+    console.log("[v0] Costo envio:", shippingCost)
+    
     // Recalcular precio final con cargo fijo y envio
     const priceWithFees = (costWithMargin + mlFixedFee + shippingCost) / (1 - mlFeePercent)
     const finalPrice = Math.ceil(priceWithFees / 10) * 10 // Redondear a decena
+    
+    console.log("[v0] Precio final ARS:", finalPrice)
 
-    // Verificación inversa
+    // Verificacion inversa
     const mlCommission = finalPrice * mlFeePercent + mlFixedFee
     const netReceived = finalPrice - mlCommission - shippingCost
     const actualMargin = ((netReceived - costInArs) / costInArs) * 100
