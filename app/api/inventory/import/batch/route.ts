@@ -126,25 +126,22 @@ export async function POST(request: NextRequest) {
         stockMap.set(ean, { stock, price })
       }
       
-      // Actualizar directamente por EAN (sin buscar ID primero)
-      for (const ean of batchEans) {
-        const stockData = stockMap.get(ean)
-        if (stockData) {
-          const { error, count } = await supabase
-            .from("products")
-            .update({ 
-              stock: stockData.stock, 
-              price: stockData.price, 
-              updated_at: now 
-            })
-            .eq("ean", ean)
-          
-          if (!error && count && count > 0) {
-            updatedCount++
-          } else if (error) {
-            failedCount++
-          }
-        }
+      // Preparar array para update masivo via RPC
+      const stockUpdates = batchEans.map(ean => {
+        const stockData = stockMap.get(ean)!
+        return { ean, stock: stockData.stock, price: stockData.price }
+      })
+      
+      // Llamar función RPC para update masivo
+      const { data: rpcResult, error: rpcError } = await supabase.rpc('update_stock_batch', {
+        stock_updates: stockUpdates
+      })
+      
+      if (!rpcError && rpcResult) {
+        updatedCount = rpcResult.updated || 0
+      } else {
+        console.log(`[v0] RPC error:`, rpcError)
+        failedCount = batchEans.length
       }
       
       const newOffset = offset + batch.length
