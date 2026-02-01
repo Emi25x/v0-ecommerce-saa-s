@@ -27,22 +27,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "cost_price_eur es requerido" }, { status: 400 })
     }
 
-    // Obtener tipo de cambio EUR -> ARS (si no se envía)
+    // Obtener tipo de cambio EUR -> ARS (Euro vendedor BNA)
     let rate = exchange_rate
     if (!rate) {
       try {
-        // Usar API de tipo de cambio (Blue o oficial)
-        const rateResponse = await fetch("https://api.bluelytics.com.ar/v2/latest")
+        // Usar API dolarapi.com para obtener Euro oficial BNA
+        const rateResponse = await fetch("https://dolarapi.com/v1/cotizaciones/eur")
         if (rateResponse.ok) {
           const rateData = await rateResponse.json()
-          // Usar dólar blue como referencia y ajustar EUR (EUR suele ser ~5-10% más que USD)
-          const usdBlue = rateData.blue?.value_sell || 1200
-          rate = usdBlue * 1.05 // EUR aproximado
+          // Euro vendedor oficial BNA
+          rate = rateData.venta || 1718
+          console.log("[v0] Euro BNA vendedor:", rate)
         } else {
-          rate = 1200 // Fallback
+          rate = 1718 // Fallback Euro BNA
         }
       } catch {
-        rate = 1200 // Fallback
+        rate = 1718 // Fallback Euro BNA
       }
     }
 
