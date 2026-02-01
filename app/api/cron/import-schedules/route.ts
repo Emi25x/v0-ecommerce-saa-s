@@ -51,19 +51,71 @@ export async function GET(request: Request) {
 
     for (const schedule of schedules) {
       try {
-        console.log(`[v0] Ejecutando importación para fuente: ${schedule.import_sources.name}`)
+        const source = schedule.import_sources
+        console.log(`[v0] Ejecutando importación para fuente: ${source.name} (feed_type: ${source.feed_type})`)
 
-        // Ejecutar la importación
-        const importResponse = await fetch(
-          `${process.env.NEXT_PUBLIC_VERCEL_URL ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` : "http://localhost:3000"}/api/inventory/import/csv`,
-          {
+        const baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL 
+          ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` 
+          : "http://localhost:3000"
+
+        // Para feeds grandes o de stock, usar batch import
+        const useBatchImport = source.feed_type === "stock_price" || source.feed_type === "catalog"
+        
+        let importResult: any = { success: false }
+        let importResponse: any; // Declare importResponse variable
+        
+        if (useBatchImport) {
+          // Ejecutar importación por lotes
+          console.log(`[v0] Usando batch import para ${source.name}`)
+          let offset = 0
+          let done = false
+          let totalCreated = 0
+          let totalUpdated = 0
+          let isFirstBatch = true
+          
+          while (!done) {
+            const batchResponse = await fetch(`${baseUrl}/api/inventory/import/batch`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ 
+                sourceId: schedule.source_id, 
+                offset, 
+                mode: source.feed_type === "stock_price" ? "update" : "upsert",
+                forceReload: isFirstBatch
+              }),
+            })
+            
+            const batchResult = await batchResponse.json()
+            
+            if (!batchResponse.ok || batchResult.error) {
+              console.error(`[v0] Error en batch offset ${offset}:`, batchResult.error)
+              break
+            }
+            
+            totalCreated += batchResult.created || 0
+            totalUpdated += batchResult.updated || 0
+            done = batchResult.done
+            offset = batchResult.nextOffset || 0
+            isFirstBatch = false
+            
+            console.log(`[v0] Batch completado: ${batchResult.progress}% (${batchResult.processed}/${batchResult.total})`)
+          }
+          
+          importResult = { 
+            success: done, 
+            created: totalCreated, 
+            updated: totalUpdated,
+            message: `Batch import completado: ${totalCreated} creados, ${totalUpdated} actualizados`
+          }
+        } else {
+          // Usar importación simple para feeds pequeños
+          importResponse = await fetch(`${baseUrl}/api/inventory/import/csv`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ sourceId: schedule.source_id }),
-          },
-        )
-
-        const importResult = await importResponse.json()
+          })
+          importResult = await importResponse.json()
+        }
 
         // Calcular próxima ejecución
         const nextRunAt = calculateNextRun(schedule)
