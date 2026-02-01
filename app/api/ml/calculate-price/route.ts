@@ -114,61 +114,82 @@ export async function POST(request: Request) {
     console.log("[v0] Costo en ARS:", costInArs)
     console.log("[v0] Costo con margen:", costWithMargin)
     
-    // Primera estimacion sin cargo fijo para determinar rango de precio
-    let estimatedFinalPrice = costWithMargin / (1 - mlFeePercent)
-    console.log("[v0] Precio estimado inicial:", estimatedFinalPrice)
+    // Calcular precio iterativamente porque agregar costos puede cambiar el rango
+    // y eso cambia los costos aplicables (cargo fijo vs envio)
+    let shippingCost = 5500 // Costo envio gratis estimado
+    let finalPrice = 0
+    let iterations = 0
+    const maxIterations = 5
     
-    // Determinar cargo fijo segun rango de precio (2025)
-    if (estimatedFinalPrice < 15000) {
-      mlFixedFee = 1115
-    } else if (estimatedFinalPrice < 25000) {
-      mlFixedFee = 2300
-    } else if (estimatedFinalPrice < 33000) {
-      mlFixedFee = 2810
-    } else {
-      mlFixedFee = 0
+    // Funcion para determinar costos segun precio
+    const getCosts = (price: number) => {
+      let fixedFee = 0
+      let shipping = 0
+      
+      if (price < 15000) {
+        fixedFee = 1115
+      } else if (price < 25000) {
+        fixedFee = 2300
+      } else if (price < 33000) {
+        fixedFee = 2810
+      } else {
+        // > $33,000: sin cargo fijo pero con envio gratis obligatorio
+        fixedFee = 0
+        shipping = shippingCost
+      }
+      
+      return { fixedFee, shipping }
     }
     
-    // Costo de envio gratis (obligatorio para productos > $33,000)
-    // Consultar API de ML para obtener costo real
-    let shippingCost = 0
-    if (estimatedFinalPrice >= 33000 && accessToken) {
+    // Iterar hasta que el precio se estabilice en un rango
+    let prevPrice = 0
+    let currentPrice = costWithMargin / (1 - mlFeePercent)
+    
+    while (Math.abs(currentPrice - prevPrice) > 100 && iterations < maxIterations) {
+      iterations++
+      prevPrice = currentPrice
+      
+      const costs = getCosts(currentPrice)
+      mlFixedFee = costs.fixedFee
+      const currentShipping = costs.shipping
+      
+      currentPrice = (costWithMargin + mlFixedFee + currentShipping) / (1 - mlFeePercent)
+      
+      console.log(`[v0] Iteracion ${iterations}: precio=$${Math.round(currentPrice)}, cargo_fijo=$${mlFixedFee}, envio=$${currentShipping}`)
+    }
+    
+    // Obtener costos finales basados en precio estabilizado
+    const finalCosts = getCosts(currentPrice)
+    mlFixedFee = finalCosts.fixedFee
+    shippingCost = finalCosts.shipping
+    
+    // Si es > $33,000 y tenemos token, intentar obtener costo real de envio
+    if (currentPrice >= 33000 && accessToken) {
       try {
-        // Consultar costo de envio gratis usando API de ML
-        // Usamos un item_id de ejemplo o consultamos shipping_options
         const shippingResponse = await fetch(
-          `https://api.mercadolibre.com/users/${account?.ml_user_id || 'me'}/shipping_options/free?price=${Math.round(estimatedFinalPrice)}&listing_type_id=${listing_type_id}&category_id=MLA3025`,
+          `https://api.mercadolibre.com/users/${account?.ml_user_id || 'me'}/shipping_options/free?price=${Math.round(currentPrice)}&listing_type_id=${listing_type_id}&category_id=MLA3025`,
           { headers: { Authorization: `Bearer ${accessToken}` } }
         )
         
         if (shippingResponse.ok) {
           const shippingData = await shippingResponse.json()
-          // El costo de envio para el vendedor esta en coverage.list_cost
           if (shippingData?.coverage?.list_cost) {
             shippingCost = shippingData.coverage.list_cost
           } else if (shippingData?.options?.[0]?.list_cost) {
             shippingCost = shippingData.options[0].list_cost
-          } else {
-            // Fallback: usar estimacion basada en peso promedio libro (500g)
-            shippingCost = 5500 // Costo actualizado 2026
           }
-        } else {
-          shippingCost = 5500 // Fallback
         }
       } catch {
-        shippingCost = 5500 // Fallback si falla la API
+        // Mantener fallback
       }
-    } else if (estimatedFinalPrice >= 33000) {
-      // Sin token, usar estimacion
-      shippingCost = 5500 // Costo estimado envio gratis 2026 (~500g)
     }
     
-    console.log("[v0] Cargo fijo ML:", mlFixedFee)
-    console.log("[v0] Costo envio:", shippingCost)
+    console.log("[v0] Cargo fijo ML final:", mlFixedFee)
+    console.log("[v0] Costo envio final:", shippingCost)
     
-    // Recalcular precio final con cargo fijo y envio
+    // Calcular precio final con costos definitivos
     const priceWithFees = (costWithMargin + mlFixedFee + shippingCost) / (1 - mlFeePercent)
-    const finalPrice = Math.ceil(priceWithFees / 10) * 10 // Redondear a decena
+    finalPrice = Math.ceil(priceWithFees / 10) * 10 // Redondear a decena
     
     console.log("[v0] Precio final ARS:", finalPrice)
 
