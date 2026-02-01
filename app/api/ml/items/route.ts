@@ -114,6 +114,7 @@ export async function GET(request: NextRequest) {
     const searchData = await searchResponse.json()
     const itemIds = searchData.results || []
 
+    console.log("[v0] ML Search Response - total:", searchData.paging?.total, "results:", itemIds.length)
     console.log("[v0] Found", itemIds.length, "product IDs")
 
     if (itemIds.length === 0) {
