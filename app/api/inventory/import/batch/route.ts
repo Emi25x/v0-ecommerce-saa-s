@@ -126,38 +126,23 @@ export async function POST(request: NextRequest) {
         stockMap.set(ean, { stock, price })
       }
       
-      // Buscar productos existentes por EAN en chunks de 500
-      const CHUNK_SIZE = 500
-      for (let i = 0; i < batchEans.length; i += CHUNK_SIZE) {
-        const chunkEans = batchEans.slice(i, i + CHUNK_SIZE)
-        
-        // Buscar productos existentes
-        const { data: existingProducts } = await supabase
-          .from("products")
-          .select("id, ean")
-          .in("ean", chunkEans)
-        
-        if (existingProducts && existingProducts.length > 0) {
-          // Preparar updates masivos
-          const updates = existingProducts.map(p => {
-            const stockData = stockMap.get(p.ean!)
-            return {
-              id: p.id,
-              stock: stockData?.stock || 0,
-              price: stockData?.price || 0,
-              updated_at: now,
-            }
-          })
-          
-          // Actualizar en batch usando upsert
-          const { error } = await supabase
+      // Actualizar directamente por EAN (sin buscar ID primero)
+      for (const ean of batchEans) {
+        const stockData = stockMap.get(ean)
+        if (stockData) {
+          const { error, count } = await supabase
             .from("products")
-            .upsert(updates, { onConflict: "id" })
+            .update({ 
+              stock: stockData.stock, 
+              price: stockData.price, 
+              updated_at: now 
+            })
+            .eq("ean", ean)
           
-          if (!error) {
-            updatedCount += updates.length
-          } else {
-            failedCount += updates.length
+          if (!error && count && count > 0) {
+            updatedCount++
+          } else if (error) {
+            failedCount++
           }
         }
       }
