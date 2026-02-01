@@ -429,6 +429,13 @@ export default function IntegrationsPage() {
                 </Button>
               </div>
               
+              {/* Link a plantillas de publicación */}
+              <div className="pt-3 border-t">
+                <Button variant="outline" className="w-full bg-transparent" asChild>
+                  <a href="/integrations/ml-templates">Configurar Plantillas de Publicacion</a>
+                </Button>
+              </div>
+
               {/* Link de autorización para copiar */}
               <div className="pt-3 border-t">
                 <label className="text-xs font-medium text-muted-foreground mb-2 block">
