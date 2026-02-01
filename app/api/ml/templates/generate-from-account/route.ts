@@ -192,21 +192,49 @@ export async function POST() {
       console.log(`[v0] Margen PROMEDIO: ${avgMargin.toFixed(2)}x (basado en ${margins.length} productos)`)
     }
     
-    // Analizar descripción para crear template
-    let descriptionTemplate = mlItem.description
+    // Analizar descripción para crear template con variables
+    let descriptionTemplate = mlItem.description || ""
     
-    // Reemplazar datos específicos del producto con variables
-    if (catalogProduct.title && descriptionTemplate.includes(catalogProduct.title)) {
-      descriptionTemplate = descriptionTemplate.replace(new RegExp(catalogProduct.title, 'gi'), '{title}')
-    }
-    if (catalogProduct.author && descriptionTemplate.includes(catalogProduct.author)) {
-      descriptionTemplate = descriptionTemplate.replace(new RegExp(catalogProduct.author, 'gi'), '{author}')
-    }
-    if (catalogProduct.brand && descriptionTemplate.includes(catalogProduct.brand)) {
-      descriptionTemplate = descriptionTemplate.replace(new RegExp(catalogProduct.brand, 'gi'), '{brand}')
-    }
+    // Detectar y reemplazar patrones comunes en descripciones de libros
+    // Patrón: "TITULO DEL LIBRO: valor" -> "TITULO DEL LIBRO: {title}"
+    descriptionTemplate = descriptionTemplate.replace(
+      /(TITULO DEL LIBRO:?\s*)[^\n]+/gi, 
+      '$1{title}'
+    )
+    descriptionTemplate = descriptionTemplate.replace(
+      /(TITULO:?\s*)[^\n]+/gi, 
+      '$1{title}'
+    )
+    descriptionTemplate = descriptionTemplate.replace(
+      /(AUTOR:?\s*)[^\n]+/gi, 
+      '$1{author}'
+    )
+    descriptionTemplate = descriptionTemplate.replace(
+      /(EDITORIAL:?\s*)[^\n]+/gi, 
+      '$1{brand}'
+    )
+    descriptionTemplate = descriptionTemplate.replace(
+      /(ISBN:?\s*)[^\n]+/gi, 
+      '$1{ean}'
+    )
+    descriptionTemplate = descriptionTemplate.replace(
+      /(Fecha de publicaci[oó]n:?\s*)[^\n]+/gi, 
+      '$1{year_edition}'
+    )
+    
+    // Reemplazar la reseña/sinopsis específica por variable
+    descriptionTemplate = descriptionTemplate.replace(
+      /(RESE[NÑ]A:?\s*)[^]+$/gi, 
+      '$1{description}'
+    )
+    descriptionTemplate = descriptionTemplate.replace(
+      /(SINOPSIS:?\s*)[^]+$/gi, 
+      '$1{description}'
+    )
+    
+    // También intentar reemplazo directo si los valores coinciden
     if (catalogProduct.ean && descriptionTemplate.includes(catalogProduct.ean)) {
-      descriptionTemplate = descriptionTemplate.replace(new RegExp(catalogProduct.ean, 'gi'), '{ean}')
+      descriptionTemplate = descriptionTemplate.replace(new RegExp(catalogProduct.ean, 'g'), '{ean}')
     }
     
     // Extraer atributos fijos (que no varían por producto)
