@@ -43,7 +43,46 @@ export async function GET(request: NextRequest) {
     }
 
     console.log(`[v0] Found ${accounts.length} account(s)`)
-    const account = accounts[0]
+    let account = accounts[0]
+    
+    // Verificar si el token está expirado y refrescarlo automáticamente
+    const expiresAt = new Date(account.token_expires_at)
+    const now = new Date()
+    if (expiresAt < now && account.refresh_token) {
+      console.log("[v0] Token expirado, intentando refrescar...")
+      try {
+        const refreshResponse = await fetch("https://api.mercadolibre.com/oauth/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            grant_type: "refresh_token",
+            client_id: process.env.MERCADOLIBRE_CLIENT_ID!,
+            client_secret: process.env.MERCADOLIBRE_CLIENT_SECRET!,
+            refresh_token: account.refresh_token,
+          }),
+        })
+        
+        if (refreshResponse.ok) {
+          const tokens = await refreshResponse.json()
+          const newExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+          
+          await supabase.from("ml_accounts").update({
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token,
+            token_expires_at: newExpiresAt,
+            updated_at: new Date().toISOString(),
+          }).eq("id", account.id)
+          
+          account = { ...account, access_token: tokens.access_token }
+          console.log("[v0] Token refrescado exitosamente")
+        } else {
+          console.error("[v0] Error al refrescar token:", await refreshResponse.text())
+        }
+      } catch (refreshError) {
+        console.error("[v0] Error en refresh:", refreshError)
+      }
+    }
+    
     const accessToken = account.access_token
 
     if (!accessToken) {

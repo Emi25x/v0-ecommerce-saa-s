@@ -429,6 +429,42 @@ export default function IntegrationsPage() {
                 </Button>
               </div>
               
+              {/* Refrescar token */}
+              {mlConnected && (
+                <div className="pt-3 border-t">
+                  <Button 
+                    variant="outline" 
+                    className="w-full bg-transparent"
+                    onClick={async () => {
+                      try {
+                        const res = await fetch("/api/mercadolibre/refresh-token", { method: "POST" })
+                        const data = await res.json()
+                        if (res.ok) {
+                          toast({
+                            title: "Token actualizado",
+                            description: `Token válido hasta: ${new Date(data.expires_at).toLocaleString()}`,
+                          })
+                        } else {
+                          toast({
+                            title: "Error al refrescar",
+                            description: data.message || "Necesitas reconectar la cuenta",
+                            variant: "destructive",
+                          })
+                        }
+                      } catch {
+                        toast({
+                          title: "Error",
+                          description: "No se pudo refrescar el token",
+                          variant: "destructive",
+                        })
+                      }
+                    }}
+                  >
+                    Refrescar Token de ML
+                  </Button>
+                </div>
+              )}
+
               {/* Link a plantillas de publicación */}
               <div className="pt-3 border-t">
                 <Button variant="outline" className="w-full bg-transparent" asChild>
