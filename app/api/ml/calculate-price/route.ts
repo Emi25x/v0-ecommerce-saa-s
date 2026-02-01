@@ -48,8 +48,13 @@ export async function POST(request: Request) {
       .limit(1)
       .single()
 
-    let mlFeePercent = 0.13 // Default 13% para gold_special
-    let mlFixedFee = 200 // Default $200 ARS cargo fijo
+    let mlFeePercent = 0.13 // Default 13% para gold_special (libros)
+    // Costo fijo adicional según precio (2025):
+    // - Hasta $15,000: $1,115
+    // - $15,000 a $25,000: $2,300  
+    // - $25,000 a $33,000: $2,810
+    // - Más de $33,000: $0
+    let mlFixedFee = 0 // Se calcula dinámicamente según el precio
 
     if (account?.access_token) {
       // Verificar y refrescar token si es necesario
@@ -92,9 +97,25 @@ export async function POST(request: Request) {
     }
 
     // Calcular precio de venta en ARS
-    // Fórmula: (Costo EUR * TipoCambio * (1 + Margen) + CargoFijo) / (1 - ComisiónML)
+    // Fórmula: (Costo EUR * TipoCambio * (1 + Margen) + CargoFijo) / (1 - ComisionML)
     const costInArs = cost_price_eur * rate
     const costWithMargin = costInArs * (1 + margin_percent / 100)
+    
+    // Primera estimacion sin cargo fijo para determinar rango de precio
+    let estimatedFinalPrice = costWithMargin / (1 - mlFeePercent)
+    
+    // Determinar cargo fijo segun rango de precio (2025)
+    if (estimatedFinalPrice < 15000) {
+      mlFixedFee = 1115
+    } else if (estimatedFinalPrice < 25000) {
+      mlFixedFee = 2300
+    } else if (estimatedFinalPrice < 33000) {
+      mlFixedFee = 2810
+    } else {
+      mlFixedFee = 0
+    }
+    
+    // Recalcular precio final con cargo fijo correcto
     const priceWithFees = (costWithMargin + mlFixedFee) / (1 - mlFeePercent)
     const finalPrice = Math.ceil(priceWithFees / 10) * 10 // Redondear a decena
 
