@@ -145,18 +145,51 @@ export async function POST() {
       titleTemplate = "{title} - {brand}"
     }
     
-    // Analizar fórmula de precio
+    // Calcular margen PROMEDIO de todas las coincidencias
+    const margins: number[] = []
+    const marginDetails: any[] = []
+    
+    for (const match of analysisResults) {
+      const mlPrice = match.ml_item.price
+      const costPrice = match.catalog_product.cost_price
+      const catalogPrice = match.catalog_product.price
+      
+      if (costPrice && costPrice > 0) {
+        const margin = mlPrice / costPrice
+        margins.push(margin)
+        marginDetails.push({
+          ean: match.ean,
+          ml_price: mlPrice,
+          cost_price: costPrice,
+          margin: margin.toFixed(2)
+        })
+        console.log(`[v0] Margen ${match.ean}: ML $${mlPrice} / Costo $${costPrice} = ${margin.toFixed(2)}x`)
+      } else if (catalogPrice && catalogPrice > 0) {
+        const margin = mlPrice / catalogPrice
+        margins.push(margin)
+        marginDetails.push({
+          ean: match.ean,
+          ml_price: mlPrice,
+          catalog_price: catalogPrice,
+          margin: margin.toFixed(2)
+        })
+        console.log(`[v0] Margen ${match.ean}: ML $${mlPrice} / Precio $${catalogPrice} = ${margin.toFixed(2)}x`)
+      }
+    }
+    
+    // Calcular margen promedio
     let priceFormula = "price"
-    if (catalogProduct.cost_price && catalogProduct.cost_price > 0) {
-      const margin = mlItem.price / catalogProduct.cost_price
-      if (margin > 1) {
-        priceFormula = `cost_price * ${margin.toFixed(2)}`
+    let avgMargin = 1
+    if (margins.length > 0) {
+      avgMargin = margins.reduce((a, b) => a + b, 0) / margins.length
+      // Usar cost_price si hay valores de costo, sino usar price
+      const hasCostPrice = analysisResults.some(m => m.catalog_product.cost_price > 0)
+      if (hasCostPrice) {
+        priceFormula = `cost_price * ${avgMargin.toFixed(2)}`
+      } else {
+        priceFormula = `price * ${avgMargin.toFixed(2)}`
       }
-    } else if (catalogProduct.price && catalogProduct.price > 0) {
-      const margin = mlItem.price / catalogProduct.price
-      if (margin > 1) {
-        priceFormula = `price * ${margin.toFixed(2)}`
-      }
+      console.log(`[v0] Margen PROMEDIO: ${avgMargin.toFixed(2)}x (basado en ${margins.length} productos)`)
     }
     
     // Analizar descripción para crear template
@@ -231,13 +264,15 @@ export async function POST() {
       analysis: {
         total_items_checked: detailsData.length,
         matches_found: analysisResults.length,
+        average_margin: avgMargin.toFixed(2),
+        price_formula: priceFormula,
+        margin_details: marginDetails.slice(0, 10), // Mostrar primeros 10
         sample_match: {
           ml_title: mlItem.title,
           catalog_title: catalogProduct.title,
           ml_price: mlItem.price,
           catalog_price: catalogProduct.price,
-          catalog_cost: catalogProduct.cost_price,
-          price_formula: priceFormula
+          catalog_cost: catalogProduct.cost_price
         }
       }
     })
