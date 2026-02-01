@@ -13,7 +13,7 @@ export default function BatchImportPage() {
   const [isRunning, setIsRunning] = useState(false)
   const [sourceId, setSourceId] = useState<string>("0477aa50-1c71-40b2-9530-9c794eb32793") // Default Arnoia
   const [sourceName, setSourceName] = useState<string>("Arnoia")
-  const [importMode, setImportMode] = useState<string>("update")
+  const [importMode, setImportMode] = useState<string>("upsert")
   const [progress, setProgress] = useState(0)
   const [total, setTotal] = useState(0)
   const [processed, setProcessed] = useState(0)
@@ -150,9 +150,9 @@ export default function BatchImportPage() {
                 <SelectValue placeholder="Seleccionar modo" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="upsert">Crear y actualizar</SelectItem>
                 <SelectItem value="update">Solo actualizar existentes</SelectItem>
                 <SelectItem value="create">Solo crear nuevos</SelectItem>
-                <SelectItem value="upsert">Crear y actualizar</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
