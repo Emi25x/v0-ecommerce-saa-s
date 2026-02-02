@@ -196,20 +196,28 @@ export async function POST(request: NextRequest) {
       attributes: [] as Array<{ id: string; value_name: string }>
     }
     
-    // La categoria Libros (MLA3025) REQUIERE catalog_product_id
-    // Si no encontramos en catalogo, NO se puede publicar
-    if (!catalogProductId) {
-      return NextResponse.json({
-        success: false,
-        error: `Producto no encontrado en catálogo de ML (ISBN: ${product.ean}). La categoría Libros requiere que el producto exista en el catálogo de Mercado Libre.`,
-        not_in_catalog: true
-      }, { status: 400 })
+    // Decidir como publicar segun el modo y si encontramos en catalogo
+    if (publish_mode === "catalog") {
+      // Modo catalogo: requiere catalog_product_id
+      if (!catalogProductId) {
+        return NextResponse.json({
+          success: false,
+          error: `Producto no encontrado en catálogo de ML (ISBN: ${product.ean}). Intenta con modo "Tradicional" o "Vinculada".`,
+          not_in_catalog: true
+        }, { status: 400 })
+      }
+      mlItem.catalog_product_id = catalogProductId
+      mlItem.catalog_listing = true
+    } else if (publish_mode === "linked") {
+      // Modo vinculado: publicacion tradicional + optin a catalogo si existe
+      // Crear como tradicional primero
+      mlItem.title = product.title?.substring(0, 60) || "Libro"
+      mlItem.description = { plain_text: description }
+    } else {
+      // Modo tradicional: sin catalogo
+      mlItem.title = product.title?.substring(0, 60) || "Libro"
+      mlItem.description = { plain_text: description }
     }
-    
-    // Tenemos producto en catalogo - usar catalog_product_id
-    mlItem.catalog_product_id = catalogProductId
-    mlItem.catalog_listing = true
-    // NO incluir title, family_name ni description - ML usa los del catalogo
 
     // Agregar atributos basicos
     const attributes = mlItem.attributes as Array<{ id: string; value_name: string }>
