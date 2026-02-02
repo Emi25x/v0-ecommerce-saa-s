@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
     const language = searchParams.get("language") || ""
     const brand = searchParams.get("brand") || ""
     const search = searchParams.get("search") || ""
+    const excludeIbd = searchParams.get("exclude_ibd") !== "false" // Por defecto excluir IBD
 
     // Obtener IDs de productos ya publicados en ml_publications
     let publishedProductIds = new Set<string>()
@@ -57,6 +58,11 @@ export async function GET(request: NextRequest) {
           .gte("cost_price", minPrice)
           .lte("cost_price", maxPrice)
         
+        // Filtrar IBD por defecto
+        if (excludeIbd) {
+          query = query.or("is_ibd.is.null,is_ibd.eq.false")
+        }
+        
         // Aplicar filtros opcionales
         if (language) {
           query = query.ilike("language", language)
@@ -96,11 +102,16 @@ export async function GET(request: NextRequest) {
     
     let query = supabase
       .from("products")
-      .select("id, ean, title, cost_price, price, stock, brand, image_url, language")
+      .select("id, ean, title, cost_price, price, stock, brand, image_url, language, is_ibd")
       .gt("cost_price", 0)
       .gte("stock", minStock)
       .gte("cost_price", minPrice)
       .lte("cost_price", maxPrice)
+    
+    // Filtrar IBD por defecto
+    if (excludeIbd) {
+      query = query.or("is_ibd.is.null,is_ibd.eq.false")
+    }
     
     // Aplicar filtros opcionales
     if (language) {

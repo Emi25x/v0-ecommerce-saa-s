@@ -81,6 +81,7 @@ export default function MLPublishPage() {
   const [publishingInProgress, setPublishingInProgress] = useState(false)
   const [filterBrand, setFilterBrand] = useState<string>("")
   const [filterLanguage, setFilterLanguage] = useState<string>("")
+  const [excludeIbd, setExcludeIbd] = useState<boolean>(true) // Por defecto excluir IBD
 
   // Construir URL de filtros para el servidor
   const buildFilterUrl = (onlyIds = false) => {
@@ -89,6 +90,7 @@ export default function MLPublishPage() {
     params.set("min_stock", String(minStock))
     params.set("min_price", String(minPrice))
     params.set("max_price", String(maxPrice))
+    params.set("exclude_ibd", String(excludeIbd))
     if (languageFilter && languageFilter !== "ALL") params.set("language", languageFilter)
     if (filterBrand) params.set("brand", filterBrand)
     if (searchTerm) params.set("search", searchTerm)
@@ -107,7 +109,7 @@ export default function MLPublishPage() {
     }, 300)
     setDebouncedFetch(timeout)
     return () => clearTimeout(timeout)
-  }, [showOnlyUnpublished, minStock, minPrice, maxPrice, languageFilter, filterBrand, searchTerm])
+  }, [showOnlyUnpublished, minStock, minPrice, maxPrice, languageFilter, filterBrand, searchTerm, excludeIbd])
 
   const fetchData = async () => {
     setLoading(true)
@@ -571,13 +573,22 @@ if (data.success) {
                       {stats.published_count.toLocaleString()} publicados en ML | {filteredProducts.length.toLocaleString()} disponibles con filtros actuales
                     </CardDescription>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Label className="text-sm whitespace-nowrap">Solo sin publicar</Label>
-                    <Checkbox
-                      checked={showOnlyUnpublished}
-                      onCheckedChange={(checked) => setShowOnlyUnpublished(!!checked)}
-                    />
-                  </div>
+<div className="flex items-center gap-4">
+  <div className="flex items-center gap-2">
+    <Label className="text-sm whitespace-nowrap">Solo sin publicar</Label>
+    <Checkbox
+      checked={showOnlyUnpublished}
+      onCheckedChange={(checked) => setShowOnlyUnpublished(!!checked)}
+    />
+  </div>
+  <div className="flex items-center gap-2">
+    <Label className="text-sm whitespace-nowrap">Excluir IBD</Label>
+    <Checkbox
+      checked={excludeIbd}
+      onCheckedChange={(checked) => setExcludeIbd(!!checked)}
+    />
+  </div>
+  </div>
                 </div>
                 
                 {/* Filtros */}
@@ -872,6 +883,7 @@ if (data.success) {
                       {filterBrand && <li>Marca: {filterBrand}</li>}
                       {searchTerm && <li>Búsqueda: {searchTerm}</li>}
                       <li>Solo sin publicar: {showOnlyUnpublished ? "Sí" : "No"}</li>
+                      <li>Excluir IBD: {excludeIbd ? "Sí" : "No"}</li>
                     </ul>
                   </div>
                   <p className="text-sm text-muted-foreground">
