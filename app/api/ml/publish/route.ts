@@ -204,6 +204,14 @@ export async function POST(request: NextRequest) {
         "CHI": "2466958", // Chino
       }
       
+      console.log("[v0] Building traditional item for product:", {
+        title: product.title,
+        author: product.author,
+        brand: product.brand,
+        ean: product.ean,
+        language: product.language
+      })
+      
       const attributes: Array<{ id: string; value_name?: string; value_id?: string }> = []
       
       // REQUERIDOS por ML para libros MLA412445
@@ -231,6 +239,8 @@ export async function POST(request: NextRequest) {
       const langCode = (product.language || "SPA").toUpperCase().substring(0, 3)
       const valueId = languageMap[langCode] || "313886" // Default Español
       attributes.push({ id: "LANGUAGE", value_id: valueId })
+      
+      console.log("[v0] Attributes to send:", JSON.stringify(attributes, null, 2))
       
       // IMPORTANTE: Para vendedores con User Products (tag user_product_seller),
       // NO se debe enviar "title", solo "family_name". ML genera el title automaticamente.
