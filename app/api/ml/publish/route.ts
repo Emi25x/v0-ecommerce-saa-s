@@ -272,6 +272,18 @@ export async function POST(request: NextRequest) {
     }
 
     // Reemplazar variables en la descripcion de la plantilla
+    // Construir el titulo usando el template (ej: "Libro {title} {author} {brand}")
+    const defaultTitle = product.title || "Libro"
+    let mlTitle = template.title_template || defaultTitle
+    mlTitle = mlTitle.replace(/{title}/g, product.title || "")
+    mlTitle = mlTitle.replace(/{author}/g, product.author || "")
+    mlTitle = mlTitle.replace(/{brand}/g, product.brand || "")
+    mlTitle = mlTitle.replace(/{ean}/g, product.ean || "")
+    // Limpiar espacios múltiples y truncar a 60 caracteres (límite de ML para family_name)
+    mlTitle = mlTitle.replace(/\s+/g, ' ').trim().substring(0, 60)
+    
+    console.log("[v0] ML Title from template:", mlTitle)
+
     // Si no hay template de descripcion, crear una descripcion por defecto
     const defaultDescription = `${product.title || "Libro"}
 
@@ -432,7 +444,7 @@ Libro nuevo. Envíos a todo el país.`
       return {
         site_id: "MLA",
         category_id: template.category_id || "MLA412445", // Libros Fisicos
-        family_name: product.title?.substring(0, 60) || "Libro",
+        family_name: mlTitle,
         price: finalPrice,
         currency_id: template.currency_id || "ARS",
         available_quantity: Math.min(product.stock || 1, 50),
