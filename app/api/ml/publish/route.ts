@@ -191,20 +191,52 @@ export async function POST(request: NextRequest) {
     
     // Helper para construir publicacion tradicional
     const buildTraditionalItem = () => {
-      const attributes: Array<{ id: string; value_name: string }> = []
+      // Mapeo de codigos de idioma a value_id de ML
+      const languageMap: Record<string, string> = {
+        "SPA": "313886", // Español
+        "ENG": "313885", // Inglés
+        "POR": "1258229", // Portugués
+        "FRA": "313883", // Francés
+        "ITA": "313889", // Italiano
+        "DEU": "313884", // Alemán
+        "RUS": "313887", // Ruso
+        "JPN": "313888", // Japonés
+        "CHI": "2466958", // Chino
+      }
       
+      const attributes: Array<{ id: string; value_name?: string; value_id?: string }> = []
+      
+      // REQUERIDOS por ML para libros
+      // BOOK_TITLE - Titulo del libro (requerido)
+      attributes.push({ id: "BOOK_TITLE", value_name: product.title?.substring(0, 255) || "Libro" })
+      
+      // AUTHOR - Autor (requerido)
+      attributes.push({ id: "AUTHOR", value_name: product.author || "Autor desconocido" })
+      
+      // PUBLISHER - Editorial (catalog_required)
+      attributes.push({ id: "PUBLISHER", value_name: product.brand || "Editorial independiente" })
+      
+      // BOOK_GENRE - Genero (catalog_required) - usar generico si no hay
+      attributes.push({ id: "BOOK_GENRE", value_name: "Literatura" })
+      
+      // GTIN/ISBN
       if (product.ean) {
         attributes.push({ id: "GTIN", value_name: product.ean })
       }
-      if (product.author) {
-        attributes.push({ id: "AUTHOR", value_name: product.author })
-      }
-      if (product.brand) {
-        attributes.push({ id: "PUBLISHER", value_name: product.brand })
-      }
+      
+      // LANGUAGE - debe usar value_id, no value_name
       if (product.language) {
-        attributes.push({ id: "LANGUAGE", value_name: product.language })
+        const langCode = product.language.toUpperCase().substring(0, 3)
+        const valueId = languageMap[langCode]
+        if (valueId) {
+          attributes.push({ id: "LANGUAGE", value_id: valueId })
+        }
+      } else {
+        // Default a Español
+        attributes.push({ id: "LANGUAGE", value_id: "313886" })
       }
+      
+      // Opcionales
       if (product.year_edition) {
         attributes.push({ id: "PUBLICATION_YEAR", value_name: product.year_edition.toString() })
       }
