@@ -19,9 +19,9 @@ export async function GET() {
     // Obtener productos con cost_price (sin ordenar para evitar timeout)
     const { data: allProducts, error } = await supabase
       .from("products")
-      .select("id, ean, title, cost_price, price, stock, brand, image_url")
+      .select("id, ean, title, cost_price, price, stock, brand, image_url, language")
       .gt("cost_price", 0)
-      .limit(100)
+      .limit(500)
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })

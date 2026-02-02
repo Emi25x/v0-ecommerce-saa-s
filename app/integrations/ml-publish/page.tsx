@@ -22,6 +22,7 @@ interface Product {
   stock: number
   brand: string
   image_url: string
+  language?: string
 }
 
 interface Template {
@@ -60,6 +61,7 @@ export default function MLPublishPage() {
   const [minStock, setMinStock] = useState<number>(0)
   const [minPrice, setMinPrice] = useState<number>(0)
   const [maxPrice, setMaxPrice] = useState<number>(1000)
+  const [languageFilter, setLanguageFilter] = useState<string>("SPA")
   const [publishMode, setPublishMode] = useState<"linked" | "catalog" | "traditional">("linked")
   const [previews, setPreviews] = useState<PublishPreview[]>([])
   const [publishing, setPublishing] = useState(false)
@@ -130,7 +132,8 @@ export default function MLPublishPage() {
     const matchesSearch = p.title.toLowerCase().includes(searchTerm.toLowerCase()) || p.ean.includes(searchTerm)
     const matchesStock = (p.stock || 0) >= minStock
     const matchesPrice = p.cost_price >= minPrice && p.cost_price <= maxPrice
-    return matchesSearch && matchesStock && matchesPrice
+    const matchesLanguage = languageFilter === "ALL" || (p.language || "").toUpperCase() === languageFilter
+    return matchesSearch && matchesStock && matchesPrice && matchesLanguage
   })
 
   const generatePreviews = async () => {
@@ -361,7 +364,7 @@ export default function MLPublishPage() {
                 </div>
                 
                 {/* Filtros */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                   <div className="space-y-1">
                     <Label className="text-xs">Buscar</Label>
                     <Input
@@ -369,6 +372,22 @@ export default function MLPublishPage() {
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                     />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Idioma</Label>
+                    <Select value={languageFilter} onValueChange={setLanguageFilter}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="SPA">Espanol</SelectItem>
+                        <SelectItem value="ENG">Ingles</SelectItem>
+                        <SelectItem value="POR">Portugues</SelectItem>
+                        <SelectItem value="FRA">Frances</SelectItem>
+                        <SelectItem value="ITA">Italiano</SelectItem>
+                        <SelectItem value="ALL">Todos</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Stock minimo</Label>

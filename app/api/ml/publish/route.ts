@@ -186,37 +186,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Construir el objeto de publicacion para ML segun el modo
+    // Construir el objeto de publicacion para ML segun el modo SELECCIONADO POR EL USUARIO
     let mlItem: Record<string, unknown>
     
-    // Decidir como publicar segun el modo seleccionado
-    if (publish_mode === "catalog" || (publish_mode === "linked" && catalogProductId)) {
-      // MODO CATALOGO: Solo necesita catalog_product_id (matchea por EAN internamente)
-      if (!catalogProductId) {
-        return NextResponse.json({
-          success: false,
-          error: `Producto no encontrado en catálogo de ML (ISBN: ${product.ean}). Intenta con modo "Tradicional".`,
-          not_in_catalog: true
-        }, { status: 400 })
-      }
-      
-      mlItem = {
-        site_id: "MLA",
-        catalog_product_id: catalogProductId,
-        catalog_listing: true,
-        price: finalPrice,
-        currency_id: "ARS",
-        available_quantity: Math.min(product.stock || 1, 50),
-        buying_mode: "buy_it_now",
-        condition: "new",
-        listing_type_id: template.listing_type_id || "gold_special",
-        pictures: product.image_url ? [{ source: product.image_url }] : [],
-      }
-    } else {
-      // MODO TRADICIONAL: Todos los campos posibles
+    // Helper para construir publicacion tradicional
+    const buildTraditionalItem = () => {
       const attributes: Array<{ id: string; value_name: string }> = []
       
-      // Agregar todos los atributos disponibles
       if (product.ean) {
         attributes.push({ id: "GTIN", value_name: product.ean })
       }
@@ -229,16 +205,16 @@ export async function POST(request: NextRequest) {
       if (product.language) {
         attributes.push({ id: "LANGUAGE", value_name: product.language })
       }
-      if (product.year) {
-        attributes.push({ id: "PUBLICATION_YEAR", value_name: product.year.toString() })
+      if (product.year_edition) {
+        attributes.push({ id: "PUBLICATION_YEAR", value_name: product.year_edition.toString() })
       }
       if (product.binding) {
         attributes.push({ id: "BOOK_COVER_TYPE", value_name: product.binding })
       }
       
-      mlItem = {
+      return {
         site_id: "MLA",
-        category_id: template.category_id || "MLA3026", // Categoria leaf para libros
+        category_id: template.category_id || "MLA3026",
         title: product.title?.substring(0, 60) || "Libro",
         family_name: product.title?.substring(0, 60) || "Libro",
         price: finalPrice,
@@ -251,6 +227,41 @@ export async function POST(request: NextRequest) {
         pictures: product.image_url ? [{ source: product.image_url }] : [],
         attributes: attributes,
       }
+    }
+    
+    // Helper para construir publicacion de catalogo
+    const buildCatalogItem = () => {
+      return {
+        site_id: "MLA",
+        catalog_product_id: catalogProductId,
+        catalog_listing: true,
+        price: finalPrice,
+        currency_id: "ARS",
+        available_quantity: Math.min(product.stock || 1, 50),
+        buying_mode: "buy_it_now",
+        condition: "new",
+        listing_type_id: template.listing_type_id || "gold_special",
+        pictures: product.image_url ? [{ source: product.image_url }] : [],
+      }
+    }
+    
+    // RESPETAR el modo seleccionado por el usuario
+    if (publish_mode === "catalog") {
+      // Usuario quiere SOLO catalogo
+      if (!catalogProductId) {
+        return NextResponse.json({
+          success: false,
+          error: `Producto no encontrado en catálogo de ML (ISBN: ${product.ean}). Intenta con modo "Tradicional".`,
+          not_in_catalog: true
+        }, { status: 400 })
+      }
+      mlItem = buildCatalogItem()
+    } else if (publish_mode === "traditional") {
+      // Usuario quiere SOLO tradicional - siempre usar tradicional
+      mlItem = buildTraditionalItem()
+    } else {
+      // Modo "linked": tradicional primero, luego optin a catalogo si existe
+      mlItem = buildTraditionalItem()
     }
 
     // Calcular margen real para verificacion
