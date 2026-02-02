@@ -76,6 +76,8 @@ export default function MLPublishPage() {
   const [showOnlyUnpublished, setShowOnlyUnpublished] = useState(true)
   const [stats, setStats] = useState<Stats>({ total_in_db: 0, published_count: 0, available_count: 0 })
   const [publishProgress, setPublishProgress] = useState({ current: 0, total: 0, success: 0, errors: 0 })
+  const [filterBrand, setFilterBrand] = useState<string>("")
+  const [filterLanguage, setFilterLanguage] = useState<string>("")
 
   useEffect(() => {
     fetchData()
@@ -84,14 +86,14 @@ export default function MLPublishPage() {
   const fetchData = async () => {
     setLoading(true)
     try {
-      // Fetch products (filtrar por publicados o no segun el toggle)
-      const productsRes = await fetch(`/api/ml/publish/available?show_all=${!showOnlyUnpublished}`)
+      // Fetch products paginados (100 por página para UI)
+      const productsRes = await fetch(`/api/ml/publish/available?show_all=${!showOnlyUnpublished}&page_size=100`)
       const productsData = await productsRes.json()
       setProducts(productsData.products || [])
       setStats({
         total_in_db: productsData.total_in_db || 0,
         published_count: productsData.published_count || 0,
-        available_count: productsData.total || 0
+        available_count: productsData.unpublished_count || productsData.total || 0
       })
 
       // Fetch templates
@@ -143,18 +145,48 @@ export default function MLPublishPage() {
     }
   }
   
-  // Seleccionar TODOS los productos filtrados (no solo los 50 visibles)
-  const selectAllFiltered = () => {
-    const allFilteredSelected = filteredProducts.every(p => selectedProducts.has(p.id))
+  // Seleccionar TODOS los productos filtrados (traer todos los IDs del servidor)
+  const selectAllFiltered = async () => {
+    // Si ya hay seleccionados, deseleccionar todos
+    if (selectedProducts.size > 0) {
+      setSelectedProducts(new Set<string>())
+      return
+    }
     
-    if (allFilteredSelected) {
-      // Deseleccionar todos los filtrados
-      const newSelected = new Set<string>()
-      setSelectedProducts(newSelected)
-    } else {
-      // Seleccionar todos los filtrados
-      const newSelected = new Set(filteredProducts.map(p => p.id))
-      setSelectedProducts(newSelected)
+    // Traer todos los IDs del servidor (query liviana)
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/ml/publish/available?show_all=${!showOnlyUnpublished}&only_ids=true`)
+      const data = await res.json()
+      
+      if (data.ids && data.ids.length > 0) {
+        // Aplicar los filtros locales (brand, language, search) sobre los IDs
+        // Necesitamos los productos completos para filtrar, así que usamos los cargados
+        // y para los que no están cargados, los seleccionamos igual
+        const allIds = new Set<string>(data.ids)
+        
+        // Si hay filtros activos, solo seleccionar los que pasan el filtro
+        if (searchTerm || filterBrand || filterLanguage) {
+          // Solo podemos filtrar los que tenemos en memoria
+          const filteredIds = filteredProducts.map(p => p.id)
+          setSelectedProducts(new Set(filteredIds))
+          toast({
+            title: "Selección parcial",
+            description: `Seleccionados ${filteredIds.length} productos que coinciden con los filtros actuales`
+          })
+        } else {
+          // Sin filtros, seleccionar todos
+          setSelectedProducts(allIds)
+          toast({
+            title: "Todos seleccionados",
+            description: `${allIds.size.toLocaleString()} productos seleccionados`
+          })
+        }
+      }
+    } catch {
+      toast({ title: "Error", description: "Error al seleccionar todos", variant: "destructive" })
+    } finally {
+      setLoading(false)
     }
   }
   
@@ -235,7 +267,8 @@ export default function MLPublishPage() {
     const matchesStock = (p.stock || 0) >= minStock
     const matchesPrice = p.cost_price >= minPrice && p.cost_price <= maxPrice
     const matchesLanguage = languageFilter === "ALL" || (p.language || "").toUpperCase() === languageFilter
-    return matchesSearch && matchesStock && matchesPrice && matchesLanguage
+    const matchesBrand = filterBrand === "" || p.brand.toLowerCase().includes(filterBrand.toLowerCase())
+    return matchesSearch && matchesStock && matchesPrice && matchesLanguage && matchesBrand
   })
 
   const generatePreviews = async () => {
@@ -463,7 +496,7 @@ export default function MLPublishPage() {
                 </div>
                 
                 {/* Filtros */}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
                   <div className="space-y-1">
                     <Label className="text-xs">Buscar</Label>
                     <Input
@@ -487,6 +520,14 @@ export default function MLPublishPage() {
                         <SelectItem value="ALL">Todos</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Marca</Label>
+                    <Input
+                      placeholder="Marca..."
+                      value={filterBrand}
+                      onChange={(e) => setFilterBrand(e.target.value)}
+                    />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Stock minimo</Label>
