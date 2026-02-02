@@ -81,6 +81,13 @@ export default function MLPublishPage() {
   const [publishingInProgress, setPublishingInProgress] = useState(false)
   const [testLimit, setTestLimit] = useState<number>(5) // Límite para pruebas
   const [totalAvailable, setTotalAvailable] = useState<number>(0) // Total disponible con filtros
+  const [publishResults, setPublishResults] = useState<Array<{
+    title: string
+    ean: string
+    status: "success" | "error" | "skipped"
+    ml_item_id?: string
+    error?: string
+  }>>([])
   const [filterBrand, setFilterBrand] = useState<string>("")
   const [filterLanguage, setFilterLanguage] = useState<string>("")
   const [excludeIbd, setExcludeIbd] = useState<boolean>(true) // Por defecto excluir IBD
@@ -231,6 +238,7 @@ export default function MLPublishPage() {
   // Iniciar publicación masiva desde el modal
   const startBulkPublish = async () => {
     setPublishingInProgress(true)
+    setPublishResults([]) // Limpiar resultados anteriores
     
     // Obtener todos los IDs con los filtros actuales
     const res = await fetch(buildFilterUrl(true))
@@ -250,6 +258,7 @@ export default function MLPublishPage() {
     let successCount = 0
     let errorCount = 0
     let skippedCount = 0
+    const results: typeof publishResults = []
     
     for (let i = 0; i < productIds.length; i++) {
       const productId = productIds[i]
@@ -270,21 +279,45 @@ export default function MLPublishPage() {
         const result = await response.json()
         if (result.success) {
           successCount++
+          results.push({
+            title: result.product_title || productId,
+            ean: result.product_ean || "",
+            status: "success",
+            ml_item_id: result.ml_item_id
+          })
         } else if (result.skipped) {
-          // Producto ya publicado, saltamos
           skippedCount++
+          results.push({
+            title: result.product_title || productId,
+            ean: result.product_ean || "",
+            status: "skipped",
+            ml_item_id: result.existing_item_id
+          })
         } else if (result.is_rate_limit) {
-          // Rate limit - esperar más y reintentar
           await new Promise(resolve => setTimeout(resolve, 3000))
-          i-- // Reintentar este producto
+          i--
           continue
         } else {
           errorCount++
+          results.push({
+            title: result.product_title || productId,
+            ean: result.product_ean || "",
+            status: "error",
+            error: result.error
+          })
         }
         setPublishProgress({ current: i + 1, total: productIds.length, success: successCount, errors: errorCount, skipped: skippedCount })
-      } catch {
+        setPublishResults([...results])
+      } catch (err) {
         errorCount++
+        results.push({
+          title: productId,
+          ean: "",
+          status: "error",
+          error: "Error de conexión"
+        })
         setPublishProgress({ current: i + 1, total: productIds.length, success: successCount, errors: errorCount, skipped: skippedCount })
+        setPublishResults([...results])
       }
       
       // Delay de 2 segundos entre publicaciones para evitar rate limit
@@ -309,6 +342,7 @@ export default function MLPublishPage() {
     if (publishingInProgress) return // No cerrar mientras está en progreso
     setShowPublishModal(false)
     setPublishProgress({ current: 0, total: 0, success: 0, errors: 0, skipped: 0 })
+    setPublishResults([])
   }
 
   // Los productos ya vienen filtrados del servidor
