@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
       account_id,      // ID de la cuenta ML
       override_price,  // Precio manual (opcional)
       preview_only = true, // Solo generar preview, no publicar
-      publish_mode = "catalog" // "catalog" o "traditional"
+      publish_mode = "linked" // "linked", "catalog" o "traditional"
     } = body
 
     if (!product_id || !template_id || !account_id) {
@@ -158,11 +158,11 @@ export async function POST(request: NextRequest) {
     description = description.replace(/{height}/g, product.height?.toString() || "")
     description = description.replace(/{thickness}/g, product.thickness?.toString() || "")
 
-    // Buscar en el catalogo de ML solo si el modo es "catalog"
+    // Buscar en el catalogo de ML si el modo es "catalog" o "linked"
     let familyName: string | null = null
     let catalogProductId: string | null = null
     
-    if (publish_mode === "catalog" && product.ean && account.access_token) {
+    if ((publish_mode === "catalog" || publish_mode === "linked") && product.ean && account.access_token) {
       try {
         // Buscar en el catalogo de ML por GTIN (ISBN)
         const catalogSearch = await fetch(
@@ -251,14 +251,21 @@ export async function POST(request: NextRequest) {
     const validAccount = await refreshTokenIfNeeded(account)
     const accessToken = validAccount.access_token
 
-    // Publicar en ML
+    // Para modo "linked", primero crear tradicional SIN catalog_product_id
+    const itemToPublish = { ...mlItem }
+    if (publish_mode === "linked") {
+      delete itemToPublish.catalog_product_id
+      delete itemToPublish.family_name
+    }
+
+    // Publicar en ML (tradicional primero si es linked)
     const mlResponse = await fetch("https://api.mercadolibre.com/items", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(mlItem)
+      body: JSON.stringify(itemToPublish)
     })
 
     const mlData = await mlResponse.json()
@@ -270,7 +277,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Guardar en nuestra base de datos
+    // Guardar publicacion tradicional en nuestra base de datos
     const { error: insertError } = await supabase
       .from("ml_publications")
       .insert({
@@ -288,11 +295,59 @@ export async function POST(request: NextRequest) {
       console.error("Error saving publication:", insertError)
     }
 
+    // Si es modo "linked" y tenemos catalog_product_id, hacer optin al catalogo
+    let catalogListing = null
+    if (publish_mode === "linked" && catalogProductId) {
+      try {
+        const optinResponse = await fetch("https://api.mercadolibre.com/items/catalog_listings", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            item_id: mlData.id,
+            catalog_product_id: catalogProductId
+          })
+        })
+
+        if (optinResponse.ok) {
+          catalogListing = await optinResponse.json()
+          
+          // Guardar tambien la publicacion de catalogo vinculada
+          if (catalogListing.id) {
+            await supabase
+              .from("ml_publications")
+              .insert({
+                product_id: product.id,
+                account_id: account.id,
+                ml_item_id: catalogListing.id,
+                title: catalogListing.title || mlData.title,
+                price: catalogListing.price || mlData.price,
+                status: catalogListing.status || "active",
+                permalink: catalogListing.permalink,
+                published_at: new Date().toISOString()
+              })
+          }
+        } else {
+          const optinError = await optinResponse.json()
+          console.error("Error en optin catalogo:", optinError)
+        }
+      } catch (optinErr) {
+        console.error("Error al vincular con catalogo:", optinErr)
+      }
+    }
+
     return NextResponse.json({
       success: true,
       ml_item_id: mlData.id,
       permalink: mlData.permalink,
-      status: mlData.status
+      status: mlData.status,
+      catalog_listing: catalogListing ? {
+        id: catalogListing.id,
+        permalink: catalogListing.permalink,
+        item_relations: catalogListing.item_relations
+      } : null
     })
 
   } catch (error) {

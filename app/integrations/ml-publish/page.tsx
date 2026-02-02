@@ -60,7 +60,7 @@ export default function MLPublishPage() {
   const [minStock, setMinStock] = useState<number>(0)
   const [minPrice, setMinPrice] = useState<number>(0)
   const [maxPrice, setMaxPrice] = useState<number>(1000)
-  const [publishMode, setPublishMode] = useState<"catalog" | "traditional">("catalog")
+  const [publishMode, setPublishMode] = useState<"linked" | "catalog" | "traditional">("linked")
   const [previews, setPreviews] = useState<PublishPreview[]>([])
   const [publishing, setPublishing] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
@@ -310,23 +310,28 @@ export default function MLPublishPage() {
               </div>
               <div className="space-y-2">
                 <Label>Modo de publicacion</Label>
-                <Select value={publishMode} onValueChange={(v) => setPublishMode(v as "catalog" | "traditional")}>
+                <Select value={publishMode} onValueChange={(v) => setPublishMode(v as "linked" | "catalog" | "traditional")}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="linked">
+                      Vinculada (recomendado)
+                    </SelectItem>
                     <SelectItem value="catalog">
-                      Catalogo (recomendado)
+                      Solo Catalogo
                     </SelectItem>
                     <SelectItem value="traditional">
-                      Tradicional (sin catalogo)
+                      Solo Tradicional
                     </SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  {publishMode === "catalog" 
-                    ? "Busca el ISBN en el catalogo de ML. Mayor visibilidad." 
-                    : "Crea publicacion independiente sin vincular al catalogo."}
+                  {publishMode === "linked" 
+                    ? "Crea tradicional + catalogo vinculadas. Stock compartido automatico por ML." 
+                    : publishMode === "catalog"
+                    ? "Solo publicacion en catalogo. Mayor visibilidad pero sin alternativa."
+                    : "Solo publicacion tradicional sin vincular al catalogo."}
                 </p>
               </div>
             </CardContent>
