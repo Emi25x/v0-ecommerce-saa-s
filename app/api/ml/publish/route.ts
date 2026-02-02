@@ -273,18 +273,25 @@ Libro nuevo. Envíos a todo el país.`
       }
       
       // BOOK_COVER - Tapa del libro (Blanda/Dura)
+      // Solo agregar si tenemos un valor mapeado válido
       if (product.binding) {
-        // Mapear binding a valores de ML
+        const bindingLower = product.binding.toLowerCase()
         const coverMap: Record<string, string> = {
           "rustica": "Blanda",
+          "rústica": "Blanda",
           "tapa blanda": "Blanda", 
           "paperback": "Blanda",
+          "blanda": "Blanda",
           "tapa dura": "Dura",
           "hardcover": "Dura",
-          "carton": "Dura"
+          "carton": "Dura",
+          "cartón": "Dura",
+          "dura": "Dura",
         }
-        const coverValue = coverMap[product.binding.toLowerCase()] || product.binding
-        attributes.push({ id: "BOOK_COVER", value_name: coverValue })
+        // Solo agregar si el valor está en el mapa, sino omitir
+        if (coverMap[bindingLower]) {
+          attributes.push({ id: "BOOK_COVER", value_name: coverMap[bindingLower] })
+        }
       }
       
       // PAGES_NUMBER - Cantidad de paginas
@@ -315,8 +322,7 @@ Libro nuevo. Envíos a todo el país.`
         description: { plain_text: description },
         // Imagenes
         pictures: pictures,
-        // Garantia del vendedor (usar del template o valor por defecto)
-        warranty: template.warranty || "Garantía del vendedor: 30 días",
+        // NOTA: warranty está deprecado en ML, no se puede enviar
         // Configuracion de envio (usar valores del template si existen)
         shipping: {
           mode: template.shipping_mode || "me2", // Mercado Envios
@@ -350,8 +356,7 @@ Libro nuevo. Envíos a todo el país.`
         description: { plain_text: description },
         // Imagenes
         pictures: pictures,
-        // Garantia del vendedor
-        warranty: template.warranty || "Garantía del vendedor: 30 días",
+        // NOTA: warranty está deprecado en ML, no se puede enviar
         // Configuracion de envio
         shipping: {
           mode: template.shipping_mode || "me2",
