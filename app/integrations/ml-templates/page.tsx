@@ -336,21 +336,46 @@ export default function MLTemplatesPage() {
   }
   
   const applyMarginToTemplate = async () => {
-    if (!priceCalculation) return
+    if (!priceCalculation) {
+      toast({ title: "Error", description: "Primero debes calcular el precio", variant: "destructive" })
+      return
+    }
     
-    // Calcular el multiplicador basado en el calculo
-    const multiplier = priceCalculation.final_price_ars / priceCalculation.cost_price_eur
-    const formula = `cost_price * ${multiplier.toFixed(2)}`
+    if (templates.length === 0) {
+      toast({ title: "Error", description: "No hay plantillas disponibles", variant: "destructive" })
+      return
+    }
     
-    setTemplateForm(prev => ({
-      ...prev,
-      price_formula: `margin:${marginPercent}%`
-    }))
+    // Usar la primera plantilla o la que este siendo editada
+    const targetTemplate = editingTemplate || templates[0]
     
-    toast({ 
-      title: "Margen aplicado", 
-      description: `Formula actualizada: ${marginPercent}% de margen` 
-    })
+    try {
+      const response = await fetch("/api/ml/templates", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: targetTemplate.id,
+          price_formula: `margin:${marginPercent}%`,
+          margin_percent: marginPercent
+        })
+      })
+      
+      const data = await response.json()
+      
+      if (data.error) {
+        toast({ title: "Error", description: data.error, variant: "destructive" })
+        return
+      }
+      
+      toast({ 
+        title: "Margen aplicado", 
+        description: `Plantilla "${targetTemplate.name}" actualizada con ${marginPercent}% de margen` 
+      })
+      
+      fetchTemplates()
+    } catch (error) {
+      toast({ title: "Error", description: "Error al actualizar plantilla", variant: "destructive" })
+    }
   }
   
   const analyzeThreshold = async () => {
