@@ -212,10 +212,12 @@ export async function POST(request: NextRequest) {
       // Modo vinculado: publicacion tradicional + optin a catalogo si existe
       // Crear como tradicional primero
       mlItem.title = product.title?.substring(0, 60) || "Libro"
+      mlItem.family_name = familyName || product.title?.substring(0, 60) || "Libro"
       mlItem.description = { plain_text: description }
     } else {
       // Modo tradicional: sin catalogo
       mlItem.title = product.title?.substring(0, 60) || "Libro"
+      mlItem.family_name = familyName || product.title?.substring(0, 60) || "Libro"
       mlItem.description = { plain_text: description }
     }
 
