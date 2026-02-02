@@ -146,7 +146,22 @@ export async function POST(request: NextRequest) {
     }
 
     // Reemplazar variables en la descripcion de la plantilla
-    let description = template.description_template || ""
+    // Si no hay template de descripcion, crear una descripcion por defecto
+    const defaultDescription = `${product.title || "Libro"}
+
+Autor: ${product.author || "No especificado"}
+Editorial: ${product.brand || "No especificada"}
+ISBN: ${product.ean || product.isbn || "No especificado"}
+Idioma: ${product.language || "Español"}
+${product.pages ? `Páginas: ${product.pages}` : ""}
+${product.binding ? `Encuadernación: ${product.binding}` : ""}
+${product.year_edition ? `Año de edición: ${product.year_edition}` : ""}
+
+${product.description || ""}
+
+Libro nuevo. Envíos a todo el país.`
+
+    let description = template.description_template || defaultDescription
     description = description.replace(/{title}/g, product.title || "")
     description = description.replace(/{author}/g, product.author || "")
     description = description.replace(/{brand}/g, product.brand || "")
@@ -272,18 +287,36 @@ export async function POST(request: NextRequest) {
       
       // Para vendedores con User Products (tag user_product_seller),
       // NO se debe enviar "title", solo "family_name". ML genera el title automaticamente.
+      
+      // Construir array de pictures
+      const pictures: Array<{ source: string }> = []
+      if (product.image_url) {
+        pictures.push({ source: product.image_url })
+      }
+      
       return {
         site_id: "MLA",
         category_id: template.category_id || "MLA412445", // Libros Fisicos
         family_name: product.title?.substring(0, 60) || "Libro",
         price: finalPrice,
-        currency_id: "ARS",
+        currency_id: template.currency_id || "ARS",
         available_quantity: Math.min(product.stock || 1, 50),
         buying_mode: "buy_it_now",
-        condition: "new",
+        condition: template.condition || "new",
         listing_type_id: template.listing_type_id || "gold_special",
+        // Descripcion del producto
         description: { plain_text: description },
-        pictures: product.image_url ? [{ source: product.image_url }] : [],
+        // Imagenes
+        pictures: pictures,
+        // Garantia del vendedor (usar del template o valor por defecto)
+        warranty: template.warranty || "Garantía del vendedor: 30 días",
+        // Configuracion de envio (usar valores del template si existen)
+        shipping: {
+          mode: template.shipping_mode || "me2", // Mercado Envios
+          local_pick_up: template.local_pick_up !== false, // true por defecto
+          free_shipping: template.free_shipping || false,
+        },
+        // Atributos del libro
         attributes: attributes,
       }
     }
