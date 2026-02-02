@@ -182,8 +182,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log("[v0] publish_mode:", publish_mode, "catalogProductId:", catalogProductId)
-
     // Construir el objeto de publicacion para ML
     const mlItem: Record<string, unknown> = {
       site_id: "MLA",
@@ -198,21 +196,20 @@ export async function POST(request: NextRequest) {
       attributes: [] as Array<{ id: string; value_name: string }>
     }
     
-    // La categoria Libros (MLA3025) REQUIERE catalog_product_id si existe
-    // Si no encontramos en catalogo, ML rechazara la publicacion con "title invalid"
-    if (catalogProductId) {
-      // Tenemos producto en catalogo - usar catalog_product_id
-      mlItem.catalog_product_id = catalogProductId
-      mlItem.catalog_listing = true
-      // NO incluir title, family_name ni description - ML usa los del catalogo
-    } else {
-      // Sin producto en catalogo - intentar con title/family_name (puede fallar en MLA3025)
-      mlItem.title = product.title?.substring(0, 60) || "Libro"
-      mlItem.family_name = familyName || product.title?.substring(0, 60) || "Libro"
-      mlItem.description = { plain_text: description }
+    // La categoria Libros (MLA3025) REQUIERE catalog_product_id
+    // Si no encontramos en catalogo, NO se puede publicar
+    if (!catalogProductId) {
+      return NextResponse.json({
+        success: false,
+        error: `Producto no encontrado en catálogo de ML (ISBN: ${product.ean}). La categoría Libros requiere que el producto exista en el catálogo de Mercado Libre.`,
+        not_in_catalog: true
+      }, { status: 400 })
     }
     
-    console.log("[v0] mlItem keys:", Object.keys(mlItem))
+    // Tenemos producto en catalogo - usar catalog_product_id
+    mlItem.catalog_product_id = catalogProductId
+    mlItem.catalog_listing = true
+    // NO incluir title, family_name ni description - ML usa los del catalogo
 
     // Agregar atributos basicos
     const attributes = mlItem.attributes as Array<{ id: string; value_name: string }>
