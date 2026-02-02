@@ -86,6 +86,7 @@ export async function POST(request: NextRequest) {
 
     if (!product_id || !template_id || !account_id) {
       return NextResponse.json({ 
+        success: false,
         error: "product_id, template_id y account_id son requeridos" 
       }, { status: 400 })
     }
@@ -100,7 +101,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (productError || !product) {
-      return NextResponse.json({ error: "Producto no encontrado" }, { status: 404 })
+      return NextResponse.json({ success: false, error: "Producto no encontrado" }, { status: 404 })
     }
     
     console.log("[v0] Product loaded from DB:", {
@@ -118,7 +119,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (templateError || !template) {
-      return NextResponse.json({ error: "Plantilla no encontrada" }, { status: 404 })
+      return NextResponse.json({ success: false, error: "Plantilla no encontrada" }, { status: 404 })
     }
 
     // Obtener la cuenta ML
@@ -129,7 +130,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (accountError || !account) {
-      return NextResponse.json({ error: "Cuenta ML no encontrada" }, { status: 404 })
+      return NextResponse.json({ success: false, error: "Cuenta ML no encontrada" }, { status: 404 })
     }
 
     // Refrescar token si es necesario para tener access_token valido
@@ -204,6 +205,7 @@ export async function POST(request: NextRequest) {
 
     if (!finalPrice) {
       return NextResponse.json({ 
+        success: false,
         error: "No se pudo calcular el precio. El producto no tiene cost_price." 
       }, { status: 400 })
     }
@@ -856,7 +858,7 @@ Libro nuevo. Envíos a todo el país.`
   } catch (error) {
     console.error("[v0] Error en POST /api/ml/publish:", error)
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Error interno" },
+      { success: false, error: error instanceof Error ? error.message : "Error interno" },
       { status: 500 }
     )
   }

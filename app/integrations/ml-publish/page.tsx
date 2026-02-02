@@ -384,9 +384,14 @@ if (data.success) {
         if (data.success) {
           updatedPreviews[i].status = "success"
           updatedPreviews[i].ml_item_id = data.ml_item_id
+        } else if (data.skipped) {
+          // Ya publicado, marcamos como success pero con nota
+          updatedPreviews[i].status = "success"
+          updatedPreviews[i].ml_item_id = data.existing_item_id
+          updatedPreviews[i].error = "Ya existía"
         } else {
           updatedPreviews[i].status = "error"
-          updatedPreviews[i].error = data.error
+          updatedPreviews[i].error = data.error || data.message || "Error desconocido"
         }
       } catch (error) {
         updatedPreviews[i].status = "error"
@@ -803,10 +808,17 @@ if (data.success) {
   </Badge>
   )}
   {!preview.already_published && preview.status === "error" && (
-  <Badge variant="destructive">
-  <XCircle className="h-3 w-3 mr-1" />
-  Error
-  </Badge>
+  <div className="flex flex-col items-center gap-1">
+    <Badge variant="destructive">
+      <XCircle className="h-3 w-3 mr-1" />
+      Error
+    </Badge>
+    {preview.error && (
+      <span className="text-xs text-red-400 max-w-[200px] truncate" title={preview.error}>
+        {preview.error}
+      </span>
+    )}
+  </div>
                         )}
                       </TableCell>
                     </TableRow>
