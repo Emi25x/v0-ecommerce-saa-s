@@ -101,7 +101,13 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (productError || !product) {
-      return NextResponse.json({ success: false, error: "Producto no encontrado" }, { status: 404 })
+      console.log("[v0] Product NOT FOUND for id:", product_id, "Error:", productError)
+      return NextResponse.json({ 
+        success: false, 
+        error: `No existe en BD (ID: ${String(product_id).slice(0, 8)}...)`,
+        product_id_received: product_id,
+        db_error: productError?.message
+      }, { status: 404 })
     }
     
     console.log("[v0] Product loaded from DB:", {
@@ -632,13 +638,13 @@ Libro nuevo. Envíos a todo el país.`
     // RESPETAR el modo seleccionado por el usuario
     if (publish_mode === "catalog") {
       // Usuario quiere SOLO catalogo
-      if (!catalogProductId) {
-        return NextResponse.json({
-          success: false,
-          error: `Producto no encontrado en catálogo de ML (ISBN: ${product.ean}). Intenta con modo "Tradicional".`,
-          not_in_catalog: true
-        }, { status: 400 })
-      }
+if (!catalogProductId) {
+  return NextResponse.json({
+  success: false,
+  error: `No está en catálogo ML (ISBN: ${product.ean}). Usa modo "Tradicional".`,
+  not_in_catalog: true
+  }, { status: 400 })
+  }
       mlItem = buildCatalogItem()
     } else if (publish_mode === "traditional") {
       // Usuario quiere SOLO tradicional - siempre usar tradicional
@@ -699,9 +705,21 @@ Libro nuevo. Envíos a todo el país.`
     const mlData = await mlResponse.json()
 
     if (!mlResponse.ok) {
+      console.log("[v0] ML Error Response:", JSON.stringify(mlData))
+      // ML puede devolver errores en varios formatos
+      let errorMsg = "Error al publicar en ML"
+      if (mlData.message) {
+        errorMsg = mlData.message
+      } else if (mlData.error) {
+        errorMsg = mlData.error
+      } else if (mlData.cause && mlData.cause.length > 0) {
+        // A veces ML pone el detalle en cause[0].message
+        errorMsg = mlData.cause.map((c: { message?: string }) => c.message).filter(Boolean).join(", ") || errorMsg
+      }
       return NextResponse.json({
         success: false,
-        error: mlData.message || mlData.error || "Error al publicar en ML"
+        error: errorMsg,
+        ml_error_detail: mlData // Incluir toda la respuesta para debug
       }, { status: 400 })
     }
 
