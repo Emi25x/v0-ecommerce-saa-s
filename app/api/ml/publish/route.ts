@@ -197,7 +197,7 @@ export async function POST(request: NextRequest) {
           const errorData = await uploadResponse.json().catch(() => ({ message: "Error desconocido" }))
           // ML devuelve error específico si la imagen es menor a 500px
           if (errorData.message?.includes("500 píxeles")) {
-            return { id: null, error: "Imagen muy pequeña (ML requiere mínimo 500px). Se publicará sin imagen." }
+            return { id: null, error: "imagen_pequena" }
           }
           return { id: null, error: errorData.message || "Error al subir imagen a ML" }
         }
@@ -209,16 +209,70 @@ export async function POST(request: NextRequest) {
       }
     }
     
+    // Funcion para subir imagen fallback de Libroide
+    const uploadFallbackImage = async (): Promise<string | null> => {
+      try {
+        // Generar la imagen fallback desde nuestro endpoint
+        const baseUrl = process.env.VERCEL_URL 
+          ? `https://${process.env.VERCEL_URL}` 
+          : process.env.NEXT_PUBLIC_VERCEL_URL 
+            ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
+            : "http://localhost:3000"
+        
+        const fallbackUrl = `${baseUrl}/api/ml/fallback-image`
+        const response = await fetch(fallbackUrl)
+        
+        if (!response.ok) {
+          console.log("[v0] Failed to generate fallback image")
+          return null
+        }
+        
+        const imageBuffer = await response.arrayBuffer()
+        const formData = new FormData()
+        const blob = new Blob([imageBuffer], { type: "image/png" })
+        formData.append("file", blob, "libroide-fallback.png")
+        
+        const uploadResponse = await fetch("https://api.mercadolibre.com/pictures/items/upload", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${accessToken}` },
+          body: formData,
+        })
+        
+        if (!uploadResponse.ok) {
+          console.log("[v0] Failed to upload fallback image to ML")
+          return null
+        }
+        
+        const uploadData = await uploadResponse.json()
+        console.log("[v0] Fallback image uploaded to ML:", uploadData.id)
+        return uploadData.id
+      } catch (error) {
+        console.log("[v0] Error uploading fallback image:", error)
+        return null
+      }
+    }
+    
     // Subir imagen a ML si existe
-    let imageUrlForML: string | null = null
     let mlPictureId: string | null = null
     let imageWarning: string | null = null
+    
     if (product.image_url) {
       const uploadResult = await uploadImageToML(product.image_url)
       mlPictureId = uploadResult.id
-      if (uploadResult.error) {
+      
+      // Si la imagen es muy pequeña, usar imagen fallback de Libroide
+      if (uploadResult.error === "imagen_pequena") {
+        console.log("[v0] Image too small, using Libroide fallback image")
+        mlPictureId = await uploadFallbackImage()
+        imageWarning = "Imagen original muy pequeña. Se usó imagen de Libroide."
+      } else if (uploadResult.error) {
         imageWarning = uploadResult.error
       }
+    } else {
+      // Sin imagen original, usar fallback
+      console.log("[v0] No image URL, using Libroide fallback image")
+      mlPictureId = await uploadFallbackImage()
+      imageWarning = "Sin imagen original. Se usó imagen de Libroide."
     }
 
     // Funcion para sanitizar texto a plain text (quitar HTML y caracteres especiales)
