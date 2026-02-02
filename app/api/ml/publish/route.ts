@@ -207,17 +207,19 @@ export async function POST(request: NextRequest) {
       const attributes: Array<{ id: string; value_name?: string; value_id?: string }> = []
       
       // MAPEO DE CAMPOS: Nuestra BD -> Atributos ML (MLA412445 - Libros Fisicos)
+      // Basado en publicacion real MLA2199217606 de la cuenta LIBROESVIDA
       // 
-      // Nuestra BD          | ML Attribute ID    | ML Attribute Name      | Tipo
-      // --------------------|--------------------|-----------------------|-------
-      // title               | BOOK_TITLE         | Título del libro      | string (required)
-      // author              | AUTHOR             | Autor                 | string (required)
-      // brand               | PUBLISHER          | Editorial             | string
-      // ean/isbn            | GTIN               | Código universal      | string
-      // language            | LANGUAGE           | Idioma                | list (value_id)
-      // year_edition        | PUBLICATION_YEAR   | Año de publicación    | string
-      // binding             | BOOK_COVER_TYPE    | Tipo de tapa          | string
-      // subject             | BOOK_SUBGENRE      | Subgénero             | string
+      // Nuestra BD          | ML Attribute ID    | ML Attribute Name         | Tipo
+      // --------------------|--------------------|-----------------------------|-------
+      // title               | BOOK_TITLE         | Título del libro           | string (required)
+      // author              | AUTHOR             | Autor                      | string (required)
+      // brand               | BOOK_PUBLISHER     | Editorial del libro        | string (required)
+      // -                   | BOOK_GENRE         | Género del libro           | list (value_id required)
+      // ean/isbn            | GTIN               | ISBN                       | string
+      // language            | LANGUAGE           | Idioma                     | list (value_id)
+      // year_edition        | PUBLICATION_YEAR   | Año de publicación         | string
+      // binding             | BOOK_COVER         | Tapa del libro             | string
+      // pages               | PAGES_NUMBER       | Cantidad de páginas        | string
       
       // REQUERIDOS por ML para MLA412445
       // BOOK_TITLE - Titulo (required)
@@ -226,13 +228,12 @@ export async function POST(request: NextRequest) {
       // AUTHOR - Autor (required)
       attributes.push({ id: "AUTHOR", value_name: product.author || "Desconocido" })
       
-      // BOOK_GENRE - Genero del libro (required para marketplace channel)
-      // Es un campo string libre segun algunos reportes, no lista
-      attributes.push({ id: "BOOK_GENRE", value_name: "Ficción" })
+      // BOOK_GENRE - Genero del libro (REQUIRED - usa value_id)
+      // value_id "7538039" = "Literatura y ficción" (valor generico seguro)
+      attributes.push({ id: "BOOK_GENRE", value_id: "7538039" })
       
-      // PUBLISHER - Editorial del libro (catalog_required)
-      // IMPORTANTE: Siempre enviar, usar valor por defecto si no hay
-      attributes.push({ id: "PUBLISHER", value_name: product.brand?.substring(0, 255) || "Editorial independiente" })
+      // BOOK_PUBLISHER - Editorial del libro (REQUIRED - NO es "PUBLISHER")
+      attributes.push({ id: "BOOK_PUBLISHER", value_name: product.brand?.substring(0, 255) || "Editorial independiente" })
       
       // GTIN/ISBN
       if (product.ean) {
@@ -248,8 +249,25 @@ export async function POST(request: NextRequest) {
       if (product.year_edition) {
         attributes.push({ id: "PUBLICATION_YEAR", value_name: product.year_edition.toString() })
       }
+      
+      // BOOK_COVER - Tapa del libro (Blanda/Dura)
       if (product.binding) {
-        attributes.push({ id: "BOOK_COVER_TYPE", value_name: product.binding })
+        // Mapear binding a valores de ML
+        const coverMap: Record<string, string> = {
+          "rustica": "Blanda",
+          "tapa blanda": "Blanda", 
+          "paperback": "Blanda",
+          "tapa dura": "Dura",
+          "hardcover": "Dura",
+          "carton": "Dura"
+        }
+        const coverValue = coverMap[product.binding.toLowerCase()] || product.binding
+        attributes.push({ id: "BOOK_COVER", value_name: coverValue })
+      }
+      
+      // PAGES_NUMBER - Cantidad de paginas
+      if (product.pages) {
+        attributes.push({ id: "PAGES_NUMBER", value_name: product.pages.toString() })
       }
       
       // Para vendedores con User Products (tag user_product_seller),
