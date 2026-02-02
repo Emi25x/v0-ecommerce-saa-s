@@ -103,6 +103,23 @@ export default function MLTemplatesPage() {
     }
   } | null>(null)
   
+  // Estado para analisis de rangos
+  const [rangeMinEur, setRangeMinEur] = useState(5)
+  const [rangeMaxEur, setRangeMaxEur] = useState(25)
+  const [calculatingRange, setCalculatingRange] = useState(false)
+  const [rangeAnalysis, setRangeAnalysis] = useState<{
+    below33k: { avgMultiplier: number; avgMargin: number; count: number }
+    above33k: { avgMultiplier: number; avgMargin: number; count: number }
+    recommendation: "below" | "above" | "mixed"
+    details: Array<{
+      costEur: number
+      finalPrice: number
+      multiplier: number
+      margin: number
+      zone: "below" | "above"
+    }>
+  } | null>(null)
+  
   // Campos de la plantilla
   const [templateForm, setTemplateForm] = useState({
     name: "Plantilla Principal",
@@ -300,6 +317,72 @@ export default function MLTemplatesPage() {
       description: `Formula actualizada: ${marginPercent}% de margen` 
     })
   }
+  
+  const calculateRangeAnalysis = async () => {
+    setCalculatingRange(true)
+    try {
+      const details: typeof rangeAnalysis extends { details: infer T } | null ? T : never = []
+      const step = (rangeMaxEur - rangeMinEur) / 10 // 10 puntos de prueba
+      
+      for (let costEur = rangeMinEur; costEur <= rangeMaxEur; costEur += step) {
+        const response = await fetch("/api/ml/calculate-price", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            cost_price_eur: costEur,
+            margin_percent: marginPercent,
+            listing_type_id: "gold_special"
+          })
+        })
+        
+        const data = await response.json()
+        if (data.success) {
+          const calc = data.calculation
+          details.push({
+            costEur: Math.round(costEur * 100) / 100,
+            finalPrice: calc.final_price_ars,
+            multiplier: Math.round(calc.final_price_ars / costEur),
+            margin: calc.verification.actual_margin_percent,
+            zone: calc.final_price_ars < 33000 ? "below" : "above"
+          })
+        }
+      }
+      
+      // Calcular promedios por zona
+      const below = details.filter(d => d.zone === "below")
+      const above = details.filter(d => d.zone === "above")
+      
+      const avgBelow = below.length > 0 ? {
+        avgMultiplier: Math.round(below.reduce((a, b) => a + b.multiplier, 0) / below.length),
+        avgMargin: Math.round(below.reduce((a, b) => a + b.margin, 0) / below.length * 10) / 10,
+        count: below.length
+      } : { avgMultiplier: 0, avgMargin: 0, count: 0 }
+      
+      const avgAbove = above.length > 0 ? {
+        avgMultiplier: Math.round(above.reduce((a, b) => a + b.multiplier, 0) / above.length),
+        avgMargin: Math.round(above.reduce((a, b) => a + b.margin, 0) / above.length * 10) / 10,
+        count: above.length
+      } : { avgMultiplier: 0, avgMargin: 0, count: 0 }
+      
+      // Determinar recomendacion
+      let recommendation: "below" | "above" | "mixed" = "mixed"
+      if (below.length === 0) recommendation = "above"
+      else if (above.length === 0) recommendation = "below"
+      else if (avgBelow.avgMultiplier < avgAbove.avgMultiplier) recommendation = "below"
+      else recommendation = "above"
+      
+      setRangeAnalysis({
+        below33k: avgBelow,
+        above33k: avgAbove,
+        recommendation,
+        details
+      })
+    } catch (error) {
+      toast({ title: "Error", description: "Error al analizar rangos", variant: "destructive" })
+    } finally {
+      setCalculatingRange(false)
+    }
+  }
 
   const editTemplate = (template: Template) => {
     setEditingTemplate(template)
@@ -488,171 +571,326 @@ export default function MLTemplatesPage() {
             )}
           </TabsContent>
 
-          <TabsContent value="calculator" className="space-y-4">
-            <div className="grid gap-6 lg:grid-cols-2">
-              {/* Panel de configuracion */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Configurar Margen</CardTitle>
-                  <CardDescription>
-                    Define el margen de ganancia deseado y el sistema calculara el precio final
-                    considerando todos los costos de Mercado Libre.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="margin">Margen de ganancia deseado (%)</Label>
-                      <div className="flex items-center gap-4">
+          <TabsContent value="calculator" className="space-y-6">
+            {/* Seccion 1: Calculo por Margen Exacto */}
+            <div>
+              <h2 className="text-xl font-semibold mb-4">Calculo por Margen Exacto</h2>
+              <div className="grid gap-6 lg:grid-cols-2">
+                {/* Panel de configuracion */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Configurar Margen</CardTitle>
+                    <CardDescription>
+                      Define el margen de ganancia deseado y el sistema calculara el precio final
+                      considerando todos los costos de Mercado Libre.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="margin">Margen de ganancia deseado (%)</Label>
+                        <div className="flex items-center gap-4">
+                          <Input
+                            id="margin"
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={marginPercent}
+                            onChange={(e) => setMarginPercent(Number(e.target.value))}
+                            className="w-24"
+                          />
+                          <span className="text-2xl font-bold text-primary">{marginPercent}%</span>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <Label htmlFor="testCost">Costo de prueba (EUR)</Label>
+                        <div className="flex items-center gap-4">
+                          <Input
+                            id="testCost"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={testCostEur}
+                            onChange={(e) => setTestCostEur(Number(e.target.value))}
+                            className="w-24"
+                          />
+                          <span className="text-muted-foreground">EUR {testCostEur.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <Button 
+                      onClick={calculatePrice} 
+                      disabled={calculating}
+                      className="w-full"
+                      size="lg"
+                    >
+                      {calculating ? "Calculando..." : "Calcular Precio"}
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                {/* Panel de resultados */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Desglose de Costos</CardTitle>
+                    <CardDescription>
+                      Valores utilizados en la formula de precio
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {priceCalculation ? (
+                      <div className="space-y-6">
+                        {/* Precio final destacado */}
+                        <div className="rounded-lg bg-primary/10 p-4 text-center">
+                          <p className="text-sm text-muted-foreground">Precio de venta en ML</p>
+                          <p className="text-4xl font-bold text-primary">
+                            ${priceCalculation.final_price_ars.toLocaleString("es-AR")}
+                          </p>
+                          <p className="mt-2 text-lg font-semibold">
+                            Multiplicador: {(priceCalculation.final_price_ars / priceCalculation.cost_price_eur).toLocaleString("es-AR", { maximumFractionDigits: 0 })}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            EUR 1 = ARS {(priceCalculation.final_price_ars / priceCalculation.cost_price_eur).toLocaleString("es-AR", { maximumFractionDigits: 0 })}
+                          </p>
+                        </div>
+
+                        {/* Tabla de costos */}
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Concepto</TableHead>
+                              <TableHead className="text-right">Valor</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            <TableRow>
+                              <TableCell className="font-medium">Costo producto</TableCell>
+                              <TableCell className="text-right">EUR {priceCalculation.cost_price_eur.toFixed(2)}</TableCell>
+                            </TableRow>
+                            <TableRow>
+                              <TableCell className="font-medium">Tipo de cambio (EUR billetes BNA)</TableCell>
+                              <TableCell className="text-right">${priceCalculation.exchange_rate.toLocaleString("es-AR")}</TableCell>
+                            </TableRow>
+                            <TableRow>
+                              <TableCell className="font-medium">Costo en ARS</TableCell>
+                              <TableCell className="text-right">${priceCalculation.cost_in_ars.toLocaleString("es-AR")}</TableCell>
+                            </TableRow>
+                            <TableRow className="bg-muted/50">
+                              <TableCell className="font-medium">Margen deseado</TableCell>
+                              <TableCell className="text-right">{priceCalculation.margin_percent}%</TableCell>
+                            </TableRow>
+                            <TableRow>
+                              <TableCell className="font-medium">Comision ML</TableCell>
+                              <TableCell className="text-right">{priceCalculation.ml_fee_percent}%</TableCell>
+                            </TableRow>
+                            <TableRow>
+                              <TableCell className="font-medium">Cargo fijo ML</TableCell>
+                              <TableCell className="text-right">${priceCalculation.ml_fixed_fee.toLocaleString("es-AR")}</TableCell>
+                            </TableRow>
+                            <TableRow>
+                              <TableCell className="font-medium">Costo envio gratis</TableCell>
+                              <TableCell className="text-right">${priceCalculation.shipping_cost.toLocaleString("es-AR")}</TableCell>
+                            </TableRow>
+                          </TableBody>
+                        </Table>
+
+                        {/* Verificacion */}
+                        <div className="rounded-lg border p-4 space-y-2">
+                          <h4 className="font-semibold text-sm">Verificacion</h4>
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <span className="text-muted-foreground">Comision ML ({priceCalculation.ml_fee_percent}%):</span>
+                            <span className="text-right">-${priceCalculation.verification.ml_commission.toLocaleString("es-AR")}</span>
+                            
+                            <span className="text-muted-foreground">Cargo fijo ML:</span>
+                            <span className="text-right">-${priceCalculation.ml_fixed_fee.toLocaleString("es-AR")}</span>
+                            
+                            <span className="text-muted-foreground">Costo envio:</span>
+                            <span className="text-right">-${priceCalculation.verification.shipping_cost.toLocaleString("es-AR")}</span>
+                            
+                            <span className="text-muted-foreground">Total costos ML:</span>
+                            <span className="text-right font-medium">-${priceCalculation.verification.total_costs.toLocaleString("es-AR")}</span>
+                            
+                            <span className="text-muted-foreground">Neto recibido:</span>
+                            <span className="text-right">${priceCalculation.verification.net_received.toLocaleString("es-AR")}</span>
+                            
+                            <span className="text-muted-foreground">Ganancia:</span>
+                            <span className="text-right text-green-600 font-medium">+${priceCalculation.verification.profit_ars.toLocaleString("es-AR")}</span>
+                            
+                            <span className="text-muted-foreground">Margen real:</span>
+                            <span className="text-right font-bold text-primary">{priceCalculation.verification.actual_margin_percent}%</span>
+                          </div>
+                        </div>
+
+                        {/* Boton aplicar */}
+                        <Button 
+                          onClick={applyMarginToTemplate}
+                          variant="outline"
+                          className="w-full bg-transparent"
+                        >
+                          Aplicar margen a plantilla activa
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex h-64 items-center justify-center text-muted-foreground">
+                        <p>Configura el margen y haz clic en Calcular</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+            
+            {/* Seccion 2: Analisis de Rangos */}
+            <div className="mt-8">
+              <h2 className="text-xl font-semibold mb-4">Analisis de Rangos (Umbral $33,000)</h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                Analiza un rango de precios para determinar si conviene publicar debajo o arriba del umbral de $33,000 
+                donde cambian los costos de ML (cargo fijo vs envio gratis).
+              </p>
+              
+              <div className="grid gap-6 lg:grid-cols-2">
+                {/* Panel de configuracion de rango */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Rango de Costos</CardTitle>
+                    <CardDescription>
+                      Define el rango de costos en EUR para analizar
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Minimo (EUR)</Label>
                         <Input
-                          id="margin"
                           type="number"
-                          min="0"
-                          max="100"
-                          value={marginPercent}
-                          onChange={(e) => setMarginPercent(Number(e.target.value))}
-                          className="w-24"
+                          min="1"
+                          step="0.5"
+                          value={rangeMinEur}
+                          onChange={(e) => setRangeMinEur(Number(e.target.value))}
                         />
-                        <span className="text-2xl font-bold text-primary">{marginPercent}%</span>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Maximo (EUR)</Label>
+                        <Input
+                          type="number"
+                          min="1"
+                          step="0.5"
+                          value={rangeMaxEur}
+                          onChange={(e) => setRangeMaxEur(Number(e.target.value))}
+                        />
                       </div>
                     </div>
                     
                     <div className="space-y-2">
-                      <Label htmlFor="testCost">Costo de prueba (EUR)</Label>
-                      <div className="flex items-center gap-4">
-                        <Input
-                          id="testCost"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={testCostEur}
-                          onChange={(e) => setTestCostEur(Number(e.target.value))}
-                          className="w-24"
-                        />
-                        <span className="text-muted-foreground">EUR {testCostEur.toFixed(2)}</span>
-                      </div>
+                      <Label>Margen deseado (%)</Label>
+                      <Input
+                        type="number"
+                        value={marginPercent}
+                        onChange={(e) => setMarginPercent(Number(e.target.value))}
+                        className="w-24"
+                      />
                     </div>
-                  </div>
-                  
-                  <Button 
-                    onClick={calculatePrice} 
-                    disabled={calculating}
-                    className="w-full"
-                    size="lg"
-                  >
-                    {calculating ? "Calculando..." : "Calcular Precio"}
-                  </Button>
-                </CardContent>
-              </Card>
+                    
+                    <Button 
+                      onClick={calculateRangeAnalysis}
+                      disabled={calculatingRange}
+                      className="w-full"
+                      size="lg"
+                    >
+                      {calculatingRange ? "Analizando..." : "Analizar Rango"}
+                    </Button>
+                  </CardContent>
+                </Card>
 
-              {/* Panel de resultados */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Desglose de Costos</CardTitle>
-                  <CardDescription>
-                    Valores utilizados en la formula de precio
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {priceCalculation ? (
-                    <div className="space-y-6">
-                      {/* Precio final destacado */}
-                      <div className="rounded-lg bg-primary/10 p-4 text-center">
-                        <p className="text-sm text-muted-foreground">Precio de venta en ML</p>
-                        <p className="text-4xl font-bold text-primary">
-                          ${priceCalculation.final_price_ars.toLocaleString("es-AR")}
-                        </p>
-                        <p className="mt-2 text-lg font-semibold">
-                          Multiplicador: {(priceCalculation.final_price_ars / priceCalculation.cost_price_eur).toLocaleString("es-AR", { maximumFractionDigits: 0 })}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          EUR 1 = ARS {(priceCalculation.final_price_ars / priceCalculation.cost_price_eur).toLocaleString("es-AR", { maximumFractionDigits: 0 })}
-                        </p>
-                      </div>
+                {/* Panel de resultados de rango */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Comparativa de Zonas</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {rangeAnalysis ? (
+                      <div className="space-y-6">
+                        {/* Recomendacion */}
+                        <div className={`rounded-lg p-4 text-center ${
+                          rangeAnalysis.recommendation === "below" 
+                            ? "bg-blue-500/10 border border-blue-500/30" 
+                            : rangeAnalysis.recommendation === "above"
+                            ? "bg-green-500/10 border border-green-500/30"
+                            : "bg-yellow-500/10 border border-yellow-500/30"
+                        }`}>
+                          <p className="text-sm text-muted-foreground">Recomendacion</p>
+                          <p className="text-xl font-bold">
+                            {rangeAnalysis.recommendation === "below" && "Mantener debajo de $33,000"}
+                            {rangeAnalysis.recommendation === "above" && "Publicar arriba de $33,000"}
+                            {rangeAnalysis.recommendation === "mixed" && "Depende del producto"}
+                          </p>
+                        </div>
 
-                      {/* Tabla de costos */}
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Concepto</TableHead>
-                            <TableHead className="text-right">Valor</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          <TableRow>
-                            <TableCell className="font-medium">Costo producto</TableCell>
-                            <TableCell className="text-right">EUR {priceCalculation.cost_price_eur.toFixed(2)}</TableCell>
-                          </TableRow>
-                          <TableRow>
-                            <TableCell className="font-medium">Tipo de cambio (EUR billetes BNA)</TableCell>
-                            <TableCell className="text-right">${priceCalculation.exchange_rate.toLocaleString("es-AR")}</TableCell>
-                          </TableRow>
-                          <TableRow>
-                            <TableCell className="font-medium">Costo en ARS</TableCell>
-                            <TableCell className="text-right">${priceCalculation.cost_in_ars.toLocaleString("es-AR")}</TableCell>
-                          </TableRow>
-                          <TableRow className="bg-muted/50">
-                            <TableCell className="font-medium">Margen deseado</TableCell>
-                            <TableCell className="text-right">{priceCalculation.margin_percent}%</TableCell>
-                          </TableRow>
-                          <TableRow>
-                            <TableCell className="font-medium">Comision ML</TableCell>
-                            <TableCell className="text-right">{priceCalculation.ml_fee_percent}%</TableCell>
-                          </TableRow>
-                          <TableRow>
-                            <TableCell className="font-medium">Cargo fijo ML</TableCell>
-                            <TableCell className="text-right">${priceCalculation.ml_fixed_fee.toLocaleString("es-AR")}</TableCell>
-                          </TableRow>
-                          <TableRow>
-                            <TableCell className="font-medium">Costo envio gratis</TableCell>
-                            <TableCell className="text-right">${priceCalculation.shipping_cost.toLocaleString("es-AR")}</TableCell>
-                          </TableRow>
-                        </TableBody>
-                      </Table>
+                        {/* Comparativa */}
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="rounded-lg border p-4 text-center">
+                            <p className="text-xs text-muted-foreground mb-1">Debajo de $33k</p>
+                            <p className="text-2xl font-bold text-blue-600">
+                              {rangeAnalysis.below33k.avgMultiplier.toLocaleString("es-AR")}x
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {rangeAnalysis.below33k.count} productos | {rangeAnalysis.below33k.avgMargin}% margen
+                            </p>
+                            <p className="text-xs mt-2">Cargo fijo: $1,115 - $2,810</p>
+                          </div>
+                          
+                          <div className="rounded-lg border p-4 text-center">
+                            <p className="text-xs text-muted-foreground mb-1">Arriba de $33k</p>
+                            <p className="text-2xl font-bold text-green-600">
+                              {rangeAnalysis.above33k.avgMultiplier.toLocaleString("es-AR")}x
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {rangeAnalysis.above33k.count} productos | {rangeAnalysis.above33k.avgMargin}% margen
+                            </p>
+                            <p className="text-xs mt-2">Envio gratis: ~$5,500</p>
+                          </div>
+                        </div>
 
-                      {/* Verificacion */}
-                      <div className="rounded-lg border p-4 space-y-2">
-                        <h4 className="font-semibold text-sm">Verificacion</h4>
-                        <div className="grid grid-cols-2 gap-2 text-sm">
-                          <span className="text-muted-foreground">Comision ML ({priceCalculation.ml_fee_percent}%):</span>
-                          <span className="text-right">-${priceCalculation.verification.ml_commission.toLocaleString("es-AR")}</span>
-                          
-                          <span className="text-muted-foreground">Cargo fijo ML:</span>
-                          <span className="text-right">-${priceCalculation.ml_fixed_fee.toLocaleString("es-AR")}</span>
-                          
-                          <span className="text-muted-foreground">Costo envio:</span>
-                          <span className="text-right">-${priceCalculation.verification.shipping_cost.toLocaleString("es-AR")}</span>
-                          
-                          <span className="text-muted-foreground">Total costos ML:</span>
-                          <span className="text-right font-medium">-${priceCalculation.verification.total_costs.toLocaleString("es-AR")}</span>
-                          
-                          <span className="text-muted-foreground">Neto recibido:</span>
-                          <span className="text-right">${priceCalculation.verification.net_received.toLocaleString("es-AR")}</span>
-                          
-                          <span className="text-muted-foreground">Ganancia:</span>
-                          <span className="text-right text-green-600 font-medium">+${priceCalculation.verification.profit_ars.toLocaleString("es-AR")}</span>
-                          
-                          <span className="text-muted-foreground">Margen real:</span>
-                          <span className="text-right font-bold text-primary">{priceCalculation.verification.actual_margin_percent}%</span>
+                        {/* Tabla de detalles */}
+                        <div className="max-h-48 overflow-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Costo EUR</TableHead>
+                                <TableHead>Precio ARS</TableHead>
+                                <TableHead>Mult.</TableHead>
+                                <TableHead>Zona</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {rangeAnalysis.details.map((d, i) => (
+                                <TableRow key={i}>
+                                  <TableCell>{d.costEur}</TableCell>
+                                  <TableCell>${d.finalPrice.toLocaleString("es-AR")}</TableCell>
+                                  <TableCell>{d.multiplier.toLocaleString("es-AR")}</TableCell>
+                                  <TableCell>
+                                    <span className={`text-xs px-2 py-1 rounded ${
+                                      d.zone === "below" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"
+                                    }`}>
+                                      {d.zone === "below" ? "< $33k" : "> $33k"}
+                                    </span>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
                         </div>
                       </div>
-
-                      {/* Boton aplicar */}
-                      <Button 
-                        onClick={applyMarginToTemplate}
-                        variant="outline"
-                        className="w-full bg-transparent"
-                      >
-                        Aplicar margen a plantilla activa
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex h-64 items-center justify-center text-muted-foreground">
-                      <p>Configura el margen y haz clic en Calcular</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+                    ) : (
+                      <div className="flex h-64 items-center justify-center text-muted-foreground">
+                        <p>Define el rango y haz clic en Analizar</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
             </div>
           </TabsContent>
 
