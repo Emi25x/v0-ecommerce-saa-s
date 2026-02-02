@@ -465,10 +465,13 @@ export default function IntegrationsPage() {
                 </div>
               )}
 
-              {/* Link a plantillas de publicación */}
-              <div className="pt-3 border-t">
+              {/* Links a funcionalidades ML */}
+              <div className="pt-3 border-t space-y-2">
                 <Button variant="outline" className="w-full bg-transparent" asChild>
-                  <a href="/integrations/ml-templates">Configurar Plantillas de Publicacion</a>
+                  <a href="/integrations/ml-templates">Configurar Plantillas y Precios</a>
+                </Button>
+                <Button variant="default" className="w-full" asChild>
+                  <a href="/integrations/ml-publish">Publicar Productos en ML</a>
                 </Button>
               </div>
 

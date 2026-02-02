@@ -82,7 +82,7 @@ export default function MLPublishPage() {
       }
 
       // Fetch accounts
-      const accountsRes = await fetch("/api/ml/accounts")
+      const accountsRes = await fetch("/api/mercadolibre/accounts")
       const accountsData = await accountsRes.json()
       setAccounts(accountsData.accounts || [])
       if (accountsData.accounts?.length > 0) {
