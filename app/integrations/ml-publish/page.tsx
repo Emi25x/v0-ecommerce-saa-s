@@ -75,7 +75,7 @@ export default function MLPublishPage() {
   const [showPreview, setShowPreview] = useState(false)
   const [showOnlyUnpublished, setShowOnlyUnpublished] = useState(true)
   const [stats, setStats] = useState<Stats>({ total_in_db: 0, published_count: 0, available_count: 0 })
-  const [publishProgress, setPublishProgress] = useState({ current: 0, total: 0, success: 0, errors: 0 })
+  const [publishProgress, setPublishProgress] = useState({ current: 0, total: 0, success: 0, errors: 0, skipped: 0 })
   const [showPublishModal, setShowPublishModal] = useState(false)
   const [publishingInProgress, setPublishingInProgress] = useState(false)
   const [filterBrand, setFilterBrand] = useState<string>("")
@@ -224,14 +224,14 @@ export default function MLPublishPage() {
     }
     
     const productIds = data.ids
-    setPublishProgress({ current: 0, total: productIds.length, success: 0, errors: 0 })
+    setPublishProgress({ current: 0, total: productIds.length, success: 0, errors: 0, skipped: 0 })
     
     let successCount = 0
     let errorCount = 0
+    let skippedCount = 0
     
     for (let i = 0; i < productIds.length; i++) {
       const productId = productIds[i]
-      setPublishProgress(prev => ({ ...prev, current: i + 1 }))
       
       try {
         const response = await fetch("/api/ml/publish", {
@@ -246,16 +246,19 @@ export default function MLPublishPage() {
           })
         })
         
-        const data = await response.json()
-        if (data.success) {
+        const result = await response.json()
+        if (result.success) {
           successCount++
+        } else if (result.skipped) {
+          // Producto ya publicado, saltamos
+          skippedCount++
         } else {
           errorCount++
         }
-        setPublishProgress({ current: i + 1, total: productIds.length, success: successCount, errors: errorCount })
+        setPublishProgress({ current: i + 1, total: productIds.length, success: successCount, errors: errorCount, skipped: skippedCount })
       } catch {
         errorCount++
-        setPublishProgress({ current: i + 1, total: productIds.length, success: successCount, errors: errorCount })
+        setPublishProgress({ current: i + 1, total: productIds.length, success: successCount, errors: errorCount, skipped: skippedCount })
       }
       
       // Delay de 1 segundo entre publicaciones
@@ -268,7 +271,7 @@ export default function MLPublishPage() {
     
     toast({
       title: "Publicación completada",
-      description: `${successCount} publicados exitosamente, ${errorCount} con errores`
+      description: `${successCount} nuevos, ${skippedCount} ya existentes, ${errorCount} errores`
     })
     
     // Recargar productos disponibles
@@ -279,7 +282,7 @@ export default function MLPublishPage() {
   const closePublishModal = () => {
     if (publishingInProgress) return // No cerrar mientras está en progreso
     setShowPublishModal(false)
-    setPublishProgress({ current: 0, total: 0, success: 0, errors: 0 })
+    setPublishProgress({ current: 0, total: 0, success: 0, errors: 0, skipped: 0 })
   }
 
   // Los productos ya vienen filtrados del servidor
@@ -872,8 +875,9 @@ export default function MLPublishPage() {
                       style={{ width: `${publishProgress.total > 0 ? (publishProgress.current / publishProgress.total) * 100 : 0}%` }}
                     />
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-green-600">{publishProgress.success} exitosos</span>
+                  <div className="flex flex-wrap justify-between gap-2 text-sm">
+                    <span className="text-green-600">{publishProgress.success} nuevos</span>
+                    <span className="text-yellow-600">{publishProgress.skipped} ya existentes</span>
                     <span className="text-red-600">{publishProgress.errors} errores</span>
                     {publishingInProgress && (
                       <span className="text-muted-foreground">

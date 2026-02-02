@@ -136,6 +136,52 @@ export async function POST(request: NextRequest) {
     const validAccount = await refreshTokenIfNeeded(account)
     const accessToken = validAccount.access_token
 
+    // Verificar si el EAN/ISBN ya está publicado en ML por este vendedor
+    if (product.ean && !preview_only) {
+      try {
+        // Buscar items del vendedor que tengan este EAN en atributos
+        const searchUrl = `https://api.mercadolibre.com/users/${validAccount.ml_user_id}/items/search?search_type=scan&attributes=GTIN:${product.ean}`
+        const searchResponse = await fetch(searchUrl, {
+          headers: { "Authorization": `Bearer ${accessToken}` }
+        })
+        
+        if (searchResponse.ok) {
+          const searchData = await searchResponse.json()
+          if (searchData.results && searchData.results.length > 0) {
+            // Ya existe una publicación con este EAN
+            return NextResponse.json({
+              success: false,
+              skipped: true,
+              reason: "already_published",
+              existing_item_id: searchData.results[0],
+              message: `El EAN ${product.ean} ya está publicado en ML (${searchData.results[0]})`
+            })
+          }
+        }
+        
+        // También verificar en nuestra base de datos local
+        const { data: existingPub } = await supabase
+          .from("ml_publications")
+          .select("ml_item_id")
+          .eq("product_id", product_id)
+          .eq("account_id", account_id)
+          .maybeSingle()
+        
+        if (existingPub) {
+          return NextResponse.json({
+            success: false,
+            skipped: true,
+            reason: "already_in_db",
+            existing_item_id: existingPub.ml_item_id,
+            message: `Este producto ya está registrado como publicado (${existingPub.ml_item_id})`
+          })
+        }
+      } catch (searchError) {
+        console.log("[v0] Error checking existing publication:", searchError)
+        // Si falla la verificación, continuamos con la publicación
+      }
+    }
+
     // Calcular el precio
     let finalPrice = override_price
     let priceCalculation = null
