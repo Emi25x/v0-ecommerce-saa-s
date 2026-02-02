@@ -78,7 +78,8 @@ export async function POST(request: NextRequest) {
       product_id,      // ID del producto en nuestro catalogo
       template_id,     // ID de la plantilla a usar
       account_id,      // ID de la cuenta ML
-      override_price   // Precio manual (opcional)
+      override_price,  // Precio manual (opcional)
+      preview_only = true // Solo generar preview, no publicar
     } = body
 
     if (!product_id || !template_id || !account_id) {
@@ -187,28 +188,70 @@ export async function POST(request: NextRequest) {
       mlItem.attributes.push({ id: "PAGES", value_name: product.pages.toString() })
     }
 
-    // TODO: Publicar en ML (por ahora solo retornamos preview)
-    // const mlResponse = await fetch("https://api.mercadolibre.com/items", {
-    //   method: "POST",
-    //   headers: {
-    //     "Authorization": `Bearer ${account.access_token}`,
-    //     "Content-Type": "application/json"
-    //   },
-    //   body: JSON.stringify(mlItem)
-    // })
+    // Calcular margen real para verificacion
+    const mlCommission = finalPrice * 0.13
+    const shippingCostFinal = priceCalculation?.shippingCost || 0
+    const fixedFeeFinal = priceCalculation?.fixedFee || 0
+    const netReceived = finalPrice - mlCommission - shippingCostFinal - fixedFeeFinal
+    const costInArs = priceCalculation?.costInArs || (product.cost_price * 1765)
+    const actualMargin = ((netReceived - costInArs) / costInArs) * 100
+
+    // Si es solo preview, retornar sin publicar
+    if (preview_only) {
+      return NextResponse.json({
+        success: true,
+        preview: {
+          price: finalPrice,
+          margin: Math.round(actualMargin * 10) / 10,
+          multiplier: Math.round(finalPrice / product.cost_price),
+          exchange_rate: priceCalculation?.exchangeRate || 1765,
+          ml_item: mlItem
+        }
+      })
+    }
+
+    // Publicar en ML
+    const mlResponse = await fetch("https://api.mercadolibre.com/items", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${account.access_token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(mlItem)
+    })
+
+    const mlData = await mlResponse.json()
+
+    if (!mlResponse.ok) {
+      return NextResponse.json({
+        success: false,
+        error: mlData.message || mlData.error || "Error al publicar en ML"
+      }, { status: 400 })
+    }
+
+    // Guardar en nuestra base de datos
+    const { error: insertError } = await supabase
+      .from("ml_publications")
+      .insert({
+        product_id: product.id,
+        account_id: account.id,
+        ml_item_id: mlData.id,
+        title: mlData.title,
+        price: mlData.price,
+        status: mlData.status,
+        permalink: mlData.permalink,
+        published_at: new Date().toISOString()
+      })
+
+    if (insertError) {
+      console.error("Error saving publication:", insertError)
+    }
 
     return NextResponse.json({
       success: true,
-      preview: true, // Indica que es solo preview, no publicado aun
-      product: {
-        id: product.id,
-        title: product.title,
-        cost_price_eur: product.cost_price,
-      },
-      price_calculation: priceCalculation,
-      final_price_ars: finalPrice,
-      ml_item: mlItem,
-      message: "Preview de publicacion generado. Para publicar, confirma la accion."
+      ml_item_id: mlData.id,
+      permalink: mlData.permalink,
+      status: mlData.status
     })
 
   } catch (error) {
