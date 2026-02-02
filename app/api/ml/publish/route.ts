@@ -197,15 +197,15 @@ export async function POST(request: NextRequest) {
       attributes: [] as Array<{ id: string; value_name: string }>
     }
     
+    // Para libros (MLA3025) SIEMPRE se necesita family_name
+    // Usar el nombre del catalogo si lo encontramos, sino el titulo del producto
+    mlItem.family_name = familyName || product.title?.substring(0, 60) || "Libro"
+    
     // Si encontramos el producto en el catalogo y modo es catalog, usar catalog_product_id
-    if (publish_mode === "catalog") {
-      if (catalogProductId) {
-        mlItem.catalog_product_id = catalogProductId
-      } else if (familyName) {
-        mlItem.family_name = familyName
-      }
+    if (publish_mode === "catalog" && catalogProductId) {
+      mlItem.catalog_product_id = catalogProductId
     }
-    // En modo tradicional no se vincula al catalogo
+    // En modo tradicional o linked no se usa catalog_product_id al crear
 
     // Agregar atributos basicos
     const attributes = mlItem.attributes as Array<{ id: string; value_name: string }>
@@ -251,11 +251,14 @@ export async function POST(request: NextRequest) {
     const validAccount = await refreshTokenIfNeeded(account)
     const accessToken = validAccount.access_token
 
-    // Para modo "linked", primero crear tradicional SIN catalog_product_id
-    const itemToPublish = { ...mlItem }
+    // Para modo "linked", primero crear tradicional SIN catalog_product_id pero CON family_name
+    const itemToPublish = { ...mlItem } as Record<string, unknown>
     if (publish_mode === "linked") {
       delete itemToPublish.catalog_product_id
-      delete itemToPublish.family_name
+      // family_name es REQUERIDO para libros, usar titulo si no tenemos del catalogo
+      if (!itemToPublish.family_name) {
+        itemToPublish.family_name = product.title?.substring(0, 60) || "Libro"
+      }
     }
 
     // Publicar en ML (tradicional primero si es linked)
