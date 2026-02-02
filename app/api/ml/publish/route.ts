@@ -206,12 +206,19 @@ export async function POST(request: NextRequest) {
       
       const attributes: Array<{ id: string; value_name?: string; value_id?: string }> = []
       
-      // REQUERIDOS por ML para libros (segun API /categories/MLA412445/attributes)
+      // REQUERIDOS por ML para libros MLA412445
       // BOOK_TITLE - Titulo del libro (required, catalog_required)
       attributes.push({ id: "BOOK_TITLE", value_name: product.title?.substring(0, 255) || "Libro" })
       
       // AUTHOR - Autor (required, catalog_required)
       attributes.push({ id: "AUTHOR", value_name: product.author || "Autor desconocido" })
+      
+      // BOOK_GENRE - Genero del libro (required para MLA412445)
+      // Usamos subject del producto o un valor generico
+      attributes.push({ id: "BOOK_GENRE", value_name: product.subject || "Literatura general" })
+      
+      // PUBLISHER - Editorial del libro (catalog_required)
+      attributes.push({ id: "PUBLISHER", value_name: product.brand || "Editorial independiente" })
       
       // GTIN/ISBN
       if (product.ean) {
