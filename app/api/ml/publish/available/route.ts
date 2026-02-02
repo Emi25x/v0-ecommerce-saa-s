@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
     const onlyIds = searchParams.get("only_ids") === "true" // Para selección masiva
     const page = parseInt(searchParams.get("page") || "1")
     const pageSize = parseInt(searchParams.get("page_size") || "100") // Default 100 para UI
+    const minStock = parseInt(searchParams.get("min_stock") || "5") // Stock mínimo por defecto 5
 
     // Obtener IDs de productos ya publicados en ml_publications
     let publishedProductIds = new Set<string>()
@@ -48,6 +49,7 @@ export async function GET(request: NextRequest) {
           .from("products")
           .select("id")
           .gt("cost_price", 0)
+          .gte("stock", minStock)
           .range(offset, offset + batchSize - 1)
         
         if (!batch || batch.length === 0) {
@@ -71,21 +73,22 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Query normal paginada para mostrar en UI
+    // Query normal paginada para mostrar en UI (sin count para evitar timeout)
     const from = (page - 1) * pageSize
     const to = from + pageSize - 1
     
-    const { data: allProducts, error, count } = await supabase
+    const { data: allProducts, error } = await supabase
       .from("products")
-      .select("id, ean, title, cost_price, price, stock, brand, image_url, language", { count: "exact" })
+      .select("id, ean, title, cost_price, price, stock, brand, image_url, language")
       .gt("cost_price", 0)
+      .gte("stock", minStock)
       .range(from, to)
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // Filtrar segun el parametro show_all
+    // Filtrar segun el parametro show_all (por defecto solo NO publicados)
     let resultProducts = allProducts || []
     if (!showAll) {
       resultProducts = resultProducts.filter(p => !allPublishedIds.has(p.id))
@@ -97,20 +100,18 @@ export async function GET(request: NextRequest) {
       is_published: allPublishedIds.has(p.id)
     }))
 
-    // Calcular total de productos sin publicar (aproximado basado en count - published)
-    const totalInDb = count || 0
-    const unpublishedCount = Math.max(0, totalInDb - allPublishedIds.size)
+    // has_more basado en si obtuvimos el máximo de resultados
+    const hasMore = (allProducts?.length || 0) >= pageSize
 
     return NextResponse.json({ 
       products: productsWithStatus,
       total: productsWithStatus.length,
-      total_in_db: totalInDb,
       published_count: allPublishedIds.size,
-      unpublished_count: unpublishedCount,
       page,
       page_size: pageSize,
+      min_stock: minStock,
       show_all: showAll,
-      has_more: (page * pageSize) < totalInDb
+      has_more: hasMore
     })
   } catch (error) {
     console.error("Error fetching available products:", error)

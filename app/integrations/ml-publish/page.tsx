@@ -65,7 +65,7 @@ export default function MLPublishPage() {
   const [selectedTemplate, setSelectedTemplate] = useState<string>("")
   const [selectedAccount, setSelectedAccount] = useState<string>("")
   const [searchTerm, setSearchTerm] = useState("")
-  const [minStock, setMinStock] = useState<number>(0)
+  const [minStock, setMinStock] = useState<number>(5)
   const [minPrice, setMinPrice] = useState<number>(0)
   const [maxPrice, setMaxPrice] = useState<number>(1000)
   const [languageFilter, setLanguageFilter] = useState<string>("SPA")
@@ -81,19 +81,19 @@ export default function MLPublishPage() {
 
   useEffect(() => {
     fetchData()
-  }, [showOnlyUnpublished])
+  }, [showOnlyUnpublished, minStock])
 
   const fetchData = async () => {
     setLoading(true)
     try {
       // Fetch products paginados (100 por página para UI)
-      const productsRes = await fetch(`/api/ml/publish/available?show_all=${!showOnlyUnpublished}&page_size=100`)
+      const productsRes = await fetch(`/api/ml/publish/available?show_all=${!showOnlyUnpublished}&page_size=100&min_stock=${minStock}`)
       const productsData = await productsRes.json()
       setProducts(productsData.products || [])
       setStats({
-        total_in_db: productsData.total_in_db || 0,
+        total_in_db: productsData.total || 0,
         published_count: productsData.published_count || 0,
-        available_count: productsData.unpublished_count || productsData.total || 0
+        available_count: productsData.total || 0
       })
 
       // Fetch templates
