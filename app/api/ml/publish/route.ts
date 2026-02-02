@@ -125,6 +125,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Cuenta ML no encontrada" }, { status: 404 })
     }
 
+    // Refrescar token si es necesario para tener access_token valido
+    const validAccount = await refreshTokenIfNeeded(account)
+    const accessToken = validAccount.access_token
+
     // Calcular el precio
     let finalPrice = override_price
     let priceCalculation = null
@@ -163,11 +167,11 @@ export async function POST(request: NextRequest) {
     let catalogProductId: string | null = null
     
     // SIEMPRE buscar en catalogo - ML rechaza "title" si el ISBN existe en su catalogo
-    if (product.ean && account.access_token) {
+    if (product.ean && accessToken) {
       try {
         const catalogSearch = await fetch(
           `https://api.mercadolibre.com/products/search?status=active&site_id=MLA&product_identifier=${product.ean}`,
-          { headers: { Authorization: `Bearer ${account.access_token}` } }
+          { headers: { Authorization: `Bearer ${accessToken}` } }
         )
         
         if (catalogSearch.ok) {
@@ -270,10 +274,6 @@ export async function POST(request: NextRequest) {
         }
       })
     }
-
-    // Refrescar token si es necesario
-    const validAccount = await refreshTokenIfNeeded(account)
-    const accessToken = validAccount.access_token
 
     // El mlItem ya esta preparado correctamente segun el publish_mode
     // Para "linked" y "traditional" ya tiene title y family_name
