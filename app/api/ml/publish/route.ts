@@ -154,10 +154,9 @@ export async function POST(request: NextRequest) {
 
     // Funcion para subir imagen directamente a ML usando multipart/form-data
     // Esto evita problemas de Cloudflare porque subimos el binario directo a ML
-    const uploadImageToML = async (imageUrl: string): Promise<string | null> => {
+    // ML requiere mínimo 500px en uno de los lados
+    const uploadImageToML = async (imageUrl: string): Promise<{ id: string | null, error?: string }> => {
       try {
-        console.log("[v0] Downloading image from:", imageUrl)
-        
         // Descargar imagen con headers de navegador
         const response = await fetch(imageUrl, {
           headers: {
@@ -167,23 +166,18 @@ export async function POST(request: NextRequest) {
         })
         
         if (!response.ok) {
-          console.log("[v0] Failed to download image:", response.status)
-          return null
+          return { id: null, error: `No se pudo descargar la imagen (${response.status})` }
         }
         
         const contentType = response.headers.get("content-type") || ""
         if (contentType.includes("text/html")) {
-          console.log("[v0] Got HTML instead of image (Cloudflare block)")
-          return null
+          return { id: null, error: "La URL de imagen está bloqueada por Cloudflare" }
         }
         
         const imageBuffer = await response.arrayBuffer()
         if (imageBuffer.byteLength < 1000) {
-          console.log("[v0] Image too small, skipping")
-          return null
+          return { id: null, error: "La imagen es muy pequeña (menos de 1KB)" }
         }
-        
-        console.log("[v0] Uploading image to ML, size:", imageBuffer.byteLength)
         
         // Crear FormData para multipart upload
         const formData = new FormData()
@@ -200,25 +194,31 @@ export async function POST(request: NextRequest) {
         })
         
         if (!uploadResponse.ok) {
-          const error = await uploadResponse.text()
-          console.log("[v0] ML upload failed:", error)
-          return null
+          const errorData = await uploadResponse.json().catch(() => ({ message: "Error desconocido" }))
+          // ML devuelve error específico si la imagen es menor a 500px
+          if (errorData.message?.includes("500 píxeles")) {
+            return { id: null, error: "Imagen muy pequeña (ML requiere mínimo 500px). Se publicará sin imagen." }
+          }
+          return { id: null, error: errorData.message || "Error al subir imagen a ML" }
         }
         
         const uploadData = await uploadResponse.json()
-        console.log("[v0] Image uploaded to ML with ID:", uploadData.id)
-        return uploadData.id // Retorna el ID de la imagen en ML
+        return { id: uploadData.id }
       } catch (error) {
-        console.log("[v0] Error uploading image:", error)
-        return null
+        return { id: null, error: `Error: ${error}` }
       }
     }
     
     // Subir imagen a ML si existe
     let imageUrlForML: string | null = null
     let mlPictureId: string | null = null
+    let imageWarning: string | null = null
     if (product.image_url) {
-      mlPictureId = await uploadImageToML(product.image_url)
+      const uploadResult = await uploadImageToML(product.image_url)
+      mlPictureId = uploadResult.id
+      if (uploadResult.error) {
+        imageWarning = uploadResult.error
+      }
     }
 
     // Funcion para sanitizar texto a plain text (quitar HTML y caracteres especiales)
@@ -730,6 +730,7 @@ Libro nuevo. Envíos a todo el país.`
       // Debug info
       image_url_sent: product.image_url || null,
       ml_picture_id: mlPictureId || null,
+      image_warning: imageWarning,
       pictures_in_response: mlData.pictures || [],
       description_added: descriptionAdded,
       description_error: descriptionError,
