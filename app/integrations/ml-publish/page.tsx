@@ -79,6 +79,8 @@ export default function MLPublishPage() {
   const [publishProgress, setPublishProgress] = useState({ current: 0, total: 0, success: 0, errors: 0, skipped: 0 })
   const [showPublishModal, setShowPublishModal] = useState(false)
   const [publishingInProgress, setPublishingInProgress] = useState(false)
+  const [testLimit, setTestLimit] = useState<number>(5) // Límite para pruebas
+  const [totalAvailable, setTotalAvailable] = useState<number>(0) // Total disponible con filtros
   const [filterBrand, setFilterBrand] = useState<string>("")
   const [filterLanguage, setFilterLanguage] = useState<string>("")
   const [excludeIbd, setExcludeIbd] = useState<boolean>(true) // Por defecto excluir IBD
@@ -209,6 +211,20 @@ export default function MLPublishPage() {
       toast({ title: "Error", description: "Selecciona plantilla y cuenta primero", variant: "destructive" })
       return
     }
+    
+    // Obtener total disponible antes de abrir el modal
+    const fetchTotalAvailable = async () => {
+      try {
+        const res = await fetch(buildFilterUrl(true))
+        const data = await res.json()
+        setTotalAvailable(data.ids?.length || 0)
+      } catch {
+        setTotalAvailable(0)
+      }
+    }
+    
+    fetchTotalAvailable()
+    
     setShowPublishModal(true)
   }
   
@@ -226,7 +242,9 @@ export default function MLPublishPage() {
       return
     }
     
-    const productIds = data.ids
+    // Aplicar límite de prueba si está configurado
+    const allIds = data.ids
+    const productIds = testLimit > 0 ? allIds.slice(0, testLimit) : allIds
     setPublishProgress({ current: 0, total: productIds.length, success: 0, errors: 0, skipped: 0 })
     
     let successCount = 0
@@ -868,7 +886,7 @@ if (data.success) {
             <CardHeader>
               <CardTitle>Publicación masiva</CardTitle>
               <CardDescription>
-                Se publicarán todos los productos que coinciden con los filtros actuales
+                {totalAvailable.toLocaleString()} productos disponibles con los filtros actuales
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -886,8 +904,33 @@ if (data.success) {
                       <li>Excluir IBD: {excludeIbd ? "Sí" : "No"}</li>
                     </ul>
                   </div>
+                  
+                  <div className="p-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg space-y-3">
+                    <p className="text-sm font-medium">Límite de publicación (para pruebas)</p>
+                    <div className="flex items-center gap-3">
+                      <Input
+                        type="number"
+                        value={testLimit}
+                        onChange={(e) => setTestLimit(parseInt(e.target.value) || 0)}
+                        className="w-24"
+                        min={0}
+                      />
+                      <span className="text-sm text-muted-foreground">
+                        {testLimit === 0 
+                          ? `Publicar todos (${totalAvailable.toLocaleString()})` 
+                          : `Publicar solo ${testLimit} de ${totalAvailable.toLocaleString()}`
+                        }
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Usa un número bajo (ej: 5) para probar. Pon 0 para publicar todos.
+                    </p>
+                  </div>
+                  
                   <p className="text-sm text-muted-foreground">
                     Se publicará 1 producto por segundo para no saturar la API de ML.
+                    {testLimit > 0 && ` Tiempo estimado: ~${testLimit} segundos.`}
+                    {testLimit === 0 && totalAvailable > 0 && ` Tiempo estimado: ~${Math.ceil(totalAvailable / 60)} minutos.`}
                   </p>
                 </>
               )}
