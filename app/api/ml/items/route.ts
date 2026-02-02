@@ -122,7 +122,7 @@ export async function GET(request: NextRequest) {
 
     console.log("[v0] Fetching products from ML API:", searchUrl)
 
-    const searchResponse = await fetchWithRetry(searchUrl, {
+    const searchResponse = await fetch(searchUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
 
@@ -160,7 +160,7 @@ export async function GET(request: NextRequest) {
       const itemsUrl = `https://api.mercadolibre.com/items?ids=${chunk.join(",")}`
       console.log("[v0] Fetching chunk:", itemsUrl)
 
-      const itemsResponse = await fetchWithRetry(itemsUrl, {
+      const itemsResponse = await fetch(itemsUrl, {
         headers: { Authorization: `Bearer ${accessToken}` },
       })
 

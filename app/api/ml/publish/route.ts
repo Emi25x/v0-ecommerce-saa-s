@@ -219,14 +219,20 @@ export async function POST(request: NextRequest) {
       // binding             | BOOK_COVER_TYPE    | Tipo de tapa          | string
       // subject             | BOOK_SUBGENRE      | Subgénero             | string
       
-      // REQUERIDOS por ML
+      // REQUERIDOS por ML para MLA412445
+      // BOOK_TITLE - Titulo (required)
       attributes.push({ id: "BOOK_TITLE", value_name: product.title?.substring(0, 255) || "Libro" })
+      
+      // AUTHOR - Autor (required)
       attributes.push({ id: "AUTHOR", value_name: product.author || "Desconocido" })
       
-      // PUBLISHER (Editorial) - usando brand
-      if (product.brand) {
-        attributes.push({ id: "PUBLISHER", value_name: product.brand.substring(0, 255) })
-      }
+      // BOOK_GENRE - Genero del libro (required para marketplace channel)
+      // Es un campo string libre segun algunos reportes, no lista
+      attributes.push({ id: "BOOK_GENRE", value_name: "Ficción" })
+      
+      // PUBLISHER - Editorial del libro (catalog_required)
+      // IMPORTANTE: Siempre enviar, usar valor por defecto si no hay
+      attributes.push({ id: "PUBLISHER", value_name: product.brand?.substring(0, 255) || "Editorial independiente" })
       
       // GTIN/ISBN
       if (product.ean) {
