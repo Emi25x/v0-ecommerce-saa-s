@@ -1,7 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { refreshTokenIfNeeded } from "@/lib/mercadolibre"
-import { put } from "@vercel/blob"
 
 // Calcular precio usando la formula de margen
 async function calculatePriceForProduct(costPriceEur: number, marginPercent: number) {
@@ -153,15 +152,16 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Funcion para subir imagen a Vercel Blob (accesible publicamente para ML)
-    const uploadImageToBlob = async (imageUrl: string, ean: string): Promise<string | null> => {
+    // Funcion para subir imagen directamente a ML usando multipart/form-data
+    // Esto evita problemas de Cloudflare porque subimos el binario directo a ML
+    const uploadImageToML = async (imageUrl: string): Promise<string | null> => {
       try {
         console.log("[v0] Downloading image from:", imageUrl)
         
         // Descargar imagen con headers de navegador
         const response = await fetch(imageUrl, {
           headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
           }
         })
@@ -183,28 +183,42 @@ export async function POST(request: NextRequest) {
           return null
         }
         
-        // Subir a Vercel Blob
-        const filename = `products/${ean}.jpg`
-        const blob = await put(filename, imageBuffer, {
-          access: "public",
-          contentType: contentType || "image/jpeg",
+        console.log("[v0] Uploading image to ML, size:", imageBuffer.byteLength)
+        
+        // Crear FormData para multipart upload
+        const formData = new FormData()
+        const blob = new Blob([imageBuffer], { type: contentType || "image/jpeg" })
+        formData.append("file", blob, "image.jpg")
+        
+        // Subir a ML usando multipart/form-data
+        const uploadResponse = await fetch("https://api.mercadolibre.com/pictures/items/upload", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+          },
+          body: formData,
         })
         
-        console.log("[v0] Image uploaded to Blob:", blob.url)
-        return blob.url
+        if (!uploadResponse.ok) {
+          const error = await uploadResponse.text()
+          console.log("[v0] ML upload failed:", error)
+          return null
+        }
+        
+        const uploadData = await uploadResponse.json()
+        console.log("[v0] Image uploaded to ML with ID:", uploadData.id)
+        return uploadData.id // Retorna el ID de la imagen en ML
       } catch (error) {
-        console.log("[v0] Error uploading to Blob:", error)
+        console.log("[v0] Error uploading image:", error)
         return null
       }
     }
     
-    // Subir imagen a Vercel Blob si existe
-    let imageUrlForML = product.image_url
-    if (product.image_url && product.ean) {
-      const blobUrl = await uploadImageToBlob(product.image_url, product.ean)
-      if (blobUrl) {
-        imageUrlForML = blobUrl
-      }
+    // Subir imagen a ML si existe
+    let imageUrlForML: string | null = null
+    let mlPictureId: string | null = null
+    if (product.image_url) {
+      mlPictureId = await uploadImageToML(product.image_url)
     }
 
     // Funcion para sanitizar texto a plain text (quitar HTML y caracteres especiales)
@@ -275,7 +289,6 @@ Libro nuevo. Envíos a todo el país.`
     // Buscar en el catalogo de ML si el modo es "catalog" o "linked"
     let familyName: string | null = null
     let catalogProductId: string | null = null
-    let mlPictureId: string | null = null // Declare the variable here
     
     // SIEMPRE buscar en catalogo - ML rechaza "title" si el ISBN existe en su catalogo
     if (product.ean && accessToken) {
@@ -388,13 +401,12 @@ Libro nuevo. Envíos a todo el país.`
         attributes.push({ id: "PAGES_NUMBER", value_name: product.pages.toString() })
       }
       
-// Para vendedores con User Products (tag user_product_seller),
-      // NO se debe enviar "title", solo "family_name". ML genera el title automaticamente.
-      
-      // Usar la URL de Blob si se subió, sino la original
-      const pictures: Array<{ source: string }> = []
-      if (imageUrlForML) {
-        pictures.push({ source: imageUrlForML })
+      // Usar el ID de imagen subido a ML, o URL como fallback
+      const pictures: Array<{ id?: string; source?: string }> = []
+      if (mlPictureId) {
+        pictures.push({ id: mlPictureId })
+      } else if (product.image_url) {
+        pictures.push({ source: product.image_url })
       }
       
       return {
@@ -422,12 +434,14 @@ Libro nuevo. Envíos a todo el país.`
       }
     }
     
-// Helper para construir publicacion de catalogo
+    // Helper para construir publicacion de catalogo
     const buildCatalogItem = () => {
-      // Usar la URL de Blob si se subió, sino la original
-      const pictures: Array<{ source: string }> = []
-      if (imageUrlForML) {
-        pictures.push({ source: imageUrlForML })
+      // Usar el ID de imagen subido a ML, o URL como fallback
+      const pictures: Array<{ id?: string; source?: string }> = []
+      if (mlPictureId) {
+        pictures.push({ id: mlPictureId })
+      } else if (product.image_url) {
+        pictures.push({ source: product.image_url })
       }
       
       return {
