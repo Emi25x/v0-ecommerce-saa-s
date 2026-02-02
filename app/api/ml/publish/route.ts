@@ -184,6 +184,54 @@ Libro nuevo. Envíos a todo el país.`
     description = description.replace(/{height}/g, product.height?.toString() || "")
     description = description.replace(/{thickness}/g, product.thickness?.toString() || "")
 
+    // Funcion para subir imagen a ML (descarga de URL externa y sube a ML)
+    const uploadImageToML = async (imageUrl: string): Promise<string | null> => {
+      try {
+        console.log("[v0] Downloading image from:", imageUrl)
+        
+        // Descargar la imagen
+        const imageResponse = await fetch(imageUrl)
+        if (!imageResponse.ok) {
+          console.error("[v0] Failed to download image:", imageResponse.status)
+          return null
+        }
+        
+        const imageBuffer = await imageResponse.arrayBuffer()
+        const contentType = imageResponse.headers.get("content-type") || "image/jpeg"
+        
+        console.log("[v0] Uploading image to ML, size:", imageBuffer.byteLength, "type:", contentType)
+        
+        // Subir a ML
+        const uploadResponse = await fetch("https://api.mercadolibre.com/pictures/items/upload", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": contentType,
+          },
+          body: imageBuffer,
+        })
+        
+        if (!uploadResponse.ok) {
+          const uploadError = await uploadResponse.text()
+          console.error("[v0] Failed to upload image to ML:", uploadError)
+          return null
+        }
+        
+        const uploadData = await uploadResponse.json()
+        console.log("[v0] Image uploaded to ML:", uploadData.id)
+        return uploadData.id // Retorna el ID de la imagen en ML
+      } catch (error) {
+        console.error("[v0] Error uploading image:", error)
+        return null
+      }
+    }
+    
+    // Subir imagen a ML si existe
+    let mlPictureId: string | null = null
+    if (product.image_url) {
+      mlPictureId = await uploadImageToML(product.image_url)
+    }
+
     // Buscar en el catalogo de ML si el modo es "catalog" o "linked"
     let familyName: string | null = null
     let catalogProductId: string | null = null
@@ -302,9 +350,13 @@ Libro nuevo. Envíos a todo el país.`
       // Para vendedores con User Products (tag user_product_seller),
       // NO se debe enviar "title", solo "family_name". ML genera el title automaticamente.
       
-      // Construir array de pictures
-      const pictures: Array<{ source: string }> = []
-      if (product.image_url) {
+      // Construir array de pictures - usar ID de ML si se subio, sino URL original
+      const pictures: Array<{ id?: string; source?: string }> = []
+      if (mlPictureId) {
+        // Usar la imagen subida a ML
+        pictures.push({ id: mlPictureId })
+      } else if (product.image_url) {
+        // Fallback a URL original (puede no funcionar si ML no puede acceder)
         pictures.push({ source: product.image_url })
       }
       
@@ -336,9 +388,11 @@ Libro nuevo. Envíos a todo el país.`
     
     // Helper para construir publicacion de catalogo
     const buildCatalogItem = () => {
-      // Construir array de pictures
-      const pictures: Array<{ source: string }> = []
-      if (product.image_url) {
+      // Construir array de pictures - usar ID de ML si se subio
+      const pictures: Array<{ id?: string; source?: string }> = []
+      if (mlPictureId) {
+        pictures.push({ id: mlPictureId })
+      } else if (product.image_url) {
         pictures.push({ source: product.image_url })
       }
       
