@@ -57,6 +57,9 @@ export default function MLPublishPage() {
   const [selectedTemplate, setSelectedTemplate] = useState<string>("")
   const [selectedAccount, setSelectedAccount] = useState<string>("")
   const [searchTerm, setSearchTerm] = useState("")
+  const [minStock, setMinStock] = useState<number>(0)
+  const [minPrice, setMinPrice] = useState<number>(0)
+  const [maxPrice, setMaxPrice] = useState<number>(1000)
   const [previews, setPreviews] = useState<PublishPreview[]>([])
   const [publishing, setPublishing] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
@@ -106,17 +109,28 @@ export default function MLPublishPage() {
   }
 
   const selectAll = () => {
-    if (selectedProducts.size === filteredProducts.length) {
-      setSelectedProducts(new Set())
+    const visibleProducts = filteredProducts.slice(0, 50)
+    const allVisibleSelected = visibleProducts.every(p => selectedProducts.has(p.id))
+    
+    if (allVisibleSelected) {
+      // Deseleccionar todos los visibles
+      const newSelected = new Set(selectedProducts)
+      visibleProducts.forEach(p => newSelected.delete(p.id))
+      setSelectedProducts(newSelected)
     } else {
-      setSelectedProducts(new Set(filteredProducts.map(p => p.id)))
+      // Seleccionar todos los visibles
+      const newSelected = new Set(selectedProducts)
+      visibleProducts.forEach(p => newSelected.add(p.id))
+      setSelectedProducts(newSelected)
     }
   }
 
-  const filteredProducts = products.filter(p =>
-    p.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.ean.includes(searchTerm)
-  )
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = p.title.toLowerCase().includes(searchTerm.toLowerCase()) || p.ean.includes(searchTerm)
+    const matchesStock = (p.stock || 0) >= minStock
+    const matchesPrice = p.cost_price >= minPrice && p.cost_price <= maxPrice
+    return matchesSearch && matchesStock && matchesPrice
+  })
 
   const generatePreviews = async () => {
     console.log("[v0] generatePreviews - selectedProducts:", selectedProducts.size)
@@ -303,20 +317,65 @@ export default function MLPublishPage() {
           {/* Lista de productos */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Productos disponibles</CardTitle>
-                  <CardDescription>
-                    {products.length} productos con precio de costo, no publicados en ML
-                  </CardDescription>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Productos disponibles</CardTitle>
+                    <CardDescription>
+                      {filteredProducts.length} de {products.length} productos
+                    </CardDescription>
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={selectAll}
+                    className="bg-transparent"
+                  >
+                    {selectedProducts.size === filteredProducts.length && filteredProducts.length > 0 
+                      ? "Deseleccionar todos" 
+                      : `Seleccionar ${filteredProducts.length > 50 ? 50 : filteredProducts.length}`}
+                  </Button>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Input
-                    placeholder="Buscar por titulo o EAN..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-64"
-                  />
+                
+                {/* Filtros */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Buscar</Label>
+                    <Input
+                      placeholder="Titulo o EAN..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Stock minimo</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={minStock}
+                      onChange={(e) => setMinStock(Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Precio min (EUR)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={0.5}
+                      value={minPrice}
+                      onChange={(e) => setMinPrice(Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Precio max (EUR)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={0.5}
+                      value={maxPrice}
+                      onChange={(e) => setMaxPrice(Number(e.target.value))}
+                    />
+                  </div>
                 </div>
               </div>
             </CardHeader>
@@ -327,7 +386,7 @@ export default function MLPublishPage() {
                     <TableRow>
                       <TableHead className="w-12">
                         <Checkbox
-                          checked={selectedProducts.size === filteredProducts.length && filteredProducts.length > 0}
+                          checked={filteredProducts.slice(0, 50).every(p => selectedProducts.has(p.id)) && filteredProducts.length > 0}
                           onCheckedChange={selectAll}
                         />
                       </TableHead>
