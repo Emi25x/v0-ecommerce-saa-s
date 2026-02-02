@@ -66,7 +66,7 @@ export default function MLPublishPage() {
   const [selectedAccount, setSelectedAccount] = useState<string>("")
   const [searchTerm, setSearchTerm] = useState("")
   const [minStock, setMinStock] = useState<number>(5)
-  const [minPrice, setMinPrice] = useState<number>(0)
+  const [minPrice, setMinPrice] = useState<number>(9)
   const [maxPrice, setMaxPrice] = useState<number>(1000)
   const [languageFilter, setLanguageFilter] = useState<string>("SPA")
   const [publishMode, setPublishMode] = useState<"linked" | "catalog" | "traditional">("linked")
