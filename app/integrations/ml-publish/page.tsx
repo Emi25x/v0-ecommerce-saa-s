@@ -967,21 +967,22 @@ export default function MLPublishPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4 overflow-y-auto flex-1">
+              {/* Filtros siempre visibles */}
+              <div className="p-4 bg-muted rounded-lg space-y-2">
+                <p className="text-sm"><strong>Filtros aplicados:</strong></p>
+                <ul className="text-sm text-muted-foreground space-y-1 grid grid-cols-2 gap-1">
+                  <li>Stock mínimo: {minStock}</li>
+                  <li>Precio: EUR {minPrice} - {maxPrice}</li>
+                  {languageFilter && languageFilter !== "ALL" && <li>Idioma: {languageFilter}</li>}
+                  {filterBrand && <li>Marca: {filterBrand}</li>}
+                  {searchTerm && <li>Búsqueda: {searchTerm}</li>}
+                  <li>Solo sin publicar: {showOnlyUnpublished ? "Sí" : "No"}</li>
+                  <li>Excluir IBD: {excludeIbd ? "Sí" : "No"}</li>
+                </ul>
+              </div>
+              
               {!publishingInProgress && publishProgress.total === 0 && (
                 <>
-                  <div className="p-4 bg-muted rounded-lg space-y-2">
-                    <p className="text-sm"><strong>Filtros aplicados:</strong></p>
-                    <ul className="text-sm text-muted-foreground space-y-1">
-                      <li>Stock mínimo: {minStock}</li>
-                      <li>Precio: EUR {minPrice} - {maxPrice}</li>
-                      {languageFilter && languageFilter !== "ALL" && <li>Idioma: {languageFilter}</li>}
-                      {filterBrand && <li>Marca: {filterBrand}</li>}
-                      {searchTerm && <li>Búsqueda: {searchTerm}</li>}
-                      <li>Solo sin publicar: {showOnlyUnpublished ? "Sí" : "No"}</li>
-                      <li>Excluir IBD: {excludeIbd ? "Sí" : "No"}</li>
-                    </ul>
-                  </div>
-                  
                   <div className="p-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg space-y-3">
                     <p className="text-sm font-medium">Límite de publicación (para pruebas)</p>
                     <div className="flex items-center gap-3">
@@ -1009,6 +1010,11 @@ export default function MLPublishPage() {
                     {testLimit > 0 && ` Tiempo estimado: ~${Math.ceil(testLimit * 2 / 60)} minutos.`}
                     {testLimit === 0 && totalAvailable > 0 && ` Tiempo estimado: ~${Math.ceil(totalAvailable * 2 / 60)} minutos.`}
                   </p>
+                  <div className="p-3 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                    <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                      <strong>Importante:</strong> No cierres esta ventana durante la publicación. El proceso se ejecuta en tu navegador.
+                    </p>
+                  </div>
                 </>
               )}
               
@@ -1060,19 +1066,7 @@ export default function MLPublishPage() {
                               </td>
                               <td className="p-2">
                                 {result.status === "success" && (
-                                  <div>
-                                    <Badge className="bg-green-500">Publicado</Badge>
-                                    {result.ml_item_id && (
-                                      <a 
-                                        href={`https://articulo.mercadolibre.com.ar/${result.ml_item_id}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-xs text-blue-500 hover:underline block mt-1"
-                                      >
-                                        Ver en ML
-                                      </a>
-                                    )}
-                                  </div>
+                                  <Badge className="bg-green-500">Publicado</Badge>
                                 )}
                                 {result.status === "skipped" && (
                                   <Badge className="bg-yellow-500 text-black">Ya existía</Badge>
