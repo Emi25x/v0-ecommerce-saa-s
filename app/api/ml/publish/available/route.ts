@@ -10,6 +10,11 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get("page") || "1")
     const pageSize = parseInt(searchParams.get("page_size") || "100") // Default 100 para UI
     const minStock = parseInt(searchParams.get("min_stock") || "5") // Stock mínimo por defecto 5
+    const minPrice = parseFloat(searchParams.get("min_price") || "0")
+    const maxPrice = parseFloat(searchParams.get("max_price") || "999999")
+    const language = searchParams.get("language") || ""
+    const brand = searchParams.get("brand") || ""
+    const search = searchParams.get("search") || ""
 
     // Obtener IDs de productos ya publicados en ml_publications
     let publishedProductIds = new Set<string>()
@@ -36,53 +41,79 @@ export async function GET(request: NextRequest) {
     // Combinar ambos sets
     const allPublishedIds = new Set([...publishedProductIds, ...publishedListingsProductIds])
 
-    // Si solo necesitamos IDs (para selección masiva), hacemos query más liviana
+    // Si solo necesitamos IDs (para publicación masiva), hacemos query con todos los filtros
     if (onlyIds) {
-      // Traer solo IDs en lotes de 1000 para evitar timeout
       const allIds: string[] = []
       let offset = 0
       const batchSize = 1000
       let hasMore = true
       
       while (hasMore) {
-        const { data: batch } = await supabase
+        let query = supabase
           .from("products")
-          .select("id")
+          .select("id, cost_price, language, brand, title, ean")
           .gt("cost_price", 0)
           .gte("stock", minStock)
-          .range(offset, offset + batchSize - 1)
+          .gte("cost_price", minPrice)
+          .lte("cost_price", maxPrice)
+        
+        // Aplicar filtros opcionales
+        if (language) {
+          query = query.ilike("language", language)
+        }
+        if (brand) {
+          query = query.ilike("brand", `%${brand}%`)
+        }
+        if (search) {
+          query = query.or(`title.ilike.%${search}%,ean.ilike.%${search}%`)
+        }
+        
+        const { data: batch } = await query.range(offset, offset + batchSize - 1)
         
         if (!batch || batch.length === 0) {
           hasMore = false
         } else {
-          allIds.push(...batch.map(p => p.id))
+          // Filtrar por no publicados si es necesario
+          const batchIds = showAll 
+            ? batch.map(p => p.id)
+            : batch.filter(p => !allPublishedIds.has(p.id)).map(p => p.id)
+          allIds.push(...batchIds)
           offset += batchSize
           if (batch.length < batchSize) hasMore = false
         }
       }
       
-      // Filtrar por publicados si es necesario
-      const filteredIds = showAll 
-        ? allIds 
-        : allIds.filter(id => !allPublishedIds.has(id))
-      
       return NextResponse.json({
-        ids: filteredIds,
-        total: filteredIds.length,
+        ids: allIds,
+        total: allIds.length,
         published_count: allPublishedIds.size
       })
     }
 
-    // Query normal paginada para mostrar en UI (sin count para evitar timeout)
+    // Query normal paginada para mostrar en UI
     const from = (page - 1) * pageSize
     const to = from + pageSize - 1
     
-    const { data: allProducts, error } = await supabase
+    let query = supabase
       .from("products")
       .select("id, ean, title, cost_price, price, stock, brand, image_url, language")
       .gt("cost_price", 0)
       .gte("stock", minStock)
-      .range(from, to)
+      .gte("cost_price", minPrice)
+      .lte("cost_price", maxPrice)
+    
+    // Aplicar filtros opcionales
+    if (language) {
+      query = query.ilike("language", language)
+    }
+    if (brand) {
+      query = query.ilike("brand", `%${brand}%`)
+    }
+    if (search) {
+      query = query.or(`title.ilike.%${search}%,ean.ilike.%${search}%`)
+    }
+    
+    const { data: allProducts, error } = await query.range(from, to)
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })

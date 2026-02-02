@@ -76,18 +76,43 @@ export default function MLPublishPage() {
   const [showOnlyUnpublished, setShowOnlyUnpublished] = useState(true)
   const [stats, setStats] = useState<Stats>({ total_in_db: 0, published_count: 0, available_count: 0 })
   const [publishProgress, setPublishProgress] = useState({ current: 0, total: 0, success: 0, errors: 0 })
+  const [showPublishModal, setShowPublishModal] = useState(false)
+  const [publishingInProgress, setPublishingInProgress] = useState(false)
   const [filterBrand, setFilterBrand] = useState<string>("")
   const [filterLanguage, setFilterLanguage] = useState<string>("")
 
+  // Construir URL de filtros para el servidor
+  const buildFilterUrl = (onlyIds = false) => {
+    const params = new URLSearchParams()
+    params.set("show_all", String(!showOnlyUnpublished))
+    params.set("min_stock", String(minStock))
+    params.set("min_price", String(minPrice))
+    params.set("max_price", String(maxPrice))
+    if (languageFilter && languageFilter !== "ALL") params.set("language", languageFilter)
+    if (filterBrand) params.set("brand", filterBrand)
+    if (searchTerm) params.set("search", searchTerm)
+    if (onlyIds) params.set("only_ids", "true")
+    else params.set("page_size", "100")
+    return `/api/ml/publish/available?${params.toString()}`
+  }
+
+  // Debounce para no hacer muchas llamadas mientras el usuario escribe
+  const [debouncedFetch, setDebouncedFetch] = useState<NodeJS.Timeout | null>(null)
+
   useEffect(() => {
-    fetchData()
-  }, [showOnlyUnpublished, minStock])
+    if (debouncedFetch) clearTimeout(debouncedFetch)
+    const timeout = setTimeout(() => {
+      fetchData()
+    }, 300)
+    setDebouncedFetch(timeout)
+    return () => clearTimeout(timeout)
+  }, [showOnlyUnpublished, minStock, minPrice, maxPrice, languageFilter, filterBrand, searchTerm])
 
   const fetchData = async () => {
     setLoading(true)
     try {
-      // Fetch products paginados (100 por página para UI)
-      const productsRes = await fetch(`/api/ml/publish/available?show_all=${!showOnlyUnpublished}&page_size=100&min_stock=${minStock}`)
+      // Fetch products con filtros del servidor
+      const productsRes = await fetch(buildFilterUrl())
       const productsData = await productsRes.json()
       setProducts(productsData.products || [])
       setStats({
@@ -153,35 +178,20 @@ export default function MLPublishPage() {
       return
     }
     
-    // Traer todos los IDs del servidor (query liviana)
+    // Traer todos los IDs del servidor con los filtros actuales
     setLoading(true)
     try {
-      const res = await fetch(`/api/ml/publish/available?show_all=${!showOnlyUnpublished}&only_ids=true`)
+      const res = await fetch(buildFilterUrl(true))
       const data = await res.json()
       
       if (data.ids && data.ids.length > 0) {
-        // Aplicar los filtros locales (brand, language, search) sobre los IDs
-        // Necesitamos los productos completos para filtrar, así que usamos los cargados
-        // y para los que no están cargados, los seleccionamos igual
-        const allIds = new Set<string>(data.ids)
-        
-        // Si hay filtros activos, solo seleccionar los que pasan el filtro
-        if (searchTerm || filterBrand || filterLanguage) {
-          // Solo podemos filtrar los que tenemos en memoria
-          const filteredIds = filteredProducts.map(p => p.id)
-          setSelectedProducts(new Set(filteredIds))
-          toast({
-            title: "Selección parcial",
-            description: `Seleccionados ${filteredIds.length} productos que coinciden con los filtros actuales`
-          })
-        } else {
-          // Sin filtros, seleccionar todos
-          setSelectedProducts(allIds)
-          toast({
-            title: "Todos seleccionados",
-            description: `${allIds.size.toLocaleString()} productos seleccionados`
-          })
-        }
+        setSelectedProducts(new Set<string>(data.ids))
+        toast({
+          title: "Todos seleccionados",
+          description: `${data.ids.length.toLocaleString()} productos seleccionados con los filtros actuales`
+        })
+      } else {
+        toast({ title: "Sin resultados", description: "No hay productos que coincidan con los filtros", variant: "destructive" })
       }
     } catch {
       toast({ title: "Error", description: "Error al seleccionar todos", variant: "destructive" })
@@ -190,24 +200,30 @@ export default function MLPublishPage() {
     }
   }
   
-  // Publicar directamente sin vista previa (con delay para no saturar API)
-  const publishDirectly = async () => {
-    if (selectedProducts.size === 0) {
-      toast({ title: "Error", description: "Selecciona al menos un producto", variant: "destructive" })
-      return
-    }
-    
+  // Abrir modal de publicación masiva
+  const openPublishModal = () => {
     if (!selectedTemplate || !selectedAccount) {
       toast({ title: "Error", description: "Selecciona plantilla y cuenta primero", variant: "destructive" })
       return
     }
+    setShowPublishModal(true)
+  }
+  
+  // Iniciar publicación masiva desde el modal
+  const startBulkPublish = async () => {
+    setPublishingInProgress(true)
     
-    if (!confirm(`¿Publicar ${selectedProducts.size} productos directamente?\n\nSe publicarán con delay de 1 segundo entre cada uno para evitar saturar la API de ML.`)) {
+    // Obtener todos los IDs con los filtros actuales
+    const res = await fetch(buildFilterUrl(true))
+    const data = await res.json()
+    
+    if (!data.ids || data.ids.length === 0) {
+      toast({ title: "Sin productos", description: "No hay productos para publicar", variant: "destructive" })
+      setPublishingInProgress(false)
       return
     }
     
-    setPublishing(true)
-    const productIds = Array.from(selectedProducts)
+    const productIds = data.ids
     setPublishProgress({ current: 0, total: productIds.length, success: 0, errors: 0 })
     
     let successCount = 0
@@ -233,25 +249,22 @@ export default function MLPublishPage() {
         const data = await response.json()
         if (data.success) {
           successCount++
-          setPublishProgress(prev => ({ ...prev, success: successCount }))
         } else {
           errorCount++
-          setPublishProgress(prev => ({ ...prev, errors: errorCount }))
         }
+        setPublishProgress({ current: i + 1, total: productIds.length, success: successCount, errors: errorCount })
       } catch {
         errorCount++
-        setPublishProgress(prev => ({ ...prev, errors: errorCount }))
+        setPublishProgress({ current: i + 1, total: productIds.length, success: successCount, errors: errorCount })
       }
       
-      // Delay de 1 segundo entre publicaciones para no saturar la API
+      // Delay de 1 segundo entre publicaciones
       if (i < productIds.length - 1) {
         await new Promise(resolve => setTimeout(resolve, 1000))
       }
     }
     
-    setPublishing(false)
-    setSelectedProducts(new Set())
-    setPublishProgress({ current: 0, total: 0, success: 0, errors: 0 })
+    setPublishingInProgress(false)
     
     toast({
       title: "Publicación completada",
@@ -261,15 +274,16 @@ export default function MLPublishPage() {
     // Recargar productos disponibles
     fetchData()
   }
+  
+  // Cerrar modal y resetear
+  const closePublishModal = () => {
+    if (publishingInProgress) return // No cerrar mientras está en progreso
+    setShowPublishModal(false)
+    setPublishProgress({ current: 0, total: 0, success: 0, errors: 0 })
+  }
 
-  const filteredProducts = products.filter(p => {
-    const matchesSearch = p.title.toLowerCase().includes(searchTerm.toLowerCase()) || p.ean.includes(searchTerm)
-    const matchesStock = (p.stock || 0) >= minStock
-    const matchesPrice = p.cost_price >= minPrice && p.cost_price <= maxPrice
-    const matchesLanguage = languageFilter === "ALL" || (p.language || "").toUpperCase() === languageFilter
-    const matchesBrand = filterBrand === "" || p.brand.toLowerCase().includes(filterBrand.toLowerCase())
-    return matchesSearch && matchesStock && matchesPrice && matchesLanguage && matchesBrand
-  })
+  // Los productos ya vienen filtrados del servidor
+  const filteredProducts = products
 
   const generatePreviews = async () => {
     if (selectedProducts.size === 0) {
@@ -381,6 +395,65 @@ export default function MLPublishPage() {
     toast({
       title: "Publicación completada",
       description: `${successCount} de ${updatedPreviews.length} productos publicados`
+    })
+  }
+
+  const publishDirectly = async () => {
+    if (selectedProducts.size === 0) {
+      toast({ title: "Error", description: "Selecciona al menos un producto", variant: "destructive" })
+      return
+    }
+
+    setPublishing(true)
+
+    const productIds = Array.from(selectedProducts)
+
+    setPublishProgress({ current: 0, total: productIds.length, success: 0, errors: 0 })
+
+    let successCount = 0
+    let errorCount = 0
+
+    for (let i = 0; i < productIds.length; i++) {
+      const productId = productIds[i]
+      setPublishProgress(prev => ({ ...prev, current: i + 1 }))
+
+      try {
+        const response = await fetch("/api/ml/publish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            product_id: productId,
+            template_id: selectedTemplate,
+            account_id: selectedAccount,
+            preview_only: false,
+            publish_mode: publishMode
+          })
+        })
+
+        const data = await response.json()
+
+        if (data.success) {
+          successCount++
+        } else {
+          errorCount++
+        }
+        setPublishProgress({ current: i + 1, total: productIds.length, success: successCount, errors: errorCount })
+      } catch {
+        errorCount++
+        setPublishProgress({ current: i + 1, total: productIds.length, success: successCount, errors: errorCount })
+      }
+
+      // Delay de 1 segundo entre publicaciones
+      if (i < productIds.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+    }
+
+    setPublishing(false)
+
+    toast({
+      title: "Publicación completada",
+      description: `${successCount} de ${productIds.length} productos publicados`
     })
   }
 
@@ -611,31 +684,6 @@ export default function MLPublishPage() {
                 </Table>
               </div>
 
-              {/* Barra de progreso durante publicación */}
-              {publishing && publishProgress.total > 0 && (
-                <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm font-medium">Publicando productos...</p>
-                    <p className="text-sm text-muted-foreground">
-                      {publishProgress.current} / {publishProgress.total}
-                    </p>
-                  </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 mb-2">
-                    <div 
-                      className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" 
-                      style={{ width: `${(publishProgress.current / publishProgress.total) * 100}%` }}
-                    />
-                  </div>
-                  <div className="flex gap-4 text-xs">
-                    <span className="text-green-600">{publishProgress.success} exitosos</span>
-                    <span className="text-red-600">{publishProgress.errors} errores</span>
-                    <span className="text-muted-foreground">
-                      ~{Math.ceil((publishProgress.total - publishProgress.current))} segundos restantes
-                    </span>
-                  </div>
-                </div>
-              )}
-
               {/* Resumen y contador */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-4 p-4 bg-muted/50 rounded-lg">
                 <div className="space-y-1">
@@ -675,15 +723,11 @@ export default function MLPublishPage() {
                   </Button>
                   
                   <Button
-                    onClick={publishDirectly}
-                    disabled={selectedProducts.size === 0 || publishing || !selectedTemplate || !selectedAccount}
+                    onClick={openPublishModal}
+                    disabled={!selectedTemplate || !selectedAccount}
                   >
-                    {publishing ? (
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    ) : (
-                      <Upload className="h-4 w-4 mr-2" />
-                    )}
-                    Publicar ({selectedProducts.size.toLocaleString()})
+                    <Upload className="h-4 w-4 mr-2" />
+                    Publicar masivo
                   </Button>
                 </div>
               </div>
@@ -780,6 +824,92 @@ export default function MLPublishPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+      
+      {/* Modal de publicación masiva */}
+      {showPublishModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-lg mx-4">
+            <CardHeader>
+              <CardTitle>Publicación masiva</CardTitle>
+              <CardDescription>
+                Se publicarán todos los productos que coinciden con los filtros actuales
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {!publishingInProgress && publishProgress.total === 0 && (
+                <>
+                  <div className="p-4 bg-muted rounded-lg space-y-2">
+                    <p className="text-sm"><strong>Filtros aplicados:</strong></p>
+                    <ul className="text-sm text-muted-foreground space-y-1">
+                      <li>Stock mínimo: {minStock}</li>
+                      <li>Precio: EUR {minPrice} - {maxPrice}</li>
+                      {languageFilter && languageFilter !== "ALL" && <li>Idioma: {languageFilter}</li>}
+                      {filterBrand && <li>Marca: {filterBrand}</li>}
+                      {searchTerm && <li>Búsqueda: {searchTerm}</li>}
+                      <li>Solo sin publicar: {showOnlyUnpublished ? "Sí" : "No"}</li>
+                    </ul>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Se publicará 1 producto por segundo para no saturar la API de ML.
+                  </p>
+                </>
+              )}
+              
+              {(publishingInProgress || publishProgress.total > 0) && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium">
+                      {publishingInProgress ? "Publicando..." : "Publicación completada"}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {publishProgress.current} / {publishProgress.total}
+                    </p>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                    <div 
+                      className="bg-primary h-3 rounded-full transition-all duration-300" 
+                      style={{ width: `${publishProgress.total > 0 ? (publishProgress.current / publishProgress.total) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-green-600">{publishProgress.success} exitosos</span>
+                    <span className="text-red-600">{publishProgress.errors} errores</span>
+                    {publishingInProgress && (
+                      <span className="text-muted-foreground">
+                        ~{Math.ceil((publishProgress.total - publishProgress.current))} seg restantes
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+            <div className="flex justify-end gap-2 p-6 pt-0">
+              {!publishingInProgress && publishProgress.total === 0 && (
+                <>
+                  <Button variant="outline" onClick={closePublishModal}>
+                    Cancelar
+                  </Button>
+                  <Button onClick={startBulkPublish}>
+                    <Upload className="h-4 w-4 mr-2" />
+                    Iniciar publicación
+                  </Button>
+                </>
+              )}
+              {!publishingInProgress && publishProgress.total > 0 && (
+                <Button onClick={closePublishModal}>
+                  Cerrar
+                </Button>
+              )}
+              {publishingInProgress && (
+                <Button disabled>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Publicando...
+                </Button>
+              )}
+            </div>
+          </Card>
+        </div>
       )}
     </div>
   )
