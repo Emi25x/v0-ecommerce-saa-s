@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { refreshTokenIfNeeded } from "@/lib/mercadolibre"
 
 // Calcular precio usando la formula de margen
 async function calculatePriceForProduct(costPriceEur: number, marginPercent: number) {
@@ -210,11 +211,15 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // Refrescar token si es necesario
+    const validAccount = await refreshTokenIfNeeded(account)
+    const accessToken = validAccount.access_token
+
     // Publicar en ML
     const mlResponse = await fetch("https://api.mercadolibre.com/items", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${account.access_token}`,
+        "Authorization": `Bearer ${accessToken}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify(mlItem)
