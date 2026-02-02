@@ -152,6 +152,36 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
+    // Funcion para sanitizar texto a plain text (quitar HTML y caracteres especiales)
+    const sanitizeToPlainText = (text: string): string => {
+      return text
+        // Quitar tags HTML
+        .replace(/<[^>]*>/g, '')
+        // Convertir entidades HTML comunes
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&aacute;/gi, 'á')
+        .replace(/&eacute;/gi, 'é')
+        .replace(/&iacute;/gi, 'í')
+        .replace(/&oacute;/gi, 'ó')
+        .replace(/&uacute;/gi, 'ú')
+        .replace(/&ntilde;/gi, 'ñ')
+        // Quitar cualquier otra entidad HTML
+        .replace(/&[^;]+;/g, '')
+        // Quitar caracteres de control excepto saltos de linea
+        .replace(/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F]/g, '')
+        // Normalizar saltos de linea
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n')
+        // Quitar lineas vacias multiples
+        .replace(/\n{3,}/g, '\n\n')
+        .trim()
+    }
+
     // Reemplazar variables en la descripcion de la plantilla
     // Si no hay template de descripcion, crear una descripcion por defecto
     const defaultDescription = `${product.title || "Libro"}
@@ -183,6 +213,9 @@ Libro nuevo. Envíos a todo el país.`
     description = description.replace(/{width}/g, product.width?.toString() || "")
     description = description.replace(/{height}/g, product.height?.toString() || "")
     description = description.replace(/{thickness}/g, product.thickness?.toString() || "")
+    
+    // Sanitizar la descripcion para que sea plain text (ML rechaza HTML)
+    description = sanitizeToPlainText(description)
 
     // Buscar en el catalogo de ML si el modo es "catalog" o "linked"
     let familyName: string | null = null
