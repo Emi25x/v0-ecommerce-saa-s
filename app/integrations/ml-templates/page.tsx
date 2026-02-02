@@ -562,8 +562,11 @@ export default function MLTemplatesPage() {
                         <p className="text-4xl font-bold text-primary">
                           ${priceCalculation.final_price_ars.toLocaleString("es-AR")}
                         </p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          Multiplicador: {(priceCalculation.final_price_ars / priceCalculation.cost_in_ars).toFixed(2)}x
+                        <p className="mt-2 text-lg font-semibold">
+                          Multiplicador: {(priceCalculation.final_price_ars / priceCalculation.cost_price_eur).toLocaleString("es-AR", { maximumFractionDigits: 0 })}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          EUR 1 = ARS {(priceCalculation.final_price_ars / priceCalculation.cost_price_eur).toLocaleString("es-AR", { maximumFractionDigits: 0 })}
                         </p>
                       </div>
 
