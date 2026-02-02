@@ -483,7 +483,7 @@ export default function MLPublishPage() {
                   <div>
                     <CardTitle>Productos disponibles</CardTitle>
                     <CardDescription>
-                      {stats.total_in_db.toLocaleString()} productos en BD | {stats.published_count.toLocaleString()} publicados | {stats.available_count.toLocaleString()} sin publicar
+                      {stats.published_count.toLocaleString()} publicados en ML | {filteredProducts.length.toLocaleString()} disponibles con filtros actuales
                     </CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
