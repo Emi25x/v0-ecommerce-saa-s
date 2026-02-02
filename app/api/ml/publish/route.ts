@@ -162,7 +162,8 @@ export async function POST(request: NextRequest) {
     let familyName: string | null = null
     let catalogProductId: string | null = null
     
-    if ((publish_mode === "catalog" || publish_mode === "linked") && product.ean && account.access_token) {
+    // SIEMPRE buscar en catalogo - ML rechaza "title" si el ISBN existe en su catalogo
+    if (product.ean && account.access_token) {
       try {
         // Buscar en el catalogo de ML por product_identifier (ISBN/EAN)
         const catalogSearch = await fetch(
@@ -197,27 +198,25 @@ export async function POST(request: NextRequest) {
     }
     
     // Decidir como publicar segun el modo y si encontramos en catalogo
-    if (publish_mode === "catalog") {
-      // Modo catalogo: requiere catalog_product_id
-      if (!catalogProductId) {
-        return NextResponse.json({
-          success: false,
-          error: `Producto no encontrado en catálogo de ML (ISBN: ${product.ean}). Intenta con modo "Tradicional" o "Vinculada".`,
-          not_in_catalog: true
-        }, { status: 400 })
-      }
+    // IMPORTANTE: Si el producto existe en el catalogo de ML, DEBE publicarse con catalog_product_id
+    // ML rechaza "title" si el ISBN ya esta en su catalogo
+    
+    if (catalogProductId) {
+      // Producto EXISTE en catalogo - DEBE usar catalog_product_id
       mlItem.catalog_product_id = catalogProductId
       mlItem.catalog_listing = true
-    } else if (publish_mode === "linked") {
-      // Modo vinculado: publicacion tradicional + optin a catalogo si existe
-      // Crear como tradicional primero
-      mlItem.title = product.title?.substring(0, 60) || "Libro"
-      mlItem.family_name = familyName || product.title?.substring(0, 60) || "Libro"
-      mlItem.description = { plain_text: description }
+      // NO incluir title, family_name ni description - ML usa los del catalogo
+    } else if (publish_mode === "catalog") {
+      // Modo catalogo pero no encontrado en catalogo
+      return NextResponse.json({
+        success: false,
+        error: `Producto no encontrado en catálogo de ML (ISBN: ${product.ean}). Intenta con modo "Tradicional".`,
+        not_in_catalog: true
+      }, { status: 400 })
     } else {
-      // Modo tradicional: sin catalogo
+      // Producto NO existe en catalogo - publicacion tradicional
       mlItem.title = product.title?.substring(0, 60) || "Libro"
-      mlItem.family_name = familyName || product.title?.substring(0, 60) || "Libro"
+      mlItem.family_name = product.title?.substring(0, 60) || "Libro"
       mlItem.description = { plain_text: description }
     }
 
