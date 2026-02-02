@@ -204,20 +204,29 @@ export async function POST(request: NextRequest) {
         "CHI": "2466958", // Chino
       }
       
-      console.log("[v0] Building traditional item for product:", {
-        title: product.title,
-        author: product.author,
-        brand: product.brand,
-        ean: product.ean,
-        language: product.language
-      })
-      
       const attributes: Array<{ id: string; value_name?: string; value_id?: string }> = []
       
-      // REQUERIDOS por ML para libros MLA412445 (segun API /categories/MLA412445/attributes)
-      // Solo BOOK_TITLE y AUTHOR son required en la API
+      // MAPEO DE CAMPOS: Nuestra BD -> Atributos ML (MLA412445 - Libros Fisicos)
+      // 
+      // Nuestra BD          | ML Attribute ID    | ML Attribute Name      | Tipo
+      // --------------------|--------------------|-----------------------|-------
+      // title               | BOOK_TITLE         | Título del libro      | string (required)
+      // author              | AUTHOR             | Autor                 | string (required)
+      // brand               | PUBLISHER          | Editorial             | string
+      // ean/isbn            | GTIN               | Código universal      | string
+      // language            | LANGUAGE           | Idioma                | list (value_id)
+      // year_edition        | PUBLICATION_YEAR   | Año de publicación    | string
+      // binding             | BOOK_COVER_TYPE    | Tipo de tapa          | string
+      // subject             | BOOK_SUBGENRE      | Subgénero             | string
+      
+      // REQUERIDOS por ML
       attributes.push({ id: "BOOK_TITLE", value_name: product.title?.substring(0, 255) || "Libro" })
-      attributes.push({ id: "AUTHOR", value_name: product.author || "Autor desconocido" })
+      attributes.push({ id: "AUTHOR", value_name: product.author || "Desconocido" })
+      
+      // PUBLISHER (Editorial) - usando brand
+      if (product.brand) {
+        attributes.push({ id: "PUBLISHER", value_name: product.brand.substring(0, 255) })
+      }
       
       // GTIN/ISBN
       if (product.ean) {
@@ -226,12 +235,18 @@ export async function POST(request: NextRequest) {
       
       // LANGUAGE - usa value_id (lista cerrada)
       const langCode = (product.language || "SPA").toUpperCase().substring(0, 3)
-      const valueId = languageMap[langCode] || "313886" // Default Español
-      attributes.push({ id: "LANGUAGE", value_id: valueId })
+      const langValueId = languageMap[langCode] || "313886" // Default Español
+      attributes.push({ id: "LANGUAGE", value_id: langValueId })
       
-      console.log("[v0] Attributes to send:", JSON.stringify(attributes, null, 2))
+      // Opcionales
+      if (product.year_edition) {
+        attributes.push({ id: "PUBLICATION_YEAR", value_name: product.year_edition.toString() })
+      }
+      if (product.binding) {
+        attributes.push({ id: "BOOK_COVER_TYPE", value_name: product.binding })
+      }
       
-      // IMPORTANTE: Para vendedores con User Products (tag user_product_seller),
+      // Para vendedores con User Products (tag user_product_seller),
       // NO se debe enviar "title", solo "family_name". ML genera el title automaticamente.
       return {
         site_id: "MLA",
