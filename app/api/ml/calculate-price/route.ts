@@ -176,8 +176,9 @@ export async function POST(request: Request) {
     finalPrice = Math.ceil(priceWithFees / 10) * 10 // Redondear a decena
 
     // Verificacion inversa
-    const mlCommission = finalPrice * mlFeePercent + mlFixedFee
-    const netReceived = finalPrice - mlCommission - shippingCost
+    // Comision ML es solo el porcentaje, cargo fijo es adicional
+    const mlCommission = finalPrice * mlFeePercent
+    const netReceived = finalPrice - mlCommission - mlFixedFee - shippingCost
     const actualMargin = ((netReceived - costInArs) / costInArs) * 100
 
     return NextResponse.json({
@@ -195,8 +196,9 @@ export async function POST(request: Request) {
         // Verificación
         verification: {
           ml_commission: Math.round(mlCommission),
+          ml_fixed_fee: mlFixedFee,
           shipping_cost: shippingCost,
-          total_costs: Math.round(mlCommission + shippingCost),
+          total_costs: Math.round(mlCommission + mlFixedFee + shippingCost),
           net_received: Math.round(netReceived),
           actual_margin_percent: Math.round(actualMargin * 10) / 10,
           profit_ars: Math.round(netReceived - costInArs)

@@ -611,8 +611,11 @@ export default function MLTemplatesPage() {
                       <div className="rounded-lg border p-4 space-y-2">
                         <h4 className="font-semibold text-sm">Verificacion</h4>
                         <div className="grid grid-cols-2 gap-2 text-sm">
-                          <span className="text-muted-foreground">Comision ML:</span>
+                          <span className="text-muted-foreground">Comision ML ({priceCalculation.ml_fee_percent}%):</span>
                           <span className="text-right">-${priceCalculation.verification.ml_commission.toLocaleString("es-AR")}</span>
+                          
+                          <span className="text-muted-foreground">Cargo fijo ML:</span>
+                          <span className="text-right">-${priceCalculation.ml_fixed_fee.toLocaleString("es-AR")}</span>
                           
                           <span className="text-muted-foreground">Costo envio:</span>
                           <span className="text-right">-${priceCalculation.verification.shipping_cost.toLocaleString("es-AR")}</span>
