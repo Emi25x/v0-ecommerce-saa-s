@@ -157,36 +157,69 @@ export async function POST(request: NextRequest) {
     description = description.replace(/{height}/g, product.height?.toString() || "")
     description = description.replace(/{thickness}/g, product.thickness?.toString() || "")
 
+    // Buscar family_name en el catalogo de ML usando el ISBN/EAN
+    let familyName: string | null = null
+    let catalogProductId: string | null = null
+    
+    if (product.ean && account.access_token) {
+      try {
+        // Buscar en el catalogo de ML por GTIN (ISBN)
+        const catalogSearch = await fetch(
+          `https://api.mercadolibre.com/products/search?status=active&site_id=MLA&GTIN=${product.ean}`,
+          { headers: { Authorization: `Bearer ${account.access_token}` } }
+        )
+        
+        if (catalogSearch.ok) {
+          const catalogData = await catalogSearch.json()
+          if (catalogData.results && catalogData.results.length > 0) {
+            catalogProductId = catalogData.results[0].id
+            familyName = catalogData.results[0].name || catalogData.results[0].id
+          }
+        }
+      } catch {
+        // Continuar sin family_name del catalogo
+      }
+    }
+
     // Construir el objeto de publicacion para ML
-    const mlItem = {
+    const mlItem: Record<string, unknown> = {
       title: product.title?.substring(0, 60) || "Libro",
       category_id: template.category_id || "MLA3025", // Libros
       price: finalPrice,
       currency_id: "ARS",
-      available_quantity: product.stock || 1,
+      available_quantity: Math.min(product.stock || 1, 50), // Max 50 para nuevos vendedores
       buying_mode: "buy_it_now",
       condition: "new",
       listing_type_id: template.listing_type_id || "gold_special",
       description: { plain_text: description },
       pictures: product.image_url ? [{ source: product.image_url }] : [],
-      attributes: []
+      attributes: [] as Array<{ id: string; value_name: string }>
+    }
+    
+    // Si encontramos el producto en el catalogo, usar catalog_product_id
+    if (catalogProductId) {
+      mlItem.catalog_product_id = catalogProductId
+    } else if (familyName) {
+      // Si solo tenemos family_name
+      mlItem.family_name = familyName
     }
 
     // Agregar atributos basicos
+    const attributes = mlItem.attributes as Array<{ id: string; value_name: string }>
     if (product.ean) {
-      mlItem.attributes.push({ id: "GTIN", value_name: product.ean })
+      attributes.push({ id: "GTIN", value_name: product.ean })
     }
     if (product.author) {
-      mlItem.attributes.push({ id: "AUTHOR", value_name: product.author })
+      attributes.push({ id: "AUTHOR", value_name: product.author })
     }
     if (product.brand) {
-      mlItem.attributes.push({ id: "PUBLISHER", value_name: product.brand })
+      attributes.push({ id: "PUBLISHER", value_name: product.brand })
     }
     if (product.language) {
-      mlItem.attributes.push({ id: "LANGUAGE", value_name: product.language })
+      attributes.push({ id: "LANGUAGE", value_name: product.language })
     }
     if (product.pages) {
-      mlItem.attributes.push({ id: "PAGES", value_name: product.pages.toString() })
+      attributes.push({ id: "PAGES", value_name: product.pages.toString() })
     }
 
     // Calcular margen real para verificacion
