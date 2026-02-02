@@ -433,13 +433,12 @@ Libro nuevo. Envíos a todo el país.`
         attributes.push({ id: "PAGES_NUMBER", value_name: product.pages.toString() })
       }
       
-      // Usar el ID de imagen subido a ML, o URL como fallback
-      const pictures: Array<{ id?: string; source?: string }> = []
-      if (mlPictureId) {
-        pictures.push({ id: mlPictureId })
-      } else if (product.image_url) {
-        pictures.push({ source: product.image_url })
-      }
+// Usar el ID de imagen subido a ML (NO usamos fallback a URL porque ML la rechazará si es pequeña)
+  const pictures: Array<{ id?: string; source?: string }> = []
+  if (mlPictureId) {
+  pictures.push({ id: mlPictureId })
+  }
+  // Si no hay mlPictureId, se publica sin imagen (mejor que fallar)
       
       return {
         site_id: "MLA",
@@ -478,13 +477,12 @@ Libro nuevo. Envíos a todo el país.`
     
     // Helper para construir publicacion de catalogo
     const buildCatalogItem = () => {
-      // Usar el ID de imagen subido a ML, o URL como fallback
-      const pictures: Array<{ id?: string; source?: string }> = []
-      if (mlPictureId) {
-        pictures.push({ id: mlPictureId })
-      } else if (product.image_url) {
-        pictures.push({ source: product.image_url })
-      }
+// Usar el ID de imagen subido a ML (NO usamos fallback a URL porque ML la rechazará si es pequeña)
+  const pictures: Array<{ id?: string; source?: string }> = []
+  if (mlPictureId) {
+  pictures.push({ id: mlPictureId })
+  }
+  // Si no hay mlPictureId, se publica sin imagen (mejor que fallar)
       
       return {
         site_id: "MLA",
