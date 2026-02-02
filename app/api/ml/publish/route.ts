@@ -475,9 +475,26 @@ Libro nuevo. Envíos a todo el país.`
           if (!activateResponse.ok) {
             const activateError = await activateResponse.json()
             console.error("[v0] Error activating item:", activateError)
-            // Continuar sin optin si no se puede activar
-          } else {
-            console.log("[v0] Item activated successfully")
+            // No hacer optin si no se pudo activar
+            throw new Error("No se pudo activar el item para optin")
+          }
+          
+          console.log("[v0] Item activated, waiting for ML to process...")
+          // Esperar 2 segundos para que ML procese el cambio de estado
+          await new Promise(resolve => setTimeout(resolve, 2000))
+          
+          // Verificar que realmente se activó
+          const verifyResponse = await fetch(`https://api.mercadolibre.com/items/${mlData.id}`, {
+            headers: { "Authorization": `Bearer ${accessToken}` }
+          })
+          
+          if (verifyResponse.ok) {
+            const verifyData = await verifyResponse.json()
+            console.log("[v0] Item status after activate:", verifyData.status)
+            if (verifyData.status === "paused") {
+              console.error("[v0] Item still paused, skipping optin")
+              throw new Error("Item sigue pausado después de activar")
+            }
           }
         }
         
