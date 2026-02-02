@@ -959,14 +959,14 @@ export default function MLPublishPage() {
       {/* Modal de publicación masiva */}
       {showPublishModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-lg mx-4">
+          <Card className="w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
             <CardHeader>
               <CardTitle>Publicación masiva</CardTitle>
               <CardDescription>
                 {totalAvailable.toLocaleString()} productos disponibles con los filtros actuales
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-4 overflow-y-auto flex-1">
               {!publishingInProgress && publishProgress.total === 0 && (
                 <>
                   <div className="p-4 bg-muted rounded-lg space-y-2">
@@ -1034,10 +1034,64 @@ export default function MLPublishPage() {
                     <span className="text-red-600">{publishProgress.errors} errores</span>
                     {publishingInProgress && (
                       <span className="text-muted-foreground">
-                        ~{Math.ceil((publishProgress.total - publishProgress.current))} seg restantes
+                        ~{Math.ceil((publishProgress.total - publishProgress.current) * 2)} seg restantes
                       </span>
                     )}
                   </div>
+                  
+                  {/* Lista de resultados */}
+                  {publishResults.length > 0 && (
+                    <div className="mt-4 max-h-60 overflow-y-auto border rounded-lg">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted sticky top-0">
+                          <tr>
+                            <th className="text-left p-2">Producto</th>
+                            <th className="text-left p-2">Estado</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {publishResults.map((result, idx) => (
+                            <tr key={idx} className="border-t">
+                              <td className="p-2">
+                                <div className="font-medium truncate max-w-[250px]" title={result.title}>
+                                  {result.title}
+                                </div>
+                                <div className="text-xs text-muted-foreground">{result.ean}</div>
+                              </td>
+                              <td className="p-2">
+                                {result.status === "success" && (
+                                  <div>
+                                    <Badge className="bg-green-500">Publicado</Badge>
+                                    {result.ml_item_id && (
+                                      <a 
+                                        href={`https://articulo.mercadolibre.com.ar/${result.ml_item_id}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-xs text-blue-500 hover:underline block mt-1"
+                                      >
+                                        Ver en ML
+                                      </a>
+                                    )}
+                                  </div>
+                                )}
+                                {result.status === "skipped" && (
+                                  <Badge className="bg-yellow-500 text-black">Ya existía</Badge>
+                                )}
+                                {result.status === "error" && (
+                                  <div>
+                                    <Badge variant="destructive">Error</Badge>
+                                    <div className="text-xs text-red-400 mt-1 truncate max-w-[150px]" title={result.error}>
+                                      {result.error}
+                                    </div>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>

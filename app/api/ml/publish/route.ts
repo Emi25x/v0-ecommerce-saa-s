@@ -203,7 +203,9 @@ export async function POST(request: NextRequest) {
         skipped: true,
         reason: alreadyPublishedInfo.source === "mercadolibre" ? "already_published" : "already_in_db",
         existing_item_id: alreadyPublishedInfo.item_id,
-        message: `El EAN ${product.ean} ya está publicado (${alreadyPublishedInfo.item_id})`
+        message: `El EAN ${product.ean} ya está publicado (${alreadyPublishedInfo.item_id})`,
+        product_title: product.title,
+        product_ean: product.ean
       })
     }
 
@@ -867,6 +869,9 @@ if (!catalogProductId) {
       ml_item_id: mlData.id,
       permalink: mlData.permalink,
       status: mlData.status,
+      // Info del producto para mostrar en resultados
+      product_title: product.title,
+      product_ean: product.ean,
       // Debug info
       image_url_sent: product.image_url || null,
       ml_picture_id: mlPictureId || null,
