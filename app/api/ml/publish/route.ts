@@ -560,8 +560,11 @@ Libro nuevo. Envíos a todo el país.`
     }
 
     // Agregar descripción en un POST separado (ML lo requiere así)
+    let descriptionAdded = false
+    let descriptionError: string | null = null
     if (description && description.trim()) {
       try {
+        console.log("[v0] Adding description to item", mlData.id, "length:", description.length)
         const descResponse = await fetch(`https://api.mercadolibre.com/items/${mlData.id}/description`, {
           method: "POST",
           headers: {
@@ -573,13 +576,19 @@ Libro nuevo. Envíos a todo el país.`
         
         if (!descResponse.ok) {
           const descError = await descResponse.json()
-          console.log("[v0] Error adding description:", descError)
+          console.log("[v0] Error adding description:", JSON.stringify(descError))
+          descriptionError = descError.message || descError.error || "Error desconocido"
         } else {
           console.log("[v0] Description added successfully")
+          descriptionAdded = true
         }
       } catch (descErr) {
         console.log("[v0] Exception adding description:", descErr)
+        descriptionError = String(descErr)
       }
+    } else {
+      console.log("[v0] No description to add (empty or null)")
+      descriptionError = "Descripción vacía o no disponible"
     }
 
     // Guardar publicacion tradicional en nuestra base de datos
@@ -688,7 +697,10 @@ Libro nuevo. Envíos a todo el país.`
       status: mlData.status,
       // Debug info
       image_url_sent: product.image_url || null,
+      ml_picture_id: mlPictureId || null,
       pictures_in_response: mlData.pictures || [],
+      description_added: descriptionAdded,
+      description_error: descriptionError,
       catalog_listing: catalogListing ? {
         id: catalogListing.id,
         permalink: catalogListing.permalink,
