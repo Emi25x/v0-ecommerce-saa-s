@@ -460,6 +460,27 @@ Libro nuevo. Envíos a todo el país.`
     let catalogListing = null
     if (publish_mode === "linked" && catalogProductId) {
       try {
+        // Si el item está pausado, activarlo primero
+        if (mlData.status === "paused") {
+          console.log("[v0] Item created as paused, activating before optin...")
+          const activateResponse = await fetch(`https://api.mercadolibre.com/items/${mlData.id}`, {
+            method: "PUT",
+            headers: {
+              "Authorization": `Bearer ${accessToken}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ status: "active" })
+          })
+          
+          if (!activateResponse.ok) {
+            const activateError = await activateResponse.json()
+            console.error("[v0] Error activating item:", activateError)
+            // Continuar sin optin si no se puede activar
+          } else {
+            console.log("[v0] Item activated successfully")
+          }
+        }
+        
         const optinResponse = await fetch("https://api.mercadolibre.com/items/catalog_listings", {
           method: "POST",
           headers: {
