@@ -392,8 +392,7 @@ Libro nuevo. Envíos a todo el país.`
         buying_mode: "buy_it_now",
         condition: template.condition || "new",
         listing_type_id: template.listing_type_id || "gold_special",
-        // Descripcion del producto
-        description: { plain_text: description },
+        // NOTA: La descripción se agrega en POST separado después de crear el item
         // Imagenes
         pictures: pictures,
         // NOTA: warranty está deprecado en ML, no se puede enviar
@@ -428,8 +427,7 @@ Libro nuevo. Envíos a todo el país.`
         buying_mode: "buy_it_now",
         condition: template.condition || "new",
         listing_type_id: template.listing_type_id || "gold_special",
-        // Descripcion del producto
-        description: { plain_text: description },
+        // NOTA: La descripción se agrega en POST separado después de crear el item
         // Imagenes
         pictures: pictures,
         // NOTA: warranty está deprecado en ML, no se puede enviar
@@ -512,6 +510,29 @@ Libro nuevo. Envíos a todo el país.`
         success: false,
         error: mlData.message || mlData.error || "Error al publicar en ML"
       }, { status: 400 })
+    }
+
+    // Agregar descripción en un POST separado (ML lo requiere así)
+    if (description && description.trim()) {
+      try {
+        const descResponse = await fetch(`https://api.mercadolibre.com/items/${mlData.id}/description`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ plain_text: description })
+        })
+        
+        if (!descResponse.ok) {
+          const descError = await descResponse.json()
+          console.log("[v0] Error adding description:", descError)
+        } else {
+          console.log("[v0] Description added successfully")
+        }
+      } catch (descErr) {
+        console.log("[v0] Exception adding description:", descErr)
+      }
     }
 
     // Guardar publicacion tradicional en nuestra base de datos
