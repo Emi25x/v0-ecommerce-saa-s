@@ -164,9 +164,9 @@ export async function POST(request: NextRequest) {
     
     if ((publish_mode === "catalog" || publish_mode === "linked") && product.ean && account.access_token) {
       try {
-        // Buscar en el catalogo de ML por GTIN (ISBN)
+        // Buscar en el catalogo de ML por product_identifier (ISBN/EAN)
         const catalogSearch = await fetch(
-          `https://api.mercadolibre.com/products/search?status=active&site_id=MLA&GTIN=${product.ean}`,
+          `https://api.mercadolibre.com/products/search?status=active&site_id=MLA&product_identifier=${product.ean}`,
           { headers: { Authorization: `Bearer ${account.access_token}` } }
         )
         
