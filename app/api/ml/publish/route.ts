@@ -101,13 +101,21 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (productError || !product) {
-      console.log("[v0] Product NOT FOUND for id:", product_id, "Error:", productError)
+      // Detectar si es error de rate limit
+      const errorMsg = productError?.message || ""
+      const isRateLimit = errorMsg.includes("Too Many") || errorMsg.includes("rate") || errorMsg.includes("429")
+      
+      console.log("[v0] Product error for id:", product_id, "Error:", productError, "IsRateLimit:", isRateLimit)
+      
       return NextResponse.json({ 
         success: false, 
-        error: `No existe en BD (ID: ${String(product_id).slice(0, 8)}...)`,
+        error: isRateLimit 
+          ? "Demasiadas solicitudes. Intenta más lento." 
+          : `No existe en BD (ID: ${String(product_id).slice(0, 8)}...)`,
         product_id_received: product_id,
-        db_error: productError?.message
-      }, { status: 404 })
+        db_error: errorMsg,
+        is_rate_limit: isRateLimit
+      }, { status: isRateLimit ? 429 : 404 })
     }
     
     console.log("[v0] Product loaded from DB:", {

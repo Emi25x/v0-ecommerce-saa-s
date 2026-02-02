@@ -273,6 +273,11 @@ export default function MLPublishPage() {
         } else if (result.skipped) {
           // Producto ya publicado, saltamos
           skippedCount++
+        } else if (result.is_rate_limit) {
+          // Rate limit - esperar más y reintentar
+          await new Promise(resolve => setTimeout(resolve, 3000))
+          i-- // Reintentar este producto
+          continue
         } else {
           errorCount++
         }
@@ -282,9 +287,9 @@ export default function MLPublishPage() {
         setPublishProgress({ current: i + 1, total: productIds.length, success: successCount, errors: errorCount, skipped: skippedCount })
       }
       
-      // Delay de 1 segundo entre publicaciones
+      // Delay de 2 segundos entre publicaciones para evitar rate limit
       if (i < productIds.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000))
+        await new Promise(resolve => setTimeout(resolve, 2000))
       }
     }
     
@@ -928,9 +933,9 @@ if (data.success) {
                   </div>
                   
                   <p className="text-sm text-muted-foreground">
-                    Se publicará 1 producto por segundo para no saturar la API de ML.
-                    {testLimit > 0 && ` Tiempo estimado: ~${testLimit} segundos.`}
-                    {testLimit === 0 && totalAvailable > 0 && ` Tiempo estimado: ~${Math.ceil(totalAvailable / 60)} minutos.`}
+                    Se publicará 1 producto cada 2 segundos para evitar rate limiting.
+                    {testLimit > 0 && ` Tiempo estimado: ~${Math.ceil(testLimit * 2 / 60)} minutos.`}
+                    {testLimit === 0 && totalAvailable > 0 && ` Tiempo estimado: ~${Math.ceil(totalAvailable * 2 / 60)} minutos.`}
                   </p>
                 </>
               )}
