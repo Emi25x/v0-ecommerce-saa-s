@@ -222,8 +222,9 @@ export async function POST(request: NextRequest) {
       attributes.push({ id: "AUTHOR", value_name: product.author || "Autor desconocido" })
       
       // BOOK_GENRE - Genero del libro (required para MLA412445)
-      // Usar un valor simple y generico - el subject puede tener formato incorrecto
-      attributes.push({ id: "BOOK_GENRE", value_name: "Novela" })
+      // Es un campo tipo lista, requiere value_id - usamos "Ficción" como genérico
+      // Value ID 9550395 = "Ficción" segun API ML
+      attributes.push({ id: "BOOK_GENRE", value_id: "9550395" })
       
       // PUBLISHER - Editorial del libro (catalog_required)
       // brand contiene la editorial del libro
