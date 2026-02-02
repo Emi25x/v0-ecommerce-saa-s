@@ -163,6 +163,7 @@ export async function POST(request: NextRequest) {
     let catalogProductId: string | null = null
     
     // SIEMPRE buscar en catalogo - ML rechaza "title" si el ISBN existe en su catalogo
+    console.log("[v0] Account keys:", Object.keys(account))
     console.log("[v0] Searching catalog for EAN:", product.ean, "has token:", !!account.access_token)
     
     if (product.ean && account.access_token) {
