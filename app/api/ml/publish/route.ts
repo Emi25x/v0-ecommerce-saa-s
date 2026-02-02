@@ -382,6 +382,13 @@ Libro nuevo. Envíos a todo el país.`
     // Para "linked" y "traditional" ya tiene title y family_name
     // Para "catalog" ya tiene catalog_product_id y catalog_listing
     const itemToPublish = mlItem
+    
+    // Log para debug - ver exactamente que se envia a ML
+    console.log("[v0] Item to publish - pictures:", JSON.stringify((itemToPublish as Record<string, unknown>).pictures))
+    console.log("[v0] Item to publish - description:", JSON.stringify((itemToPublish as Record<string, unknown>).description))
+    console.log("[v0] Item to publish - shipping:", JSON.stringify((itemToPublish as Record<string, unknown>).shipping))
+    console.log("[v0] Item to publish - warranty:", (itemToPublish as Record<string, unknown>).warranty)
+    console.log("[v0] Product image_url from DB:", product.image_url)
 
     // Publicar en ML (tradicional primero si es linked)
     const mlResponse = await fetch("https://api.mercadolibre.com/items", {
