@@ -214,11 +214,13 @@ export async function POST(request: NextRequest) {
       attributes.push({ id: "AUTHOR", value_name: product.author || "Autor desconocido" })
       
       // BOOK_GENRE - Genero del libro (required para MLA412445)
-      // Usamos subject del producto o un valor generico
-      attributes.push({ id: "BOOK_GENRE", value_name: product.subject || "Literatura general" })
+      // Usar un valor simple y generico - el subject puede tener formato incorrecto
+      attributes.push({ id: "BOOK_GENRE", value_name: "Novela" })
       
       // PUBLISHER - Editorial del libro (catalog_required)
-      attributes.push({ id: "PUBLISHER", value_name: product.brand || "Editorial independiente" })
+      // brand contiene la editorial del libro
+      const publisher = product.brand?.substring(0, 100) || "Varias editoriales"
+      attributes.push({ id: "PUBLISHER", value_name: publisher })
       
       // GTIN/ISBN
       if (product.ean) {
