@@ -134,6 +134,22 @@ export async function GET(request: Request) {
           success: importResult.success || (importResponse && importResponse.ok),
           result: importResult,
         })
+        
+        // Si es una importación de stock/precio, sincronizar con ML
+        if (source.feed_type === "stock_price" && (importResult.success || importResult.updated > 0)) {
+          console.log(`[v0] Sincronizando stock con ML después de importar ${source.name}`)
+          try {
+            const syncResponse = await fetch(`${baseUrl}/api/ml/sync-stock`, {
+              method: "GET"
+            })
+            const syncResult = await syncResponse.json()
+            console.log(`[v0] Sync ML completado:`, syncResult)
+            results[results.length - 1].ml_sync = syncResult
+          } catch (syncError) {
+            console.error(`[v0] Error sincronizando con ML:`, syncError)
+            results[results.length - 1].ml_sync_error = "Error al sincronizar con ML"
+          }
+        }
       } catch (error: any) {
         console.error(`[v0] Error ejecutando importación para schedule ${schedule.id}:`, error)
         results.push({

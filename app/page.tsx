@@ -3,6 +3,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useState, useEffect } from "react"
+import { SyncStatusCard } from "@/components/sync-status-card"
 
 
 const PackageIcon = ({ className }: { className?: string }) => (
@@ -285,7 +286,7 @@ export default function DashboardPage() {
           </Card>
         </div>
 
-        <div className="mt-6 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-6 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Alertas</CardTitle>
@@ -296,6 +297,11 @@ export default function DashboardPage() {
               <p className="text-xs text-muted-foreground">Productos penalizados</p>
             </CardContent>
           </Card>
+          
+          {/* Card de Estado de Sincronización ML */}
+          <div className="md:col-span-2">
+            <SyncStatusCard />
+          </div>
         </div>
 
         <div className="mt-6 grid gap-6 md:grid-cols-2">

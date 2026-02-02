@@ -121,6 +121,12 @@ interface MLAccount {
   connected: boolean
   tokenExpired: boolean
   browser_preference?: string
+  auto_sync_stock?: boolean
+  auto_sync_new_listings?: boolean
+  last_stock_sync_at?: string
+  last_new_listings_sync_at?: string
+  stock_sync_count?: number
+  new_listings_count?: number
 }
 
 export function MLAccountCard({
@@ -139,6 +145,10 @@ export function MLAccountCard({
   const [authLinkCopied, setAuthLinkCopied] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
   const [lastSyncResult, setLastSyncResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [autoSyncStock, setAutoSyncStock] = useState(account.auto_sync_stock ?? true)
+  const [autoSyncNewListings, setAutoSyncNewListings] = useState(account.auto_sync_new_listings ?? true)
+  const [isSavingSync, setIsSavingSync] = useState(false)
+  const [isSyncingStock, setIsSyncingStock] = useState(false)
 
   useEffect(() => {
     const stored = localStorage.getItem(`ml_browser_${account.id}`)
@@ -166,6 +176,58 @@ export function MLAccountCard({
     { value: "safari-default", label: "Safari - Perfil Principal" },
     { value: "custom", label: "Personalizado..." },
   ]
+
+  const handleSaveSyncPreferences = async () => {
+    setIsSavingSync(true)
+    try {
+      const response = await fetch(`/api/mercadolibre/accounts/${account.id}/sync-preferences`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          auto_sync_stock: autoSyncStock,
+          auto_sync_new_listings: autoSyncNewListings
+        }),
+      })
+      if (response.ok) {
+        onUpdate()
+      }
+    } catch (error) {
+      console.error("[v0] Error saving sync preferences:", error)
+    } finally {
+      setIsSavingSync(false)
+    }
+  }
+
+  const handleSyncStockNow = async () => {
+    setIsSyncingStock(true)
+    try {
+      const response = await fetch("/api/ml/sync-stock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: account.id }),
+      })
+      const data = await response.json()
+      if (response.ok) {
+        setLastSyncResult({
+          success: true,
+          message: `Stock sincronizado: ${data.updated || 0} actualizados`,
+        })
+        onUpdate()
+      } else {
+        setLastSyncResult({
+          success: false,
+          message: data.error || "Error al sincronizar stock",
+        })
+      }
+    } catch (error) {
+      setLastSyncResult({
+        success: false,
+        message: "Error de conexión",
+      })
+    } finally {
+      setIsSyncingStock(false)
+    }
+  }
 
   const handleSync = async () => {
     setIsSyncing(true)
@@ -374,6 +436,75 @@ export function MLAccountCard({
             Selecciona qué navegador o perfil usar para abrir órdenes de esta cuenta. Esta información se mostrará
             cuando intentes abrir una orden.
           </p>
+        </div>
+
+        {/* Configuración de Sincronización Automática */}
+        <div className="space-y-3 p-3 bg-muted/50 rounded-lg">
+          <Label className="text-sm font-medium">Sincronización Automática</Label>
+          
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label className="text-sm">Actualizar stock en ML</Label>
+              <p className="text-xs text-muted-foreground">Después de importar stock de proveedores</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={autoSyncStock}
+              onChange={(e) => setAutoSyncStock(e.target.checked)}
+              className="h-4 w-4"
+            />
+          </div>
+          
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label className="text-sm">Publicar productos nuevos</Label>
+              <p className="text-xs text-muted-foreground">Después de importar catálogo nuevo</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={autoSyncNewListings}
+              onChange={(e) => setAutoSyncNewListings(e.target.checked)}
+              className="h-4 w-4"
+            />
+          </div>
+          
+          <Button 
+            onClick={handleSaveSyncPreferences} 
+            disabled={isSavingSync} 
+            size="sm"
+            className="w-full"
+          >
+            {isSavingSync ? "Guardando..." : "Guardar preferencias"}
+          </Button>
+          
+          {/* Estado de última sincronización */}
+          <div className="pt-2 border-t border-border space-y-1">
+            <div className="flex justify-between text-xs">
+              <span className="text-muted-foreground">Último sync stock:</span>
+              <span>
+                {account.last_stock_sync_at 
+                  ? new Date(account.last_stock_sync_at).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })
+                  : "Nunca"
+                }
+              </span>
+            </div>
+            {account.stock_sync_count !== undefined && account.stock_sync_count > 0 && (
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">Productos actualizados:</span>
+                <span>{account.stock_sync_count}</span>
+              </div>
+            )}
+          </div>
+          
+          <Button 
+            onClick={handleSyncStockNow} 
+            disabled={isSyncingStock || !isConnected} 
+            variant="outline"
+            size="sm"
+            className="w-full bg-transparent"
+          >
+            {isSyncingStock ? "Sincronizando..." : "Sincronizar stock ahora"}
+          </Button>
         </div>
 
         <div className="flex gap-2">
