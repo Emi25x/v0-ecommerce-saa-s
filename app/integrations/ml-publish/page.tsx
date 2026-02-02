@@ -23,6 +23,13 @@ interface Product {
   brand: string
   image_url: string
   language?: string
+  is_published?: boolean
+}
+
+interface Stats {
+  total_in_db: number
+  published_count: number
+  available_count: number
 }
 
 interface Template {
@@ -66,18 +73,26 @@ export default function MLPublishPage() {
   const [previews, setPreviews] = useState<PublishPreview[]>([])
   const [publishing, setPublishing] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
+  const [showOnlyUnpublished, setShowOnlyUnpublished] = useState(true)
+  const [stats, setStats] = useState<Stats>({ total_in_db: 0, published_count: 0, available_count: 0 })
+  const [publishProgress, setPublishProgress] = useState({ current: 0, total: 0, success: 0, errors: 0 })
 
   useEffect(() => {
     fetchData()
-  }, [])
+  }, [showOnlyUnpublished])
 
   const fetchData = async () => {
     setLoading(true)
     try {
-      // Fetch products not published in ML (with cost_price)
-      const productsRes = await fetch("/api/ml/publish/available")
+      // Fetch products (filtrar por publicados o no segun el toggle)
+      const productsRes = await fetch(`/api/ml/publish/available?show_all=${!showOnlyUnpublished}`)
       const productsData = await productsRes.json()
       setProducts(productsData.products || [])
+      setStats({
+        total_in_db: productsData.total_in_db || 0,
+        published_count: productsData.published_count || 0,
+        available_count: productsData.total || 0
+      })
 
       // Fetch templates
       const templatesRes = await fetch("/api/ml/templates")
@@ -143,22 +158,33 @@ export default function MLPublishPage() {
     }
   }
   
-  // Publicar directamente sin vista previa
+  // Publicar directamente sin vista previa (con delay para no saturar API)
   const publishDirectly = async () => {
     if (selectedProducts.size === 0) {
       toast({ title: "Error", description: "Selecciona al menos un producto", variant: "destructive" })
       return
     }
     
-    if (!confirm(`¿Publicar ${selectedProducts.size} productos directamente sin vista previa?`)) {
+    if (!selectedTemplate || !selectedAccount) {
+      toast({ title: "Error", description: "Selecciona plantilla y cuenta primero", variant: "destructive" })
+      return
+    }
+    
+    if (!confirm(`¿Publicar ${selectedProducts.size} productos directamente?\n\nSe publicarán con delay de 1 segundo entre cada uno para evitar saturar la API de ML.`)) {
       return
     }
     
     setPublishing(true)
+    const productIds = Array.from(selectedProducts)
+    setPublishProgress({ current: 0, total: productIds.length, success: 0, errors: 0 })
+    
     let successCount = 0
     let errorCount = 0
     
-    for (const productId of selectedProducts) {
+    for (let i = 0; i < productIds.length; i++) {
+      const productId = productIds[i]
+      setPublishProgress(prev => ({ ...prev, current: i + 1 }))
+      
       try {
         const response = await fetch("/api/ml/publish", {
           method: "POST",
@@ -175,22 +201,29 @@ export default function MLPublishPage() {
         const data = await response.json()
         if (data.success) {
           successCount++
+          setPublishProgress(prev => ({ ...prev, success: successCount }))
         } else {
           errorCount++
-          console.log("[v0] Error publishing product:", productId, data.error)
+          setPublishProgress(prev => ({ ...prev, errors: errorCount }))
         }
-      } catch (error) {
+      } catch {
         errorCount++
-        console.log("[v0] Exception publishing product:", productId, error)
+        setPublishProgress(prev => ({ ...prev, errors: errorCount }))
+      }
+      
+      // Delay de 1 segundo entre publicaciones para no saturar la API
+      if (i < productIds.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000))
       }
     }
     
     setPublishing(false)
     setSelectedProducts(new Set())
+    setPublishProgress({ current: 0, total: 0, success: 0, errors: 0 })
     
     toast({
       title: "Publicación completada",
-      description: `${successCount} publicados, ${errorCount} errores`
+      description: `${successCount} publicados exitosamente, ${errorCount} con errores`
     })
     
     // Recargar productos disponibles
@@ -417,19 +450,16 @@ export default function MLPublishPage() {
                   <div>
                     <CardTitle>Productos disponibles</CardTitle>
                     <CardDescription>
-                      {filteredProducts.length} de {products.length} productos
+                      {stats.total_in_db.toLocaleString()} productos en BD | {stats.published_count.toLocaleString()} publicados | {stats.available_count.toLocaleString()} sin publicar
                     </CardDescription>
                   </div>
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    onClick={selectAll}
-                    className="bg-transparent"
-                  >
-                    {selectedProducts.size === filteredProducts.length && filteredProducts.length > 0 
-                      ? "Deseleccionar todos" 
-                      : `Seleccionar ${filteredProducts.length > 50 ? 50 : filteredProducts.length}`}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm whitespace-nowrap">Solo sin publicar</Label>
+                    <Checkbox
+                      checked={showOnlyUnpublished}
+                      onCheckedChange={(checked) => setShowOnlyUnpublished(!!checked)}
+                    />
+                  </div>
                 </div>
                 
                 {/* Filtros */}
@@ -540,14 +570,39 @@ export default function MLPublishPage() {
                 </Table>
               </div>
 
+              {/* Barra de progreso durante publicación */}
+              {publishing && publishProgress.total > 0 && (
+                <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-medium">Publicando productos...</p>
+                    <p className="text-sm text-muted-foreground">
+                      {publishProgress.current} / {publishProgress.total}
+                    </p>
+                  </div>
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 mb-2">
+                    <div 
+                      className="bg-blue-600 h-2.5 rounded-full transition-all duration-300" 
+                      style={{ width: `${(publishProgress.current / publishProgress.total) * 100}%` }}
+                    />
+                  </div>
+                  <div className="flex gap-4 text-xs">
+                    <span className="text-green-600">{publishProgress.success} exitosos</span>
+                    <span className="text-red-600">{publishProgress.errors} errores</span>
+                    <span className="text-muted-foreground">
+                      ~{Math.ceil((publishProgress.total - publishProgress.current))} segundos restantes
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {/* Resumen y contador */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-4 p-4 bg-muted/50 rounded-lg">
                 <div className="space-y-1">
                   <p className="text-sm font-medium">
-                    Total publicables: <span className="text-primary">{filteredProducts.length}</span> productos
+                    Filtrados: <span className="text-primary">{filteredProducts.length.toLocaleString()}</span> productos
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {selectedProducts.size} seleccionados
+                    {selectedProducts.size.toLocaleString()} seleccionados
                     {filteredProducts.length > 50 && ` (mostrando 50 en tabla)`}
                   </p>
                 </div>
@@ -557,11 +612,11 @@ export default function MLPublishPage() {
                     variant="outline"
                     size="sm"
                     onClick={selectAllFiltered}
-                    disabled={filteredProducts.length === 0}
+                    disabled={filteredProducts.length === 0 || publishing}
                   >
                     {filteredProducts.every(p => selectedProducts.has(p.id)) && filteredProducts.length > 0
-                      ? `Deseleccionar todos (${filteredProducts.length})`
-                      : `Seleccionar todos (${filteredProducts.length})`
+                      ? `Deseleccionar todos (${filteredProducts.length.toLocaleString()})`
+                      : `Seleccionar todos (${filteredProducts.length.toLocaleString()})`
                     }
                   </Button>
                   
@@ -580,14 +635,14 @@ export default function MLPublishPage() {
                   
                   <Button
                     onClick={publishDirectly}
-                    disabled={selectedProducts.size === 0 || publishing}
+                    disabled={selectedProducts.size === 0 || publishing || !selectedTemplate || !selectedAccount}
                   >
                     {publishing ? (
                       <Loader2 className="h-4 w-4 animate-spin mr-2" />
                     ) : (
                       <Upload className="h-4 w-4 mr-2" />
                     )}
-                    Publicar ({selectedProducts.size})
+                    Publicar ({selectedProducts.size.toLocaleString()})
                   </Button>
                 </div>
               </div>

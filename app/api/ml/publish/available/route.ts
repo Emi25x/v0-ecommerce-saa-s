@@ -1,9 +1,13 @@
 import { createClient } from "@/lib/supabase/server"
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
+    const searchParams = request.nextUrl.searchParams
+    const showAll = searchParams.get("show_all") === "true"
+    const page = parseInt(searchParams.get("page") || "1")
+    const pageSize = parseInt(searchParams.get("page_size") || "10000") // Por defecto traer todos
 
     // Obtener IDs de productos ya publicados en ml_publications
     let publishedProductIds = new Set<string>()
@@ -30,31 +34,42 @@ export async function GET() {
     // Combinar ambos sets
     const allPublishedIds = new Set([...publishedProductIds, ...publishedListingsProductIds])
 
-    // Obtener productos con cost_price (sin ordenar para evitar timeout)
-    const { data: allProducts, error } = await supabase
+    // Obtener TODOS los productos con cost_price (paginado para evitar timeout)
+    // Usamos rango para paginacion eficiente
+    const from = (page - 1) * pageSize
+    const to = from + pageSize - 1
+    
+    const { data: allProducts, error, count } = await supabase
       .from("products")
-      .select("id, ean, title, cost_price, price, stock, brand, image_url, language")
+      .select("id, ean, title, cost_price, price, stock, brand, image_url, language", { count: "exact" })
       .gt("cost_price", 0)
-      .limit(500)
+      .range(from, to)
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // Filtrar los que no estan publicados (por product_id)
-    const availableProducts = (allProducts || []).filter(p => !allPublishedIds.has(p.id))
+    // Filtrar segun el parametro show_all
+    let resultProducts = allProducts || []
+    if (!showAll) {
+      // Por defecto, solo mostrar los NO publicados
+      resultProducts = resultProducts.filter(p => !allPublishedIds.has(p.id))
+    }
 
-    console.log("[v0] Products available:", {
-      total: allProducts?.length || 0,
-      published_in_ml_publications: publishedProductIds.size,
-      published_in_ml_listings: publishedListingsProductIds.size,
-      available: availableProducts.length
-    })
+    // Marcar cuales estan publicados (para mostrar en UI)
+    const productsWithStatus = resultProducts.map(p => ({
+      ...p,
+      is_published: allPublishedIds.has(p.id)
+    }))
 
     return NextResponse.json({ 
-      products: availableProducts,
-      total: availableProducts.length,
-      published_count: allPublishedIds.size
+      products: productsWithStatus,
+      total: productsWithStatus.length,
+      total_in_db: count || 0,
+      published_count: allPublishedIds.size,
+      page,
+      page_size: pageSize,
+      show_all: showAll
     })
   } catch (error) {
     console.error("Error fetching available products:", error)
