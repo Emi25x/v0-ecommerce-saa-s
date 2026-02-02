@@ -342,15 +342,50 @@ export default function MLPublishPage() {
 
         const data = await response.json()
 
-if (data.success) {
-  newPreviews.push({
-  product,
-  calculated_price: data.preview.price,
-  multiplier: Math.round(data.preview.price / product.cost_price),
-  margin: data.preview.margin,
-  status: "pending",
-  already_published: data.preview.already_published
-  })
+        // Si es rate limit, esperar y reintentar
+        if (data.is_rate_limit) {
+          await new Promise(resolve => setTimeout(resolve, 2000))
+          // Reintentar una vez
+          const retryResponse = await fetch("/api/ml/publish", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              product_id: productId,
+              template_id: selectedTemplate,
+              account_id: selectedAccount,
+              preview_only: true,
+              publish_mode: publishMode
+            })
+          })
+          const retryData = await retryResponse.json()
+          if (retryData.success) {
+            newPreviews.push({
+              product,
+              calculated_price: retryData.preview.price,
+              multiplier: Math.round(retryData.preview.price / product.cost_price),
+              margin: retryData.preview.margin,
+              status: "pending",
+              already_published: retryData.preview.already_published
+            })
+          } else {
+            newPreviews.push({
+              product,
+              calculated_price: 0,
+              multiplier: 0,
+              margin: 0,
+              status: "error",
+              error: retryData.error || "Error después de reintentar"
+            })
+          }
+        } else if (data.success) {
+          newPreviews.push({
+            product,
+            calculated_price: data.preview.price,
+            multiplier: Math.round(data.preview.price / product.cost_price),
+            margin: data.preview.margin,
+            status: "pending",
+            already_published: data.preview.already_published
+          })
         } else {
           newPreviews.push({
             product,
@@ -371,6 +406,9 @@ if (data.success) {
           error: "Error al calcular precio"
         })
       }
+      
+      // Delay entre previews para evitar rate limiting
+      await new Promise(resolve => setTimeout(resolve, 500))
     }
 
     setPreviews(newPreviews)
