@@ -2,6 +2,27 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { createServerClient } from "@/lib/supabase/server" // Declared the variable here
 
+// Helper para fetch con reintentos
+async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3): Promise<Response> {
+  let lastError: Error | null = null
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: AbortSignal.timeout(15000), // 15 segundos timeout
+      })
+      return response
+    } catch (error) {
+      lastError = error as Error
+      console.log(`[v0] Fetch attempt ${i + 1} failed:`, lastError.message)
+      if (i < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))) // Espera exponencial
+      }
+    }
+  }
+  throw lastError || new Error("Fetch failed after retries")
+}
+
 export async function GET(request: NextRequest) {
   console.log("[v0] ========================================")
   console.log("[v0] GET /api/ml/items - STARTING")
@@ -101,7 +122,7 @@ export async function GET(request: NextRequest) {
 
     console.log("[v0] Fetching products from ML API:", searchUrl)
 
-    const searchResponse = await fetch(searchUrl, {
+    const searchResponse = await fetchWithRetry(searchUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
 
@@ -139,7 +160,7 @@ export async function GET(request: NextRequest) {
       const itemsUrl = `https://api.mercadolibre.com/items?ids=${chunk.join(",")}`
       console.log("[v0] Fetching chunk:", itemsUrl)
 
-      const itemsResponse = await fetch(itemsUrl, {
+      const itemsResponse = await fetchWithRetry(itemsUrl, {
         headers: { Authorization: `Bearer ${accessToken}` },
       })
 
