@@ -127,6 +127,75 @@ export default function MLPublishPage() {
       setSelectedProducts(newSelected)
     }
   }
+  
+  // Seleccionar TODOS los productos filtrados (no solo los 50 visibles)
+  const selectAllFiltered = () => {
+    const allFilteredSelected = filteredProducts.every(p => selectedProducts.has(p.id))
+    
+    if (allFilteredSelected) {
+      // Deseleccionar todos los filtrados
+      const newSelected = new Set<string>()
+      setSelectedProducts(newSelected)
+    } else {
+      // Seleccionar todos los filtrados
+      const newSelected = new Set(filteredProducts.map(p => p.id))
+      setSelectedProducts(newSelected)
+    }
+  }
+  
+  // Publicar directamente sin vista previa
+  const publishDirectly = async () => {
+    if (selectedProducts.size === 0) {
+      toast({ title: "Error", description: "Selecciona al menos un producto", variant: "destructive" })
+      return
+    }
+    
+    if (!confirm(`¿Publicar ${selectedProducts.size} productos directamente sin vista previa?`)) {
+      return
+    }
+    
+    setPublishing(true)
+    let successCount = 0
+    let errorCount = 0
+    
+    for (const productId of selectedProducts) {
+      try {
+        const response = await fetch("/api/ml/publish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            product_id: productId,
+            template_id: selectedTemplate,
+            account_id: selectedAccount,
+            preview_only: false,
+            publish_mode: publishMode
+          })
+        })
+        
+        const data = await response.json()
+        if (data.success) {
+          successCount++
+        } else {
+          errorCount++
+          console.log("[v0] Error publishing product:", productId, data.error)
+        }
+      } catch (error) {
+        errorCount++
+        console.log("[v0] Exception publishing product:", productId, error)
+      }
+    }
+    
+    setPublishing(false)
+    setSelectedProducts(new Set())
+    
+    toast({
+      title: "Publicación completada",
+      description: `${successCount} publicados, ${errorCount} errores`
+    })
+    
+    // Recargar productos disponibles
+    fetchData()
+  }
 
   const filteredProducts = products.filter(p => {
     const matchesSearch = p.title.toLowerCase().includes(searchTerm.toLowerCase()) || p.ean.includes(searchTerm)
@@ -471,27 +540,56 @@ export default function MLPublishPage() {
                 </Table>
               </div>
 
-              {filteredProducts.length > 50 && (
-                <p className="text-sm text-muted-foreground mt-2">
-                  Mostrando 50 de {filteredProducts.length} productos
-                </p>
-              )}
-
-              <div className="flex items-center justify-between mt-4">
-                <p className="text-sm text-muted-foreground">
-                  {selectedProducts.size} productos seleccionados
-                </p>
-                <Button
-                  onClick={generatePreviews}
-                  disabled={selectedProducts.size === 0 || publishing}
-                >
-                  {publishing ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : (
-                    <Eye className="h-4 w-4 mr-2" />
-                  )}
-                  Vista previa ({selectedProducts.size})
-                </Button>
+              {/* Resumen y contador */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-4 p-4 bg-muted/50 rounded-lg">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">
+                    Total publicables: <span className="text-primary">{filteredProducts.length}</span> productos
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedProducts.size} seleccionados
+                    {filteredProducts.length > 50 && ` (mostrando 50 en tabla)`}
+                  </p>
+                </div>
+                
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={selectAllFiltered}
+                    disabled={filteredProducts.length === 0}
+                  >
+                    {filteredProducts.every(p => selectedProducts.has(p.id)) && filteredProducts.length > 0
+                      ? `Deseleccionar todos (${filteredProducts.length})`
+                      : `Seleccionar todos (${filteredProducts.length})`
+                    }
+                  </Button>
+                  
+                  <Button
+                    variant="outline"
+                    onClick={generatePreviews}
+                    disabled={selectedProducts.size === 0 || publishing}
+                  >
+                    {publishing ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <Eye className="h-4 w-4 mr-2" />
+                    )}
+                    Vista previa
+                  </Button>
+                  
+                  <Button
+                    onClick={publishDirectly}
+                    disabled={selectedProducts.size === 0 || publishing}
+                  >
+                    {publishing ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <Upload className="h-4 w-4 mr-2" />
+                    )}
+                    Publicar ({selectedProducts.size})
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
