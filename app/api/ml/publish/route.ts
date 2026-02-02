@@ -442,7 +442,17 @@ Libro nuevo. Envíos a todo el país.`
         // NOTA: La descripción se agrega en POST separado después de crear el item
         // Imagenes
         pictures: pictures,
-        // NOTA: warranty está deprecado en ML, no se puede enviar
+        // Garantia via sale_terms (WARRANTY_TYPE + WARRANTY_TIME)
+        sale_terms: [
+          {
+            id: "WARRANTY_TYPE",
+            value_name: template.warranty_type || "Garantía del vendedor"
+          },
+          {
+            id: "WARRANTY_TIME", 
+            value_name: template.warranty_time || "30 días"
+          }
+        ],
         // Configuracion de envio (usar valores del template si existen)
         shipping: {
           mode: template.shipping_mode || "me2", // Mercado Envios
@@ -477,7 +487,17 @@ Libro nuevo. Envíos a todo el país.`
         // NOTA: La descripción se agrega en POST separado después de crear el item
         // Imagenes
         pictures: pictures,
-        // NOTA: warranty está deprecado en ML, no se puede enviar
+        // Garantia via sale_terms (WARRANTY_TYPE + WARRANTY_TIME)
+        sale_terms: [
+          {
+            id: "WARRANTY_TYPE",
+            value_name: template.warranty_type || "Garantía del vendedor"
+          },
+          {
+            id: "WARRANTY_TIME", 
+            value_name: template.warranty_time || "30 días"
+          }
+        ],
         // Configuracion de envio
         shipping: {
           mode: template.shipping_mode || "me2",
