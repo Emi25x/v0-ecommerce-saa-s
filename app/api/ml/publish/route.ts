@@ -102,6 +102,13 @@ export async function POST(request: NextRequest) {
     if (productError || !product) {
       return NextResponse.json({ error: "Producto no encontrado" }, { status: 404 })
     }
+    
+    console.log("[v0] Product loaded from DB:", {
+      id: product.id,
+      title: product.title,
+      image_url: product.image_url,
+      description: product.description?.substring(0, 100) + "..."
+    })
 
     // Obtener la plantilla
     const { data: template, error: templateError } = await supabase
@@ -323,17 +330,34 @@ Libro nuevo. Envíos a todo el país.`
     
     // Helper para construir publicacion de catalogo
     const buildCatalogItem = () => {
+      // Construir array de pictures
+      const pictures: Array<{ source: string }> = []
+      if (product.image_url) {
+        pictures.push({ source: product.image_url })
+      }
+      
       return {
         site_id: "MLA",
         catalog_product_id: catalogProductId,
         catalog_listing: true,
         price: finalPrice,
-        currency_id: "ARS",
+        currency_id: template.currency_id || "ARS",
         available_quantity: Math.min(product.stock || 1, 50),
         buying_mode: "buy_it_now",
-        condition: "new",
+        condition: template.condition || "new",
         listing_type_id: template.listing_type_id || "gold_special",
-        pictures: product.image_url ? [{ source: product.image_url }] : [],
+        // Descripcion del producto
+        description: { plain_text: description },
+        // Imagenes
+        pictures: pictures,
+        // Garantia del vendedor
+        warranty: template.warranty || "Garantía del vendedor: 30 días",
+        // Configuracion de envio
+        shipping: {
+          mode: template.shipping_mode || "me2",
+          local_pick_up: template.local_pick_up !== false,
+          free_shipping: template.free_shipping || false,
+        },
       }
     }
     
