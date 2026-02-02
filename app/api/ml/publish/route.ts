@@ -212,10 +212,11 @@ export async function POST(request: NextRequest) {
         attributes.push({ id: "BOOK_COVER_TYPE", value_name: product.binding })
       }
       
+      // IMPORTANTE: Para vendedores con User Products (tag user_product_seller),
+      // NO se debe enviar "title", solo "family_name". ML genera el title automaticamente.
       return {
         site_id: "MLA",
         category_id: template.category_id || "MLA3026",
-        title: product.title?.substring(0, 60) || "Libro",
         family_name: product.title?.substring(0, 60) || "Libro",
         price: finalPrice,
         currency_id: "ARS",
