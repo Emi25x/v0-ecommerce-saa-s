@@ -189,15 +189,34 @@ Libro nuevo. Envíos a todo el país.`
       try {
         console.log("[v0] Downloading image from:", imageUrl)
         
-        // Descargar la imagen
-        const imageResponse = await fetch(imageUrl)
+        // Intentar descargar con headers de navegador para evitar bloqueos
+        const imageResponse = await fetch(imageUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+            "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+          }
+        })
+        
         if (!imageResponse.ok) {
-          console.error("[v0] Failed to download image:", imageResponse.status)
+          console.log("[v0] Failed to download image (status " + imageResponse.status + "), continuing without image")
+          return null
+        }
+        
+        // Verificar que sea una imagen y no HTML (Cloudflare challenge)
+        const contentType = imageResponse.headers.get("content-type") || ""
+        if (contentType.includes("text/html")) {
+          console.log("[v0] Image URL returned HTML (likely Cloudflare), continuing without image")
           return null
         }
         
         const imageBuffer = await imageResponse.arrayBuffer()
-        const contentType = imageResponse.headers.get("content-type") || "image/jpeg"
+        
+        // Verificar tamaño mínimo (una imagen real debería ser > 1KB)
+        if (imageBuffer.byteLength < 1000) {
+          console.log("[v0] Image too small, likely not a real image, continuing without")
+          return null
+        }
         
         console.log("[v0] Uploading image to ML, size:", imageBuffer.byteLength, "type:", contentType)
         
@@ -206,14 +225,14 @@ Libro nuevo. Envíos a todo el país.`
           method: "POST",
           headers: {
             "Authorization": `Bearer ${accessToken}`,
-            "Content-Type": contentType,
+            "Content-Type": contentType || "image/jpeg",
           },
           body: imageBuffer,
         })
         
         if (!uploadResponse.ok) {
           const uploadError = await uploadResponse.text()
-          console.error("[v0] Failed to upload image to ML:", uploadError)
+          console.log("[v0] Failed to upload image to ML:", uploadError)
           return null
         }
         
@@ -221,15 +240,18 @@ Libro nuevo. Envíos a todo el país.`
         console.log("[v0] Image uploaded to ML:", uploadData.id)
         return uploadData.id // Retorna el ID de la imagen en ML
       } catch (error) {
-        console.error("[v0] Error uploading image:", error)
+        console.log("[v0] Error downloading/uploading image, continuing without:", error)
         return null
       }
     }
     
-    // Subir imagen a ML si existe
+    // Intentar subir imagen a ML si existe (no bloquea si falla)
     let mlPictureId: string | null = null
     if (product.image_url) {
       mlPictureId = await uploadImageToML(product.image_url)
+      if (!mlPictureId) {
+        console.log("[v0] Could not process image, publication will be created without image")
+      }
     }
 
     // Buscar en el catalogo de ML si el modo es "catalog" o "linked"
