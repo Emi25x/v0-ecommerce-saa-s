@@ -162,25 +162,39 @@ export async function POST(request: NextRequest) {
     let familyName: string | null = null
     let catalogProductId: string | null = null
     
-    if ((publish_mode === "catalog" || publish_mode === "linked") && product.ean && account.access_token) {
+    // SIEMPRE buscar en catalogo - ML rechaza "title" si el ISBN existe en su catalogo
+    console.log("[v0] Searching catalog for EAN:", product.ean, "has token:", !!account.access_token)
+    
+    if (product.ean && account.access_token) {
       try {
         // Buscar en el catalogo de ML por product_identifier (ISBN/EAN)
-        const catalogSearch = await fetch(
-          `https://api.mercadolibre.com/products/search?status=active&site_id=MLA&product_identifier=${product.ean}`,
-          { headers: { Authorization: `Bearer ${account.access_token}` } }
-        )
+        const catalogUrl = `https://api.mercadolibre.com/products/search?status=active&site_id=MLA&product_identifier=${product.ean}`
+        console.log("[v0] Catalog search URL:", catalogUrl)
+        
+        const catalogSearch = await fetch(catalogUrl, { 
+          headers: { Authorization: `Bearer ${account.access_token}` } 
+        })
+        
+        console.log("[v0] Catalog search status:", catalogSearch.status)
         
         if (catalogSearch.ok) {
           const catalogData = await catalogSearch.json()
+          console.log("[v0] Catalog results count:", catalogData.results?.length || 0)
           if (catalogData.results && catalogData.results.length > 0) {
             catalogProductId = catalogData.results[0].id
             familyName = catalogData.results[0].name || catalogData.results[0].id
+            console.log("[v0] Found catalog product:", catalogProductId)
           }
+        } else {
+          const errorText = await catalogSearch.text()
+          console.log("[v0] Catalog search error:", errorText)
         }
-      } catch {
-        // Continuar sin family_name del catalogo
+      } catch (err) {
+        console.log("[v0] Catalog search exception:", err)
       }
     }
+    
+    console.log("[v0] Final catalogProductId:", catalogProductId)
 
     // Construir el objeto de publicacion para ML
     const mlItem: Record<string, unknown> = {
@@ -197,27 +211,25 @@ export async function POST(request: NextRequest) {
     }
     
     // Decidir como publicar segun el modo y si encontramos en catalogo
-    if (publish_mode === "catalog") {
-      // Modo catalogo: requiere catalog_product_id
-      if (!catalogProductId) {
-        return NextResponse.json({
-          success: false,
-          error: `Producto no encontrado en catálogo de ML (ISBN: ${product.ean}). Intenta con modo "Tradicional" o "Vinculada".`,
-          not_in_catalog: true
-        }, { status: 400 })
-      }
+    // IMPORTANTE: Si el producto existe en el catalogo de ML, DEBE publicarse con catalog_product_id
+    // ML rechaza "title" si el ISBN ya esta en su catalogo
+    
+    if (catalogProductId) {
+      // Producto EXISTE en catalogo - DEBE usar catalog_product_id
       mlItem.catalog_product_id = catalogProductId
       mlItem.catalog_listing = true
-    } else if (publish_mode === "linked") {
-      // Modo vinculado: publicacion tradicional + optin a catalogo si existe
-      // Crear como tradicional primero
-      mlItem.title = product.title?.substring(0, 60) || "Libro"
-      mlItem.family_name = familyName || product.title?.substring(0, 60) || "Libro"
-      mlItem.description = { plain_text: description }
+      // NO incluir title, family_name ni description - ML usa los del catalogo
+    } else if (publish_mode === "catalog") {
+      // Modo catalogo pero no encontrado en catalogo
+      return NextResponse.json({
+        success: false,
+        error: `Producto no encontrado en catálogo de ML (ISBN: ${product.ean}). Intenta con modo "Tradicional".`,
+        not_in_catalog: true
+      }, { status: 400 })
     } else {
-      // Modo tradicional: sin catalogo
+      // Producto NO existe en catalogo - publicacion tradicional
       mlItem.title = product.title?.substring(0, 60) || "Libro"
-      mlItem.family_name = familyName || product.title?.substring(0, 60) || "Libro"
+      mlItem.family_name = product.title?.substring(0, 60) || "Libro"
       mlItem.description = { plain_text: description }
     }
 
@@ -266,12 +278,9 @@ export async function POST(request: NextRequest) {
     const accessToken = validAccount.access_token
 
     // El mlItem ya esta preparado correctamente segun el publish_mode
+    // Para "linked" y "traditional" ya tiene title y family_name
+    // Para "catalog" ya tiene catalog_product_id y catalog_listing
     const itemToPublish = mlItem
-
-    console.log("[v0] ========== PUBLICANDO EN ML ==========")
-    console.log("[v0] publish_mode:", publish_mode)
-    console.log("[v0] catalogProductId:", catalogProductId)
-    console.log("[v0] itemToPublish:", JSON.stringify(itemToPublish, null, 2))
 
     // Publicar en ML (tradicional primero si es linked)
     const mlResponse = await fetch("https://api.mercadolibre.com/items", {
@@ -285,14 +294,10 @@ export async function POST(request: NextRequest) {
 
     const mlData = await mlResponse.json()
 
-    console.log("[v0] ML Response status:", mlResponse.status)
-    console.log("[v0] ML Response data:", JSON.stringify(mlData, null, 2))
-
     if (!mlResponse.ok) {
       return NextResponse.json({
         success: false,
-        error: mlData.message || mlData.error || "Error al publicar en ML",
-        ml_error: mlData
+        error: mlData.message || mlData.error || "Error al publicar en ML"
       }, { status: 400 })
     }
 
