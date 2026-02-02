@@ -131,7 +131,7 @@ export async function GET(request: Request) {
 
         results.push({
           source: schedule.import_sources.name,
-          success: importResponse.ok,
+          success: importResult.success || (importResponse && importResponse.ok),
           result: importResult,
         })
       } catch (error: any) {
