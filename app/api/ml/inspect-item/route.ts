@@ -4,7 +4,8 @@ import { NextResponse } from "next/server"
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
-  const itemId = searchParams.get("item_id") || "MLA2199217606" // Default a un item conocido
+  let itemId = searchParams.get("item_id")
+  const showRecent = searchParams.get("recent") === "true"
   
   try {
     const supabase = await createClient()
@@ -21,6 +22,37 @@ export async function GET(request: Request) {
     
     // Refrescar token
     const validAccount = await refreshTokenIfNeeded(account)
+    
+    // Si se pide items recientes, buscar los últimos creados
+    if (showRecent || !itemId) {
+      const searchResponse = await fetch(
+        `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?limit=5&sort=date_desc`,
+        { headers: { Authorization: `Bearer ${validAccount.access_token}` } }
+      )
+      
+      if (searchResponse.ok) {
+        const searchData = await searchResponse.json()
+        if (searchData.results?.length > 0) {
+          // Si no hay itemId específico, usar el más reciente
+          if (!itemId) {
+            itemId = searchData.results[0]
+          }
+          
+          // Si se pide recent=true, devolver lista de IDs recientes
+          if (showRecent) {
+            return NextResponse.json({
+              recent_items: searchData.results,
+              total: searchData.paging?.total || 0,
+              message: "Usa ?item_id=MLA... para ver detalles de un item específico"
+            })
+          }
+        }
+      }
+    }
+    
+    if (!itemId) {
+      return NextResponse.json({ error: "No item_id provided and no items found" }, { status: 400 })
+    }
     
     // Obtener item completo con atributos
     const itemResponse = await fetch(
