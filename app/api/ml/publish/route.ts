@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { refreshTokenIfNeeded } from "@/lib/mercadolibre"
+import { put } from "@vercel/blob"
 
 // Calcular precio usando la formula de margen
 async function calculatePriceForProduct(costPriceEur: number, marginPercent: number) {
@@ -150,6 +151,60 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ 
         error: "No se pudo calcular el precio. El producto no tiene cost_price." 
       }, { status: 400 })
+    }
+
+    // Funcion para subir imagen a Vercel Blob (accesible publicamente para ML)
+    const uploadImageToBlob = async (imageUrl: string, ean: string): Promise<string | null> => {
+      try {
+        console.log("[v0] Downloading image from:", imageUrl)
+        
+        // Descargar imagen con headers de navegador
+        const response = await fetch(imageUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+          }
+        })
+        
+        if (!response.ok) {
+          console.log("[v0] Failed to download image:", response.status)
+          return null
+        }
+        
+        const contentType = response.headers.get("content-type") || ""
+        if (contentType.includes("text/html")) {
+          console.log("[v0] Got HTML instead of image (Cloudflare block)")
+          return null
+        }
+        
+        const imageBuffer = await response.arrayBuffer()
+        if (imageBuffer.byteLength < 1000) {
+          console.log("[v0] Image too small, skipping")
+          return null
+        }
+        
+        // Subir a Vercel Blob
+        const filename = `products/${ean}.jpg`
+        const blob = await put(filename, imageBuffer, {
+          access: "public",
+          contentType: contentType || "image/jpeg",
+        })
+        
+        console.log("[v0] Image uploaded to Blob:", blob.url)
+        return blob.url
+      } catch (error) {
+        console.log("[v0] Error uploading to Blob:", error)
+        return null
+      }
+    }
+    
+    // Subir imagen a Vercel Blob si existe
+    let imageUrlForML = product.image_url
+    if (product.image_url && product.ean) {
+      const blobUrl = await uploadImageToBlob(product.image_url, product.ean)
+      if (blobUrl) {
+        imageUrlForML = blobUrl
+      }
     }
 
     // Funcion para sanitizar texto a plain text (quitar HTML y caracteres especiales)
@@ -333,13 +388,13 @@ Libro nuevo. Envíos a todo el país.`
         attributes.push({ id: "PAGES_NUMBER", value_name: product.pages.toString() })
       }
       
-      // Para vendedores con User Products (tag user_product_seller),
+// Para vendedores con User Products (tag user_product_seller),
       // NO se debe enviar "title", solo "family_name". ML genera el title automaticamente.
       
-      // Construir array de pictures - pasar URL directamente a ML
+      // Usar la URL de Blob si se subió, sino la original
       const pictures: Array<{ source: string }> = []
-      if (product.image_url) {
-        pictures.push({ source: product.image_url })
+      if (imageUrlForML) {
+        pictures.push({ source: imageUrlForML })
       }
       
       return {
@@ -367,12 +422,12 @@ Libro nuevo. Envíos a todo el país.`
       }
     }
     
-    // Helper para construir publicacion de catalogo
+// Helper para construir publicacion de catalogo
     const buildCatalogItem = () => {
-      // Construir array de pictures - pasar URL directamente a ML
+      // Usar la URL de Blob si se subió, sino la original
       const pictures: Array<{ source: string }> = []
-      if (product.image_url) {
-        pictures.push({ source: product.image_url })
+      if (imageUrlForML) {
+        pictures.push({ source: imageUrlForML })
       }
       
       return {
