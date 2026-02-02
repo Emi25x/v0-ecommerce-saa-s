@@ -5,29 +5,23 @@ export async function GET() {
   try {
     const supabase = await createClient()
 
-    // Obtener IDs de productos ya publicados en ML
-    const { data: publishedProducts } = await supabase
-      .from("ml_publications")
-      .select("product_id")
-    
-    const publishedIds = new Set((publishedProducts || []).map(p => p.product_id))
+    // Obtener IDs de productos ya publicados en ML (puede fallar si tabla no existe)
+    let publishedIds = new Set<string>()
+    try {
+      const { data: publishedProducts } = await supabase
+        .from("ml_publications")
+        .select("product_id")
+      publishedIds = new Set((publishedProducts || []).map(p => p.product_id))
+    } catch {
+      // Tabla puede no existir aun, continuar sin filtrar
+    }
 
-    // Obtener todos los productos con cost_price
+    // Obtener productos con cost_price (sin ordenar para evitar timeout)
     const { data: allProducts, error } = await supabase
       .from("products")
-      .select(`
-        id,
-        ean,
-        title,
-        cost_price,
-        price,
-        stock,
-        brand,
-        image_url
-      `)
+      .select("id, ean, title, cost_price, price, stock, brand, image_url")
       .gt("cost_price", 0)
-      .order("title")
-      .limit(1000)
+      .limit(100)
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
