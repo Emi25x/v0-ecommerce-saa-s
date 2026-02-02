@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
 
     // Construir el objeto de publicacion para ML
     const mlItem: Record<string, unknown> = {
-      title: product.title?.substring(0, 60) || "Libro",
+      site_id: "MLA",
       category_id: template.category_id || "MLA3025", // Libros
       price: finalPrice,
       currency_id: "ARS",
@@ -192,20 +192,22 @@ export async function POST(request: NextRequest) {
       buying_mode: "buy_it_now",
       condition: "new",
       listing_type_id: template.listing_type_id || "gold_special",
-      description: { plain_text: description },
       pictures: product.image_url ? [{ source: product.image_url }] : [],
       attributes: [] as Array<{ id: string; value_name: string }>
     }
     
-    // Para libros (MLA3025) SIEMPRE se necesita family_name
-    // Usar el nombre del catalogo si lo encontramos, sino el titulo del producto
-    mlItem.family_name = familyName || product.title?.substring(0, 60) || "Libro"
-    
-    // Si encontramos el producto en el catalogo y modo es catalog, usar catalog_product_id
+    // Para modo "catalog" con catalog_product_id: NO enviar title, agregar catalog_listing
+    // Para modo "linked" y "traditional": enviar title y family_name
     if (publish_mode === "catalog" && catalogProductId) {
       mlItem.catalog_product_id = catalogProductId
+      mlItem.catalog_listing = true
+      // NO incluir title ni family_name - ML usa los del catalogo
+    } else {
+      // Modos linked y traditional necesitan title y family_name
+      mlItem.title = product.title?.substring(0, 60) || "Libro"
+      mlItem.family_name = familyName || product.title?.substring(0, 60) || "Libro"
+      mlItem.description = { plain_text: description }
     }
-    // En modo tradicional o linked no se usa catalog_product_id al crear
 
     // Agregar atributos basicos
     const attributes = mlItem.attributes as Array<{ id: string; value_name: string }>
@@ -251,15 +253,10 @@ export async function POST(request: NextRequest) {
     const validAccount = await refreshTokenIfNeeded(account)
     const accessToken = validAccount.access_token
 
-    // Para modo "linked", primero crear tradicional SIN catalog_product_id pero CON family_name
-    const itemToPublish = { ...mlItem } as Record<string, unknown>
-    if (publish_mode === "linked") {
-      delete itemToPublish.catalog_product_id
-      // family_name es REQUERIDO para libros, usar titulo si no tenemos del catalogo
-      if (!itemToPublish.family_name) {
-        itemToPublish.family_name = product.title?.substring(0, 60) || "Libro"
-      }
-    }
+    // El mlItem ya esta preparado correctamente segun el publish_mode
+    // Para "linked" y "traditional" ya tiene title y family_name
+    // Para "catalog" ya tiene catalog_product_id y catalog_listing
+    const itemToPublish = mlItem
 
     // Publicar en ML (tradicional primero si es linked)
     const mlResponse = await fetch("https://api.mercadolibre.com/items", {
