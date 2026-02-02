@@ -182,44 +182,37 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Construir el objeto de publicacion para ML
-    const mlItem: Record<string, unknown> = {
-      site_id: "MLA",
-      price: finalPrice,
-      currency_id: "ARS",
-      available_quantity: Math.min(product.stock || 1, 50), // Max 50 para nuevos vendedores
-      buying_mode: "buy_it_now",
-      condition: "new",
-      listing_type_id: template.listing_type_id || "gold_special",
-      pictures: product.image_url ? [{ source: product.image_url }] : [],
-    }
+    // Construir el objeto de publicacion para ML segun el modo
+    let mlItem: Record<string, unknown>
     
-    // Decidir como publicar segun el modo y si encontramos en catalogo
-    // IMPORTANTE: Si el producto existe en el catalogo de ML, DEBE publicarse con catalog_product_id
-    // ML rechaza "title" si el ISBN ya esta en su catalogo
-    
-    if (catalogProductId) {
-      // Producto EXISTE en catalogo - usar catalog_product_id
-      // NO enviar category_id, title, family_name, description ni attributes - ML los toma del catalogo
-      mlItem.catalog_product_id = catalogProductId
-      mlItem.catalog_listing = true
-    } else if (publish_mode === "catalog") {
-      // Modo catalogo pero no encontrado en catalogo
-      return NextResponse.json({
-        success: false,
-        error: `Producto no encontrado en catálogo de ML (ISBN: ${product.ean}). Intenta con modo "Tradicional".`,
-        not_in_catalog: true
-      }, { status: 400 })
-    } else {
-      // Producto NO existe en catalogo - publicacion tradicional
-      // Usar categoria leaf para libros (MLA3026 = Novela)
-      mlItem.category_id = template.category_id || "MLA3026"
-      mlItem.title = product.title?.substring(0, 60) || "Libro"
-      mlItem.family_name = product.title?.substring(0, 60) || "Libro"
-      mlItem.description = { plain_text: description }
+    // Decidir como publicar segun el modo seleccionado
+    if (publish_mode === "catalog" || (publish_mode === "linked" && catalogProductId)) {
+      // MODO CATALOGO: Solo necesita catalog_product_id (matchea por EAN internamente)
+      if (!catalogProductId) {
+        return NextResponse.json({
+          success: false,
+          error: `Producto no encontrado en catálogo de ML (ISBN: ${product.ean}). Intenta con modo "Tradicional".`,
+          not_in_catalog: true
+        }, { status: 400 })
+      }
       
-      // Agregar atributos solo para publicaciones tradicionales
+      mlItem = {
+        site_id: "MLA",
+        catalog_product_id: catalogProductId,
+        catalog_listing: true,
+        price: finalPrice,
+        currency_id: "ARS",
+        available_quantity: Math.min(product.stock || 1, 50),
+        buying_mode: "buy_it_now",
+        condition: "new",
+        listing_type_id: template.listing_type_id || "gold_special",
+        pictures: product.image_url ? [{ source: product.image_url }] : [],
+      }
+    } else {
+      // MODO TRADICIONAL: Todos los campos posibles
       const attributes: Array<{ id: string; value_name: string }> = []
+      
+      // Agregar todos los atributos disponibles
       if (product.ean) {
         attributes.push({ id: "GTIN", value_name: product.ean })
       }
@@ -229,7 +222,31 @@ export async function POST(request: NextRequest) {
       if (product.brand) {
         attributes.push({ id: "PUBLISHER", value_name: product.brand })
       }
-      mlItem.attributes = attributes
+      if (product.language) {
+        attributes.push({ id: "LANGUAGE", value_name: product.language })
+      }
+      if (product.year) {
+        attributes.push({ id: "PUBLICATION_YEAR", value_name: product.year.toString() })
+      }
+      if (product.binding) {
+        attributes.push({ id: "BOOK_COVER_TYPE", value_name: product.binding })
+      }
+      
+      mlItem = {
+        site_id: "MLA",
+        category_id: template.category_id || "MLA3026", // Categoria leaf para libros
+        title: product.title?.substring(0, 60) || "Libro",
+        family_name: product.title?.substring(0, 60) || "Libro",
+        price: finalPrice,
+        currency_id: "ARS",
+        available_quantity: Math.min(product.stock || 1, 50),
+        buying_mode: "buy_it_now",
+        condition: "new",
+        listing_type_id: template.listing_type_id || "gold_special",
+        description: { plain_text: description },
+        pictures: product.image_url ? [{ source: product.image_url }] : [],
+        attributes: attributes,
+      }
     }
 
     // Calcular margen real para verificacion
