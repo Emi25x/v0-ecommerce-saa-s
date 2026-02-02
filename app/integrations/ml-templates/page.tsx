@@ -64,6 +64,27 @@ interface AnalysisResult {
   suggested_template: any
 }
 
+interface RangeAnalysis {
+  below33k: {
+    avgMultiplier: number
+    avgMargin: number
+    count: number
+  }
+  above33k: {
+    avgMultiplier: number
+    avgMargin: number
+    count: number
+  }
+  recommendation: "below" | "above" | "mixed"
+  details: {
+    costEur: number
+    finalPrice: number
+    multiplier: number
+    margin: number
+    zone: "below" | "above"
+  }[]
+}
+
 export default function MLTemplatesPage() {
   const [accounts, setAccounts] = useState<MLAccount[]>([])
   const [selectedAccount, setSelectedAccount] = useState<string>("")
@@ -103,21 +124,35 @@ export default function MLTemplatesPage() {
     }
   } | null>(null)
   
-  // Estado para analisis de rangos
-  const [rangeMinEur, setRangeMinEur] = useState(5)
-  const [rangeMaxEur, setRangeMaxEur] = useState(25)
-  const [calculatingRange, setCalculatingRange] = useState(false)
-  const [rangeAnalysis, setRangeAnalysis] = useState<{
-    below33k: { avgMultiplier: number; avgMargin: number; count: number }
-    above33k: { avgMultiplier: number; avgMargin: number; count: number }
-    recommendation: "below" | "above" | "mixed"
-    details: Array<{
-      costEur: number
-      finalPrice: number
-      multiplier: number
+  // Estado para analisis de umbral $33k
+  const [thresholdCostEur, setThresholdCostEur] = useState(15)
+  const [marginMin, setMarginMin] = useState(20)
+  const [marginMax, setMarginMax] = useState(25)
+  const [calculatingThreshold, setCalculatingThreshold] = useState(false)
+  const [thresholdAnalysis, setThresholdAnalysis] = useState<{
+    costEur: number
+    costArs: number
+    exchangeRate: number
+    below33k: {
+      price: number
       margin: number
-      zone: "below" | "above"
-    }>
+      multiplier: number
+      fixedFee: number
+      shippingCost: number
+      netProfit: number
+      withinRange: boolean
+    }
+    above33k: {
+      price: number
+      margin: number
+      multiplier: number
+      fixedFee: number
+      shippingCost: number
+      netProfit: number
+      withinRange: boolean
+    }
+    recommendation: "below" | "above" | "either"
+    reason: string
   } | null>(null)
   
   // Campos de la plantilla
@@ -304,7 +339,7 @@ export default function MLTemplatesPage() {
     if (!priceCalculation) return
     
     // Calcular el multiplicador basado en el calculo
-    const multiplier = priceCalculation.final_price_ars / priceCalculation.cost_in_ars
+    const multiplier = priceCalculation.final_price_ars / priceCalculation.cost_price_eur
     const formula = `cost_price * ${multiplier.toFixed(2)}`
     
     setTemplateForm(prev => ({
@@ -318,69 +353,96 @@ export default function MLTemplatesPage() {
     })
   }
   
-  const calculateRangeAnalysis = async () => {
-    setCalculatingRange(true)
+  const analyzeThreshold = async () => {
+    setCalculatingThreshold(true)
     try {
-      const details: typeof rangeAnalysis extends { details: infer T } | null ? T : never = []
-      const step = (rangeMaxEur - rangeMinEur) / 10 // 10 puntos de prueba
+      // Obtener tipo de cambio actual
+      const rateResponse = await fetch("https://dolarapi.com/v1/cotizaciones/eur")
+      const rateData = await rateResponse.json()
+      const exchangeRate = Math.round((rateData.venta || 1718) * 1.027) // EUR billetes BNA
       
-      for (let costEur = rangeMinEur; costEur <= rangeMaxEur; costEur += step) {
-        const response = await fetch("/api/ml/calculate-price", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            cost_price_eur: costEur,
-            margin_percent: marginPercent,
-            listing_type_id: "gold_special"
-          })
-        })
-        
-        const data = await response.json()
-        if (data.success) {
-          const calc = data.calculation
-          details.push({
-            costEur: Math.round(costEur * 100) / 100,
-            finalPrice: calc.final_price_ars,
-            multiplier: Math.round(calc.final_price_ars / costEur),
-            margin: calc.verification.actual_margin_percent,
-            zone: calc.final_price_ars < 33000 ? "below" : "above"
-          })
-        }
-      }
+      const costArs = thresholdCostEur * exchangeRate
       
-      // Calcular promedios por zona
-      const below = details.filter(d => d.zone === "below")
-      const above = details.filter(d => d.zone === "above")
+      // Calcular para precio DEBAJO de $33k (con cargo fijo, sin envio)
+      // Encontrar el margen que da precio cercano a $32,999
+      const targetPriceBelow = 32999
+      const mlFeePercent = 0.13
       
-      const avgBelow = below.length > 0 ? {
-        avgMultiplier: Math.round(below.reduce((a, b) => a + b.multiplier, 0) / below.length),
-        avgMargin: Math.round(below.reduce((a, b) => a + b.margin, 0) / below.length * 10) / 10,
-        count: below.length
-      } : { avgMultiplier: 0, avgMargin: 0, count: 0 }
+      // Para debajo de $33k, determinar cargo fijo segun rango estimado
+      let fixedFeeBelow = 2810 // Asumimos rango $25k-$33k
+      if (costArs * 1.2 < 15000) fixedFeeBelow = 1115
+      else if (costArs * 1.2 < 25000) fixedFeeBelow = 2300
       
-      const avgAbove = above.length > 0 ? {
-        avgMultiplier: Math.round(above.reduce((a, b) => a + b.multiplier, 0) / above.length),
-        avgMargin: Math.round(above.reduce((a, b) => a + b.margin, 0) / above.length * 10) / 10,
-        count: above.length
-      } : { avgMultiplier: 0, avgMargin: 0, count: 0 }
+      // Calcular margen resultante si fijamos precio en $32,999
+      const netReceivedBelow = targetPriceBelow - (targetPriceBelow * mlFeePercent) - fixedFeeBelow
+      const marginBelow = ((netReceivedBelow - costArs) / costArs) * 100
+      const profitBelow = netReceivedBelow - costArs
+      
+      // Calcular para precio ARRIBA de $33k (sin cargo fijo, con envio gratis)
+      const shippingCost = 5500
+      
+      // Calcular precio minimo arriba de $33k con margen minimo aceptable
+      const targetMarginAbove = marginMin / 100
+      const costWithMarginAbove = costArs * (1 + targetMarginAbove)
+      const priceAbove = Math.ceil((costWithMarginAbove + shippingCost) / (1 - mlFeePercent) / 10) * 10
+      
+      // Verificar que quede arriba de $33k
+      const finalPriceAbove = Math.max(priceAbove, 33100)
+      const netReceivedAbove = finalPriceAbove - (finalPriceAbove * mlFeePercent) - shippingCost
+      const marginAbove = ((netReceivedAbove - costArs) / costArs) * 100
+      const profitAbove = netReceivedAbove - costArs
       
       // Determinar recomendacion
-      let recommendation: "below" | "above" | "mixed" = "mixed"
-      if (below.length === 0) recommendation = "above"
-      else if (above.length === 0) recommendation = "below"
-      else if (avgBelow.avgMultiplier < avgAbove.avgMultiplier) recommendation = "below"
-      else recommendation = "above"
+      const belowWithinRange = marginBelow >= marginMin && marginBelow <= marginMax
+      const aboveWithinRange = marginAbove >= marginMin && marginAbove <= marginMax
       
-      setRangeAnalysis({
-        below33k: avgBelow,
-        above33k: avgAbove,
+      let recommendation: "below" | "above" | "either" = "either"
+      let reason = ""
+      
+      if (!belowWithinRange && !aboveWithinRange) {
+        recommendation = marginBelow > marginAbove ? "below" : "above"
+        reason = "Ninguna opcion esta dentro del rango de margen deseado"
+      } else if (belowWithinRange && !aboveWithinRange) {
+        recommendation = "below"
+        reason = "Solo debajo de $33k cumple el rango de margen"
+      } else if (!belowWithinRange && aboveWithinRange) {
+        recommendation = "above"
+        reason = "Solo arriba de $33k cumple el rango de margen. Ademas con envio gratis se vende mas."
+      } else {
+        // Ambos dentro del rango - recomendar arriba por envio gratis
+        recommendation = "above"
+        reason = "Ambas opciones cumplen el margen, pero con envio gratis se vende mas."
+      }
+      
+      setThresholdAnalysis({
+        costEur: thresholdCostEur,
+        costArs,
+        exchangeRate,
+        below33k: {
+          price: targetPriceBelow,
+          margin: Math.round(marginBelow * 10) / 10,
+          multiplier: Math.round(targetPriceBelow / thresholdCostEur),
+          fixedFee: fixedFeeBelow,
+          shippingCost: 0,
+          netProfit: Math.round(profitBelow),
+          withinRange: belowWithinRange
+        },
+        above33k: {
+          price: finalPriceAbove,
+          margin: Math.round(marginAbove * 10) / 10,
+          multiplier: Math.round(finalPriceAbove / thresholdCostEur),
+          fixedFee: 0,
+          shippingCost,
+          netProfit: Math.round(profitAbove),
+          withinRange: aboveWithinRange
+        },
         recommendation,
-        details
+        reason
       })
     } catch (error) {
-      toast({ title: "Error", description: "Error al analizar rangos", variant: "destructive" })
+      toast({ title: "Error", description: "Error al analizar umbral", variant: "destructive" })
     } finally {
-      setCalculatingRange(false)
+      setCalculatingThreshold(false)
     }
   }
 
@@ -742,150 +804,182 @@ export default function MLTemplatesPage() {
               </div>
             </div>
             
-            {/* Seccion 2: Analisis de Rangos */}
+            {/* Seccion 2: Analisis Umbral $33,000 */}
             <div className="mt-8">
-              <h2 className="text-xl font-semibold mb-4">Analisis de Rangos (Umbral $33,000)</h2>
+              <h2 className="text-xl font-semibold mb-4">Optimizador de Umbral $33,000</h2>
               <p className="text-sm text-muted-foreground mb-4">
-                Analiza un rango de precios para determinar si conviene publicar debajo o arriba del umbral de $33,000 
-                donde cambian los costos de ML (cargo fijo vs envio gratis).
+                Para un producto dado, compara si conviene fijarlo debajo de $33,000 (cargo fijo, sin envio gratis) 
+                o arriba (sin cargo fijo, con envio gratis). Considera que con envio gratis se vende mas.
               </p>
               
               <div className="grid gap-6 lg:grid-cols-2">
-                {/* Panel de configuracion de rango */}
+                {/* Panel de configuracion */}
                 <Card>
                   <CardHeader>
-                    <CardTitle>Rango de Costos</CardTitle>
+                    <CardTitle>Configurar Analisis</CardTitle>
                     <CardDescription>
-                      Define el rango de costos en EUR para analizar
+                      Define el costo del producto y el rango de margen aceptable
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Minimo (EUR)</Label>
-                        <Input
-                          type="number"
-                          min="1"
-                          step="0.5"
-                          value={rangeMinEur}
-                          onChange={(e) => setRangeMinEur(Number(e.target.value))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Maximo (EUR)</Label>
-                        <Input
-                          type="number"
-                          min="1"
-                          step="0.5"
-                          value={rangeMaxEur}
-                          onChange={(e) => setRangeMaxEur(Number(e.target.value))}
-                        />
-                      </div>
-                    </div>
-                    
                     <div className="space-y-2">
-                      <Label>Margen deseado (%)</Label>
+                      <Label>Costo del producto (EUR)</Label>
                       <Input
                         type="number"
-                        value={marginPercent}
-                        onChange={(e) => setMarginPercent(Number(e.target.value))}
-                        className="w-24"
+                        min="1"
+                        step="0.5"
+                        value={thresholdCostEur}
+                        onChange={(e) => setThresholdCostEur(Number(e.target.value))}
                       />
                     </div>
                     
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Margen minimo (%)</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={marginMin}
+                          onChange={(e) => setMarginMin(Number(e.target.value))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Margen maximo (%)</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={marginMax}
+                          onChange={(e) => setMarginMax(Number(e.target.value))}
+                        />
+                      </div>
+                    </div>
+                    
+                    <p className="text-xs text-muted-foreground">
+                      Rango aceptable: {marginMin}% - {marginMax}%
+                    </p>
+                    
                     <Button 
-                      onClick={calculateRangeAnalysis}
-                      disabled={calculatingRange}
+                      onClick={analyzeThreshold}
+                      disabled={calculatingThreshold}
                       className="w-full"
                       size="lg"
                     >
-                      {calculatingRange ? "Analizando..." : "Analizar Rango"}
+                      {calculatingThreshold ? "Analizando..." : "Analizar Opciones"}
                     </Button>
                   </CardContent>
                 </Card>
 
-                {/* Panel de resultados de rango */}
+                {/* Panel de resultados */}
                 <Card>
                   <CardHeader>
-                    <CardTitle>Comparativa de Zonas</CardTitle>
+                    <CardTitle>Comparativa</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    {rangeAnalysis ? (
+                    {thresholdAnalysis ? (
                       <div className="space-y-6">
+                        {/* Info del producto */}
+                        <div className="text-sm text-center pb-4 border-b">
+                          <span className="text-muted-foreground">Producto: </span>
+                          <span className="font-medium">EUR {thresholdAnalysis.costEur}</span>
+                          <span className="text-muted-foreground"> = </span>
+                          <span className="font-medium">${thresholdAnalysis.costArs.toLocaleString("es-AR")}</span>
+                          <span className="text-muted-foreground text-xs"> (TC: ${thresholdAnalysis.exchangeRate})</span>
+                        </div>
+                        
                         {/* Recomendacion */}
                         <div className={`rounded-lg p-4 text-center ${
-                          rangeAnalysis.recommendation === "below" 
+                          thresholdAnalysis.recommendation === "below" 
                             ? "bg-blue-500/10 border border-blue-500/30" 
-                            : rangeAnalysis.recommendation === "above"
+                            : thresholdAnalysis.recommendation === "above"
                             ? "bg-green-500/10 border border-green-500/30"
                             : "bg-yellow-500/10 border border-yellow-500/30"
                         }`}>
                           <p className="text-sm text-muted-foreground">Recomendacion</p>
-                          <p className="text-xl font-bold">
-                            {rangeAnalysis.recommendation === "below" && "Mantener debajo de $33,000"}
-                            {rangeAnalysis.recommendation === "above" && "Publicar arriba de $33,000"}
-                            {rangeAnalysis.recommendation === "mixed" && "Depende del producto"}
+                          <p className="text-lg font-bold">
+                            {thresholdAnalysis.recommendation === "below" && "Fijar en $32,999"}
+                            {thresholdAnalysis.recommendation === "above" && "Publicar arriba de $33,000"}
+                            {thresholdAnalysis.recommendation === "either" && "Ambas opciones validas"}
                           </p>
+                          <p className="text-xs text-muted-foreground mt-1">{thresholdAnalysis.reason}</p>
                         </div>
 
-                        {/* Comparativa */}
+                        {/* Comparativa lado a lado */}
                         <div className="grid grid-cols-2 gap-4">
-                          <div className="rounded-lg border p-4 text-center">
-                            <p className="text-xs text-muted-foreground mb-1">Debajo de $33k</p>
-                            <p className="text-2xl font-bold text-blue-600">
-                              {rangeAnalysis.below33k.avgMultiplier.toLocaleString("es-AR")}x
+                          {/* Debajo de $33k */}
+                          <div className={`rounded-lg border p-4 ${
+                            thresholdAnalysis.below33k.withinRange ? "border-blue-500/50 bg-blue-500/5" : "opacity-60"
+                          }`}>
+                            <p className="text-xs text-muted-foreground mb-2 text-center">Debajo de $33k</p>
+                            <p className="text-2xl font-bold text-center text-blue-600">
+                              ${thresholdAnalysis.below33k.price.toLocaleString("es-AR")}
                             </p>
-                            <p className="text-xs text-muted-foreground">
-                              {rangeAnalysis.below33k.count} productos | {rangeAnalysis.below33k.avgMargin}% margen
-                            </p>
-                            <p className="text-xs mt-2">Cargo fijo: $1,115 - $2,810</p>
+                            <div className="mt-3 space-y-1 text-xs">
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Margen:</span>
+                                <span className={thresholdAnalysis.below33k.withinRange ? "text-green-600 font-medium" : "text-red-500"}>
+                                  {thresholdAnalysis.below33k.margin}%
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Multiplicador:</span>
+                                <span>{thresholdAnalysis.below33k.multiplier.toLocaleString("es-AR")}x</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Cargo fijo:</span>
+                                <span>-${thresholdAnalysis.below33k.fixedFee.toLocaleString("es-AR")}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Envio:</span>
+                                <span>$0</span>
+                              </div>
+                              <div className="flex justify-between pt-2 border-t">
+                                <span className="text-muted-foreground">Ganancia:</span>
+                                <span className="font-medium">${thresholdAnalysis.below33k.netProfit.toLocaleString("es-AR")}</span>
+                              </div>
+                            </div>
+                            <p className="text-xs text-center mt-3 text-muted-foreground">Sin envio gratis</p>
                           </div>
                           
-                          <div className="rounded-lg border p-4 text-center">
-                            <p className="text-xs text-muted-foreground mb-1">Arriba de $33k</p>
-                            <p className="text-2xl font-bold text-green-600">
-                              {rangeAnalysis.above33k.avgMultiplier.toLocaleString("es-AR")}x
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {rangeAnalysis.above33k.count} productos | {rangeAnalysis.above33k.avgMargin}% margen
-                            </p>
-                            <p className="text-xs mt-2">Envio gratis: ~$5,500</p>
+                          {/* Arriba de $33k */}
+                          <div className={`rounded-lg border p-4 ${
+                            thresholdAnalysis.above33k.withinRange ? "border-green-500/50 bg-green-500/5" : "opacity-60"
+                          }`}>
+                            <p className="text-xs text-muted-foreground mb-2 text-center">Arriba de $33k</p>
+                            <p className="text-2xl font-bold text-center text-green-600">
+                              ${thresholdAnalysis.above33k.price.toLocaleString("es-AR")}</p>
+                            <div className="mt-3 space-y-1 text-xs">
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Margen:</span>
+                                <span className={thresholdAnalysis.above33k.withinRange ? "text-green-600 font-medium" : "text-red-500"}>
+                                  {thresholdAnalysis.above33k.margin}%
+                                </span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Multiplicador:</span>
+                                <span>{thresholdAnalysis.above33k.multiplier.toLocaleString("es-AR")}x</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Cargo fijo:</span>
+                                <span>$0</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Envio:</span>
+                                <span>-${thresholdAnalysis.above33k.shippingCost.toLocaleString("es-AR")}</span>
+                              </div>
+                              <div className="flex justify-between pt-2 border-t">
+                                <span className="text-muted-foreground">Ganancia:</span>
+                                <span className="font-medium">${thresholdAnalysis.above33k.netProfit.toLocaleString("es-AR")}</span>
+                              </div>
+                            </div>
+                            <p className="text-xs text-center mt-3 text-green-600 font-medium">Con envio gratis</p>
                           </div>
-                        </div>
-
-                        {/* Tabla de detalles */}
-                        <div className="max-h-48 overflow-auto">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>Costo EUR</TableHead>
-                                <TableHead>Precio ARS</TableHead>
-                                <TableHead>Mult.</TableHead>
-                                <TableHead>Zona</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {rangeAnalysis.details.map((d, i) => (
-                                <TableRow key={i}>
-                                  <TableCell>{d.costEur}</TableCell>
-                                  <TableCell>${d.finalPrice.toLocaleString("es-AR")}</TableCell>
-                                  <TableCell>{d.multiplier.toLocaleString("es-AR")}</TableCell>
-                                  <TableCell>
-                                    <span className={`text-xs px-2 py-1 rounded ${
-                                      d.zone === "below" ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700"
-                                    }`}>
-                                      {d.zone === "below" ? "< $33k" : "> $33k"}
-                                    </span>
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
                         </div>
                       </div>
                     ) : (
                       <div className="flex h-64 items-center justify-center text-muted-foreground">
-                        <p>Define el rango y haz clic en Analizar</p>
+                        <p>Configura el producto y haz clic en Analizar</p>
                       </div>
                     )}
                   </CardContent>
