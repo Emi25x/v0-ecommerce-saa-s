@@ -216,7 +216,7 @@ export async function POST(request: NextRequest) {
       // NO se debe enviar "title", solo "family_name". ML genera el title automaticamente.
       return {
         site_id: "MLA",
-        category_id: template.category_id || "MLA3026",
+        category_id: template.category_id || "MLA412445", // Libros Fisicos
         family_name: product.title?.substring(0, 60) || "Libro",
         price: finalPrice,
         currency_id: "ARS",
