@@ -33,6 +33,7 @@ const App = () => {
   const [showResetDialog, setShowResetDialog] = useState(false)
   const [resetLoading, setResetLoading] = useState(false)
   const [resetConfirmText, setResetConfirmText] = useState("")
+  const [runningCron, setRunningCron] = useState(false)
 
   // Estado para el análisis de duplicados
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -1011,6 +1012,36 @@ const App = () => {
     }
   }
 
+  const handleRunCron = async () => {
+    setRunningCron(true)
+    try {
+      const response = await fetch("/api/cron/import-schedules")
+      const data = await response.json()
+      
+      if (data.processed && data.processed.length > 0) {
+        toast({
+          title: "Cron ejecutado",
+          description: `Se procesaron ${data.processed.length} importaciones programadas`,
+        })
+        // Recargar datos
+        loadSources()
+      } else {
+        toast({
+          title: "Sin tareas pendientes",
+          description: data.message || "No hay importaciones programadas para ejecutar ahora",
+        })
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error al ejecutar cron",
+        description: error.message,
+        variant: "destructive",
+      })
+    } finally {
+      setRunningCron(false)
+    }
+  }
+
   const handleResetDatabase = async () => {
     if (resetConfirmText !== "ELIMINAR TODO") {
       toast({
@@ -1199,6 +1230,10 @@ const App = () => {
           <p className="text-muted-foreground">Administra tus fuentes de datos y configuraciones de importación</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={handleRunCron} disabled={runningCron}>
+            {runningCron ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+            Ejecutar Cron
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setShowDiagnosticDialog(true)} disabled={loadingDiagnostic}>
             {loadingDiagnostic ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
             Diagnóstico
