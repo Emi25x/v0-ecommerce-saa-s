@@ -60,6 +60,7 @@ export default function MLPublishPage() {
   const [minStock, setMinStock] = useState<number>(0)
   const [minPrice, setMinPrice] = useState<number>(0)
   const [maxPrice, setMaxPrice] = useState<number>(1000)
+  const [publishMode, setPublishMode] = useState<"catalog" | "traditional">("catalog")
   const [previews, setPreviews] = useState<PublishPreview[]>([])
   const [publishing, setPublishing] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
@@ -133,9 +134,6 @@ export default function MLPublishPage() {
   })
 
   const generatePreviews = async () => {
-    console.log("[v0] generatePreviews - selectedProducts:", selectedProducts.size)
-    console.log("[v0] generatePreviews - template:", selectedTemplate, "account:", selectedAccount)
-    
     if (selectedProducts.size === 0) {
       toast({ title: "Error", description: "Selecciona al menos un producto", variant: "destructive" })
       return
@@ -148,8 +146,6 @@ export default function MLPublishPage() {
       const product = products.find(p => p.id === productId)
       if (!product) continue
 
-      console.log("[v0] Generating preview for product:", product.title, "cost:", product.cost_price)
-
       try {
         const response = await fetch("/api/ml/publish", {
           method: "POST",
@@ -158,12 +154,12 @@ export default function MLPublishPage() {
             product_id: productId,
             template_id: selectedTemplate,
             account_id: selectedAccount,
-            preview_only: true
+            preview_only: true,
+            publish_mode: publishMode
           })
         })
 
         const data = await response.json()
-        console.log("[v0] Preview response:", data)
 
         if (data.success) {
           newPreviews.push({
@@ -219,7 +215,8 @@ export default function MLPublishPage() {
             product_id: updatedPreviews[i].product.id,
             template_id: selectedTemplate,
             account_id: selectedAccount,
-            preview_only: false
+            preview_only: false,
+            publish_mode: publishMode
           })
         })
 
@@ -280,7 +277,7 @@ export default function MLPublishPage() {
             <CardHeader>
               <CardTitle>Configuracion</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
+            <CardContent className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
                 <Label>Plantilla</Label>
                 <Select value={selectedTemplate} onValueChange={setSelectedTemplate}>
@@ -310,6 +307,27 @@ export default function MLPublishPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Modo de publicacion</Label>
+                <Select value={publishMode} onValueChange={(v) => setPublishMode(v as "catalog" | "traditional")}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="catalog">
+                      Catalogo (recomendado)
+                    </SelectItem>
+                    <SelectItem value="traditional">
+                      Tradicional (sin catalogo)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {publishMode === "catalog" 
+                    ? "Busca el ISBN en el catalogo de ML. Mayor visibilidad." 
+                    : "Crea publicacion independiente sin vincular al catalogo."}
+                </p>
               </div>
             </CardContent>
           </Card>

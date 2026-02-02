@@ -80,7 +80,8 @@ export async function POST(request: NextRequest) {
       template_id,     // ID de la plantilla a usar
       account_id,      // ID de la cuenta ML
       override_price,  // Precio manual (opcional)
-      preview_only = true // Solo generar preview, no publicar
+      preview_only = true, // Solo generar preview, no publicar
+      publish_mode = "catalog" // "catalog" o "traditional"
     } = body
 
     if (!product_id || !template_id || !account_id) {
@@ -157,11 +158,11 @@ export async function POST(request: NextRequest) {
     description = description.replace(/{height}/g, product.height?.toString() || "")
     description = description.replace(/{thickness}/g, product.thickness?.toString() || "")
 
-    // Buscar family_name en el catalogo de ML usando el ISBN/EAN
+    // Buscar en el catalogo de ML solo si el modo es "catalog"
     let familyName: string | null = null
     let catalogProductId: string | null = null
     
-    if (product.ean && account.access_token) {
+    if (publish_mode === "catalog" && product.ean && account.access_token) {
       try {
         // Buscar en el catalogo de ML por GTIN (ISBN)
         const catalogSearch = await fetch(
@@ -196,13 +197,15 @@ export async function POST(request: NextRequest) {
       attributes: [] as Array<{ id: string; value_name: string }>
     }
     
-    // Si encontramos el producto en el catalogo, usar catalog_product_id
-    if (catalogProductId) {
-      mlItem.catalog_product_id = catalogProductId
-    } else if (familyName) {
-      // Si solo tenemos family_name
-      mlItem.family_name = familyName
+    // Si encontramos el producto en el catalogo y modo es catalog, usar catalog_product_id
+    if (publish_mode === "catalog") {
+      if (catalogProductId) {
+        mlItem.catalog_product_id = catalogProductId
+      } else if (familyName) {
+        mlItem.family_name = familyName
+      }
     }
+    // En modo tradicional no se vincula al catalogo
 
     // Agregar atributos basicos
     const attributes = mlItem.attributes as Array<{ id: string; value_name: string }>
