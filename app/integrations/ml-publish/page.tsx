@@ -119,6 +119,9 @@ export default function MLPublishPage() {
   )
 
   const generatePreviews = async () => {
+    console.log("[v0] generatePreviews - selectedProducts:", selectedProducts.size)
+    console.log("[v0] generatePreviews - template:", selectedTemplate, "account:", selectedAccount)
+    
     if (selectedProducts.size === 0) {
       toast({ title: "Error", description: "Selecciona al menos un producto", variant: "destructive" })
       return
@@ -130,6 +133,8 @@ export default function MLPublishPage() {
     for (const productId of selectedProducts) {
       const product = products.find(p => p.id === productId)
       if (!product) continue
+
+      console.log("[v0] Generating preview for product:", product.title, "cost:", product.cost_price)
 
       try {
         const response = await fetch("/api/ml/publish", {
@@ -144,6 +149,7 @@ export default function MLPublishPage() {
         })
 
         const data = await response.json()
+        console.log("[v0] Preview response:", data)
 
         if (data.success) {
           newPreviews.push({
