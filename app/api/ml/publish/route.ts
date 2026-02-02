@@ -222,10 +222,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Funcion para sanitizar texto a plain text (quitar HTML y caracteres especiales)
+    // ML solo acepta caracteres ASCII básicos y algunos extendidos
     const sanitizeToPlainText = (text: string): string => {
       return text
         // Quitar tags HTML
-        .replace(/<[^>]*>/g, '')
+        .replace(/<[^>]*>/g, ' ')
         // Convertir entidades HTML comunes
         .replace(/&nbsp;/g, ' ')
         .replace(/&amp;/g, '&')
@@ -233,21 +234,40 @@ export async function POST(request: NextRequest) {
         .replace(/&gt;/g, '>')
         .replace(/&quot;/g, '"')
         .replace(/&#39;/g, "'")
-        .replace(/&aacute;/gi, 'á')
-        .replace(/&eacute;/gi, 'é')
-        .replace(/&iacute;/gi, 'í')
-        .replace(/&oacute;/gi, 'ó')
-        .replace(/&uacute;/gi, 'ú')
-        .replace(/&ntilde;/gi, 'ñ')
+        .replace(/&aacute;/gi, 'a')
+        .replace(/&eacute;/gi, 'e')
+        .replace(/&iacute;/gi, 'i')
+        .replace(/&oacute;/gi, 'o')
+        .replace(/&uacute;/gi, 'u')
+        .replace(/&ntilde;/gi, 'n')
+        .replace(/&#\d+;/g, '') // Quitar entidades numéricas
         // Quitar cualquier otra entidad HTML
-        .replace(/&[^;]+;/g, '')
-        // Quitar caracteres de control excepto saltos de linea
-        .replace(/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F]/g, '')
+        .replace(/&[a-zA-Z]+;/g, '')
+        // Reemplazar caracteres Unicode problemáticos
+        .replace(/[""]/g, '"') // Comillas tipográficas
+        .replace(/['']/g, "'") // Apóstrofes tipográficos
+        .replace(/[–—]/g, '-') // Guiones largos
+        .replace(/[…]/g, '...') // Puntos suspensivos
+        .replace(/[•·]/g, '-') // Viñetas
+        .replace(/[©®™]/g, '') // Símbolos de copyright
+        .replace(/[€£¥]/g, '$') // Símbolos de moneda
+        .replace(/[°]/g, ' grados ') // Símbolo de grados
+        .replace(/[½¼¾]/g, '') // Fracciones
+        .replace(/[←→↑↓↔]/g, '') // Flechas
+        .replace(/[★☆♠♣♥♦]/g, '') // Símbolos especiales
+        // Quitar caracteres de control y no imprimibles
+        .replace(/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '')
+        // Quitar caracteres Unicode fuera del rango latino básico extendido
+        .replace(/[^\x20-\x7E\xA0-\xFF\n]/g, '')
         // Normalizar saltos de linea
         .replace(/\r\n/g, '\n')
         .replace(/\r/g, '\n')
+        // Quitar espacios múltiples
+        .replace(/[ \t]+/g, ' ')
         // Quitar lineas vacias multiples
         .replace(/\n{3,}/g, '\n\n')
+        // Quitar espacios al inicio/fin de líneas
+        .replace(/^[ \t]+|[ \t]+$/gm, '')
         .trim()
     }
 
