@@ -214,22 +214,10 @@ export async function POST(request: NextRequest) {
       
       const attributes: Array<{ id: string; value_name?: string; value_id?: string }> = []
       
-      // REQUERIDOS por ML para libros MLA412445
-      // BOOK_TITLE - Titulo del libro (required, catalog_required)
+      // REQUERIDOS por ML para libros MLA412445 (segun API /categories/MLA412445/attributes)
+      // Solo BOOK_TITLE y AUTHOR son required en la API
       attributes.push({ id: "BOOK_TITLE", value_name: product.title?.substring(0, 255) || "Libro" })
-      
-      // AUTHOR - Autor (required, catalog_required)
       attributes.push({ id: "AUTHOR", value_name: product.author || "Autor desconocido" })
-      
-      // BOOK_GENRE - Genero del libro (required para MLA412445)
-      // Es un campo tipo lista, requiere value_id - usamos "Ficción" como genérico
-      // Value ID 9550395 = "Ficción" segun API ML
-      attributes.push({ id: "BOOK_GENRE", value_id: "9550395" })
-      
-      // PUBLISHER - Editorial del libro (catalog_required)
-      // brand contiene la editorial del libro
-      const publisher = product.brand?.substring(0, 100) || "Varias editoriales"
-      attributes.push({ id: "PUBLISHER", value_name: publisher })
       
       // GTIN/ISBN
       if (product.ean) {
