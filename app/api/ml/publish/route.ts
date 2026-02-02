@@ -137,7 +137,10 @@ export async function POST(request: NextRequest) {
     const accessToken = validAccount.access_token
 
     // Verificar si el EAN/ISBN ya está publicado en ML por este vendedor
-    if (product.ean && !preview_only) {
+    // Se verifica tanto en preview como en publicación real
+    let alreadyPublishedInfo: { exists: boolean; item_id?: string; source?: string } = { exists: false }
+    
+    if (product.ean) {
       try {
         // Buscar items del vendedor que tengan este EAN en atributos
         const searchUrl = `https://api.mercadolibre.com/users/${validAccount.ml_user_id}/items/search?search_type=scan&attributes=GTIN:${product.ean}`
@@ -148,38 +151,45 @@ export async function POST(request: NextRequest) {
         if (searchResponse.ok) {
           const searchData = await searchResponse.json()
           if (searchData.results && searchData.results.length > 0) {
-            // Ya existe una publicación con este EAN
-            return NextResponse.json({
-              success: false,
-              skipped: true,
-              reason: "already_published",
-              existing_item_id: searchData.results[0],
-              message: `El EAN ${product.ean} ya está publicado en ML (${searchData.results[0]})`
-            })
+            alreadyPublishedInfo = { 
+              exists: true, 
+              item_id: searchData.results[0],
+              source: "mercadolibre"
+            }
           }
         }
         
         // También verificar en nuestra base de datos local
-        const { data: existingPub } = await supabase
-          .from("ml_publications")
-          .select("ml_item_id")
-          .eq("product_id", product_id)
-          .eq("account_id", account_id)
-          .maybeSingle()
-        
-        if (existingPub) {
-          return NextResponse.json({
-            success: false,
-            skipped: true,
-            reason: "already_in_db",
-            existing_item_id: existingPub.ml_item_id,
-            message: `Este producto ya está registrado como publicado (${existingPub.ml_item_id})`
-          })
+        if (!alreadyPublishedInfo.exists) {
+          const { data: existingPub } = await supabase
+            .from("ml_publications")
+            .select("ml_item_id")
+            .eq("product_id", product_id)
+            .eq("account_id", account_id)
+            .maybeSingle()
+          
+          if (existingPub) {
+            alreadyPublishedInfo = { 
+              exists: true, 
+              item_id: existingPub.ml_item_id,
+              source: "database"
+            }
+          }
         }
       } catch (searchError) {
         console.log("[v0] Error checking existing publication:", searchError)
-        // Si falla la verificación, continuamos con la publicación
       }
+    }
+    
+    // Si ya está publicado y NO es preview, rechazar
+    if (alreadyPublishedInfo.exists && !preview_only) {
+      return NextResponse.json({
+        success: false,
+        skipped: true,
+        reason: alreadyPublishedInfo.source === "mercadolibre" ? "already_published" : "already_in_db",
+        existing_item_id: alreadyPublishedInfo.item_id,
+        message: `El EAN ${product.ean} ya está publicado (${alreadyPublishedInfo.item_id})`
+      })
     }
 
     // Calcular el precio
@@ -653,7 +663,11 @@ Libro nuevo. Envíos a todo el país.`
           margin: Math.round(actualMargin * 10) / 10,
           multiplier: Math.round(finalPrice / product.cost_price),
           exchange_rate: priceCalculation?.exchangeRate || 1765,
-          ml_item: mlItem
+          ml_item: mlItem,
+          already_published: alreadyPublishedInfo.exists ? {
+            item_id: alreadyPublishedInfo.item_id,
+            source: alreadyPublishedInfo.source
+          } : null
         }
       })
     }

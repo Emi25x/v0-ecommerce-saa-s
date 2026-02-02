@@ -53,6 +53,7 @@ interface PublishPreview {
   status: "pending" | "publishing" | "success" | "error"
   error?: string
   ml_item_id?: string
+  already_published?: { item_id: string; source: string } | null
 }
 
 export default function MLPublishPage() {
@@ -316,14 +317,15 @@ export default function MLPublishPage() {
 
         const data = await response.json()
 
-        if (data.success) {
-          newPreviews.push({
-            product,
-            calculated_price: data.preview.price,
-            multiplier: Math.round(data.preview.price / product.cost_price),
-            margin: data.preview.margin,
-            status: "pending"
-          })
+if (data.success) {
+  newPreviews.push({
+  product,
+  calculated_price: data.preview.price,
+  multiplier: Math.round(data.preview.price / product.cost_price),
+  margin: data.preview.margin,
+  status: "pending",
+  already_published: data.preview.already_published
+  })
         } else {
           newPreviews.push({
             product,
@@ -357,7 +359,9 @@ export default function MLPublishPage() {
     const updatedPreviews = [...previews]
 
     for (let i = 0; i < updatedPreviews.length; i++) {
+      // Saltar productos con error o que ya están publicados
       if (updatedPreviews[i].status === "error") continue
+      if (updatedPreviews[i].already_published) continue
 
       updatedPreviews[i].status = "publishing"
       setPreviews([...updatedPreviews])
@@ -779,25 +783,30 @@ export default function MLPublishPage() {
                       </TableCell>
                       <TableCell className="text-right">{preview.multiplier?.toLocaleString("es-AR")}x</TableCell>
                       <TableCell className="text-right">{preview.margin?.toFixed(1)}%</TableCell>
-                      <TableCell className="text-center">
-                        {preview.status === "pending" && <Badge variant="outline">Pendiente</Badge>}
-                        {preview.status === "publishing" && (
-                          <Badge variant="secondary">
-                            <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                            Publicando
-                          </Badge>
-                        )}
-                        {preview.status === "success" && (
-                          <Badge className="bg-green-500">
-                            <CheckCircle className="h-3 w-3 mr-1" />
-                            Publicado
-                          </Badge>
-                        )}
-                        {preview.status === "error" && (
-                          <Badge variant="destructive">
-                            <XCircle className="h-3 w-3 mr-1" />
-                            Error
-                          </Badge>
+<TableCell className="text-center">
+  {preview.already_published && (
+  <Badge className="bg-yellow-500 text-black">
+  Ya publicado
+  </Badge>
+  )}
+  {!preview.already_published && preview.status === "pending" && <Badge variant="outline">Pendiente</Badge>}
+  {!preview.already_published && preview.status === "publishing" && (
+  <Badge variant="secondary">
+  <Loader2 className="h-3 w-3 animate-spin mr-1" />
+  Publicando
+  </Badge>
+  )}
+  {!preview.already_published && preview.status === "success" && (
+  <Badge className="bg-green-500">
+  <CheckCircle className="h-3 w-3 mr-1" />
+  Publicado
+  </Badge>
+  )}
+  {!preview.already_published && preview.status === "error" && (
+  <Badge variant="destructive">
+  <XCircle className="h-3 w-3 mr-1" />
+  Error
+  </Badge>
                         )}
                       </TableCell>
                     </TableRow>
