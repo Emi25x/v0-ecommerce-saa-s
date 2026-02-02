@@ -206,43 +206,22 @@ export async function POST(request: NextRequest) {
       
       const attributes: Array<{ id: string; value_name?: string; value_id?: string }> = []
       
-      // REQUERIDOS por ML para libros
-      // BOOK_TITLE - Titulo del libro (requerido)
+      // REQUERIDOS por ML para libros (segun API /categories/MLA412445/attributes)
+      // BOOK_TITLE - Titulo del libro (required, catalog_required)
       attributes.push({ id: "BOOK_TITLE", value_name: product.title?.substring(0, 255) || "Libro" })
       
-      // AUTHOR - Autor (requerido)
+      // AUTHOR - Autor (required, catalog_required)
       attributes.push({ id: "AUTHOR", value_name: product.author || "Autor desconocido" })
-      
-      // PUBLISHER - Editorial (catalog_required)
-      attributes.push({ id: "PUBLISHER", value_name: product.brand || "Editorial independiente" })
-      
-      // BOOK_GENRE - Genero (catalog_required) - usar generico si no hay
-      attributes.push({ id: "BOOK_GENRE", value_name: "Literatura" })
       
       // GTIN/ISBN
       if (product.ean) {
         attributes.push({ id: "GTIN", value_name: product.ean })
       }
       
-      // LANGUAGE - debe usar value_id, no value_name
-      if (product.language) {
-        const langCode = product.language.toUpperCase().substring(0, 3)
-        const valueId = languageMap[langCode]
-        if (valueId) {
-          attributes.push({ id: "LANGUAGE", value_id: valueId })
-        }
-      } else {
-        // Default a Español
-        attributes.push({ id: "LANGUAGE", value_id: "313886" })
-      }
-      
-      // Opcionales
-      if (product.year_edition) {
-        attributes.push({ id: "PUBLICATION_YEAR", value_name: product.year_edition.toString() })
-      }
-      if (product.binding) {
-        attributes.push({ id: "BOOK_COVER_TYPE", value_name: product.binding })
-      }
+      // LANGUAGE - usa value_id (lista cerrada)
+      const langCode = (product.language || "SPA").toUpperCase().substring(0, 3)
+      const valueId = languageMap[langCode] || "313886" // Default Español
+      attributes.push({ id: "LANGUAGE", value_id: valueId })
       
       // IMPORTANTE: Para vendedores con User Products (tag user_product_seller),
       // NO se debe enviar "title", solo "family_name". ML genera el title automaticamente.
