@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { executeFullImport } from "@/lib/import/batch-import"
+// TODO: Implementar sync ML como función directa en lugar de fetch
+// import { syncStockWithML } from "@/lib/ml/sync-stock"
 
 // Este endpoint debe ser llamado por un cron job (ej: Vercel Cron)
 // Configurar en vercel.json:
@@ -54,68 +57,9 @@ export async function GET(request: Request) {
         const source = schedule.import_sources
         console.log(`[v0] Ejecutando importación para fuente: ${source.name} (feed_type: ${source.feed_type})`)
 
-        const baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL 
-          ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` 
-          : "http://localhost:3000"
-
-        // Para feeds grandes o de stock, usar batch import
-        const useBatchImport = source.feed_type === "stock_price" || source.feed_type === "catalog"
-        
-        let importResult: any = { success: false }
-        let importResponse: any; // Declare importResponse variable
-        
-        if (useBatchImport) {
-          // Ejecutar importación por lotes
-          console.log(`[v0] Usando batch import para ${source.name}`)
-          let offset = 0
-          let done = false
-          let totalCreated = 0
-          let totalUpdated = 0
-          let isFirstBatch = true
-          
-          while (!done) {
-            const batchResponse = await fetch(`${baseUrl}/api/inventory/import/batch`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ 
-                sourceId: schedule.source_id, 
-                offset, 
-                mode: source.feed_type === "stock_price" ? "update" : "upsert",
-                forceReload: isFirstBatch
-              }),
-            })
-            
-            const batchResult = await batchResponse.json()
-            
-            if (!batchResponse.ok || batchResult.error) {
-              console.error(`[v0] Error en batch offset ${offset}:`, batchResult.error)
-              break
-            }
-            
-            totalCreated += batchResult.created || 0
-            totalUpdated += batchResult.updated || 0
-            done = batchResult.done
-            offset = batchResult.nextOffset || 0
-            isFirstBatch = false
-            
-            console.log(`[v0] Batch completado: ${batchResult.progress}% (${batchResult.processed}/${batchResult.total})`)
-          }
-          
-          importResult = { 
-            success: done, 
-            created: totalCreated, 
-            updated: totalUpdated,
-            message: `Batch import completado: ${totalCreated} creados, ${totalUpdated} actualizados`
-          }
-        } else {
-          // Usar importación simple para feeds pequeños
-          importResponse = await fetch(`${baseUrl}/api/inventory/import/csv`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sourceId: schedule.source_id }),
-          })
-          importResult = await importResponse.json()
-        }
+        // Ejecutar importación directamente (sin fetch interno)
+        console.log(`[v0] Ejecutando importación directa para ${source.name}`)
+        const importResult = await executeFullImport(schedule.source_id, source.feed_type)
 
         // Calcular próxima ejecución
         const nextRunAt = calculateNextRun(schedule)
@@ -131,24 +75,15 @@ export async function GET(request: Request) {
 
         results.push({
           source: schedule.import_sources.name,
-          success: importResult.success || (importResponse && importResponse.ok),
+          success: importResult.success,
           result: importResult,
         })
         
-        // Si es una importación de stock/precio, sincronizar con ML
+        // TODO: Si es una importación de stock/precio, sincronizar con ML
+        // Esto se implementará como función directa cuando el cron funcione en producción
         if (source.feed_type === "stock_price" && (importResult.success || importResult.updated > 0)) {
-          console.log(`[v0] Sincronizando stock con ML después de importar ${source.name}`)
-          try {
-            const syncResponse = await fetch(`${baseUrl}/api/ml/sync-stock`, {
-              method: "GET"
-            })
-            const syncResult = await syncResponse.json()
-            console.log(`[v0] Sync ML completado:`, syncResult)
-            results[results.length - 1].ml_sync = syncResult
-          } catch (syncError) {
-            console.error(`[v0] Error sincronizando con ML:`, syncError)
-            results[results.length - 1].ml_sync_error = "Error al sincronizar con ML"
-          }
+          console.log(`[v0] Importación de stock completada. Sync con ML pendiente de implementar como función directa.`)
+          // La sincronización con ML se puede hacer manualmente desde la UI por ahora
         }
       } catch (error: any) {
         console.error(`[v0] Error ejecutando importación para schedule ${schedule.id}:`, error)
