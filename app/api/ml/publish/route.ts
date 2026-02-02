@@ -163,44 +163,28 @@ export async function POST(request: NextRequest) {
     let catalogProductId: string | null = null
     
     // SIEMPRE buscar en catalogo - ML rechaza "title" si el ISBN existe en su catalogo
-    console.log("[v0] Account keys:", Object.keys(account))
-    console.log("[v0] Searching catalog for EAN:", product.ean, "has token:", !!account.access_token)
-    
     if (product.ean && account.access_token) {
       try {
-        // Buscar en el catalogo de ML por product_identifier (ISBN/EAN)
-        const catalogUrl = `https://api.mercadolibre.com/products/search?status=active&site_id=MLA&product_identifier=${product.ean}`
-        console.log("[v0] Catalog search URL:", catalogUrl)
-        
-        const catalogSearch = await fetch(catalogUrl, { 
-          headers: { Authorization: `Bearer ${account.access_token}` } 
-        })
-        
-        console.log("[v0] Catalog search status:", catalogSearch.status)
+        const catalogSearch = await fetch(
+          `https://api.mercadolibre.com/products/search?status=active&site_id=MLA&product_identifier=${product.ean}`,
+          { headers: { Authorization: `Bearer ${account.access_token}` } }
+        )
         
         if (catalogSearch.ok) {
           const catalogData = await catalogSearch.json()
-          console.log("[v0] Catalog results count:", catalogData.results?.length || 0)
           if (catalogData.results && catalogData.results.length > 0) {
             catalogProductId = catalogData.results[0].id
             familyName = catalogData.results[0].name || catalogData.results[0].id
-            console.log("[v0] Found catalog product:", catalogProductId)
           }
-        } else {
-          const errorText = await catalogSearch.text()
-          console.log("[v0] Catalog search error:", errorText)
         }
-      } catch (err) {
-        console.log("[v0] Catalog search exception:", err)
+      } catch {
+        // Continuar sin catalogo
       }
     }
-    
-    console.log("[v0] Final catalogProductId:", catalogProductId)
 
     // Construir el objeto de publicacion para ML
     const mlItem: Record<string, unknown> = {
       site_id: "MLA",
-      category_id: template.category_id || "MLA3025", // Libros
       price: finalPrice,
       currency_id: "ARS",
       available_quantity: Math.min(product.stock || 1, 50), // Max 50 para nuevos vendedores
@@ -208,7 +192,6 @@ export async function POST(request: NextRequest) {
       condition: "new",
       listing_type_id: template.listing_type_id || "gold_special",
       pictures: product.image_url ? [{ source: product.image_url }] : [],
-      attributes: [] as Array<{ id: string; value_name: string }>
     }
     
     // Decidir como publicar segun el modo y si encontramos en catalogo
@@ -216,10 +199,10 @@ export async function POST(request: NextRequest) {
     // ML rechaza "title" si el ISBN ya esta en su catalogo
     
     if (catalogProductId) {
-      // Producto EXISTE en catalogo - DEBE usar catalog_product_id
+      // Producto EXISTE en catalogo - usar catalog_product_id
+      // NO enviar category_id, title, family_name, description ni attributes - ML los toma del catalogo
       mlItem.catalog_product_id = catalogProductId
       mlItem.catalog_listing = true
-      // NO incluir title, family_name ni description - ML usa los del catalogo
     } else if (publish_mode === "catalog") {
       // Modo catalogo pero no encontrado en catalogo
       return NextResponse.json({
@@ -229,27 +212,24 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     } else {
       // Producto NO existe en catalogo - publicacion tradicional
+      // Usar categoria leaf para libros (MLA3026 = Novela)
+      mlItem.category_id = template.category_id || "MLA3026"
       mlItem.title = product.title?.substring(0, 60) || "Libro"
       mlItem.family_name = product.title?.substring(0, 60) || "Libro"
       mlItem.description = { plain_text: description }
-    }
-
-    // Agregar atributos basicos
-    const attributes = mlItem.attributes as Array<{ id: string; value_name: string }>
-    if (product.ean) {
-      attributes.push({ id: "GTIN", value_name: product.ean })
-    }
-    if (product.author) {
-      attributes.push({ id: "AUTHOR", value_name: product.author })
-    }
-    if (product.brand) {
-      attributes.push({ id: "PUBLISHER", value_name: product.brand })
-    }
-    if (product.language) {
-      attributes.push({ id: "LANGUAGE", value_name: product.language })
-    }
-    if (product.pages) {
-      attributes.push({ id: "PAGES", value_name: product.pages.toString() })
+      
+      // Agregar atributos solo para publicaciones tradicionales
+      const attributes: Array<{ id: string; value_name: string }> = []
+      if (product.ean) {
+        attributes.push({ id: "GTIN", value_name: product.ean })
+      }
+      if (product.author) {
+        attributes.push({ id: "AUTHOR", value_name: product.author })
+      }
+      if (product.brand) {
+        attributes.push({ id: "PUBLISHER", value_name: product.brand })
+      }
+      mlItem.attributes = attributes
     }
 
     // Calcular margen real para verificacion
