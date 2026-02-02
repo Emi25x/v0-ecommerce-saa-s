@@ -525,6 +525,9 @@ Libro nuevo. Envíos a todo el país.`
       ml_item_id: mlData.id,
       permalink: mlData.permalink,
       status: mlData.status,
+      // Debug info
+      image_url_sent: product.image_url || null,
+      pictures_in_response: mlData.pictures || [],
       catalog_listing: catalogListing ? {
         id: catalogListing.id,
         permalink: catalogListing.permalink,
