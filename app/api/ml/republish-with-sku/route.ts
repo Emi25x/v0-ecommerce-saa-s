@@ -56,7 +56,6 @@ export async function POST(request: Request) {
           stock,
           price,
           author,
-          publisher,
           image_url
         )
       `)
