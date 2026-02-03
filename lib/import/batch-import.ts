@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import Papa from "papaparse"
 
-const BATCH_SIZE = 1000
+const BATCH_SIZE = 200 // Reducido para evitar timeout en Supabase
 
 // Cache global para el archivo CSV parseado
 const csvCache: Map<string, { data: Record<string, string>[], timestamp: number }> = new Map()
