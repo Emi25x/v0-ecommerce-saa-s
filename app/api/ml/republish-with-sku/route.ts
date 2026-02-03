@@ -209,10 +209,24 @@ export async function POST(request: Request) {
           }
         )
 
-        // Manejar rate limiting
-        if (publishResponse.status === 429) {
-          console.log(`[v0] Rate limited, esperando 30 segundos...`)
-          await new Promise(resolve => setTimeout(resolve, 30000))
+        // Manejar rate limiting y quota diaria
+        if (publishResponse.status === 429 || publishResponse.status === 403) {
+          const errorBody = await publishResponse.text()
+          console.log(`[v0] Rate limited o quota alcanzada: ${errorBody}`)
+          
+          // Si es quota diaria, detener completamente
+          if (errorBody.includes("daily_quota") || errorBody.includes("Daily quota")) {
+            return NextResponse.json({
+              success: false,
+              republished,
+              errors: errors + 1,
+              total: publications.length,
+              message: "Cuota diaria de MercadoLibre alcanzada. Reintentar mañana.",
+              quota_reached: true,
+              results
+            })
+          }
+          
           results.push({ 
             ml_item_id: pub.ml_item_id, 
             status: "error", 
