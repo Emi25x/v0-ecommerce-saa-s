@@ -1,7 +1,26 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 
+// Extrae el EAN/GTIN de los atributos de un item de ML
+function extractEanFromItem(item: any): string | null {
+  if (!item.attributes) return null
+  
+  // Buscar en atributos comunes de EAN/GTIN
+  const eanAttributes = ["GTIN", "EAN", "UPC", "ISBN"]
+  for (const attr of item.attributes) {
+    if (eanAttributes.includes(attr.id) && attr.value_name) {
+      return attr.value_name
+    }
+  }
+  
+  // También buscar en seller_custom_field o seller_sku
+  if (item.seller_custom_field) return item.seller_custom_field
+  
+  return null
+}
+
 // Sincroniza el stock de productos publicados en ML con el stock actual de la BD
+// Relaciona por EAN: obtiene EAN de ML, busca producto en DB por EAN, actualiza stock en ML
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
@@ -22,14 +41,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
     }
 
-    // Verificar si tiene auto_sync_stock habilitado
-    if (!account.auto_sync_stock) {
-      return NextResponse.json({ 
-        success: false, 
-        message: "Sincronización automática de stock deshabilitada para esta cuenta" 
-      })
-    }
-
     // Refrescar token si es necesario
     let accessToken = account.access_token
     if (new Date(account.token_expires_at) <= new Date()) {
@@ -46,102 +57,198 @@ export async function POST(request: Request) {
       }
     }
 
-    // Obtener todas las publicaciones de esta cuenta
-    const { data: publications, error: pubError } = await supabase
-      .from("ml_publications")
-      .select("id, ml_item_id, product_id")
-      .eq("account_id", account_id)
-      .eq("status", "active")
+    // Obtener items activos de ML directamente desde la API
+    const mlUserId = account.ml_user_id
+    const itemsResponse = await fetch(
+      `https://api.mercadolibre.com/users/${mlUserId}/items/search?status=active&limit=100`,
+      {
+        headers: { "Authorization": `Bearer ${accessToken}` }
+      }
+    )
 
-    if (pubError) {
-      return NextResponse.json({ error: "Error al obtener publicaciones" }, { status: 500 })
+    if (!itemsResponse.ok) {
+      return NextResponse.json({ error: "Error al obtener items de ML" }, { status: 500 })
     }
 
-    if (!publications || publications.length === 0) {
+    const itemsData = await itemsResponse.json()
+    const itemIds = itemsData.results || []
+
+    if (itemIds.length === 0) {
       return NextResponse.json({ 
         success: true, 
-        message: "No hay publicaciones activas para sincronizar",
+        message: "No hay publicaciones activas en ML",
         updated: 0 
       })
     }
 
-    // Obtener el stock actual de cada producto
-    const productIds = publications.map(p => p.product_id)
+    // Obtener todos los productos de nuestra DB con EAN
     const { data: products, error: productsError } = await supabase
       .from("products")
-      .select("id, stock, title")
-      .in("id", productIds)
+      .select("id, ean, sku, stock, title")
+      .not("ean", "is", null)
 
     if (productsError) {
-      return NextResponse.json({ error: "Error al obtener productos" }, { status: 500 })
+      return NextResponse.json({ error: "Error al obtener productos de DB" }, { status: 500 })
     }
 
-    const productStockMap = new Map(products?.map(p => [p.id, { stock: p.stock, title: p.title }]) || [])
-
-    // Actualizar stock en ML para cada publicación
-    let updated = 0
-    let errors = 0
-    const results: Array<{ ml_item_id: string; status: string; error?: string }> = []
-
-    for (const pub of publications) {
-      const productInfo = productStockMap.get(pub.product_id)
-      if (!productInfo) continue
-
-      const newStock = productInfo.stock || 0
-
-      try {
-        // Actualizar stock en ML
-        const updateResponse = await fetch(`https://api.mercadolibre.com/items/${pub.ml_item_id}`, {
-          method: "PUT",
-          headers: {
-            "Authorization": `Bearer ${accessToken}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            available_quantity: newStock
-          })
-        })
-
-        if (updateResponse.ok) {
-          updated++
-          results.push({ ml_item_id: pub.ml_item_id, status: "updated" })
-          
-          // Actualizar fecha de sync en la publicación
-          await supabase
-            .from("ml_publications")
-            .update({ 
-              current_stock: newStock,
-              last_sync_at: new Date().toISOString()
-            })
-            .eq("id", pub.id)
-        } else {
-          const errorData = await updateResponse.json()
-          errors++
-          results.push({ 
-            ml_item_id: pub.ml_item_id, 
-            status: "error", 
-            error: errorData.message || "Error al actualizar" 
-          })
-        }
-
-        // Pequeño delay para no saturar la API
-        await new Promise(resolve => setTimeout(resolve, 200))
-      } catch (err) {
-        errors++
-        results.push({ 
-          ml_item_id: pub.ml_item_id, 
-          status: "error", 
-          error: "Error de conexión" 
+    // Crear mapa de EAN -> stock
+    const eanStockMap = new Map<string, { stock: number; title: string; id: string }>()
+    for (const product of products || []) {
+      if (product.ean) {
+        eanStockMap.set(product.ean, { 
+          stock: product.stock || 0, 
+          title: product.title || "",
+          id: product.id 
         })
       }
+      // También mapear por SKU como fallback
+      if (product.sku) {
+        eanStockMap.set(product.sku, { 
+          stock: product.stock || 0, 
+          title: product.title || "",
+          id: product.id 
+        })
+      }
+    }
+
+    // Procesar items en lotes de 20 para no saturar la API
+    let updated = 0
+    let errors = 0
+    let noMatch = 0
+    const results: Array<{ ml_item_id: string; ean?: string; status: string; error?: string; newStock?: number }> = []
+
+    // Obtener detalles de items en lotes de 20
+    for (let i = 0; i < itemIds.length; i += 20) {
+      const batch = itemIds.slice(i, i + 20)
+      const idsParam = batch.join(",")
+      
+      const detailsResponse = await fetch(
+        `https://api.mercadolibre.com/items?ids=${idsParam}&attributes=id,title,available_quantity,attributes,seller_custom_field`,
+        {
+          headers: { "Authorization": `Bearer ${accessToken}` }
+        }
+      )
+
+      if (!detailsResponse.ok) {
+        console.error("Error obteniendo detalles de items:", await detailsResponse.text())
+        continue
+      }
+
+      const itemsDetails = await detailsResponse.json()
+
+      for (const itemWrapper of itemsDetails) {
+        if (itemWrapper.code !== 200 || !itemWrapper.body) continue
+        
+        const item = itemWrapper.body
+        const ean = extractEanFromItem(item)
+
+        if (!ean) {
+          noMatch++
+          results.push({ 
+            ml_item_id: item.id, 
+            status: "no_ean", 
+            error: "No se encontró EAN en la publicación" 
+          })
+          continue
+        }
+
+        const productInfo = eanStockMap.get(ean)
+        if (!productInfo) {
+          noMatch++
+          results.push({ 
+            ml_item_id: item.id, 
+            ean,
+            status: "no_match", 
+            error: `No se encontró producto con EAN ${ean} en DB` 
+          })
+          continue
+        }
+
+        const newStock = productInfo.stock
+        const currentStock = item.available_quantity || 0
+
+        // Solo actualizar si el stock es diferente
+        if (newStock === currentStock) {
+          results.push({ 
+            ml_item_id: item.id, 
+            ean,
+            status: "unchanged",
+            newStock 
+          })
+          continue
+        }
+
+        try {
+          // Actualizar stock en ML
+          const updateResponse = await fetch(`https://api.mercadolibre.com/items/${item.id}`, {
+            method: "PUT",
+            headers: {
+              "Authorization": `Bearer ${accessToken}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              available_quantity: newStock
+            })
+          })
+
+          if (updateResponse.ok) {
+            updated++
+            results.push({ 
+              ml_item_id: item.id, 
+              ean,
+              status: "updated",
+              newStock 
+            })
+            
+            // Actualizar o crear registro en ml_publications
+            const { data: existingPub } = await supabase
+              .from("ml_publications")
+              .select("id")
+              .eq("ml_item_id", item.id)
+              .single()
+
+            if (existingPub) {
+              await supabase
+                .from("ml_publications")
+                .update({ 
+                  current_stock: newStock,
+                  updated_at: new Date().toISOString()
+                })
+                .eq("id", existingPub.id)
+            }
+          } else {
+            const errorData = await updateResponse.json()
+            errors++
+            results.push({ 
+              ml_item_id: item.id, 
+              ean,
+              status: "error", 
+              error: errorData.message || "Error al actualizar ML" 
+            })
+          }
+
+          // Delay para no saturar la API
+          await new Promise(resolve => setTimeout(resolve, 100))
+        } catch (err) {
+          errors++
+          results.push({ 
+            ml_item_id: item.id, 
+            ean,
+            status: "error", 
+            error: "Error de conexión" 
+          })
+        }
+      }
+
+      // Delay entre lotes
+      await new Promise(resolve => setTimeout(resolve, 500))
     }
 
     // Actualizar estadísticas de la cuenta
     await supabase
       .from("ml_accounts")
       .update({
-        last_stock_sync_at: new Date().toISOString(),
-        stock_sync_count: updated
+        updated_at: new Date().toISOString()
       })
       .eq("id", account_id)
 
@@ -149,8 +256,10 @@ export async function POST(request: Request) {
       success: true,
       updated,
       errors,
-      total: publications.length,
-      results
+      noMatch,
+      total: itemIds.length,
+      message: `Sincronizado: ${updated} actualizados, ${errors} errores, ${noMatch} sin match por EAN`,
+      results: results.slice(0, 50) // Limitar resultados en respuesta
     })
 
   } catch (error) {
