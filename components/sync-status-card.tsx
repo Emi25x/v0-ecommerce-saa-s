@@ -24,7 +24,9 @@ export function SyncStatusCard() {
   const [importing, setImporting] = useState<string | null>(null)
   const [importResult, setImportResult] = useState<string | null>(null)
   const [listingNoSku, setListingNoSku] = useState<string | null>(null)
-  const [noSkuItems, setNoSkuItems] = useState<Array<{id: string; title: string; permalink: string}> | null>(null)
+  const [noSkuItems, setNoSkuItems] = useState<Array<{id: string; title: string; permalink: string; ean?: string}> | null>(null)
+  const [fixingSkuItem, setFixingSkuItem] = useState<string | null>(null)
+  const [fixSkuResults, setFixSkuResults] = useState<{[key: string]: string}>({})
 
   useEffect(() => {
     fetchAccounts()
@@ -79,6 +81,31 @@ export function SyncStatusCard() {
       console.error("Error listing items without SKU:", error)
     } finally {
       setListingNoSku(null)
+    }
+  }
+
+  // Intentar agregar SKU a un item individual
+  const handleFixSkuItem = async (accountId: string, mlItemId: string, ean: string) => {
+    setFixingSkuItem(mlItemId)
+    try {
+      const response = await fetch("/api/ml/add-sku-to-item", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: accountId, ml_item_id: mlItemId, ean }),
+      })
+      const data = await response.json()
+      
+      if (data.success) {
+        setFixSkuResults(prev => ({ ...prev, [mlItemId]: `OK: ${data.method}` }))
+        // Remover de la lista
+        setNoSkuItems(prev => prev?.filter(item => item.id !== mlItemId) || null)
+      } else {
+        setFixSkuResults(prev => ({ ...prev, [mlItemId]: `Error: ${data.error}` }))
+      }
+    } catch (error) {
+      setFixSkuResults(prev => ({ ...prev, [mlItemId]: "Error de conexion" }))
+    } finally {
+      setFixingSkuItem(null)
     }
   }
 
@@ -241,17 +268,38 @@ export function SyncStatusCard() {
                       Cerrar
                     </Button>
                   </div>
-                  <div className="max-h-48 overflow-y-auto space-y-1">
+                  <div className="max-h-48 overflow-y-auto space-y-2">
                     {noSkuItems.map((item) => (
-                      <a
-                        key={item.id}
-                        href={item.permalink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block text-xs text-blue-600 hover:underline truncate"
-                      >
-                        {item.id} - {item.title}
-                      </a>
+                      <div key={item.id} className="flex items-center gap-2">
+                        <a
+                          href={item.permalink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-1 text-xs text-blue-600 hover:underline truncate"
+                        >
+                          {item.id} - {item.title}
+                        </a>
+                        {item.ean && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleFixSkuItem(account.id, item.id, item.ean!)}
+                            disabled={fixingSkuItem === item.id}
+                            className="h-6 px-2 text-xs bg-transparent"
+                          >
+                            {fixingSkuItem === item.id ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              "Fix"
+                            )}
+                          </Button>
+                        )}
+                        {fixSkuResults[item.id] && (
+                          <span className={`text-xs ${fixSkuResults[item.id].startsWith("OK") ? "text-green-600" : "text-red-600"}`}>
+                            {fixSkuResults[item.id]}
+                          </span>
+                        )}
+                      </div>
                     ))}
                   </div>
                   <p className="text-xs text-red-600 mt-2">

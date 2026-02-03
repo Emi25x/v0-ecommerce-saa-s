@@ -52,8 +52,16 @@ export async function POST(request: Request) {
     const itemIds = searchData.results || []
     const totalItems = searchData.paging?.total || itemIds.length
 
-    const withoutSku: Array<{ id: string; title: string; permalink: string; created: string }> = []
+    const withoutSku: Array<{ id: string; title: string; permalink: string; created: string; ean?: string; gtin?: string }> = []
     const withSku: Array<{ id: string; sku: string }> = []
+
+    // Obtener todos los productos de nuestra DB para buscar por GTIN
+    const { data: products } = await supabase
+      .from("products")
+      .select("ean, title")
+      .not("ean", "is", null)
+    
+    const eanMap = new Map(products?.map(p => [p.ean, p.title]) || [])
 
     // Procesar en lotes de 20
     for (let i = 0; i < Math.min(itemIds.length, 100); i += 20) {
@@ -76,22 +84,32 @@ export async function POST(request: Request) {
         
         // Buscar SKU en diferentes lugares
         let sku = item.seller_sku || item.seller_custom_field || null
+        let gtin: string | null = null
         
-        if (!sku && item.attributes) {
+        if (item.attributes) {
           for (const attr of item.attributes) {
-            if (["GTIN", "EAN", "SELLER_SKU"].includes(attr.id) && attr.value_name) {
-              sku = attr.value_name
+            if (["GTIN", "EAN"].includes(attr.id) && attr.value_name) {
+              gtin = attr.value_name
+              if (!sku) sku = attr.value_name
               break
+            }
+            if (attr.id === "SELLER_SKU" && attr.value_name && !sku) {
+              sku = attr.value_name
             }
           }
         }
 
         if (!sku) {
+          // Buscar el EAN en nuestra DB usando el GTIN del item
+          const ean = gtin && eanMap.has(gtin) ? gtin : undefined
+          
           withoutSku.push({
             id: item.id,
             title: item.title,
             permalink: item.permalink,
-            created: item.date_created
+            created: item.date_created,
+            ean: ean,
+            gtin: gtin || undefined
           })
         } else {
           withSku.push({ id: item.id, sku })
