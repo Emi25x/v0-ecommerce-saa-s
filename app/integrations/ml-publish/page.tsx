@@ -94,11 +94,11 @@ export default function MLPublishPage() {
   const [elapsedTime, setElapsedTime] = useState<number>(0) // Tiempo transcurrido en segundos
   const [publishStartTime, setPublishStartTime] = useState<number | null>(null)
   const [bulkAction, setBulkAction] = useState<"publish" | "update_price">("publish") // Acción masiva
-  // Opciones de calculadora de precios
-  const [useIva, setUseIva] = useState<boolean>(true)
-  const [ivaPercent, setIvaPercent] = useState<number>(21)
-  const [useCommission, setUseCommission] = useState<boolean>(true)
-  const [commissionPercent, setCommissionPercent] = useState<number>(13)
+  const [marginPercent, setMarginPercent] = useState<number>(20) // Margen de ganancia
+  const [useIva, setUseIva] = useState<boolean>(false) // Variable para incluir IVA
+  const [ivaPercent, setIvaPercent] = useState<number>(21) // Porcentaje de IVA
+  const [useCommission, setUseCommission] = useState<boolean>(false) // Variable para incluir comisión ML
+  const [commissionPercent, setCommissionPercent] = useState<number>(13) // Porcentaje de comisión ML
 
   // Construir URL de filtros para el servidor
   const buildFilterUrl = (onlyIds = false) => {
@@ -312,7 +312,11 @@ export default function MLPublishPage() {
             template_id: selectedTemplate,
             account_id: selectedAccount,
             preview_only: false,
-            publish_mode: publishMode
+            publish_mode: publishMode,
+            use_iva: useIva,
+            iva_percent: ivaPercent,
+            use_commission: useCommission,
+            commission_percent: commissionPercent
           })
         })
         
@@ -406,7 +410,11 @@ export default function MLPublishPage() {
             template_id: selectedTemplate,
             account_id: selectedAccount,
             preview_only: true,
-            publish_mode: publishMode
+            publish_mode: publishMode,
+            use_iva: useIva,
+            iva_percent: ivaPercent,
+            use_commission: useCommission,
+            commission_percent: commissionPercent
           })
         })
 
@@ -424,7 +432,11 @@ export default function MLPublishPage() {
               template_id: selectedTemplate,
               account_id: selectedAccount,
               preview_only: true,
-              publish_mode: publishMode
+              publish_mode: publishMode,
+              use_iva: useIva,
+              iva_percent: ivaPercent,
+              use_commission: useCommission,
+              commission_percent: commissionPercent
             })
           })
           const retryData = await retryResponse.json()
@@ -508,7 +520,11 @@ export default function MLPublishPage() {
             template_id: selectedTemplate,
             account_id: selectedAccount,
             preview_only: false,
-            publish_mode: publishMode
+            publish_mode: publishMode,
+            use_iva: useIva,
+            iva_percent: ivaPercent,
+            use_commission: useCommission,
+            commission_percent: commissionPercent
           })
         })
 
@@ -571,7 +587,11 @@ export default function MLPublishPage() {
             template_id: selectedTemplate,
             account_id: selectedAccount,
             preview_only: false,
-            publish_mode: publishMode
+            publish_mode: publishMode,
+            use_iva: useIva,
+            iva_percent: ivaPercent,
+            use_commission: useCommission,
+            commission_percent: commissionPercent
           })
         })
 
@@ -730,49 +750,20 @@ export default function MLPublishPage() {
                     min={0}
                     placeholder="0 = todos"
                   />
-                  <p className="text-xs text-muted-foreground">0 para publicar todos</p>
+                  <p className="text-xs text-muted-foreground">0 para todos</p>
                 </div>
 
-                {/* IVA */}
+                {/* Margen de ganancia */}
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Checkbox 
-                      id="useIva" 
-                      checked={useIva} 
-                      onCheckedChange={(c) => setUseIva(!!c)} 
-                    />
-                    <Label htmlFor="useIva">Incluir IVA</Label>
-                  </div>
-                  {useIva && (
-                    <Input
-                      type="number"
-                      value={ivaPercent}
-                      onChange={(e) => setIvaPercent(parseFloat(e.target.value) || 21)}
-                      min={0}
-                      max={100}
-                    />
-                  )}
-                </div>
-
-                {/* Comisión ML */}
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Checkbox 
-                      id="useCommission" 
-                      checked={useCommission} 
-                      onCheckedChange={(c) => setUseCommission(!!c)} 
-                    />
-                    <Label htmlFor="useCommission">Incluir comisión ML</Label>
-                  </div>
-                  {useCommission && (
-                    <Input
-                      type="number"
-                      value={commissionPercent}
-                      onChange={(e) => setCommissionPercent(parseFloat(e.target.value) || 13)}
-                      min={0}
-                      max={100}
-                    />
-                  )}
+                  <Label>Margen de ganancia %</Label>
+                  <Input
+                    type="number"
+                    value={marginPercent}
+                    onChange={(e) => setMarginPercent(parseFloat(e.target.value) || 20)}
+                    min={0}
+                    max={100}
+                  />
+                  <p className="text-xs text-muted-foreground">IVA y comisión ML se calculan automáticamente</p>
                 </div>
               </div>
 
@@ -1126,9 +1117,11 @@ export default function MLPublishPage() {
                     <ul className="text-sm space-y-1">
                       <li><strong>Acción:</strong> {bulkAction === "publish" ? "Publicar nuevos" : "Actualizar precios"}</li>
                       <li><strong>Productos:</strong> {testLimit === 0 ? `Todos (${totalAvailable.toLocaleString()})` : `${testLimit} de ${totalAvailable.toLocaleString()}`}</li>
-                      {useIva && <li><strong>IVA:</strong> {ivaPercent}%</li>}
-                      {useCommission && <li><strong>Comisión ML:</strong> {commissionPercent}%</li>}
+                      <li><strong>Margen:</strong> {marginPercent}%</li>
                     </ul>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      El precio se calcula automáticamente incluyendo tipo de cambio, comisión ML y cargos fijos.
+                    </p>
                   </div>
                   
                   <p className="text-sm text-muted-foreground">
