@@ -41,34 +41,46 @@ export async function POST(request: Request) {
       }
     }
 
-    // Obtener TODOS los productos de nuestra DB para relacionar por EAN (paginado)
-    const eanToProductId = new Map<string, string>()
-    let productOffset = 0
-    const productLimit = 10000
-    let hasMoreProducts = true
+    // Obtener TODOS los productos de nuestra DB para relacionar por EAN
+    // Usar una sola query con count para verificar
+    const { count: totalProducts } = await supabase
+      .from("products")
+      .select("*", { count: "exact", head: true })
+      .not("ean", "is", null)
     
-    while (hasMoreProducts) {
+    console.log(`[v0] Total productos con EAN en DB: ${totalProducts}`)
+    
+    const eanToProductId = new Map<string, string>()
+    const pageSize = 50000
+    let offset = 0
+    
+    while (offset < (totalProducts || 0)) {
       const { data: products, error: productsError } = await supabase
         .from("products")
-        .select("id, ean, sku")
+        .select("id, ean")
         .not("ean", "is", null)
-        .range(productOffset, productOffset + productLimit - 1)
+        .range(offset, offset + pageSize - 1)
       
-      if (productsError || !products || products.length === 0) {
-        hasMoreProducts = false
+      if (productsError) {
+        console.error(`[v0] Error obteniendo productos offset ${offset}:`, productsError)
         break
       }
       
+      if (!products || products.length === 0) break
+      
       for (const product of products) {
         if (product.ean) eanToProductId.set(product.ean, product.id)
-        if (product.sku) eanToProductId.set(product.sku, product.id)
       }
       
-      hasMoreProducts = products.length === productLimit
-      productOffset += productLimit
+      console.log(`[v0] Cargados ${offset + products.length} productos...`)
+      offset += pageSize
     }
     
-    console.log(`[v0] Productos en DB con EAN: ${eanToProductId.size}`)
+    console.log(`[v0] Mapa de EANs construido con ${eanToProductId.size} entradas`)
+    
+    // Verificar que el EAN de prueba existe
+    const testEan = "9788414041024"
+    console.log(`[v0] Test EAN ${testEan} existe en mapa: ${eanToProductId.has(testEan)}`)
 
     // Obtener todas las publicaciones de ML (paginado con scroll_id para > 1000 items)
     const mlUserId = account.ml_user_id
