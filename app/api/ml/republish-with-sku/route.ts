@@ -162,12 +162,13 @@ export async function POST(request: Request) {
 
         console.log(`[v0] Eliminada publicación ${pub.ml_item_id}`)
 
-        // 3. Esperar un poco antes de republicar
-        await new Promise(resolve => setTimeout(resolve, 500))
+        // 3. Esperar antes de republicar (2 segundos)
+        await new Promise(resolve => setTimeout(resolve, 2000))
 
         // 4. Llamar al endpoint de publish existente para crear la publicación
         // Esto asegura que se use exactamente la misma lógica y formato
-        const baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL || ""
+        const requestUrl = new URL(request.url)
+        const baseUrl = `${requestUrl.protocol}//${requestUrl.host}`
         
         // Obtener el template por defecto de la cuenta
         const { data: defaultTemplate } = await supabase
@@ -208,7 +209,33 @@ export async function POST(request: Request) {
           }
         )
 
-        const publishResult = await publishResponse.json()
+        // Manejar rate limiting
+        if (publishResponse.status === 429) {
+          console.log(`[v0] Rate limited, esperando 30 segundos...`)
+          await new Promise(resolve => setTimeout(resolve, 30000))
+          results.push({ 
+            ml_item_id: pub.ml_item_id, 
+            status: "error", 
+            error: "Rate limited - reintentar más tarde" 
+          })
+          errors++
+          continue
+        }
+
+        const responseText = await publishResponse.text()
+        let publishResult
+        try {
+          publishResult = JSON.parse(responseText)
+        } catch {
+          console.error(`[v0] Respuesta no JSON: ${responseText.substring(0, 100)}`)
+          results.push({ 
+            ml_item_id: pub.ml_item_id, 
+            status: "error", 
+            error: `Respuesta inválida: ${responseText.substring(0, 50)}` 
+          })
+          errors++
+          continue
+        }
         
         if (publishResponse.ok && publishResult.success) {
           const newItem = publishResult.data
@@ -243,8 +270,8 @@ export async function POST(request: Request) {
           errors++
         }
 
-        // Delay entre publicaciones para no saturar la API
-        await new Promise(resolve => setTimeout(resolve, 1000))
+        // Delay entre publicaciones para no saturar la API (3 segundos)
+        await new Promise(resolve => setTimeout(resolve, 3000))
       } catch (err) {
         console.error(`[v0] Error procesando ${pub.ml_item_id}:`, err)
         results.push({ 
