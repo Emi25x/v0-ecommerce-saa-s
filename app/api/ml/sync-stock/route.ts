@@ -1,38 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 
-// Extrae el EAN/GTIN/SKU de un item de ML
-// En ML el SKU del vendedor (seller_sku) suele ser el EAN
-function extractEanFromItem(item: any): { ean: string | null; source: string } {
-  // 1. Primero buscar en seller_sku (SKU del vendedor - normalmente es el EAN)
-  if (item.seller_sku) {
-    console.log(`[v0] Item ${item.id}: Found seller_sku = ${item.seller_sku}`)
-    return { ean: item.seller_sku, source: "seller_sku" }
-  }
-  
-  // 2. Buscar en seller_custom_field
-  if (item.seller_custom_field) {
-    console.log(`[v0] Item ${item.id}: Found seller_custom_field = ${item.seller_custom_field}`)
-    return { ean: item.seller_custom_field, source: "seller_custom_field" }
-  }
-  
-  // 3. Buscar en atributos GTIN/EAN/UPC/ISBN
-  if (item.attributes) {
-    const eanAttributes = ["GTIN", "EAN", "UPC", "ISBN", "SELLER_SKU"]
-    for (const attr of item.attributes) {
-      if (eanAttributes.includes(attr.id) && attr.value_name) {
-        console.log(`[v0] Item ${item.id}: Found ${attr.id} = ${attr.value_name}`)
-        return { ean: attr.value_name, source: attr.id }
-      }
-    }
-  }
-  
-  console.log(`[v0] Item ${item.id}: NO EAN found. Attributes:`, JSON.stringify(item.attributes?.slice(0, 5)))
-  return { ean: null, source: "none" }
-}
-
 // Sincroniza el stock de productos publicados en ML con el stock actual de la BD
-// Relaciona por EAN: obtiene EAN de ML, busca producto en DB por EAN, actualiza stock en ML
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
@@ -53,6 +22,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
     }
 
+    // Verificar si tiene auto_sync_stock habilitado
+    if (!account.auto_sync_stock) {
+      return NextResponse.json({ 
+        success: false, 
+        message: "Sincronización automática de stock deshabilitada para esta cuenta" 
+      })
+    }
+
     // Refrescar token si es necesario
     let accessToken = account.access_token
     if (new Date(account.token_expires_at) <= new Date()) {
@@ -69,199 +46,102 @@ export async function POST(request: Request) {
       }
     }
 
-    // Obtener items activos de ML directamente desde la API
-    const mlUserId = account.ml_user_id
-    const itemsResponse = await fetch(
-      `https://api.mercadolibre.com/users/${mlUserId}/items/search?status=active&limit=100`,
-      {
-        headers: { "Authorization": `Bearer ${accessToken}` }
-      }
-    )
+    // Obtener todas las publicaciones de esta cuenta
+    const { data: publications, error: pubError } = await supabase
+      .from("ml_publications")
+      .select("id, ml_item_id, product_id")
+      .eq("account_id", account_id)
+      .eq("status", "active")
 
-    if (!itemsResponse.ok) {
-      return NextResponse.json({ error: "Error al obtener items de ML" }, { status: 500 })
+    if (pubError) {
+      return NextResponse.json({ error: "Error al obtener publicaciones" }, { status: 500 })
     }
 
-    const itemsData = await itemsResponse.json()
-    const itemIds = itemsData.results || []
-
-    if (itemIds.length === 0) {
+    if (!publications || publications.length === 0) {
       return NextResponse.json({ 
         success: true, 
-        message: "No hay publicaciones activas en ML",
+        message: "No hay publicaciones activas para sincronizar",
         updated: 0 
       })
     }
 
-    // Obtener todos los productos de nuestra DB con EAN
+    // Obtener el stock actual de cada producto
+    const productIds = publications.map(p => p.product_id)
     const { data: products, error: productsError } = await supabase
       .from("products")
-      .select("id, ean, sku, stock, title")
-      .not("ean", "is", null)
+      .select("id, stock, title")
+      .in("id", productIds)
 
     if (productsError) {
-      return NextResponse.json({ error: "Error al obtener productos de DB" }, { status: 500 })
+      return NextResponse.json({ error: "Error al obtener productos" }, { status: 500 })
     }
 
-    // Crear mapa de EAN -> stock
-    const eanStockMap = new Map<string, { stock: number; title: string; id: string }>()
-    for (const product of products || []) {
-      if (product.ean) {
-        eanStockMap.set(product.ean, { 
-          stock: product.stock || 0, 
-          title: product.title || "",
-          id: product.id 
-        })
-      }
-      // También mapear por SKU como fallback
-      if (product.sku) {
-        eanStockMap.set(product.sku, { 
-          stock: product.stock || 0, 
-          title: product.title || "",
-          id: product.id 
-        })
-      }
-    }
+    const productStockMap = new Map(products?.map(p => [p.id, { stock: p.stock, title: p.title }]) || [])
 
-    // Procesar items en lotes de 20 para no saturar la API
+    // Actualizar stock en ML para cada publicación
     let updated = 0
     let errors = 0
-    let noMatch = 0
-    const results: Array<{ ml_item_id: string; ean?: string; status: string; error?: string; newStock?: number }> = []
+    const results: Array<{ ml_item_id: string; status: string; error?: string }> = []
 
-    // Obtener detalles de items en lotes de 20
-    for (let i = 0; i < itemIds.length; i += 20) {
-      const batch = itemIds.slice(i, i + 20)
-      const idsParam = batch.join(",")
-      
-      const detailsResponse = await fetch(
-        `https://api.mercadolibre.com/items?ids=${idsParam}&attributes=id,title,available_quantity,attributes,seller_custom_field,seller_sku`,
-        {
-          headers: { "Authorization": `Bearer ${accessToken}` }
-        }
-      )
+    for (const pub of publications) {
+      const productInfo = productStockMap.get(pub.product_id)
+      if (!productInfo) continue
 
-      if (!detailsResponse.ok) {
-        console.error("Error obteniendo detalles de items:", await detailsResponse.text())
-        continue
-      }
+      const newStock = productInfo.stock || 0
 
-      const itemsDetails = await detailsResponse.json()
-
-      for (const itemWrapper of itemsDetails) {
-        if (itemWrapper.code !== 200 || !itemWrapper.body) continue
-        
-        const item = itemWrapper.body
-        const { ean, source } = extractEanFromItem(item)
-
-        if (!ean) {
-          noMatch++
-          results.push({ 
-            ml_item_id: item.id, 
-            status: "no_ean", 
-            error: "No se encontró EAN en la publicación" 
+      try {
+        // Actualizar stock en ML
+        const updateResponse = await fetch(`https://api.mercadolibre.com/items/${pub.ml_item_id}`, {
+          method: "PUT",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            available_quantity: newStock
           })
-          continue
-        }
+        })
 
-        const productInfo = eanStockMap.get(ean)
-        if (!productInfo) {
-          noMatch++
-          results.push({ 
-            ml_item_id: item.id, 
-            ean,
-            status: "no_match", 
-            error: `No se encontró producto con EAN ${ean} en DB` 
-          })
-          continue
-        }
-
-        const newStock = productInfo.stock
-        const currentStock = item.available_quantity || 0
-
-        // Solo actualizar si el stock es diferente
-        if (newStock === currentStock) {
-          results.push({ 
-            ml_item_id: item.id, 
-            ean,
-            status: "unchanged",
-            newStock 
-          })
-          continue
-        }
-
-        try {
-          // Actualizar stock en ML
-          const updateResponse = await fetch(`https://api.mercadolibre.com/items/${item.id}`, {
-            method: "PUT",
-            headers: {
-              "Authorization": `Bearer ${accessToken}`,
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              available_quantity: newStock
+        if (updateResponse.ok) {
+          updated++
+          results.push({ ml_item_id: pub.ml_item_id, status: "updated" })
+          
+          // Actualizar fecha de sync en la publicación
+          await supabase
+            .from("ml_publications")
+            .update({ 
+              current_stock: newStock,
+              last_sync_at: new Date().toISOString()
             })
-          })
-
-          if (updateResponse.ok) {
-            updated++
-console.log(`[v0] Item ${item.id}: UPDATED stock from ${currentStock} to ${newStock} (EAN: ${ean} via ${source})`)
-            results.push({ 
-            ml_item_id: item.id, 
-            ean,
-            status: "updated",
-            newStock 
-          })
-            
-            // Actualizar o crear registro en ml_publications
-            const { data: existingPub } = await supabase
-              .from("ml_publications")
-              .select("id")
-              .eq("ml_item_id", item.id)
-              .single()
-
-            if (existingPub) {
-              await supabase
-                .from("ml_publications")
-                .update({ 
-                  current_stock: newStock,
-                  updated_at: new Date().toISOString()
-                })
-                .eq("id", existingPub.id)
-            }
-          } else {
-            const errorData = await updateResponse.json()
-            errors++
-            results.push({ 
-              ml_item_id: item.id, 
-              ean,
-              status: "error", 
-              error: errorData.message || "Error al actualizar ML" 
-            })
-          }
-
-          // Delay para no saturar la API
-          await new Promise(resolve => setTimeout(resolve, 100))
-        } catch (err) {
+            .eq("id", pub.id)
+        } else {
+          const errorData = await updateResponse.json()
           errors++
           results.push({ 
-            ml_item_id: item.id, 
-            ean,
+            ml_item_id: pub.ml_item_id, 
             status: "error", 
-            error: "Error de conexión" 
+            error: errorData.message || "Error al actualizar" 
           })
         }
-      }
 
-      // Delay entre lotes
-      await new Promise(resolve => setTimeout(resolve, 500))
+        // Pequeño delay para no saturar la API
+        await new Promise(resolve => setTimeout(resolve, 200))
+      } catch (err) {
+        errors++
+        results.push({ 
+          ml_item_id: pub.ml_item_id, 
+          status: "error", 
+          error: "Error de conexión" 
+        })
+      }
     }
 
     // Actualizar estadísticas de la cuenta
     await supabase
       .from("ml_accounts")
       .update({
-        updated_at: new Date().toISOString()
+        last_stock_sync_at: new Date().toISOString(),
+        stock_sync_count: updated
       })
       .eq("id", account_id)
 
@@ -269,10 +149,8 @@ console.log(`[v0] Item ${item.id}: UPDATED stock from ${currentStock} to ${newSt
       success: true,
       updated,
       errors,
-      noMatch,
-      total: itemIds.length,
-      message: `Sincronizado: ${updated} actualizados, ${errors} errores, ${noMatch} sin match por EAN`,
-      results: results.slice(0, 50) // Limitar resultados en respuesta
+      total: publications.length,
+      results
     })
 
   } catch (error) {

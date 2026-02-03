@@ -21,12 +21,6 @@ export function SyncStatusCard() {
   const [accounts, setAccounts] = useState<AccountSyncStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState<string | null>(null)
-  const [importing, setImporting] = useState<string | null>(null)
-  const [importResult, setImportResult] = useState<string | null>(null)
-  const [listingNoSku, setListingNoSku] = useState<string | null>(null)
-  const [noSkuItems, setNoSkuItems] = useState<Array<{id: string; title: string; permalink: string; ean?: string}> | null>(null)
-  const [fixingSkuItem, setFixingSkuItem] = useState<string | null>(null)
-  const [fixSkuResults, setFixSkuResults] = useState<{[key: string]: string}>({})
 
   useEffect(() => {
     fetchAccounts()
@@ -59,80 +53,6 @@ export function SyncStatusCard() {
       console.error("Error syncing stock:", error)
     } finally {
       setSyncing(null)
-    }
-  }
-
-  // Listar publicaciones sin SKU
-  const handleListWithoutSku = async (accountId: string) => {
-    setListingNoSku(accountId)
-    setNoSkuItems(null)
-    try {
-      const response = await fetch("/api/ml/list-without-sku", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account_id: accountId }),
-      })
-      const data = await response.json()
-      
-      if (data.items_without_sku) {
-        setNoSkuItems(data.items_without_sku)
-      }
-    } catch (error) {
-      console.error("Error listing items without SKU:", error)
-    } finally {
-      setListingNoSku(null)
-    }
-  }
-
-  // Intentar agregar SKU a un item individual
-  const handleFixSkuItem = async (accountId: string, mlItemId: string, ean: string) => {
-    setFixingSkuItem(mlItemId)
-    try {
-      const response = await fetch("/api/ml/add-sku-to-item", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account_id: accountId, ml_item_id: mlItemId, ean }),
-      })
-      const data = await response.json()
-      
-      if (data.success) {
-        setFixSkuResults(prev => ({ ...prev, [mlItemId]: `OK: ${data.method}` }))
-        // Remover de la lista
-        setNoSkuItems(prev => prev?.filter(item => item.id !== mlItemId) || null)
-      } else {
-        setFixSkuResults(prev => ({ ...prev, [mlItemId]: `Error: ${data.error}` }))
-      }
-    } catch (error) {
-      setFixSkuResults(prev => ({ ...prev, [mlItemId]: "Error de conexion" }))
-    } finally {
-      setFixingSkuItem(null)
-    }
-  }
-
-  // Importar publicaciones desde ML a nuestra DB
-  const handleImportPublications = async (accountId: string) => {
-    setImporting(accountId)
-    setImportResult(null)
-    try {
-      const response = await fetch("/api/ml/import-publications", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account_id: accountId }),
-      })
-      const data = await response.json()
-      
-      if (data.error) {
-        setImportResult(`Error: ${data.error}`)
-      } else {
-        setImportResult(`Importadas: ${data.imported}, Sin match: ${data.noMatch}, Errores: ${data.errors}`)
-      }
-      
-      setTimeout(() => setImportResult(null), 10000)
-    } catch (error) {
-      console.error("Error importing publications:", error)
-      setImportResult("Error al importar")
-    } finally {
-      setImporting(null)
     }
   }
 
@@ -203,117 +123,21 @@ export function SyncStatusCard() {
             <div key={account.id} className="p-3 border rounded-lg space-y-3">
               <div className="flex items-center justify-between">
                 <span className="font-medium">{account.nickname}</span>
-                <div className="flex gap-2 flex-wrap">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleListWithoutSku(account.id)}
-                    disabled={listingNoSku === account.id}
-                    className="bg-transparent"
-                  >
-                    {listingNoSku === account.id ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <XCircle className="h-3 w-3" />
-                    )}
-                    <span className="ml-1">Sin SKU</span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleImportPublications(account.id)}
-                    disabled={importing === account.id}
-                    className="bg-transparent"
-                  >
-                    {importing === account.id ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Package className="h-3 w-3" />
-                    )}
-                    <span className="ml-1">Importar</span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleSyncStock(account.id)}
-                    disabled={syncing === account.id}
-                    className="bg-transparent"
-                  >
-                    {syncing === account.id ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-3 w-3" />
-                    )}
-                    <span className="ml-1">Sync</span>
-                  </Button>
-                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleSyncStock(account.id)}
+                  disabled={syncing === account.id}
+                  className="bg-transparent"
+                >
+                  {syncing === account.id ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3 w-3" />
+                  )}
+                  <span className="ml-1">Sync</span>
+                </Button>
               </div>
-              {importResult && (
-                <div className="text-sm font-medium text-primary">{importResult}</div>
-              )}
-              
-              {/* Lista de items sin SKU */}
-              {noSkuItems && noSkuItems.length > 0 && (
-                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium text-red-800">
-                      {noSkuItems.length} publicaciones sin SKU:
-                    </span>
-                    <Button 
-                      size="sm" 
-                      variant="ghost" 
-                      onClick={() => setNoSkuItems(null)}
-                      className="h-6 px-2 text-xs"
-                    >
-                      Cerrar
-                    </Button>
-                  </div>
-                  <div className="max-h-48 overflow-y-auto space-y-2">
-                    {noSkuItems.map((item) => (
-                      <div key={item.id} className="flex items-center gap-2">
-                        <a
-                          href={item.permalink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex-1 text-xs text-blue-600 hover:underline truncate"
-                        >
-                          {item.id} - {item.title}
-                        </a>
-                        {item.ean && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleFixSkuItem(account.id, item.id, item.ean!)}
-                            disabled={fixingSkuItem === item.id}
-                            className="h-6 px-2 text-xs bg-transparent"
-                          >
-                            {fixingSkuItem === item.id ? (
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                            ) : (
-                              "Fix"
-                            )}
-                          </Button>
-                        )}
-                        {fixSkuResults[item.id] && (
-                          <span className={`text-xs ${fixSkuResults[item.id].startsWith("OK") ? "text-green-600" : "text-red-600"}`}>
-                            {fixSkuResults[item.id]}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-xs text-red-600 mt-2">
-                    Podes eliminar estas desde el panel de MercadoLibre
-                  </p>
-                </div>
-              )}
-              {noSkuItems && noSkuItems.length === 0 && (
-                <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-                  <span className="text-sm font-medium text-green-800">
-                    Todas las publicaciones tienen SKU configurado
-                  </span>
-                </div>
-              )}
 
               <div className="grid grid-cols-2 gap-3">
                 {/* Stock Status */}
