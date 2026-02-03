@@ -21,10 +21,8 @@ export function SyncStatusCard() {
   const [accounts, setAccounts] = useState<AccountSyncStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState<string | null>(null)
-  const [fixingSku, setFixingSku] = useState<string | null>(null)
-  const [fixProgress, setFixProgress] = useState<{ current: number, total: number, updated: number } | null>(null)
-  const [republishing, setRepublishing] = useState<string | null>(null)
-  const [republishResult, setRepublishResult] = useState<string | null>(null)
+  const [importing, setImporting] = useState<string | null>(null)
+  const [importResult, setImportResult] = useState<string | null>(null)
 
   useEffect(() => {
     fetchAccounts()
@@ -57,6 +55,33 @@ export function SyncStatusCard() {
       console.error("Error syncing stock:", error)
     } finally {
       setSyncing(null)
+    }
+  }
+
+  // Importar publicaciones desde ML a nuestra DB
+  const handleImportPublications = async (accountId: string) => {
+    setImporting(accountId)
+    setImportResult(null)
+    try {
+      const response = await fetch("/api/ml/import-publications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: accountId }),
+      })
+      const data = await response.json()
+      
+      if (data.error) {
+        setImportResult(`Error: ${data.error}`)
+      } else {
+        setImportResult(`Importadas: ${data.imported}, Sin match: ${data.noMatch}, Errores: ${data.errors}`)
+      }
+      
+      setTimeout(() => setImportResult(null), 10000)
+    } catch (error) {
+      console.error("Error importing publications:", error)
+      setImportResult("Error al importar")
+    } finally {
+      setImporting(null)
     }
   }
 
@@ -127,21 +152,40 @@ export function SyncStatusCard() {
             <div key={account.id} className="p-3 border rounded-lg space-y-3">
               <div className="flex items-center justify-between">
                 <span className="font-medium">{account.nickname}</span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleSyncStock(account.id)}
-                  disabled={syncing === account.id}
-                  className="bg-transparent"
-                >
-                  {syncing === account.id ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-3 w-3" />
-                  )}
-                  <span className="ml-1">Sync Stock</span>
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleImportPublications(account.id)}
+                    disabled={importing === account.id}
+                    className="bg-transparent"
+                  >
+                    {importing === account.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Package className="h-3 w-3" />
+                    )}
+                    <span className="ml-1">Importar de ML</span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleSyncStock(account.id)}
+                    disabled={syncing === account.id}
+                    className="bg-transparent"
+                  >
+                    {syncing === account.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3 w-3" />
+                    )}
+                    <span className="ml-1">Sync Stock</span>
+                  </Button>
+                </div>
               </div>
+              {importResult && (
+                <div className="text-sm font-medium text-primary">{importResult}</div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 {/* Stock Status */}
