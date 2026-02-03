@@ -52,6 +52,11 @@ export async function POST(request: Request) {
       if (product.ean) eanToProductId.set(product.ean, product.id)
       if (product.sku) eanToProductId.set(product.sku, product.id)
     }
+    
+    console.log(`[v0] Productos en DB con EAN: ${eanToProductId.size}`)
+    // Mostrar algunos EANs de ejemplo
+    const sampleEans = Array.from(eanToProductId.keys()).slice(0, 3)
+    console.log(`[v0] Ejemplo de EANs en DB: ${sampleEans.join(", ")}`)
 
     // Obtener todas las publicaciones de ML (paginado con scroll_id para > 1000 items)
     const mlUserId = account.ml_user_id
@@ -148,6 +153,11 @@ export async function POST(request: Request) {
 
         // Buscar producto en nuestra DB por EAN
         const productId = ean ? eanToProductId.get(ean) : null
+
+        // Log para debugging - mostrar los primeros 5 sin match
+        if (!productId && noMatch < 5) {
+          console.log(`[v0] No match para item ${item.id}: EAN="${ean}" title="${item.title?.substring(0, 50)}"`)
+        }
 
         if (!productId) {
           noMatch++
