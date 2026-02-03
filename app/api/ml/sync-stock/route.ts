@@ -1,20 +1,24 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 
-// Extrae el EAN/GTIN de los atributos de un item de ML
+// Extrae el EAN/GTIN/SKU de un item de ML
+// En ML el SKU del vendedor (seller_sku) suele ser el EAN
 function extractEanFromItem(item: any): string | null {
-  if (!item.attributes) return null
+  // 1. Primero buscar en seller_sku (SKU del vendedor - normalmente es el EAN)
+  if (item.seller_sku) return item.seller_sku
   
-  // Buscar en atributos comunes de EAN/GTIN
-  const eanAttributes = ["GTIN", "EAN", "UPC", "ISBN"]
-  for (const attr of item.attributes) {
-    if (eanAttributes.includes(attr.id) && attr.value_name) {
-      return attr.value_name
+  // 2. Buscar en seller_custom_field
+  if (item.seller_custom_field) return item.seller_custom_field
+  
+  // 3. Buscar en atributos GTIN/EAN/UPC/ISBN
+  if (item.attributes) {
+    const eanAttributes = ["GTIN", "EAN", "UPC", "ISBN", "SELLER_SKU"]
+    for (const attr of item.attributes) {
+      if (eanAttributes.includes(attr.id) && attr.value_name) {
+        return attr.value_name
+      }
     }
   }
-  
-  // También buscar en seller_custom_field o seller_sku
-  if (item.seller_custom_field) return item.seller_custom_field
   
   return null
 }
@@ -123,7 +127,7 @@ export async function POST(request: Request) {
       const idsParam = batch.join(",")
       
       const detailsResponse = await fetch(
-        `https://api.mercadolibre.com/items?ids=${idsParam}&attributes=id,title,available_quantity,attributes,seller_custom_field`,
+        `https://api.mercadolibre.com/items?ids=${idsParam}&attributes=id,title,available_quantity,attributes,seller_custom_field,seller_sku`,
         {
           headers: { "Authorization": `Bearer ${accessToken}` }
         }
