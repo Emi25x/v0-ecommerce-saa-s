@@ -53,16 +53,23 @@ export async function POST(request: Request) {
       if (product.sku) eanToProductId.set(product.sku, product.id)
     }
 
-    // Obtener todas las publicaciones de ML (paginado)
+    // Obtener todas las publicaciones de ML (paginado con scroll_id para > 1000 items)
     const mlUserId = account.ml_user_id
     let allItemIds: string[] = []
-    let offset = 0
+    let scrollId: string | null = null
     const limit = 100
     let hasMore = true
 
     while (hasMore) {
+      // ML no permite offset > 1000, usar scroll_id para paginar más allá
+      let searchUrl = `https://api.mercadolibre.com/users/${mlUserId}/items/search?status=active&limit=${limit}`
+      
+      if (scrollId) {
+        searchUrl += `&scroll_id=${scrollId}`
+      }
+
       const searchResponse = await fetch(
-        `https://api.mercadolibre.com/users/${mlUserId}/items/search?status=active&offset=${offset}&limit=${limit}`,
+        searchUrl,
         { headers: { "Authorization": `Bearer ${accessToken}` } }
       )
 
@@ -75,8 +82,9 @@ export async function POST(request: Request) {
       const itemIds = searchData.results || []
       allItemIds = allItemIds.concat(itemIds)
 
-      hasMore = itemIds.length === limit && allItemIds.length < searchData.paging?.total
-      offset += limit
+      // Usar scroll_id para la siguiente página
+      scrollId = searchData.scroll_id || null
+      hasMore = itemIds.length === limit && scrollId !== null
 
       // Pequeño delay para no saturar
       await new Promise(resolve => setTimeout(resolve, 100))
