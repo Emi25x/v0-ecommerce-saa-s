@@ -111,7 +111,7 @@ export async function POST(request: Request) {
 
         const currentItem = await itemResponse.json()
 
-        // 2. Cerrar la publicación actual
+        // 2. Primero cerrar la publicación (requerido antes de eliminar)
         const closeResponse = await fetch(
           `https://api.mercadolibre.com/items/${pub.ml_item_id}`,
           {
@@ -137,6 +137,32 @@ export async function POST(request: Request) {
 
         console.log(`[v0] Cerrada publicación ${pub.ml_item_id}`)
 
+        // 3. Ahora eliminar la publicación
+        const deleteResponse = await fetch(
+          `https://api.mercadolibre.com/items/${pub.ml_item_id}`,
+          {
+            method: "PUT",
+            headers: {
+              "Authorization": `Bearer ${accessToken}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ deleted: true })
+          }
+        )
+
+        if (!deleteResponse.ok) {
+          const deleteError = await deleteResponse.json()
+          results.push({ 
+            ml_item_id: pub.ml_item_id, 
+            status: "error", 
+            error: `Error al eliminar: ${deleteError.message}` 
+          })
+          errors++
+          continue
+        }
+
+        console.log(`[v0] Eliminada publicación ${pub.ml_item_id}`)
+
         // 3. Esperar un poco antes de republicar
         await new Promise(resolve => setTimeout(resolve, 500))
 
@@ -158,21 +184,9 @@ export async function POST(request: Request) {
           results.push({ 
             ml_item_id: pub.ml_item_id, 
             status: "error", 
-            error: "No hay template por defecto configurado" 
+            error: "No hay template por defecto configurado - publicación eliminada sin republicar" 
           })
           errors++
-          // Reabrir la publicación cerrada
-          await fetch(
-            `https://api.mercadolibre.com/items/${pub.ml_item_id}`,
-            {
-              method: "PUT",
-              headers: {
-                "Authorization": `Bearer ${accessToken}`,
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify({ status: "active" })
-            }
-          )
           continue
         }
 
@@ -218,26 +232,14 @@ export async function POST(request: Request) {
             new_item_id: newItem.id 
           })
         } else {
-          const createError = publishResult.error
+          const createError = publishResult.error || publishResult
           console.error(`[v0] Error al crear nueva publicación:`, createError)
           
-          // Reabrir la publicación cerrada si falla la creación
-          await fetch(
-            `https://api.mercadolibre.com/items/${pub.ml_item_id}`,
-            {
-              method: "PUT",
-              headers: {
-                "Authorization": `Bearer ${accessToken}`,
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify({ status: "active" })
-            }
-          )
-
+          // La publicación ya fue eliminada, solo registrar el error
           results.push({ 
             ml_item_id: pub.ml_item_id, 
             status: "error", 
-            error: createError.message || "Error al crear nueva publicación" 
+            error: createError.message || "Error al crear nueva publicación - publicación eliminada" 
           })
           errors++
         }
