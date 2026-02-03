@@ -260,9 +260,11 @@ export default function MLPublishPage() {
     let skippedCount = 0
     const results: typeof publishResults = []
     
-    for (let i = 0; i < productIds.length; i++) {
-      const productId = productIds[i]
-      
+    // Publicar en lotes de 3 productos en paralelo para mayor velocidad
+    const BATCH_SIZE = 3
+    const DELAY_BETWEEN_BATCHES = 1000 // 1 segundo entre lotes
+    
+    const publishProduct = async (productId: string) => {
       try {
         const response = await fetch("/api/ml/publish", {
           method: "POST",
@@ -278,51 +280,47 @@ export default function MLPublishPage() {
         
         const result = await response.json()
         if (result.success) {
-          successCount++
-          results.push({
-            title: result.product_title || productId,
-            ean: result.product_ean || "",
-            status: "success",
-            ml_item_id: result.ml_item_id
-          })
+          return { status: "success" as const, title: result.product_title || productId, ean: result.product_ean || "", ml_item_id: result.ml_item_id }
         } else if (result.skipped) {
-          skippedCount++
-          results.push({
-            title: result.product_title || productId,
-            ean: result.product_ean || "",
-            status: "skipped",
-            ml_item_id: result.existing_item_id
-          })
+          return { status: "skipped" as const, title: result.product_title || productId, ean: result.product_ean || "", ml_item_id: result.existing_item_id }
         } else if (result.is_rate_limit) {
-          await new Promise(resolve => setTimeout(resolve, 3000))
-          i--
-          continue
+          return { status: "rate_limit" as const, productId }
+        } else {
+          return { status: "error" as const, title: result.product_title || productId, ean: result.product_ean || "", error: result.error }
+        }
+      } catch {
+        return { status: "error" as const, title: productId, ean: "", error: "Error de conexión" }
+      }
+    }
+    
+    // Procesar en lotes
+    for (let i = 0; i < productIds.length; i += BATCH_SIZE) {
+      const batch = productIds.slice(i, i + BATCH_SIZE)
+      const batchResults = await Promise.all(batch.map(publishProduct))
+      
+      // Procesar resultados del lote
+      for (const result of batchResults) {
+        if (result.status === "success") {
+          successCount++
+          results.push({ title: result.title, ean: result.ean, status: "success", ml_item_id: result.ml_item_id })
+        } else if (result.status === "skipped") {
+          skippedCount++
+          results.push({ title: result.title, ean: result.ean, status: "skipped", ml_item_id: result.ml_item_id })
+        } else if (result.status === "rate_limit") {
+          // Re-encolar el producto para reintentar
+          productIds.push(result.productId)
         } else {
           errorCount++
-          results.push({
-            title: result.product_title || productId,
-            ean: result.product_ean || "",
-            status: "error",
-            error: result.error
-          })
+          results.push({ title: result.title, ean: result.ean, status: "error", error: result.error })
         }
-        setPublishProgress({ current: i + 1, total: productIds.length, success: successCount, errors: errorCount, skipped: skippedCount })
-        setPublishResults([...results])
-      } catch (err) {
-        errorCount++
-        results.push({
-          title: productId,
-          ean: "",
-          status: "error",
-          error: "Error de conexión"
-        })
-        setPublishProgress({ current: i + 1, total: productIds.length, success: successCount, errors: errorCount, skipped: skippedCount })
-        setPublishResults([...results])
       }
       
-      // Delay de 2 segundos entre publicaciones para evitar rate limit
-      if (i < productIds.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 2000))
+      setPublishProgress({ current: Math.min(i + BATCH_SIZE, productIds.length), total: productIds.length, success: successCount, errors: errorCount, skipped: skippedCount })
+      setPublishResults([...results])
+      
+      // Delay entre lotes
+      if (i + BATCH_SIZE < productIds.length) {
+        await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES))
       }
     }
     
@@ -1006,9 +1004,9 @@ export default function MLPublishPage() {
                   </div>
                   
                   <p className="text-sm text-muted-foreground">
-                    Se publicará 1 producto cada 2 segundos para evitar rate limiting.
-                    {testLimit > 0 && ` Tiempo estimado: ~${Math.ceil(testLimit * 2 / 60)} minutos.`}
-                    {testLimit === 0 && totalAvailable > 0 && ` Tiempo estimado: ~${Math.ceil(totalAvailable * 2 / 60)} minutos.`}
+                    Se publican 3 productos en paralelo cada segundo.
+                    {testLimit > 0 && ` Tiempo estimado: ~${Math.ceil(testLimit / 3 / 60)} minutos.`}
+                    {testLimit === 0 && totalAvailable > 0 && ` Tiempo estimado: ~${Math.ceil(totalAvailable / 3 / 60)} minutos.`}
                   </p>
                   <div className="p-3 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                     <p className="text-sm text-yellow-700 dark:text-yellow-300">
