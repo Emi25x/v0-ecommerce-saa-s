@@ -41,46 +41,16 @@ export async function POST(request: Request) {
       }
     }
 
-    // Obtener TODOS los productos de nuestra DB para relacionar por EAN
-    // Usar una sola query con count para verificar
-    const { count: totalProducts } = await supabase
-      .from("products")
-      .select("*", { count: "exact", head: true })
-      .not("ean", "is", null)
-    
-    console.log(`[v0] Total productos con EAN en DB: ${totalProducts}`)
-    
-    const eanToProductId = new Map<string, string>()
-    const pageSize = 50000
-    let offset = 0
-    
-    while (offset < (totalProducts || 0)) {
-      const { data: products, error: productsError } = await supabase
+    // Función auxiliar para buscar producto por EAN directamente en DB
+    async function findProductByEan(ean: string): Promise<string | null> {
+      const { data } = await supabase
         .from("products")
-        .select("id, ean")
-        .not("ean", "is", null)
-        .range(offset, offset + pageSize - 1)
-      
-      if (productsError) {
-        console.error(`[v0] Error obteniendo productos offset ${offset}:`, productsError)
-        break
-      }
-      
-      if (!products || products.length === 0) break
-      
-      for (const product of products) {
-        if (product.ean) eanToProductId.set(product.ean, product.id)
-      }
-      
-      console.log(`[v0] Cargados ${offset + products.length} productos...`)
-      offset += pageSize
+        .select("id")
+        .eq("ean", ean)
+        .limit(1)
+        .single()
+      return data?.id || null
     }
-    
-    console.log(`[v0] Mapa de EANs construido con ${eanToProductId.size} entradas`)
-    
-    // Verificar que el EAN de prueba existe
-    const testEan = "9788414041024"
-    console.log(`[v0] Test EAN ${testEan} existe en mapa: ${eanToProductId.has(testEan)}`)
 
     // Obtener todas las publicaciones de ML (paginado con scroll_id para > 1000 items)
     const mlUserId = account.ml_user_id
@@ -133,6 +103,7 @@ export async function POST(request: Request) {
     let imported = 0
     let errors = 0
     let noMatch = 0
+    const eanToProductId: Map<string, string> = new Map()
 
     for (let i = 0; i < allItemIds.length; i += 20) {
       const batch = allItemIds.slice(i, i + 20)
@@ -175,13 +146,8 @@ export async function POST(request: Request) {
           }
         }
 
-        // Buscar producto en nuestra DB por EAN
-        const productId = ean ? eanToProductId.get(ean) : null
-
-        // Log para debugging - mostrar los primeros 5 sin match
-        if (!productId && noMatch < 5) {
-          console.log(`[v0] No match para item ${item.id}: EAN="${ean}" title="${item.title?.substring(0, 50)}"`)
-        }
+        // Buscar producto en nuestra DB por EAN (query directa)
+        const productId = ean ? await findProductByEan(ean) : null
 
         if (!productId) {
           noMatch++
