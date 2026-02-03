@@ -166,15 +166,46 @@ export async function POST(request: NextRequest) {
         if (searchResponse.ok) {
           const searchData = await searchResponse.json()
           if (searchData.results && searchData.results.length > 0) {
+            const mlItemId = searchData.results[0]
             alreadyPublishedInfo = { 
               exists: true, 
-              item_id: searchData.results[0],
+              item_id: mlItemId,
               source: "mercadolibre"
             }
+            
+            // Guardar en products que ya está publicado (si no lo teníamos)
+            if (!product.ml_item_id || product.ml_item_id !== mlItemId) {
+              await supabase
+                .from("products")
+                .update({
+                  ml_item_id: mlItemId,
+                  ml_account_id: account_id,
+                  ml_status: "active",
+                  ml_last_checked_at: new Date().toISOString()
+                })
+                .eq("id", product_id)
+            }
+          } else {
+            // No está publicado en ML, actualizar last_checked
+            await supabase
+              .from("products")
+              .update({
+                ml_last_checked_at: new Date().toISOString()
+              })
+              .eq("id", product_id)
           }
         }
         
-        // También verificar en nuestra base de datos local
+        // También verificar en nuestra base de datos local (products.ml_item_id)
+        if (!alreadyPublishedInfo.exists && product.ml_item_id) {
+          alreadyPublishedInfo = { 
+            exists: true, 
+            item_id: product.ml_item_id,
+            source: "database"
+          }
+        }
+        
+        // Fallback: verificar en ml_publications
         if (!alreadyPublishedInfo.exists) {
           const { data: existingPub } = await supabase
             .from("ml_publications")
@@ -189,6 +220,16 @@ export async function POST(request: NextRequest) {
               item_id: existingPub.ml_item_id,
               source: "database"
             }
+            // Sincronizar con products
+            await supabase
+              .from("products")
+              .update({
+                ml_item_id: existingPub.ml_item_id,
+                ml_account_id: account_id,
+                ml_status: "active",
+                ml_last_checked_at: new Date().toISOString()
+              })
+              .eq("id", product_id)
           }
         }
       } catch (searchError) {
@@ -863,6 +904,19 @@ if (!catalogProductId) {
         console.error("Error al vincular con catalogo:", optinErr)
       }
     }
+
+    // Guardar estado de publicación en products
+    await supabase
+      .from("products")
+      .update({
+        ml_item_id: mlData.id,
+        ml_account_id: account.id,
+        ml_status: mlData.status || "active",
+        ml_published_at: new Date().toISOString(),
+        ml_last_checked_at: new Date().toISOString(),
+        ml_permalink: mlData.permalink
+      })
+      .eq("id", product_id)
 
     return NextResponse.json({
       success: true,
