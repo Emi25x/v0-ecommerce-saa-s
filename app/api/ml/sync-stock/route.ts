@@ -3,24 +3,32 @@ import { NextResponse } from "next/server"
 
 // Extrae el EAN/GTIN/SKU de un item de ML
 // En ML el SKU del vendedor (seller_sku) suele ser el EAN
-function extractEanFromItem(item: any): string | null {
+function extractEanFromItem(item: any): { ean: string | null; source: string } {
   // 1. Primero buscar en seller_sku (SKU del vendedor - normalmente es el EAN)
-  if (item.seller_sku) return item.seller_sku
+  if (item.seller_sku) {
+    console.log(`[v0] Item ${item.id}: Found seller_sku = ${item.seller_sku}`)
+    return { ean: item.seller_sku, source: "seller_sku" }
+  }
   
   // 2. Buscar en seller_custom_field
-  if (item.seller_custom_field) return item.seller_custom_field
+  if (item.seller_custom_field) {
+    console.log(`[v0] Item ${item.id}: Found seller_custom_field = ${item.seller_custom_field}`)
+    return { ean: item.seller_custom_field, source: "seller_custom_field" }
+  }
   
   // 3. Buscar en atributos GTIN/EAN/UPC/ISBN
   if (item.attributes) {
     const eanAttributes = ["GTIN", "EAN", "UPC", "ISBN", "SELLER_SKU"]
     for (const attr of item.attributes) {
       if (eanAttributes.includes(attr.id) && attr.value_name) {
-        return attr.value_name
+        console.log(`[v0] Item ${item.id}: Found ${attr.id} = ${attr.value_name}`)
+        return { ean: attr.value_name, source: attr.id }
       }
     }
   }
   
-  return null
+  console.log(`[v0] Item ${item.id}: NO EAN found. Attributes:`, JSON.stringify(item.attributes?.slice(0, 5)))
+  return { ean: null, source: "none" }
 }
 
 // Sincroniza el stock de productos publicados en ML con el stock actual de la BD
@@ -144,7 +152,7 @@ export async function POST(request: Request) {
         if (itemWrapper.code !== 200 || !itemWrapper.body) continue
         
         const item = itemWrapper.body
-        const ean = extractEanFromItem(item)
+        const { ean, source } = extractEanFromItem(item)
 
         if (!ean) {
           noMatch++
@@ -197,12 +205,13 @@ export async function POST(request: Request) {
 
           if (updateResponse.ok) {
             updated++
+console.log(`[v0] Item ${item.id}: UPDATED stock from ${currentStock} to ${newStock} (EAN: ${ean} via ${source})`)
             results.push({ 
-              ml_item_id: item.id, 
-              ean,
-              status: "updated",
-              newStock 
-            })
+            ml_item_id: item.id, 
+            ean,
+            status: "updated",
+            newStock 
+          })
             
             // Actualizar o crear registro en ml_publications
             const { data: existingPub } = await supabase

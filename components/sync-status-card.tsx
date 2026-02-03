@@ -22,7 +22,7 @@ export function SyncStatusCard() {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState<string | null>(null)
   const [fixingSku, setFixingSku] = useState<string | null>(null)
-  const [fixSkuResult, setFixSkuResult] = useState<string | null>(null)
+  const [fixProgress, setFixProgress] = useState<{ current: number; total: number; updated: number } | null>(null)
 
   useEffect(() => {
     fetchAccounts()
@@ -45,13 +45,11 @@ export function SyncStatusCard() {
   const handleSyncStock = async (accountId: string) => {
     setSyncing(accountId)
     try {
-      const response = await fetch("/api/ml/sync-stock", {
+      await fetch("/api/ml/sync-stock", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ account_id: accountId }),
       })
-      const data = await response.json()
-      console.log("[v0] Sync stock result:", data)
       await fetchAccounts()
     } catch (error) {
       console.error("Error syncing stock:", error)
@@ -60,24 +58,56 @@ export function SyncStatusCard() {
     }
   }
 
+  // Corregir seller_sku en todas las publicaciones (poner EAN como SKU)
   const handleFixSellerSku = async (accountId: string) => {
     setFixingSku(accountId)
-    setFixSkuResult(null)
+    setFixProgress({ current: 0, total: 0, updated: 0 })
+    
     try {
-      const response = await fetch("/api/ml/fix-seller-sku", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account_id: accountId }),
-      })
-      const data = await response.json()
-      console.log("[v0] Fix seller_sku result:", data)
-      setFixSkuResult(`${data.updated} actualizados, ${data.errors} errores`)
-      setTimeout(() => setFixSkuResult(null), 5000)
+      let offset = 0
+      const limit = 100
+      let hasMore = true
+      let totalUpdated = 0
+      let totalItems = 0
+
+      while (hasMore) {
+        const response = await fetch("/api/ml/fix-seller-sku", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ account_id: accountId, limit, offset }),
+        })
+        
+        const data = await response.json()
+        
+        if (data.error) {
+          console.error("Error fixing SKU:", data.error)
+          break
+        }
+
+        totalItems = data.total || 0
+        totalUpdated += data.updated || 0
+        hasMore = data.hasMore || false
+        offset = data.nextOffset || offset + limit
+
+        setFixProgress({ 
+          current: Math.min(offset, totalItems), 
+          total: totalItems, 
+          updated: totalUpdated 
+        })
+
+        // Pequeña pausa entre lotes
+        if (hasMore) {
+          await new Promise(resolve => setTimeout(resolve, 500))
+        }
+      }
+
+      alert(`Completado: ${totalUpdated} publicaciones actualizadas de ${totalItems} total`)
     } catch (error) {
-      console.error("Error fixing seller_sku:", error)
-      setFixSkuResult("Error al actualizar")
+      console.error("Error fixing seller SKU:", error)
+      alert("Error al corregir SKU")
     } finally {
       setFixingSku(null)
+      setFixProgress(null)
     }
   }
 
@@ -148,41 +178,21 @@ export function SyncStatusCard() {
             <div key={account.id} className="p-3 border rounded-lg space-y-3">
               <div className="flex items-center justify-between">
                 <span className="font-medium">{account.nickname}</span>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleFixSellerSku(account.id)}
-                    disabled={fixingSku === account.id}
-                    className="bg-transparent"
-                    title="Actualizar seller_sku con EAN en publicaciones existentes"
-                  >
-                    {fixingSku === account.id ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Package className="h-3 w-3" />
-                    )}
-                    <span className="ml-1">Fix SKU</span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleSyncStock(account.id)}
-                    disabled={syncing === account.id}
-                    className="bg-transparent"
-                  >
-                    {syncing === account.id ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-3 w-3" />
-                    )}
-                    <span className="ml-1">Sync</span>
-                  </Button>
-                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleSyncStock(account.id)}
+                  disabled={syncing === account.id}
+                  className="bg-transparent"
+                >
+                  {syncing === account.id ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3 w-3" />
+                  )}
+                  <span className="ml-1">Sync</span>
+                </Button>
               </div>
-              {fixSkuResult && (
-                <div className="text-sm text-primary font-medium">{fixSkuResult}</div>
-              )}
 
               <div className="grid grid-cols-2 gap-3">
                 {/* Stock Status */}
