@@ -48,7 +48,7 @@ export async function POST(request: Request) {
         .select("id")
         .eq("ean", ean)
         .limit(1)
-        .single()
+        .maybeSingle()
       return data?.id || null
     }
 
