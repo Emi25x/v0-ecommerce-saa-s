@@ -55,6 +55,8 @@ export default function DashboardPage() {
   const [competitionStats, setCompetitionStats] = useState<any>(null)
   const [syncedData, setSyncedData] = useState<any>({ totalSynced: 0, libralSynced: 0 })
   const [syncedLoading, setSyncedLoading] = useState(true)
+  const [updatingStock, setUpdatingStock] = useState(false)
+  const [stockMessage, setStockMessage] = useState<string>("")
 
   useEffect(() => {
     const fetchAccounts = async () => {
@@ -175,6 +177,33 @@ export default function DashboardPage() {
   const syncedProductsCount = syncedData?.totalSynced || 0
   const loading = accountsLoading || productsLoading
 
+  const handleUpdateStock = async () => {
+    setUpdatingStock(true)
+    setStockMessage("Actualizando stock desde proveedores...")
+    try {
+      const response = await fetch("/api/cron/import-schedules", { method: "GET" })
+      const data = await response.json()
+      
+      if (data.success || data.executed) {
+        setStockMessage(`Stock actualizado: ${data.executed || 0} fuentes procesadas`)
+        // Refrescar datos
+        const syncedRes = await fetch("/api/inventory/products/synced-count")
+        const syncedResult = await syncedRes.json()
+        setSyncedData(syncedResult)
+        setTimeout(() => setStockMessage(""), 5000)
+      } else {
+        setStockMessage(data.message || "No hay actualizaciones pendientes")
+        setTimeout(() => setStockMessage(""), 5000)
+      }
+    } catch (error) {
+      console.error("[v0] Stock update failed:", error)
+      setStockMessage("Error al actualizar stock")
+      setTimeout(() => setStockMessage(""), 5000)
+    } finally {
+      setUpdatingStock(false)
+    }
+  }
+
   const handleSync = async () => {
     setSyncing(true)
     setSyncMessage("Sincronizando productos...")
@@ -282,6 +311,30 @@ export default function DashboardPage() {
               <p className="text-xs text-muted-foreground">
                 Productos ganando • {competitionStats?.losing || 0} perdiendo
               </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Botón prominente para actualizar stock */}
+        <div className="mt-6">
+          <Card className="border-primary/20 bg-primary/5">
+            <CardContent className="flex flex-col sm:flex-row items-center justify-between gap-4 p-6">
+              <div>
+                <h3 className="text-lg font-semibold">Actualizar Stock de Proveedores</h3>
+                <p className="text-sm text-muted-foreground">
+                  Ejecuta la importación de stock desde Arnoia y otras fuentes
+                  {stockMessage && <span className="ml-2 text-primary font-medium">• {stockMessage}</span>}
+                </p>
+              </div>
+              <Button 
+                onClick={handleUpdateStock} 
+                disabled={updatingStock}
+                size="lg"
+                className="min-w-[200px]"
+              >
+                <RefreshIcon className={`mr-2 h-5 w-5 ${updatingStock ? "animate-spin" : ""}`} />
+                {updatingStock ? "Actualizando..." : "Actualizar Stock Ahora"}
+              </Button>
             </CardContent>
           </Card>
         </div>
