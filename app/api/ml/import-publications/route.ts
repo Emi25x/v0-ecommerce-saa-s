@@ -159,7 +159,7 @@ export async function POST(request: Request) {
           .from("ml_publications")
           .select("id")
           .eq("ml_item_id", item.id)
-          .single()
+          .maybeSingle()
 
         if (existing) {
           // Ya existe, actualizar
