@@ -91,6 +91,14 @@ export default function MLPublishPage() {
   const [filterBrand, setFilterBrand] = useState<string>("")
   const [filterLanguage, setFilterLanguage] = useState<string>("")
   const [excludeIbd, setExcludeIbd] = useState<boolean>(true) // Por defecto excluir IBD
+  const [elapsedTime, setElapsedTime] = useState<number>(0) // Tiempo transcurrido en segundos
+  const [publishStartTime, setPublishStartTime] = useState<number | null>(null)
+  const [bulkAction, setBulkAction] = useState<"publish" | "update_price">("publish") // Acción masiva
+  // Opciones de calculadora de precios
+  const [useIva, setUseIva] = useState<boolean>(true)
+  const [ivaPercent, setIvaPercent] = useState<number>(21)
+  const [useCommission, setUseCommission] = useState<boolean>(true)
+  const [commissionPercent, setCommissionPercent] = useState<number>(13)
 
   // Construir URL de filtros para el servidor
   const buildFilterUrl = (onlyIds = false) => {
@@ -111,10 +119,38 @@ export default function MLPublishPage() {
   // Debounce para no hacer muchas llamadas mientras el usuario escribe
   const [debouncedFetch, setDebouncedFetch] = useState<NodeJS.Timeout | null>(null)
 
+  // Timer para tiempo transcurrido
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null
+    if (publishingInProgress && publishStartTime) {
+      interval = setInterval(() => {
+        setElapsedTime(Math.floor((Date.now() - publishStartTime) / 1000))
+      }, 1000)
+    } else if (!publishingInProgress) {
+      setElapsedTime(0)
+    }
+    return () => {
+      if (interval) clearInterval(interval)
+    }
+  }, [publishingInProgress, publishStartTime])
+
+  // Formatear tiempo como HH:MM:SS
+  const formatTime = (seconds: number) => {
+    const hrs = Math.floor(seconds / 3600)
+    const mins = Math.floor((seconds % 3600) / 60)
+    const secs = seconds % 60
+    return `${hrs.toString().padStart(2, "0")}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+  }
+
   useEffect(() => {
     if (debouncedFetch) clearTimeout(debouncedFetch)
     const timeout = setTimeout(() => {
       fetchData()
+      // También actualizar total disponible para publicación masiva
+      fetch(buildFilterUrl(true))
+        .then(res => res.json())
+        .then(data => setTotalAvailable(data.ids?.length || 0))
+        .catch(() => setTotalAvailable(0))
     }, 300)
     setDebouncedFetch(timeout)
     return () => clearTimeout(timeout)
@@ -238,6 +274,8 @@ export default function MLPublishPage() {
   // Iniciar publicación masiva desde el modal
   const startBulkPublish = async () => {
     setPublishingInProgress(true)
+    setPublishStartTime(Date.now()) // Iniciar timer
+    setElapsedTime(0)
     setPublishResults([]) // Limpiar resultados anteriores
     
     // Obtener todos los IDs con los filtros actuales
@@ -655,6 +693,106 @@ export default function MLPublishPage() {
             </CardContent>
           </Card>
 
+          {/* Publicación Masiva - Sección destacada */}
+          <Card className="border-primary/50 bg-primary/5">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Upload className="h-5 w-5" />
+                Publicación Masiva
+              </CardTitle>
+              <CardDescription>
+                Publica o actualiza múltiples productos de una vez
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                {/* Acción */}
+                <div className="space-y-2">
+                  <Label>Acción</Label>
+                  <Select value={bulkAction} onValueChange={(v) => setBulkAction(v as "publish" | "update_price")}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="publish">Publicar nuevos</SelectItem>
+                      <SelectItem value="update_price">Solo actualizar precio</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                {/* Límite */}
+                <div className="space-y-2">
+                  <Label>Límite de productos</Label>
+                  <Input
+                    type="number"
+                    value={testLimit}
+                    onChange={(e) => setTestLimit(parseInt(e.target.value) || 0)}
+                    min={0}
+                    placeholder="0 = todos"
+                  />
+                  <p className="text-xs text-muted-foreground">0 para publicar todos</p>
+                </div>
+
+                {/* IVA */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Checkbox 
+                      id="useIva" 
+                      checked={useIva} 
+                      onCheckedChange={(c) => setUseIva(!!c)} 
+                    />
+                    <Label htmlFor="useIva">Incluir IVA</Label>
+                  </div>
+                  {useIva && (
+                    <Input
+                      type="number"
+                      value={ivaPercent}
+                      onChange={(e) => setIvaPercent(parseFloat(e.target.value) || 21)}
+                      min={0}
+                      max={100}
+                    />
+                  )}
+                </div>
+
+                {/* Comisión ML */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Checkbox 
+                      id="useCommission" 
+                      checked={useCommission} 
+                      onCheckedChange={(c) => setUseCommission(!!c)} 
+                    />
+                    <Label htmlFor="useCommission">Incluir comisión ML</Label>
+                  </div>
+                  {useCommission && (
+                    <Input
+                      type="number"
+                      value={commissionPercent}
+                      onChange={(e) => setCommissionPercent(parseFloat(e.target.value) || 13)}
+                      min={0}
+                      max={100}
+                    />
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-4 border-t">
+                <div className="text-sm text-muted-foreground">
+                  <span className="font-medium">{totalAvailable.toLocaleString()}</span> productos disponibles con filtros actuales
+                  {testLimit > 0 && <span> (se procesarán {Math.min(testLimit, totalAvailable).toLocaleString()})</span>}
+                </div>
+                <Button 
+                  onClick={openPublishModal} 
+                  disabled={!selectedTemplate || !selectedAccount}
+                  size="lg"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  {bulkAction === "publish" ? "Iniciar Publicación Masiva" : "Actualizar Precios"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Lista de productos */}
           <Card>
             <CardHeader>
@@ -959,7 +1097,9 @@ export default function MLPublishPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <Card className="w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
             <CardHeader>
-              <CardTitle>Publicación masiva</CardTitle>
+              <CardTitle>
+                {bulkAction === "publish" ? "Publicación Masiva" : "Actualización de Precios"}
+              </CardTitle>
               <CardDescription>
                 {totalAvailable.toLocaleString()} productos disponibles con los filtros actuales
               </CardDescription>
@@ -981,36 +1121,23 @@ export default function MLPublishPage() {
               
               {!publishingInProgress && publishProgress.total === 0 && (
                 <>
-                  <div className="p-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg space-y-3">
-                    <p className="text-sm font-medium">Límite de publicación (para pruebas)</p>
-                    <div className="flex items-center gap-3">
-                      <Input
-                        type="number"
-                        value={testLimit}
-                        onChange={(e) => setTestLimit(parseInt(e.target.value) || 0)}
-                        className="w-24"
-                        min={0}
-                      />
-                      <span className="text-sm text-muted-foreground">
-                        {testLimit === 0 
-                          ? `Publicar todos (${totalAvailable.toLocaleString()})` 
-                          : `Publicar solo ${testLimit} de ${totalAvailable.toLocaleString()}`
-                        }
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Usa un número bajo (ej: 5) para probar. Pon 0 para publicar todos.
-                    </p>
+                  <div className="p-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg space-y-2">
+                    <p className="text-sm font-medium">Configuración seleccionada:</p>
+                    <ul className="text-sm space-y-1">
+                      <li><strong>Acción:</strong> {bulkAction === "publish" ? "Publicar nuevos" : "Actualizar precios"}</li>
+                      <li><strong>Productos:</strong> {testLimit === 0 ? `Todos (${totalAvailable.toLocaleString()})` : `${testLimit} de ${totalAvailable.toLocaleString()}`}</li>
+                      {useIva && <li><strong>IVA:</strong> {ivaPercent}%</li>}
+                      {useCommission && <li><strong>Comisión ML:</strong> {commissionPercent}%</li>}
+                    </ul>
                   </div>
                   
                   <p className="text-sm text-muted-foreground">
-                    Se publican 3 productos en paralelo cada segundo.
-                    {testLimit > 0 && ` Tiempo estimado: ~${Math.ceil(testLimit / 3 / 60)} minutos.`}
-                    {testLimit === 0 && totalAvailable > 0 && ` Tiempo estimado: ~${Math.ceil(totalAvailable / 3 / 60)} minutos.`}
+                    Se procesan 3 productos en paralelo cada segundo.
+                    {" "}Tiempo estimado: ~{formatTime(Math.ceil((testLimit > 0 ? testLimit : totalAvailable) / 3))}
                   </p>
                   <div className="p-3 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                     <p className="text-sm text-yellow-700 dark:text-yellow-300">
-                      <strong>Importante:</strong> No cierres esta ventana durante la publicación. El proceso se ejecuta en tu navegador.
+                      <strong>Importante:</strong> No cierres esta ventana durante el proceso.
                     </p>
                   </div>
                 </>
@@ -1022,9 +1149,14 @@ export default function MLPublishPage() {
                     <p className="text-sm font-medium">
                       {publishingInProgress ? "Publicando..." : "Publicación completada"}
                     </p>
-                    <p className="text-sm text-muted-foreground">
-                      {publishProgress.current} / {publishProgress.total}
-                    </p>
+                    <div className="flex items-center gap-4">
+                      <p className="text-sm text-muted-foreground">
+                        {publishProgress.current} / {publishProgress.total}
+                      </p>
+                      <p className="text-sm font-mono bg-muted px-2 py-1 rounded">
+                        {formatTime(elapsedTime)}
+                      </p>
+                    </div>
                   </div>
                   <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
                     <div 
@@ -1036,9 +1168,9 @@ export default function MLPublishPage() {
                     <span className="text-green-600">{publishProgress.success} nuevos</span>
                     <span className="text-yellow-600">{publishProgress.skipped} ya existentes</span>
                     <span className="text-red-600">{publishProgress.errors} errores</span>
-                    {publishingInProgress && (
+                    {publishingInProgress && publishProgress.current > 0 && (
                       <span className="text-muted-foreground">
-                        ~{Math.ceil((publishProgress.total - publishProgress.current) * 2)} seg restantes
+                        ETA: {formatTime(Math.ceil((publishProgress.total - publishProgress.current) / 3))}
                       </span>
                     )}
                   </div>
@@ -1095,7 +1227,7 @@ export default function MLPublishPage() {
                   </Button>
                   <Button onClick={startBulkPublish}>
                     <Upload className="h-4 w-4 mr-2" />
-                    Iniciar publicación
+                    {bulkAction === "publish" ? "Iniciar Publicación" : "Iniciar Actualización"}
                   </Button>
                 </>
               )}
@@ -1107,7 +1239,7 @@ export default function MLPublishPage() {
               {publishingInProgress && (
                 <Button disabled>
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  Publicando...
+                  {bulkAction === "publish" ? "Publicando..." : "Actualizando..."}
                 </Button>
               )}
             </div>
