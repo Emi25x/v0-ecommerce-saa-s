@@ -23,6 +23,8 @@ export function SyncStatusCard() {
   const [syncing, setSyncing] = useState<string | null>(null)
   const [fixingSku, setFixingSku] = useState<string | null>(null)
   const [fixProgress, setFixProgress] = useState<{ current: number; total: number; updated: number } | null>(null)
+  const [republishing, setRepublishing] = useState<string | null>(null)
+  const [republishResult, setRepublishResult] = useState<string | null>(null)
 
   useEffect(() => {
     fetchAccounts()
@@ -111,6 +113,39 @@ export function SyncStatusCard() {
     }
   }
 
+  // Republicar publicaciones con EAN como seller_sku
+  const handleRepublishWithSku = async (accountId: string) => {
+    if (!confirm("Esto cerrará las publicaciones actuales y las volverá a crear con el EAN como SKU. ¿Continuar?")) {
+      return
+    }
+    
+    setRepublishing(accountId)
+    setRepublishResult(null)
+    
+    try {
+      const response = await fetch("/api/ml/republish-with-sku", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: accountId }),
+      })
+      
+      const data = await response.json()
+      
+      if (data.error) {
+        setRepublishResult(`Error: ${data.error}`)
+      } else {
+        setRepublishResult(`${data.republished} republicadas, ${data.errors} errores`)
+      }
+      
+      setTimeout(() => setRepublishResult(null), 10000)
+    } catch (error) {
+      console.error("Error republishing:", error)
+      setRepublishResult("Error al republicar")
+    } finally {
+      setRepublishing(null)
+    }
+  }
+
   const isToday = (dateStr: string | null) => {
     if (!dateStr) return false
     const date = new Date(dateStr)
@@ -178,21 +213,39 @@ export function SyncStatusCard() {
             <div key={account.id} className="p-3 border rounded-lg space-y-3">
               <div className="flex items-center justify-between">
                 <span className="font-medium">{account.nickname}</span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleSyncStock(account.id)}
-                  disabled={syncing === account.id}
-                  className="bg-transparent"
-                >
-                  {syncing === account.id ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-3 w-3" />
-                  )}
-                  <span className="ml-1">Sync</span>
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleSyncStock(account.id)}
+                    disabled={syncing === account.id}
+                    className="bg-transparent"
+                  >
+                    {syncing === account.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3 w-3" />
+                    )}
+                    <span className="ml-1">Sync</span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => handleRepublishWithSku(account.id)}
+                    disabled={republishing === account.id}
+                  >
+                    {republishing === account.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Package className="h-3 w-3" />
+                    )}
+                    <span className="ml-1">Republicar con SKU</span>
+                  </Button>
+                </div>
               </div>
+              {republishResult && (
+                <div className="text-sm font-medium text-primary">{republishResult}</div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 {/* Stock Status */}

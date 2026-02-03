@@ -1,0 +1,260 @@
+import { createClient } from "@/lib/supabase/server"
+import { NextResponse } from "next/server"
+
+// Republica las publicaciones creadas por este proyecto con el EAN como seller_sku
+// 1. Cierra la publicación existente
+// 2. Crea una nueva con seller_sku = EAN
+export async function POST(request: Request) {
+  try {
+    const supabase = await createClient()
+    const { account_id } = await request.json()
+
+    if (!account_id) {
+      return NextResponse.json({ error: "account_id requerido" }, { status: 400 })
+    }
+
+    // Obtener cuenta ML
+    const { data: account, error: accountError } = await supabase
+      .from("ml_accounts")
+      .select("*")
+      .eq("id", account_id)
+      .single()
+
+    if (accountError || !account) {
+      return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
+    }
+
+    // Refrescar token si es necesario
+    let accessToken = account.access_token
+    if (new Date(account.token_expires_at) <= new Date()) {
+      const refreshResponse = await fetch(`${process.env.NEXT_PUBLIC_VERCEL_URL || ""}/api/mercadolibre/refresh-token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id })
+      })
+      if (refreshResponse.ok) {
+        const refreshData = await refreshResponse.json()
+        accessToken = refreshData.access_token
+      } else {
+        return NextResponse.json({ error: "Error al refrescar token" }, { status: 401 })
+      }
+    }
+
+    // Obtener publicaciones de este proyecto (las que tienen product_id)
+    const { data: publications, error: pubError } = await supabase
+      .from("ml_publications")
+      .select(`
+        id,
+        ml_item_id,
+        product_id,
+        status,
+        products:product_id (
+          id,
+          ean,
+          sku,
+          title,
+          stock,
+          price,
+          cost,
+          author,
+          publisher,
+          image_url
+        )
+      `)
+      .eq("account_id", account_id)
+      .not("product_id", "is", null)
+
+    if (pubError) {
+      return NextResponse.json({ error: "Error al obtener publicaciones" }, { status: 500 })
+    }
+
+    if (!publications || publications.length === 0) {
+      return NextResponse.json({ 
+        success: true, 
+        message: "No hay publicaciones para republicar",
+        republished: 0 
+      })
+    }
+
+    console.log(`[v0] Republicando ${publications.length} publicaciones con seller_sku`)
+
+    let republished = 0
+    let errors = 0
+    const results: Array<{ ml_item_id: string; status: string; new_item_id?: string; error?: string }> = []
+
+    for (const pub of publications) {
+      const product = pub.products as any
+      if (!product || !product.ean) {
+        results.push({ 
+          ml_item_id: pub.ml_item_id, 
+          status: "skipped", 
+          error: "Sin EAN" 
+        })
+        continue
+      }
+
+      try {
+        // 1. Obtener datos de la publicación actual
+        const itemResponse = await fetch(
+          `https://api.mercadolibre.com/items/${pub.ml_item_id}`,
+          { headers: { "Authorization": `Bearer ${accessToken}` } }
+        )
+
+        if (!itemResponse.ok) {
+          results.push({ 
+            ml_item_id: pub.ml_item_id, 
+            status: "error", 
+            error: "No se pudo obtener item" 
+          })
+          errors++
+          continue
+        }
+
+        const currentItem = await itemResponse.json()
+
+        // 2. Cerrar la publicación actual
+        const closeResponse = await fetch(
+          `https://api.mercadolibre.com/items/${pub.ml_item_id}`,
+          {
+            method: "PUT",
+            headers: {
+              "Authorization": `Bearer ${accessToken}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ status: "closed" })
+          }
+        )
+
+        if (!closeResponse.ok) {
+          const closeError = await closeResponse.json()
+          results.push({ 
+            ml_item_id: pub.ml_item_id, 
+            status: "error", 
+            error: `Error al cerrar: ${closeError.message}` 
+          })
+          errors++
+          continue
+        }
+
+        console.log(`[v0] Cerrada publicación ${pub.ml_item_id}`)
+
+        // 3. Esperar un poco antes de republicar
+        await new Promise(resolve => setTimeout(resolve, 500))
+
+        // 4. Crear nueva publicación con seller_sku
+        const newItemData: any = {
+          site_id: "MLA",
+          title: currentItem.title,
+          category_id: currentItem.category_id,
+          price: currentItem.price,
+          currency_id: currentItem.currency_id || "ARS",
+          available_quantity: product.stock || 1,
+          buying_mode: "buy_it_now",
+          condition: currentItem.condition || "new",
+          listing_type_id: currentItem.listing_type_id || "gold_special",
+          seller_sku: product.ean, // EAN como SKU
+          pictures: currentItem.pictures?.map((p: any) => ({ source: p.url || p.secure_url })) || [],
+          shipping: {
+            mode: "me2",
+            local_pick_up: true,
+            free_shipping: false,
+          },
+          attributes: currentItem.attributes || []
+        }
+
+        // Si es publicación de catálogo
+        if (currentItem.catalog_product_id) {
+          newItemData.catalog_product_id = currentItem.catalog_product_id
+          newItemData.catalog_listing = true
+          delete newItemData.title
+          delete newItemData.category_id
+          delete newItemData.attributes
+        }
+
+        const createResponse = await fetch(
+          "https://api.mercadolibre.com/items",
+          {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${accessToken}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(newItemData)
+          }
+        )
+
+        if (createResponse.ok) {
+          const newItem = await createResponse.json()
+          console.log(`[v0] Nueva publicación creada: ${newItem.id} con seller_sku: ${product.ean}`)
+
+          // Actualizar registro en ml_publications
+          await supabase
+            .from("ml_publications")
+            .update({ 
+              ml_item_id: newItem.id,
+              status: newItem.status,
+              updated_at: new Date().toISOString()
+            })
+            .eq("id", pub.id)
+
+          republished++
+          results.push({ 
+            ml_item_id: pub.ml_item_id, 
+            status: "republished", 
+            new_item_id: newItem.id 
+          })
+        } else {
+          const createError = await createResponse.json()
+          console.error(`[v0] Error al crear nueva publicación:`, createError)
+          
+          // Reabrir la publicación cerrada si falla la creación
+          await fetch(
+            `https://api.mercadolibre.com/items/${pub.ml_item_id}`,
+            {
+              method: "PUT",
+              headers: {
+                "Authorization": `Bearer ${accessToken}`,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({ status: "active" })
+            }
+          )
+
+          results.push({ 
+            ml_item_id: pub.ml_item_id, 
+            status: "error", 
+            error: createError.message || "Error al crear nueva publicación" 
+          })
+          errors++
+        }
+
+        // Delay entre publicaciones para no saturar la API
+        await new Promise(resolve => setTimeout(resolve, 1000))
+
+      } catch (err) {
+        console.error(`[v0] Error procesando ${pub.ml_item_id}:`, err)
+        results.push({ 
+          ml_item_id: pub.ml_item_id, 
+          status: "error", 
+          error: "Error de conexión" 
+        })
+        errors++
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      republished,
+      errors,
+      total: publications.length,
+      message: `Republicadas: ${republished}, Errores: ${errors}`,
+      results
+    })
+
+  } catch (error) {
+    console.error("Error en republish-with-sku:", error)
+    return NextResponse.json({ 
+      error: error instanceof Error ? error.message : "Error interno" 
+    }, { status: 500 })
+  }
+}
