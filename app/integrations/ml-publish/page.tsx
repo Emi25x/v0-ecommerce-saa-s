@@ -94,11 +94,13 @@ export default function MLPublishPage() {
   const [elapsedTime, setElapsedTime] = useState<number>(0) // Tiempo transcurrido en segundos
   const [publishStartTime, setPublishStartTime] = useState<number | null>(null)
   const [bulkAction, setBulkAction] = useState<"publish" | "update_price">("publish") // Acción masiva
-  const [marginPercent, setMarginPercent] = useState<number>(20) // Margen de ganancia
-  const [useIva, setUseIva] = useState<boolean>(false) // Variable para incluir IVA
-  const [ivaPercent, setIvaPercent] = useState<number>(21) // Porcentaje de IVA
-  const [useCommission, setUseCommission] = useState<boolean>(false) // Variable para incluir comisión ML
-  const [commissionPercent, setCommissionPercent] = useState<number>(13) // Porcentaje de comisión ML
+  const [priceProfiles, setPriceProfiles] = useState<{id: string, name: string, margin_percent: number, is_default: boolean}[]>([])
+  const [selectedPriceProfile, setSelectedPriceProfile] = useState<string>("")
+  const [useIva, setUseIva] = useState<boolean>(false)
+  const [ivaPercent, setIvaPercent] = useState<number>(0)
+  const [useCommission, setUseCommission] = useState<boolean>(false)
+  const [commissionPercent, setCommissionPercent] = useState<number>(0)
+  const [marginPercent, setMarginPercent] = useState<number>(20)
 
   // Construir URL de filtros para el servidor
   const buildFilterUrl = (onlyIds = false) => {
@@ -183,6 +185,17 @@ export default function MLPublishPage() {
       setAccounts(accountsData.accounts || [])
       if (accountsData.accounts?.length > 0) {
         setSelectedAccount(accountsData.accounts[0].id)
+      }
+
+      // Fetch price profiles
+      const profilesRes = await fetch("/api/price-profiles")
+      const profilesData = await profilesRes.json()
+      setPriceProfiles(profilesData.profiles || [])
+      const defaultProfile = profilesData.profiles?.find((p: any) => p.is_default)
+      if (defaultProfile) {
+        setSelectedPriceProfile(defaultProfile.id)
+      } else if (profilesData.profiles?.length > 0) {
+        setSelectedPriceProfile(profilesData.profiles[0].id)
       }
     } catch (error) {
       toast({ title: "Error", description: "Error al cargar datos", variant: "destructive" })
@@ -753,17 +766,26 @@ export default function MLPublishPage() {
                   <p className="text-xs text-muted-foreground">0 para todos</p>
                 </div>
 
-                {/* Margen de ganancia */}
+                {/* Perfil de precios */}
                 <div className="space-y-2">
-                  <Label>Margen de ganancia %</Label>
-                  <Input
-                    type="number"
-                    value={marginPercent}
-                    onChange={(e) => setMarginPercent(parseFloat(e.target.value) || 20)}
-                    min={0}
-                    max={100}
-                  />
-                  <p className="text-xs text-muted-foreground">IVA y comisión ML se calculan automáticamente</p>
+                  <Label>Perfil de precios</Label>
+                  <Select value={selectedPriceProfile} onValueChange={setSelectedPriceProfile}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar perfil" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {priceProfiles.map(profile => (
+                        <SelectItem key={profile.id} value={profile.id}>
+                          {profile.name} ({profile.margin_percent}%)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    <a href="/integrations/ml-templates" className="text-primary hover:underline">
+                      Gestionar perfiles en Calculadora
+                    </a>
+                  </p>
                 </div>
               </div>
 
@@ -795,22 +817,22 @@ export default function MLPublishPage() {
                       {stats.published_count.toLocaleString()} publicados en ML | {filteredProducts.length.toLocaleString()} disponibles con filtros actuales
                     </CardDescription>
                   </div>
-<div className="flex items-center gap-4">
-  <div className="flex items-center gap-2">
-    <Label className="text-sm whitespace-nowrap">Solo sin publicar</Label>
-    <Checkbox
-      checked={showOnlyUnpublished}
-      onCheckedChange={(checked) => setShowOnlyUnpublished(!!checked)}
-    />
-  </div>
-  <div className="flex items-center gap-2">
-    <Label className="text-sm whitespace-nowrap">Excluir IBD</Label>
-    <Checkbox
-      checked={excludeIbd}
-      onCheckedChange={(checked) => setExcludeIbd(!!checked)}
-    />
-  </div>
-  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm whitespace-nowrap">Solo sin publicar</Label>
+                      <Checkbox
+                        checked={showOnlyUnpublished}
+                        onCheckedChange={(checked) => setShowOnlyUnpublished(!!checked)}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm whitespace-nowrap">Excluir IBD</Label>
+                      <Checkbox
+                        checked={excludeIbd}
+                        onCheckedChange={(checked) => setExcludeIbd(!!checked)}
+                      />
+                    </div>
+                  </div>
                 </div>
                 
                 {/* Filtros */}
@@ -1021,37 +1043,37 @@ export default function MLPublishPage() {
                       </TableCell>
                       <TableCell className="text-right">{preview.multiplier?.toLocaleString("es-AR")}x</TableCell>
                       <TableCell className="text-right">{preview.margin?.toFixed(1)}%</TableCell>
-<TableCell className="text-center">
-  {preview.already_published && (
-  <Badge className="bg-yellow-500 text-black">
-  Ya publicado
-  </Badge>
-  )}
-  {!preview.already_published && preview.status === "pending" && <Badge variant="outline">Pendiente</Badge>}
-  {!preview.already_published && preview.status === "publishing" && (
-  <Badge variant="secondary">
-  <Loader2 className="h-3 w-3 animate-spin mr-1" />
-  Publicando
-  </Badge>
-  )}
-  {!preview.already_published && preview.status === "success" && (
-  <Badge className="bg-green-500">
-  <CheckCircle className="h-3 w-3 mr-1" />
-  Publicado
-  </Badge>
-  )}
-  {!preview.already_published && preview.status === "error" && (
-  <div className="flex flex-col items-center gap-1">
-    <Badge variant="destructive">
-      <XCircle className="h-3 w-3 mr-1" />
-      Error
-    </Badge>
-    {preview.error && (
-      <span className="text-xs text-red-400 max-w-[200px] truncate" title={preview.error}>
-        {preview.error}
-      </span>
-    )}
-  </div>
+                      <TableCell className="text-center">
+                        {preview.already_published && (
+                          <Badge className="bg-yellow-500 text-black">
+                            Ya publicado
+                          </Badge>
+                        )}
+                        {!preview.already_published && preview.status === "pending" && <Badge variant="outline">Pendiente</Badge>}
+                        {!preview.already_published && preview.status === "publishing" && (
+                          <Badge variant="secondary">
+                            <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                            Publicando
+                          </Badge>
+                        )}
+                        {!preview.already_published && preview.status === "success" && (
+                          <Badge className="bg-green-500">
+                            <CheckCircle className="h-3 w-3 mr-1" />
+                            Publicado
+                          </Badge>
+                        )}
+                        {!preview.already_published && preview.status === "error" && (
+                          <div className="flex flex-col items-center gap-1">
+                            <Badge variant="destructive">
+                              <XCircle className="h-3 w-3 mr-1" />
+                              Error
+                            </Badge>
+                            {preview.error && (
+                              <span className="text-xs text-red-400 max-w-[200px] truncate" title={preview.error}>
+                                {preview.error}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </TableCell>
                     </TableRow>
@@ -1117,7 +1139,7 @@ export default function MLPublishPage() {
                     <ul className="text-sm space-y-1">
                       <li><strong>Acción:</strong> {bulkAction === "publish" ? "Publicar nuevos" : "Actualizar precios"}</li>
                       <li><strong>Productos:</strong> {testLimit === 0 ? `Todos (${totalAvailable.toLocaleString()})` : `${testLimit} de ${totalAvailable.toLocaleString()}`}</li>
-                      <li><strong>Margen:</strong> {marginPercent}%</li>
+                      <li><strong>Perfil:</strong> {priceProfiles.find(p => p.id === selectedPriceProfile)?.name || "No seleccionado"} ({priceProfiles.find(p => p.id === selectedPriceProfile)?.margin_percent || 0}%)</li>
                     </ul>
                     <p className="text-xs text-muted-foreground mt-2">
                       El precio se calcula automáticamente incluyendo tipo de cambio, comisión ML y cargos fijos.

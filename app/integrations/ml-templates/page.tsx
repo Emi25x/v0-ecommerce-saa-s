@@ -85,6 +85,15 @@ interface RangeAnalysis {
   }[]
 }
 
+interface PriceProfile {
+  id: string
+  name: string
+  description?: string
+  margin_percent: number
+  listing_type_id: string
+  is_default: boolean
+}
+
 export default function MLTemplatesPage() {
   const [accounts, setAccounts] = useState<MLAccount[]>([])
   const [selectedAccount, setSelectedAccount] = useState<string>("")
@@ -105,6 +114,12 @@ export default function MLTemplatesPage() {
   const [marginPercent, setMarginPercent] = useState(20)
   const [testCostEur, setTestCostEur] = useState(10)
   const [calculating, setCalculating] = useState(false)
+  
+  // Estado para perfiles de precios
+  const [priceProfiles, setPriceProfiles] = useState<PriceProfile[]>([])
+  const [selectedProfileId, setSelectedProfileId] = useState<string>("")
+  const [newProfileName, setNewProfileName] = useState("")
+  const [savingProfile, setSavingProfile] = useState(false)
   const [priceCalculation, setPriceCalculation] = useState<{
     cost_price_eur: number
     exchange_rate: number
@@ -175,6 +190,7 @@ export default function MLTemplatesPage() {
 
   useEffect(() => {
     fetchAccounts()
+    fetchPriceProfiles(setPriceProfiles) // Use fetchPriceProfiles
   }, [])
 
   useEffect(() => {
@@ -307,6 +323,78 @@ export default function MLTemplatesPage() {
     } catch (error) {
       console.error("Error deleting template:", error)
     }
+  }
+
+  const fetchPriceProfiles = async () => {
+    try {
+      const response = await fetch("/api/price-profiles")
+      const data = await response.json()
+      if (data.profiles) {
+        setPriceProfiles(data.profiles)
+        // Seleccionar el perfil por defecto
+        const defaultProfile = data.profiles.find((p: PriceProfile) => p.is_default)
+        if (defaultProfile) {
+          setSelectedProfileId(defaultProfile.id)
+          setMarginPercent(Number(defaultProfile.margin_percent))
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching price profiles:", error)
+    }
+  }
+
+  const saveProfile = async () => {
+    if (!newProfileName.trim()) {
+      toast({ title: "Error", description: "Ingresa un nombre para el perfil", variant: "destructive" })
+      return
+    }
+    
+    setSavingProfile(true)
+    try {
+      const response = await fetch("/api/price-profiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newProfileName,
+          margin_percent: marginPercent,
+          listing_type_id: "gold_special"
+        })
+      })
+      
+      const data = await response.json()
+      if (data.profile) {
+        toast({ title: "Perfil guardado", description: `Perfil "${newProfileName}" creado` })
+        setNewProfileName("")
+        fetchPriceProfiles()
+      } else {
+        toast({ title: "Error", description: data.error || "Error al guardar", variant: "destructive" })
+      }
+    } catch (error) {
+      toast({ title: "Error", description: "Error al guardar perfil", variant: "destructive" })
+    } finally {
+      setSavingProfile(false)
+    }
+  }
+
+  const deleteProfile = async (id: string) => {
+    if (!confirm("¿Eliminar este perfil de precios?")) return
+    
+    try {
+      const response = await fetch(`/api/price-profiles?id=${id}`, { method: "DELETE" })
+      const data = await response.json()
+      if (data.success) {
+        toast({ title: "Perfil eliminado" })
+        fetchPriceProfiles()
+      }
+    } catch (error) {
+      toast({ title: "Error", description: "Error al eliminar", variant: "destructive" })
+    }
+  }
+
+  const loadProfile = (profile: PriceProfile) => {
+    setSelectedProfileId(profile.id)
+    setMarginPercent(Number(profile.margin_percent))
+    toast({ title: "Perfil cargado", description: `Usando "${profile.name}" (${profile.margin_percent}%)` })
   }
 
   const calculatePrice = async () => {
@@ -673,6 +761,53 @@ export default function MLTemplatesPage() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
+                    {/* Perfiles guardados */}
+                    <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
+                      <Label className="font-medium">Perfiles de Precios Guardados</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {priceProfiles.map((profile) => (
+                          <div key={profile.id} className="flex items-center gap-1">
+                            <Button
+                              variant={selectedProfileId === profile.id ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => loadProfile(profile)}
+                              className={selectedProfileId === profile.id ? "" : "bg-transparent"}
+                            >
+                              {profile.name} ({profile.margin_percent}%)
+                              {profile.is_default && <Badge variant="secondary" className="ml-1 text-xs">Default</Badge>}
+                            </Button>
+                            {!profile.is_default && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => deleteProfile(profile.id)}
+                                className="h-8 w-8 p-0 text-red-500 hover:text-red-700"
+                              >
+                                x
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex gap-2 pt-2 border-t">
+                        <Input
+                          placeholder="Nombre del perfil"
+                          value={newProfileName}
+                          onChange={(e) => setNewProfileName(e.target.value)}
+                          className="max-w-[200px]"
+                        />
+                        <Button 
+                          onClick={saveProfile} 
+                          disabled={savingProfile || !newProfileName.trim()}
+                          variant="outline"
+                          size="sm"
+                          className="bg-transparent"
+                        >
+                          {savingProfile ? "Guardando..." : "Guardar como perfil"}
+                        </Button>
+                      </div>
+                    </div>
+
                     <div className="space-y-4">
                       <div className="space-y-2">
                         <Label htmlFor="margin">Margen de ganancia deseado (%)</Label>
