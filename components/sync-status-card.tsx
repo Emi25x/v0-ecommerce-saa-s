@@ -22,7 +22,7 @@ export function SyncStatusCard() {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState<string | null>(null)
   const [fixingSku, setFixingSku] = useState<string | null>(null)
-  const [fixProgress, setFixProgress] = useState<{ current: number; total: number; updated: number } | null>(null)
+  const [fixProgress, setFixProgress] = useState<{ current: number, total: number, updated: number } | null>(null)
   const [republishing, setRepublishing] = useState<string | null>(null)
   const [republishResult, setRepublishResult] = useState<string | null>(null)
 
@@ -57,92 +57,6 @@ export function SyncStatusCard() {
       console.error("Error syncing stock:", error)
     } finally {
       setSyncing(null)
-    }
-  }
-
-  // Corregir seller_sku en todas las publicaciones (poner EAN como SKU)
-  const handleFixSellerSku = async (accountId: string) => {
-    setFixingSku(accountId)
-    setFixProgress({ current: 0, total: 0, updated: 0 })
-    
-    try {
-      let offset = 0
-      const limit = 100
-      let hasMore = true
-      let totalUpdated = 0
-      let totalItems = 0
-
-      while (hasMore) {
-        const response = await fetch("/api/ml/fix-seller-sku", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ account_id: accountId, limit, offset }),
-        })
-        
-        const data = await response.json()
-        
-        if (data.error) {
-          console.error("Error fixing SKU:", data.error)
-          break
-        }
-
-        totalItems = data.total || 0
-        totalUpdated += data.updated || 0
-        hasMore = data.hasMore || false
-        offset = data.nextOffset || offset + limit
-
-        setFixProgress({ 
-          current: Math.min(offset, totalItems), 
-          total: totalItems, 
-          updated: totalUpdated 
-        })
-
-        // Pequeña pausa entre lotes
-        if (hasMore) {
-          await new Promise(resolve => setTimeout(resolve, 500))
-        }
-      }
-
-      alert(`Completado: ${totalUpdated} publicaciones actualizadas de ${totalItems} total`)
-    } catch (error) {
-      console.error("Error fixing seller SKU:", error)
-      alert("Error al corregir SKU")
-    } finally {
-      setFixingSku(null)
-      setFixProgress(null)
-    }
-  }
-
-  // Republicar publicaciones con EAN como seller_sku
-  const handleRepublishWithSku = async (accountId: string) => {
-    if (!confirm("Esto cerrará las publicaciones actuales y las volverá a crear con el EAN como SKU. ¿Continuar?")) {
-      return
-    }
-    
-    setRepublishing(accountId)
-    setRepublishResult(null)
-    
-    try {
-      const response = await fetch("/api/ml/republish-with-sku", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account_id: accountId }),
-      })
-      
-      const data = await response.json()
-      
-      if (data.error) {
-        setRepublishResult(`Error: ${data.error}`)
-      } else {
-        setRepublishResult(`${data.republished} republicadas, ${data.errors} errores`)
-      }
-      
-      setTimeout(() => setRepublishResult(null), 10000)
-    } catch (error) {
-      console.error("Error republishing:", error)
-      setRepublishResult("Error al republicar")
-    } finally {
-      setRepublishing(null)
     }
   }
 
@@ -213,39 +127,21 @@ export function SyncStatusCard() {
             <div key={account.id} className="p-3 border rounded-lg space-y-3">
               <div className="flex items-center justify-between">
                 <span className="font-medium">{account.nickname}</span>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleSyncStock(account.id)}
-                    disabled={syncing === account.id}
-                    className="bg-transparent"
-                  >
-                    {syncing === account.id ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-3 w-3" />
-                    )}
-                    <span className="ml-1">Sync</span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => handleRepublishWithSku(account.id)}
-                    disabled={republishing === account.id}
-                  >
-                    {republishing === account.id ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Package className="h-3 w-3" />
-                    )}
-                    <span className="ml-1">Republicar con SKU</span>
-                  </Button>
-                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleSyncStock(account.id)}
+                  disabled={syncing === account.id}
+                  className="bg-transparent"
+                >
+                  {syncing === account.id ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3 w-3" />
+                  )}
+                  <span className="ml-1">Sync Stock</span>
+                </Button>
               </div>
-              {republishResult && (
-                <div className="text-sm font-medium text-primary">{republishResult}</div>
-              )}
 
               <div className="grid grid-cols-2 gap-3">
                 {/* Stock Status */}
