@@ -23,6 +23,8 @@ export function SyncStatusCard() {
   const [syncing, setSyncing] = useState<string | null>(null)
   const [importing, setImporting] = useState<string | null>(null)
   const [importResult, setImportResult] = useState<string | null>(null)
+  const [listingNoSku, setListingNoSku] = useState<string | null>(null)
+  const [noSkuItems, setNoSkuItems] = useState<Array<{id: string; title: string; permalink: string}> | null>(null)
 
   useEffect(() => {
     fetchAccounts()
@@ -55,6 +57,28 @@ export function SyncStatusCard() {
       console.error("Error syncing stock:", error)
     } finally {
       setSyncing(null)
+    }
+  }
+
+  // Listar publicaciones sin SKU
+  const handleListWithoutSku = async (accountId: string) => {
+    setListingNoSku(accountId)
+    setNoSkuItems(null)
+    try {
+      const response = await fetch("/api/ml/list-without-sku", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: accountId }),
+      })
+      const data = await response.json()
+      
+      if (data.items_without_sku) {
+        setNoSkuItems(data.items_without_sku)
+      }
+    } catch (error) {
+      console.error("Error listing items without SKU:", error)
+    } finally {
+      setListingNoSku(null)
     }
   }
 
@@ -152,7 +176,21 @@ export function SyncStatusCard() {
             <div key={account.id} className="p-3 border rounded-lg space-y-3">
               <div className="flex items-center justify-between">
                 <span className="font-medium">{account.nickname}</span>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleListWithoutSku(account.id)}
+                    disabled={listingNoSku === account.id}
+                    className="bg-transparent"
+                  >
+                    {listingNoSku === account.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <XCircle className="h-3 w-3" />
+                    )}
+                    <span className="ml-1">Sin SKU</span>
+                  </Button>
                   <Button
                     size="sm"
                     variant="outline"
@@ -165,7 +203,7 @@ export function SyncStatusCard() {
                     ) : (
                       <Package className="h-3 w-3" />
                     )}
-                    <span className="ml-1">Importar de ML</span>
+                    <span className="ml-1">Importar</span>
                   </Button>
                   <Button
                     size="sm"
@@ -179,12 +217,54 @@ export function SyncStatusCard() {
                     ) : (
                       <RefreshCw className="h-3 w-3" />
                     )}
-                    <span className="ml-1">Sync Stock</span>
+                    <span className="ml-1">Sync</span>
                   </Button>
                 </div>
               </div>
               {importResult && (
                 <div className="text-sm font-medium text-primary">{importResult}</div>
+              )}
+              
+              {/* Lista de items sin SKU */}
+              {noSkuItems && noSkuItems.length > 0 && (
+                <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-medium text-red-800">
+                      {noSkuItems.length} publicaciones sin SKU:
+                    </span>
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
+                      onClick={() => setNoSkuItems(null)}
+                      className="h-6 px-2 text-xs"
+                    >
+                      Cerrar
+                    </Button>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto space-y-1">
+                    {noSkuItems.map((item) => (
+                      <a
+                        key={item.id}
+                        href={item.permalink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block text-xs text-blue-600 hover:underline truncate"
+                      >
+                        {item.id} - {item.title}
+                      </a>
+                    ))}
+                  </div>
+                  <p className="text-xs text-red-600 mt-2">
+                    Podes eliminar estas desde el panel de MercadoLibre
+                  </p>
+                </div>
+              )}
+              {noSkuItems && noSkuItems.length === 0 && (
+                <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <span className="text-sm font-medium text-green-800">
+                    Todas las publicaciones tienen SKU configurado
+                  </span>
+                </div>
               )}
 
               <div className="grid grid-cols-2 gap-3">
