@@ -619,6 +619,8 @@ Libro nuevo. Envíos a todo el país.`
         buying_mode: "buy_it_now",
         condition: template.condition || "new",
         listing_type_id: template.listing_type_id || "gold_special",
+        // SKU del vendedor = EAN (para relacionar con nuestro inventario)
+        seller_sku: product.ean || product.sku || null,
         // NOTA: La descripción se agrega en POST separado después de crear el item
         // Imagenes
         pictures: pictures,
@@ -663,6 +665,8 @@ Libro nuevo. Envíos a todo el país.`
         buying_mode: "buy_it_now",
         condition: template.condition || "new",
         listing_type_id: template.listing_type_id || "gold_special",
+        // SKU del vendedor = EAN (para relacionar con nuestro inventario)
+        seller_sku: product.ean || product.sku || null,
         // NOTA: La descripción se agrega en POST separado después de crear el item
         // Imagenes
         pictures: pictures,
