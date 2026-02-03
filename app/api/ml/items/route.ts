@@ -1,5 +1,27 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createServerClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/supabase/server"
+import { createServerClient } from "@/lib/supabase/server" // Declared the variable here
+
+// Helper para fetch con reintentos
+async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3): Promise<Response> {
+  let lastError: Error | null = null
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: AbortSignal.timeout(15000), // 15 segundos timeout
+      })
+      return response
+    } catch (error) {
+      lastError = error as Error
+      console.log(`[v0] Fetch attempt ${i + 1} failed:`, lastError.message)
+      if (i < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))) // Espera exponencial
+      }
+    }
+  }
+  throw lastError || new Error("Fetch failed after retries")
+}
 
 export async function GET(request: NextRequest) {
   console.log("[v0] ========================================")
@@ -19,11 +41,11 @@ export async function GET(request: NextRequest) {
 
   try {
     console.log("[v0] Creating Supabase client...")
-    const supabase = await createServerClient()
+    const supabase = await createClient()
     console.log("[v0] Supabase client created successfully")
 
-    console.log("[v0] Querying mercadolibre_accounts...")
-    let accountsQuery = supabase.from("mercadolibre_accounts").select("*")
+    console.log("[v0] Querying ml_accounts...")
+    let accountsQuery = supabase.from("ml_accounts").select("*")
 
     if (accountId && accountId !== "all") {
       accountsQuery = accountsQuery.eq("id", accountId)
@@ -42,7 +64,46 @@ export async function GET(request: NextRequest) {
     }
 
     console.log(`[v0] Found ${accounts.length} account(s)`)
-    const account = accounts[0]
+    let account = accounts[0]
+    
+    // Verificar si el token está expirado y refrescarlo automáticamente
+    const expiresAt = new Date(account.token_expires_at)
+    const now = new Date()
+    if (expiresAt < now && account.refresh_token) {
+      console.log("[v0] Token expirado, intentando refrescar...")
+      try {
+        const refreshResponse = await fetch("https://api.mercadolibre.com/oauth/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            grant_type: "refresh_token",
+            client_id: process.env.MERCADOLIBRE_CLIENT_ID!,
+            client_secret: process.env.MERCADOLIBRE_CLIENT_SECRET!,
+            refresh_token: account.refresh_token,
+          }),
+        })
+        
+        if (refreshResponse.ok) {
+          const tokens = await refreshResponse.json()
+          const newExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+          
+          await supabase.from("ml_accounts").update({
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token,
+            token_expires_at: newExpiresAt,
+            updated_at: new Date().toISOString(),
+          }).eq("id", account.id)
+          
+          account = { ...account, access_token: tokens.access_token }
+          console.log("[v0] Token refrescado exitosamente")
+        } else {
+          console.error("[v0] Error al refrescar token:", await refreshResponse.text())
+        }
+      } catch (refreshError) {
+        console.error("[v0] Error en refresh:", refreshError)
+      }
+    }
+    
     const accessToken = account.access_token
 
     if (!accessToken) {
@@ -74,6 +135,7 @@ export async function GET(request: NextRequest) {
     const searchData = await searchResponse.json()
     const itemIds = searchData.results || []
 
+    console.log("[v0] ML Search Response - total:", searchData.paging?.total, "results:", itemIds.length)
     console.log("[v0] Found", itemIds.length, "product IDs")
 
     if (itemIds.length === 0) {

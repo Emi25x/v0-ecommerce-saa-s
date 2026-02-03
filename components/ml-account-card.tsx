@@ -45,7 +45,7 @@ const Settings = () => (
       strokeLinecap="round"
       strokeLinejoin="round"
       strokeWidth={2}
-      d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37.996.608 2.296.07 2.572-1.065z"
+      d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37.996.608 2.296.07 2.572-1.065z"
     />
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
   </svg>
@@ -76,6 +76,12 @@ const Edit = () => (
 const Check = () => (
   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+  </svg>
+)
+
+const RefreshCw = () => (
+  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
   </svg>
 )
 
@@ -115,6 +121,12 @@ interface MLAccount {
   connected: boolean
   tokenExpired: boolean
   browser_preference?: string
+  auto_sync_stock?: boolean
+  auto_sync_new_listings?: boolean
+  last_stock_sync_at?: string
+  last_new_listings_sync_at?: string
+  stock_sync_count?: number
+  new_listings_count?: number
 }
 
 export function MLAccountCard({
@@ -130,6 +142,13 @@ export function MLAccountCard({
   const [browserPreference, setBrowserPreference] = useState("")
   const [customBrowser, setCustomBrowser] = useState("")
   const [isSavingBrowser, setIsSavingBrowser] = useState(false)
+  const [authLinkCopied, setAuthLinkCopied] = useState(false)
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [lastSyncResult, setLastSyncResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [autoSyncStock, setAutoSyncStock] = useState(account.auto_sync_stock ?? true)
+  const [autoSyncNewListings, setAutoSyncNewListings] = useState(account.auto_sync_new_listings ?? true)
+  const [isSavingSync, setIsSavingSync] = useState(false)
+  const [isSyncingStock, setIsSyncingStock] = useState(false)
 
   useEffect(() => {
     const stored = localStorage.getItem(`ml_browser_${account.id}`)
@@ -157,6 +176,91 @@ export function MLAccountCard({
     { value: "safari-default", label: "Safari - Perfil Principal" },
     { value: "custom", label: "Personalizado..." },
   ]
+
+  const handleSaveSyncPreferences = async () => {
+    setIsSavingSync(true)
+    try {
+      const response = await fetch(`/api/mercadolibre/accounts/${account.id}/sync-preferences`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          auto_sync_stock: autoSyncStock,
+          auto_sync_new_listings: autoSyncNewListings
+        }),
+      })
+      if (response.ok) {
+        onUpdate()
+      }
+    } catch (error) {
+      console.error("[v0] Error saving sync preferences:", error)
+    } finally {
+      setIsSavingSync(false)
+    }
+  }
+
+  const handleSyncStockNow = async () => {
+    setIsSyncingStock(true)
+    try {
+      const response = await fetch("/api/ml/sync-stock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: account.id }),
+      })
+      const data = await response.json()
+      if (response.ok) {
+        setLastSyncResult({
+          success: true,
+          message: `Stock sincronizado: ${data.updated || 0} actualizados`,
+        })
+        onUpdate()
+      } else {
+        setLastSyncResult({
+          success: false,
+          message: data.error || "Error al sincronizar stock",
+        })
+      }
+    } catch (error) {
+      setLastSyncResult({
+        success: false,
+        message: "Error de conexión",
+      })
+    } finally {
+      setIsSyncingStock(false)
+    }
+  }
+
+  const handleSync = async () => {
+    setIsSyncing(true)
+    setLastSyncResult(null)
+    try {
+      const response = await fetch("/api/mercadolibre/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ml_user_id: account.ml_user_id }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        setLastSyncResult({
+          success: true,
+          message: `Sincronizado: ${data.summary?.orders || 0} ordenes, ${data.summary?.items || 0} productos`,
+        })
+      } else {
+        setLastSyncResult({
+          success: false,
+          message: data.error || "Error al sincronizar",
+        })
+      }
+    } catch (error) {
+      setLastSyncResult({
+        success: false,
+        message: "Error de conexion",
+      })
+    } finally {
+      setIsSyncing(false)
+    }
+  }
 
   const handleSaveNickname = async () => {
     try {
@@ -225,6 +329,12 @@ export function MLAccountCard({
     const url = `${window.location.origin}/api/mercadolibre/webhooks?account_id=${account.id}`
     navigator.clipboard.writeText(url)
     setWebhookUrl(url)
+  }
+
+  const copyAuthLink = () => {
+    const authLink = `${window.location.origin}/api/mercadolibre/auth`
+    navigator.clipboard.writeText(authLink)
+    setAuthLinkCopied(true)
   }
 
   const isConnected = account.connected && !account.tokenExpired
@@ -328,6 +438,75 @@ export function MLAccountCard({
           </p>
         </div>
 
+        {/* Configuración de Sincronización Automática */}
+        <div className="space-y-3 p-3 bg-muted/50 rounded-lg">
+          <Label className="text-sm font-medium">Sincronización Automática</Label>
+          
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label className="text-sm">Actualizar stock en ML</Label>
+              <p className="text-xs text-muted-foreground">Después de importar stock de proveedores</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={autoSyncStock}
+              onChange={(e) => setAutoSyncStock(e.target.checked)}
+              className="h-4 w-4"
+            />
+          </div>
+          
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label className="text-sm">Publicar productos nuevos</Label>
+              <p className="text-xs text-muted-foreground">Después de importar catálogo nuevo</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={autoSyncNewListings}
+              onChange={(e) => setAutoSyncNewListings(e.target.checked)}
+              className="h-4 w-4"
+            />
+          </div>
+          
+          <Button 
+            onClick={handleSaveSyncPreferences} 
+            disabled={isSavingSync} 
+            size="sm"
+            className="w-full"
+          >
+            {isSavingSync ? "Guardando..." : "Guardar preferencias"}
+          </Button>
+          
+          {/* Estado de última sincronización */}
+          <div className="pt-2 border-t border-border space-y-1">
+            <div className="flex justify-between text-xs">
+              <span className="text-muted-foreground">Último sync stock:</span>
+              <span>
+                {account.last_stock_sync_at 
+                  ? new Date(account.last_stock_sync_at).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })
+                  : "Nunca"
+                }
+              </span>
+            </div>
+            {account.stock_sync_count !== undefined && account.stock_sync_count > 0 && (
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">Productos actualizados:</span>
+                <span>{account.stock_sync_count}</span>
+              </div>
+            )}
+          </div>
+          
+          <Button 
+            onClick={handleSyncStockNow} 
+            disabled={isSyncingStock || !isConnected} 
+            variant="outline"
+            size="sm"
+            className="w-full bg-transparent"
+          >
+            {isSyncingStock ? "Sincronizando..." : "Sincronizar stock ahora"}
+          </Button>
+        </div>
+
         <div className="flex gap-2">
           <Dialog open={showConfig} onOpenChange={setShowConfig}>
             <DialogTrigger asChild>
@@ -386,27 +565,49 @@ export function MLAccountCard({
             </DialogContent>
           </Dialog>
 
-          {!isConnected && (
-            <Button variant="default" asChild className="flex-1">
-              <a href={`/api/mercadolibre/auth?account_id=${account.id}`}>
-                {account.tokenExpired ? "Reconectar" : "Conectar"}
-              </a>
-            </Button>
-          )}
-
-          <Button variant="destructive" size="icon" onClick={handleDelete} disabled={isDeleting}>
+{!isConnected && (
+  <Button variant="default" asChild className="flex-1">
+  <a href={`/api/mercadolibre/auth?account_id=${account.id}`}>
+    {account.tokenExpired ? "Reconectar" : "Conectar"}
+  </a>
+  </Button>
+  )}
+  
+  {isConnected && (
+    <Button 
+      variant="outline" 
+      size="sm" 
+      onClick={handleSync} 
+      disabled={isSyncing}
+      className="bg-transparent"
+    >
+      <RefreshCw className={isSyncing ? "animate-spin" : ""} />
+      <span className="ml-1">{isSyncing ? "Sincronizando..." : "Sincronizar"}</span>
+    </Button>
+  )}
+  
+  <Button variant="destructive" size="icon" onClick={handleDelete} disabled={isDeleting}>
             <Trash />
           </Button>
         </div>
 
-        {account.tokenExpired && (
-          <Alert variant="destructive">
-            <AlertDescription className="text-xs">
-              El token ha expirado. Haz clic en "Reconectar" para renovar la conexión.
-            </AlertDescription>
-          </Alert>
-        )}
-      </CardContent>
+{account.tokenExpired && (
+  <Alert variant="destructive">
+  <AlertDescription className="text-xs">
+    El token ha expirado. Haz clic en Reconectar para renovar la conexion.
+  </AlertDescription>
+  </Alert>
+  )}
+  
+  {lastSyncResult && (
+    <Alert variant={lastSyncResult.success ? "default" : "destructive"}>
+      <AlertDescription className="text-xs">
+        {lastSyncResult.message}
+      </AlertDescription>
+    </Alert>
+  )}
+  
+  </CardContent>
     </Card>
   )
 }

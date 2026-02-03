@@ -33,6 +33,7 @@ const App = () => {
   const [showResetDialog, setShowResetDialog] = useState(false)
   const [resetLoading, setResetLoading] = useState(false)
   const [resetConfirmText, setResetConfirmText] = useState("")
+  const [runningCron, setRunningCron] = useState(false)
 
   // Estado para el análisis de duplicados
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -79,7 +80,8 @@ const App = () => {
       }
 
       const commonNames: Record<string, string[]> = {
-        sku: ["sku", "codigo_interno", "codigo", "barcode", "ean", "upc"],
+        sku: ["sku", "codigo_interno", "codigo", "barcode", "upc"],
+        ean: ["ean", "ean13", "isbn", "codigo_barras", "barcode"],
         title: ["title", "name", "titulo", "product", "nombre", "descripcion"],
         description: ["description", "descripcion", "detalle", "desc"],
         category: ["category", "categoria", "rubro", "cat"],
@@ -217,6 +219,17 @@ const App = () => {
     }
   }, [])
 
+  // Sincronizar backgroundImports con importProgress en tiempo real
+  useEffect(() => {
+    if (sourceToImport?.id && (importProgress.status === "running" || importProgress.processed > 0 || importProgress.imported > 0 || importProgress.updated > 0)) {
+      setBackgroundImports((prev) => {
+        const updated = new Map(prev)
+        updated.set(sourceToImport.id, { ...importProgress })
+        return updated
+      })
+    }
+  }, [importProgress, sourceToImport?.id])
+
   async function updateBackgroundImportsProgress() {
     if (backgroundImports.size === 0) return
 
@@ -224,12 +237,13 @@ const App = () => {
     let hasUpdates = false
 
     for (const [sourceId, progress] of backgroundImports.entries()) {
-      if (progress.status !== "running") continue
-
       // Copiar el progreso actual de importProgress si es la misma fuente
-      if (sourceToImport?.id === sourceId && importProgress.status === "running") {
-        updatedImports.set(sourceId, { ...importProgress })
-        hasUpdates = true
+      if (sourceToImport?.id === sourceId) {
+        // Siempre sincronizar mientras haya una importación activa o recién finalizada
+        if (importProgress.total > 0 || importProgress.processed > 0 || importProgress.imported > 0 || importProgress.updated > 0) {
+          updatedImports.set(sourceId, { ...importProgress })
+          hasUpdates = true
+        }
       }
     }
 
@@ -301,7 +315,15 @@ const App = () => {
     }
 
     setSourceToImport(source)
-    setImportMode("update")
+    // Para catálogos base (Arnoia), usar modo "skip" por defecto (solo importar nuevos)
+    // Para actualizaciones de stock/precio, usar modo "update"
+    if (source.feed_type === "catalog" && source.name.toLowerCase().includes("arnoia") && !source.name.toLowerCase().includes("act")) {
+      setImportMode("skip")
+    } else if (source.feed_type === "stock_price") {
+      setImportMode("update")
+    } else {
+      setImportMode("update")
+    }
     setShowImportConfirmDialog(true)
   }
 
@@ -558,8 +580,9 @@ const App = () => {
           // Procesar todos los productos del batch en paralelo
           const results = await Promise.allSettled(
             batch.map(async (row: any) => {
+              let sku: string | undefined
               try {
-                const sku = extractFieldValue(row, "sku", source.column_mapping)?.toString().trim().toUpperCase()
+                sku = extractFieldValue(row, "sku", source.column_mapping)?.toString().trim().toUpperCase()
 
                 if (!sku) {
                   return { type: "error", error: "Sin SKU válido", row }
@@ -571,6 +594,12 @@ const App = () => {
                 const brand = extractFieldValue(row, "brand", source.column_mapping)
                 const priceValue = extractFieldValue(row, "price", source.column_mapping)
                 const stockValue = extractFieldValue(row, "stock", source.column_mapping)
+                
+                // Extraer EAN y normalizarlo (quitar espacios y ceros a la izquierda)
+                let ean = extractFieldValue(row, "ean", source.column_mapping)
+                if (ean) {
+                  ean = String(ean).trim().replace(/^0+/, "") || ean
+                }
 
                 // Validar si el precio o stock son números válidos
                 const parsedPrice = Number.parseFloat(priceValue)
@@ -582,24 +611,31 @@ const App = () => {
 
                 if (existingProduct) {
                   if (source.feed_type === "catalog") {
-                    // Para catálogo completo: actualizar todo si title cambió
-                    if (title && title !== existingProduct.title) {
-                      await supabase
-                        .from("products")
-                        .update({
-                          title,
-                          description,
-                          category,
-                          brand,
-                          price: validPrice,
-                          stock: validStock,
-                          updated_at: new Date().toISOString(),
-                        })
-                        .eq("id", existingProduct.id)
-                      return { type: "updated" }
-                    } else {
-                      return { type: "skipped" }
+                    // Para catálogo completo: actualizar datos del producto incluyendo EAN
+                    const updateData: any = {
+                      price: validPrice,
+                      stock: validStock,
+                      updated_at: new Date().toISOString(),
                     }
+                    
+                    // Siempre actualizar EAN si viene en el CSV
+                    if (ean) {
+                      updateData.ean = ean
+                    }
+                    
+                    // Actualizar otros campos si el title cambió
+                    if (title && title !== existingProduct.title) {
+                      updateData.title = title
+                      updateData.description = description
+                      updateData.category = category
+                      updateData.brand = brand
+                    }
+                    
+                    await supabase
+                      .from("products")
+                      .update(updateData)
+                      .eq("id", existingProduct.id)
+                    return { type: "updated" }
                   } else if (source.feed_type === "stock_price") {
                     // Para stock_price: solo actualizar precio/stock
                     await supabase
@@ -625,6 +661,7 @@ const App = () => {
                       
                       await supabase.from("products").insert({
                         sku,
+                        ean: ean || null,
                         title: backupTitle || `Producto ${sku}`,
                         description: backupDescription,
                         category: backupCategory,
@@ -638,23 +675,24 @@ const App = () => {
                       missingSkus.push(sku)
                       return { type: "skipped" }
                     }
-                  } else {
-                    // Catálogo completo: insertar directamente
-                    await supabase.from("products").insert({
-                      sku,
-                      title: title || `Producto ${sku}`,
-                      description,
-                      category,
-                      brand,
-                      price: validPrice,
-                      stock: validStock,
-                      source: [source.name],
-                    })
-                    return { type: "imported" }
+} else {
+                  // Catálogo completo: insertar directamente
+                  await supabase.from("products").insert({
+                    sku,
+                    ean: ean || null,
+                    title: title || `Producto ${sku}`,
+                    description,
+                    category,
+                    brand,
+                    price: validPrice,
+                    stock: validStock,
+                    source: [source.name],
+                  })
+                  return { type: "imported" }
                   }
                 }
               } catch (error: any) {
-                return { type: "error", error: error.message, sku }
+                return { type: "error", error: error.message, sku: sku || "desconocido" }
               }
             }),
           )
@@ -842,8 +880,18 @@ const App = () => {
     if (!sourceToImport) return
 
     setShowImportConfirmDialog(false)
-    setShowProgressDialog(true)
 
+    // Redirigir a la página de batch-import con el sourceId y nombre
+    // Esta página maneja el progreso correctamente
+    if (sourceToImport.url_template) {
+      const mode = sourceToImport.feed_type === "stock_price" ? "update" : importMode
+      const encodedName = encodeURIComponent(sourceToImport.name)
+      window.location.href = `/inventory/sources/batch-import?sourceId=${sourceToImport.id}&mode=${mode}&name=${encodedName}`
+      return
+    }
+
+    // Importación sin URL (subida de archivo manual)
+    setShowProgressDialog(true)
     isExecutingRef.current = true
 
     const newProgress: ImportProgressState = {
@@ -961,6 +1009,36 @@ const App = () => {
       })
     } finally {
       setCleaningDuplicates(false)
+    }
+  }
+
+  const handleRunCron = async () => {
+    setRunningCron(true)
+    try {
+      const response = await fetch("/api/cron/import-schedules")
+      const data = await response.json()
+      
+      if (data.processed && data.processed.length > 0) {
+        toast({
+          title: "Cron ejecutado",
+          description: `Se procesaron ${data.processed.length} importaciones programadas`,
+        })
+        // Recargar datos
+        loadSources()
+      } else {
+        toast({
+          title: "Sin tareas pendientes",
+          description: data.message || "No hay importaciones programadas para ejecutar ahora",
+        })
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error al ejecutar cron",
+        description: error.message,
+        variant: "destructive",
+      })
+    } finally {
+      setRunningCron(false)
     }
   }
 
@@ -1152,6 +1230,10 @@ const App = () => {
           <p className="text-muted-foreground">Administra tus fuentes de datos y configuraciones de importación</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={handleRunCron} disabled={runningCron}>
+            {runningCron ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+            Ejecutar Cron
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setShowDiagnosticDialog(true)} disabled={loadingDiagnostic}>
             {loadingDiagnostic ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
             Diagnóstico
@@ -1160,12 +1242,18 @@ const App = () => {
             <Trash2 className="h-4 w-4" />
             Reiniciar Base
           </Button>
-          <Link href="/inventory/sources/new">
-            <Button>
-              <Upload className="mr-2 h-4 w-4" />
-              Nueva Fuente
-            </Button>
-          </Link>
+<Link href="/inventory/sources/batch-import">
+  <Button variant="outline">
+  <RefreshCw className="mr-2 h-4 w-4" />
+  Importacion Masiva
+  </Button>
+  </Link>
+  <Link href="/inventory/sources/new">
+  <Button>
+  <Upload className="mr-2 h-4 w-4" />
+  Nueva Fuente
+  </Button>
+  </Link>
         </div>
       </div>
 
@@ -1251,16 +1339,51 @@ const App = () => {
                   </div>
                 </CardHeader>
 
-                {backgroundProgress && backgroundProgress.status === "running" && (
+                {/* Panel de progreso solo para importaciones del cliente (con total > 0) */}
+                {backgroundProgress && backgroundProgress.status === "running" && backgroundProgress.total > 0 && (
                   <div className="px-6 pb-3">
                     <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
                           Importación en progreso
                         </span>
-                        <span className="text-xs text-blue-700 dark:text-blue-300">
-                          {backgroundProgress.processed} / {backgroundProgress.total}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-blue-700 dark:text-blue-300">
+                            {backgroundProgress.processed} / {backgroundProgress.total}
+                          </span>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            className="h-6 px-2 text-xs"
+                            onClick={() => {
+                              if (sourceToImport?.id === source.id) {
+                                cancelImport()
+                              } else {
+                                // Cancelar importación de esta fuente específica
+                                setBackgroundImports((prev) => {
+                                  const updated = new Map(prev)
+                                  const current = updated.get(source.id)
+                                  if (current) {
+                                    updated.set(source.id, { ...current, status: "cancelled" })
+                                  }
+                                  return updated
+                                })
+                                setRunningImports((prev) => {
+                                  const updated = new Map(prev)
+                                  updated.delete(source.id)
+                                  return updated
+                                })
+                                toast({
+                                  title: "Importación cancelada",
+                                  description: `La importación de ${source.name} ha sido cancelada`,
+                                })
+                              }
+                            }}
+                          >
+                            <StopCircle className="h-3 w-3 mr-1" />
+                            Cancelar
+                          </Button>
+                        </div>
                       </div>
                       <div className="w-full bg-blue-100 dark:bg-blue-900/50 rounded-full h-2">
                         <div
@@ -1271,9 +1394,9 @@ const App = () => {
                         />
                       </div>
                       <div className="mt-2 flex gap-4 text-xs text-blue-700 dark:text-blue-300">
-                        <span>✓ {backgroundProgress.imported} nuevos</span>
-                        <span>↻ {backgroundProgress.updated} actualizados</span>
-                        <span>✗ {backgroundProgress.failed} fallidos</span>
+                        <span>Nuevos: {backgroundProgress.imported}</span>
+                        <span>Actualizados: {backgroundProgress.updated}</span>
+                        <span>Fallidos: {backgroundProgress.failed}</span>
                       </div>
                     </div>
                   </div>
@@ -1405,48 +1528,63 @@ const App = () => {
           <DialogHeader>
             <DialogTitle>Confirmar Importación</DialogTitle>
             <DialogDescription>
-              Estás a punto de importar productos desde &quot;{sourceToImport?.name}&quot;
+              Estás a punto de importar desde &quot;{sourceToImport?.name}&quot;
+              {sourceToImport?.feed_type === "stock_price" && " (solo stock y precios)"}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="import-mode">Modo de Importación</Label>
-              <Select value={importMode} onValueChange={(value: any) => setImportMode(value)}>
-                <SelectTrigger id="import-mode">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="update">
-                    <div className="flex flex-col">
-                      <span className="font-medium">Actualizar existentes</span>
-                      <span className="text-xs text-muted-foreground">
-                        Actualiza productos existentes y agrega nuevos
-                      </span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="overwrite">
-                    <div className="flex flex-col">
-                      <span className="font-medium">Sobrescribir todo</span>
-                      <span className="text-xs text-muted-foreground">
-                        Reemplaza completamente los productos existentes
-                      </span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="skip">
-                    <div className="flex flex-col">
-                      <span className="font-medium">Solo nuevos</span>
-                      <span className="text-xs text-muted-foreground">Ignora productos que ya existen</span>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Solo mostrar selector de modo si NO es tipo stock */}
+            {sourceToImport?.feed_type !== "stock_price" && (
+              <div className="space-y-2">
+                <Label htmlFor="import-mode">Modo de Importación</Label>
+                <Select value={importMode} onValueChange={(value: any) => setImportMode(value)}>
+                  <SelectTrigger id="import-mode">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="update">
+                      <div className="flex flex-col">
+                        <span className="font-medium">Actualizar existentes</span>
+                        <span className="text-xs text-muted-foreground">
+                          Actualiza productos existentes por EAN
+                        </span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="overwrite">
+                      <div className="flex flex-col">
+                        <span className="font-medium">Sobrescribir todo</span>
+                        <span className="text-xs text-muted-foreground">
+                          Reemplaza completamente los productos existentes
+                        </span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="skip">
+                      <div className="flex flex-col">
+                        <span className="font-medium">Solo nuevos</span>
+                        <span className="text-xs text-muted-foreground">Ignora productos que ya existen</span>
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            
+            {/* Mensaje informativo para tipo stock */}
+            {sourceToImport?.feed_type === "stock_price" && (
+              <div className="rounded-lg border p-3 bg-muted/50">
+                <p className="text-sm text-muted-foreground">
+                  Se actualizará el stock y precio de los productos existentes que coincidan por EAN.
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowImportConfirmDialog(false)}>
               Cancelar
             </Button>
-            <Button onClick={confirmImport}>Iniciar Importación</Button>
+            <Button onClick={confirmImport}>
+              Iniciar Importación
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1612,7 +1750,7 @@ const App = () => {
                       <Button 
                         variant="outline" 
                         size="sm" 
-                        className="mt-2"
+                        className="mt-2 bg-transparent"
                         onClick={() => window.open(analysisResult.sqlEditorUrl, '_blank')}
                       >
                         <ExternalLink className="mr-2 h-4 w-4" />

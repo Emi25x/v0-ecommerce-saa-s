@@ -1,5 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { refreshTokenIfNeeded } from "@/lib/mercadolibre"
+import { handleQuestionNotification } from "@/lib/mercadolibre/questionHandler"
 
 // Webhook endpoint para recibir notificaciones de MercadoLibre
 export async function POST(request: NextRequest) {
@@ -28,6 +30,9 @@ export async function POST(request: NextRequest) {
       case "items":
         await handleItemNotification(body)
         break
+      case "questions":
+        await handleQuestionNotification(body)
+        break
       default:
         console.log(`[v0] Unhandled topic: ${body.topic}`)
     }
@@ -52,29 +57,55 @@ export async function POST(request: NextRequest) {
 async function handleOrderNotification(notification: any) {
   try {
     const supabase = await createClient()
-
-    // Extraer el order ID del resource
     const orderId = notification.resource.split("/").pop()
 
     console.log(`[v0] Processing order notification for order ${orderId}`)
 
-    // Guardar la notificación en la base de datos para procesamiento asíncrono
-    const { error } = await supabase.from("ml_webhook_queue").insert({
+    // Buscar la cuenta de ML por user_id
+    const { data: account } = await supabase
+      .from("ml_accounts")
+      .select("*")
+      .eq("ml_user_id", notification.user_id.toString())
+      .single()
+
+    if (account) {
+      // Refrescar token si es necesario
+      const validAccount = await refreshTokenIfNeeded(account)
+      
+      // Obtener datos de la orden desde la API de ML
+      const orderResponse = await fetch(`https://api.mercadolibre.com/orders/${orderId}`, {
+        headers: { Authorization: `Bearer ${validAccount.access_token}` },
+      })
+
+      if (orderResponse.ok) {
+        const orderData = await orderResponse.json()
+        
+        // Guardar/actualizar en cache
+        await supabase.from("ml_orders_cache").upsert({
+          id: orderData.id.toString(),
+          account_id: account.id,
+          order_data: orderData,
+          buyer_nickname: orderData.buyer?.nickname,
+          status: orderData.status,
+          total_amount: orderData.total_amount,
+          cached_at: new Date().toISOString(),
+        }, { onConflict: "id" })
+
+        console.log(`[v0] Order ${orderId} synced to cache`)
+      }
+    }
+
+    // También guardar en queue para auditoría
+    await supabase.from("ml_webhook_queue").insert({
       topic: notification.topic,
       resource: notification.resource,
       user_id: notification.user_id,
       application_id: notification.application_id,
       sent: notification.sent,
       received: notification.received,
-      processed: false,
+      processed: true,
       created_at: new Date().toISOString(),
     })
-
-    if (error) {
-      console.error("[v0] Error saving webhook to queue:", error)
-    } else {
-      console.log(`[v0] Order notification queued for processing: ${orderId}`)
-    }
   } catch (error) {
     console.error("[v0] Error handling order notification:", error)
   }
@@ -83,29 +114,50 @@ async function handleOrderNotification(notification: any) {
 async function handleShipmentNotification(notification: any) {
   try {
     const supabase = await createClient()
-
-    // Extraer el shipment ID del resource
     const shipmentId = notification.resource.split("/").pop()
 
     console.log(`[v0] Processing shipment notification for shipment ${shipmentId}`)
 
-    // Guardar la notificación en la base de datos para procesamiento asíncrono
-    const { error } = await supabase.from("ml_webhook_queue").insert({
+    // Buscar la cuenta de ML
+    const { data: account } = await supabase
+      .from("ml_accounts")
+      .select("*")
+      .eq("ml_user_id", notification.user_id.toString())
+      .single()
+
+    if (account) {
+      const validAccount = await refreshTokenIfNeeded(account)
+      
+      // Obtener datos del envío
+      const shipmentResponse = await fetch(`https://api.mercadolibre.com/shipments/${shipmentId}`, {
+        headers: { Authorization: `Bearer ${validAccount.access_token}` },
+      })
+
+      if (shipmentResponse.ok) {
+        const shipmentData = await shipmentResponse.json()
+        
+        await supabase.from("ml_shipments").upsert({
+          id: shipmentData.id.toString(),
+          account_id: account.id,
+          order_id: shipmentData.order_id?.toString(),
+          status: shipmentData.status,
+          substatus: shipmentData.substatus,
+          tracking_number: shipmentData.tracking_number,
+          shipment_data: shipmentData,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "id" })
+
+        console.log(`[v0] Shipment ${shipmentId} synced to cache`)
+      }
+    }
+
+    await supabase.from("ml_webhook_queue").insert({
       topic: notification.topic,
       resource: notification.resource,
       user_id: notification.user_id,
-      application_id: notification.application_id,
-      sent: notification.sent,
-      received: notification.received,
-      processed: false,
+      processed: true,
       created_at: new Date().toISOString(),
     })
-
-    if (error) {
-      console.error("[v0] Error saving webhook to queue:", error)
-    } else {
-      console.log(`[v0] Shipment notification queued for processing: ${shipmentId}`)
-    }
   } catch (error) {
     console.error("[v0] Error handling shipment notification:", error)
   }
@@ -114,29 +166,55 @@ async function handleShipmentNotification(notification: any) {
 async function handleItemNotification(notification: any) {
   try {
     const supabase = await createClient()
-
-    // Extraer el item ID del resource
     const itemId = notification.resource.split("/").pop()
 
     console.log(`[v0] Processing item notification for item ${itemId}`)
 
-    // Guardar la notificación en la base de datos para procesamiento asíncrono
-    const { error } = await supabase.from("ml_webhook_queue").insert({
+    // Buscar la cuenta de ML
+    const { data: account } = await supabase
+      .from("ml_accounts")
+      .select("*")
+      .eq("ml_user_id", notification.user_id.toString())
+      .single()
+
+    if (account) {
+      const validAccount = await refreshTokenIfNeeded(account)
+      
+      // Obtener datos del item
+      const itemResponse = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
+        headers: { Authorization: `Bearer ${validAccount.access_token}` },
+      })
+
+      if (itemResponse.ok) {
+        const itemData = await itemResponse.json()
+        
+        await supabase.from("ml_products_cache").upsert({
+          id: itemData.id,
+          account_id: account.id,
+          title: itemData.title,
+          price: itemData.price,
+          currency_id: itemData.currency_id,
+          available_quantity: itemData.available_quantity,
+          sold_quantity: itemData.sold_quantity,
+          status: itemData.status,
+          thumbnail: itemData.thumbnail,
+          permalink: itemData.permalink,
+          category_id: itemData.category_id,
+          item_data: itemData,
+          cached_at: new Date().toISOString(),
+        }, { onConflict: "id" })
+
+        console.log(`[v0] Item ${itemId} synced to cache`)
+      }
+    }
+
+    await supabase.from("ml_webhook_queue").insert({
       topic: notification.topic,
       resource: notification.resource,
       user_id: notification.user_id,
-      application_id: notification.application_id,
-      sent: notification.sent,
-      received: notification.received,
-      processed: false,
+      processed: true,
       created_at: new Date().toISOString(),
     })
-
-    if (error) {
-      console.error("[v0] Error saving webhook to queue:", error)
-    } else {
-      console.log(`[v0] Item notification queued for processing: ${itemId}`)
-    }
   } catch (error) {
     console.error("[v0] Error handling item notification:", error)
   }

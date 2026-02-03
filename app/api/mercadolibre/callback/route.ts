@@ -81,6 +81,23 @@ export async function GET(request: NextRequest) {
       console.log("[v0] ML Account created in database:", user.nickname)
     }
 
+    // Disparar sincronización inicial en background
+    try {
+      const syncUrl = `${request.nextUrl.origin}/api/mercadolibre/sync`
+      fetch(syncUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ml_user_id: user.id.toString() }),
+      }).then(() => {
+        console.log("[v0] Sync inicial disparada para:", user.nickname)
+      }).catch((err) => {
+        console.error("[v0] Error disparando sync inicial:", err)
+      })
+    } catch (syncError) {
+      console.error("[v0] Error en sync inicial:", syncError)
+      // No bloqueamos el redirect si falla el sync
+    }
+
     const response = NextResponse.redirect(
       `${request.nextUrl.origin}/integrations?ml_connected=true&ml_user=${user.nickname}`,
     )

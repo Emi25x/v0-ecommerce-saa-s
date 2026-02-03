@@ -4,6 +4,7 @@ import type React from "react"
 
 import { useState, useEffect } from "react"
 import { usePathname } from "next/navigation"
+import { FileText as FeatherFileText, Upload as FeatherUpload } from "react-feather" // Importing FileText and Upload components from react-feather
 
 // Inline SVG components
 const Package = (props: React.SVGProps<SVGSVGElement>) => (
@@ -179,6 +180,7 @@ const Database = (props: React.SVGProps<SVGSVGElement>) => (
 export function AppSidebar() {
   const pathname = usePathname()
   const [mlExpanded, setMlExpanded] = useState(true)
+  const [integrationsExpanded, setIntegrationsExpanded] = useState(true) // Declaring integrationsExpanded state
 
   const [lastVisits, setLastVisits] = useState({
     orders: null as string | null,
@@ -357,17 +359,56 @@ export function AppSidebar() {
           <span className="font-medium">Base de Productos</span>
         </a>
 
-        <a
-          href="/integrations"
-          className={`mt-2 flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${
-            isActive("/integrations")
-              ? "bg-sidebar-accent text-sidebar-accent-foreground"
-              : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          }`}
-        >
-          <Settings className="h-5 w-5" />
-          <span className="font-medium">Integraciones</span>
-        </a>
+        <div className="mt-2">
+          <button
+            onClick={() => setIntegrationsExpanded(!integrationsExpanded)}
+            className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <div className="flex items-center gap-3">
+              <Settings className="h-5 w-5" />
+              <span className="font-medium">Integraciones</span>
+            </div>
+            <ChevronDown className={`h-4 w-4 transition-transform ${integrationsExpanded ? "rotate-180" : ""}`} />
+          </button>
+
+          {integrationsExpanded && (
+            <div className="ml-8 mt-1 flex flex-col gap-1">
+              <a
+                href="/integrations"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname === "/integrations"
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <Settings className="h-4 w-4" />
+                <span>Configuracion</span>
+              </a>
+              <a
+                href="/integrations/ml-templates"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname === "/integrations/ml-templates"
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <FeatherFileText className="h-4 w-4" />
+                <span>Plantillas y Precios</span>
+              </a>
+              <a
+                href="/integrations/ml-publish"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname === "/integrations/ml-publish"
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <FeatherUpload className="h-4 w-4" />
+                <span>Publicar en ML</span>
+              </a>
+            </div>
+          )}
+        </div>
       </nav>
     </aside>
   )

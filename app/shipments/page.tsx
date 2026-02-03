@@ -13,7 +13,7 @@ import { Separator } from "@/components/ui/separator"
 import { Checkbox } from "@/components/ui/checkbox"
 import { AdvancedPagination } from "@/components/advanced-pagination"
 import { RefreshCw, Filter, Download, Package, Eye, Calendar, Truck, Printer, MapPin, Clock } from "lucide-react"
-import { AppSidebar } from "@/components/app-sidebar"
+
 import { MLConnectionStatus } from "@/components/ml-connection-status"
 import { LastUpdated } from "@/components/last-updated"
 import { SortSelector } from "@/components/sort-selector"
@@ -594,580 +594,417 @@ export default function ShipmentsPage() {
         </div>
       </header>
 
-      <div className="flex flex-1">
-        <AppSidebar />
+      <main className="flex-1 p-6">
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight">Envíos</h2>
+            <p className="text-muted-foreground">
+              {paging.total > 0
+                ? `${paging.total.toLocaleString()} envíos en total`
+                : "Gestiona tus envíos de Mercado Libre"}
+              {selectedAccount !== "all" && mlAccounts.length > 0 && (
+                <span className="ml-2 text-sm">
+                  • {mlAccounts.find((a) => a.id === selectedAccount)?.nickname || "Cuenta seleccionada"}
+                </span>
+              )}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={loadShipments} disabled={loading} variant="outline">
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Actualizar
+            </Button>
+            <Button variant="outline" onClick={exportToCSV} disabled={shipments.length === 0}>
+              <Download className="mr-2 h-4 w-4" />
+              Exportar CSV
+            </Button>
+          </div>
+        </div>
 
-        <main className="flex-1 p-6">
-          <div className="mb-8 flex items-center justify-between">
-            <div>
-              <h2 className="text-3xl font-bold tracking-tight">Envíos</h2>
-              <p className="text-muted-foreground">
-                {paging.total > 0
-                  ? `${paging.total.toLocaleString()} envíos en total`
-                  : "Gestiona tus envíos de Mercado Libre"}
-                {selectedAccount !== "all" && mlAccounts.length > 0 && (
-                  <span className="ml-2 text-sm">
-                    • {mlAccounts.find((a) => a.id === selectedAccount)?.nickname || "Cuenta seleccionada"}
-                  </span>
+        <div className="mb-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Pendientes</CardTitle>
+              <Clock className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.pending}</div>
+              <p className="text-xs text-muted-foreground">Preparando envío</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Listos</CardTitle>
+              <Package className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.ready_to_ship}</div>
+              <p className="text-xs text-muted-foreground">Para enviar</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">En Tránsito</CardTitle>
+              <Truck className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.shipped}</div>
+              <p className="text-xs text-muted-foreground">Enviados</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Entregados</CardTitle>
+              <Badge variant="secondary" className="h-4 w-4" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.delivered}</div>
+              <p className="text-xs text-muted-foreground">Completados</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card className="mb-6">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <Label className="text-sm font-medium">Filtrar por cuenta:</Label>
+                <Select value={selectedAccount} onValueChange={setSelectedAccount}>
+                  <SelectTrigger className="w-[300px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas las cuentas ({mlAccounts.length})</SelectItem>
+                    {mlAccounts.map((account) => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {account.nickname || account.ml_user_id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {mlAccounts.length === 0 && (
+                  <Button variant="outline" size="sm" asChild>
+                    <a href="/integrations">Conectar Cuenta</a>
+                  </Button>
                 )}
-              </p>
+              </div>
+              <div className="flex items-center gap-4">
+                <LastUpdated timestamp={lastUpdated} isLoading={loading} onRefresh={loadShipments} />
+                <MLConnectionStatus accountId={selectedAccount} onRefresh={loadShipments} refreshing={loading} />
+              </div>
             </div>
-            <div className="flex gap-2">
-              <Button onClick={loadShipments} disabled={loading} variant="outline">
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Actualizar
-              </Button>
-              <Button variant="outline" onClick={exportToCSV} disabled={shipments.length === 0}>
-                <Download className="mr-2 h-4 w-4" />
-                Exportar CSV
-              </Button>
-            </div>
-          </div>
+          </CardContent>
+        </Card>
 
-          <div className="mb-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Pendientes</CardTitle>
-                <Clock className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stats.pending}</div>
-                <p className="text-xs text-muted-foreground">Preparando envío</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Listos</CardTitle>
-                <Package className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stats.ready_to_ship}</div>
-                <p className="text-xs text-muted-foreground">Para enviar</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">En Tránsito</CardTitle>
-                <Truck className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stats.shipped}</div>
-                <p className="text-xs text-muted-foreground">Enviados</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Entregados</CardTitle>
-                <Badge variant="secondary" className="h-4 w-4" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stats.delivered}</div>
-                <p className="text-xs text-muted-foreground">Completados</p>
-              </CardContent>
-            </Card>
-          </div>
-
-          <Card className="mb-6">
-            <CardContent className="pt-6">
+        {selectedShipments.size > 0 && (
+          <Card className="mb-6 border-2 border-primary">
+            <CardContent className="py-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <Label className="text-sm font-medium">Filtrar por cuenta:</Label>
-                  <Select value={selectedAccount} onValueChange={setSelectedAccount}>
-                    <SelectTrigger className="w-[300px]">
+                  <Badge variant="default" className="text-base px-3 py-1">
+                    {selectedShipments.size} seleccionados
+                  </Badge>
+                  <Button variant="outline" size="sm" onClick={() => setSelectedShipments(new Set())}>
+                    Limpiar selección
+                  </Button>
+                </div>
+                <Button onClick={printBulkLabels} disabled={printingLabels} size="lg">
+                  <Printer className="mr-2 h-5 w-5" />
+                  Imprimir {selectedShipments.size} Etiquetas
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        <Card className="mb-6 border-2">
+          <CardHeader className="bg-muted/30">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Filtros</CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setShowFilters(!showFilters)}>
+                <Filter className="mr-2 h-4 w-4" />
+                {showFilters ? "Ocultar" : "Mostrar"}
+              </Button>
+            </div>
+          </CardHeader>
+          {showFilters && (
+            <CardContent className="bg-muted/10">
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-2">
+                  <Label>Estado del Envío</Label>
+                  <Select value={filters.status} onValueChange={(v) => setFilters({ ...filters, status: v })}>
+                    <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">Todas las cuentas ({mlAccounts.length})</SelectItem>
-                      {mlAccounts.map((account) => (
-                        <SelectItem key={account.id} value={account.id}>
-                          {account.nickname || account.ml_user_id}
-                        </SelectItem>
-                      ))}
+                      <SelectItem value="all">Todos</SelectItem>
+                      <SelectItem value="pending">Pendiente</SelectItem>
+                      <SelectItem value="handling">Preparando</SelectItem>
+                      <SelectItem value="ready_to_ship">Listo para Enviar</SelectItem>
+                      <SelectItem value="shipped">Enviado</SelectItem>
+                      <SelectItem value="delivered">Entregado</SelectItem>
+                      <SelectItem value="not_delivered">No Entregado</SelectItem>
+                      <SelectItem value="cancelled">Cancelado</SelectItem>
                     </SelectContent>
                   </Select>
-                  {mlAccounts.length === 0 && (
-                    <Button variant="outline" size="sm" asChild>
-                      <a href="/integrations">Conectar Cuenta</a>
-                    </Button>
-                  )}
                 </div>
-                <div className="flex items-center gap-4">
-                  <LastUpdated timestamp={lastUpdated} isLoading={loading} onRefresh={loadShipments} />
-                  <MLConnectionStatus accountId={selectedAccount} onRefresh={loadShipments} refreshing={loading} />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
 
-          {selectedShipments.size > 0 && (
-            <Card className="mb-6 border-2 border-primary">
-              <CardContent className="py-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <Badge variant="default" className="text-base px-3 py-1">
-                      {selectedShipments.size} seleccionados
-                    </Badge>
-                    <Button variant="outline" size="sm" onClick={() => setSelectedShipments(new Set())}>
-                      Limpiar selección
-                    </Button>
-                  </div>
-                  <Button onClick={printBulkLabels} disabled={printingLabels} size="lg">
-                    <Printer className="mr-2 h-5 w-5" />
-                    Imprimir {selectedShipments.size} Etiquetas
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          <Card className="mb-6 border-2">
-            <CardHeader className="bg-muted/30">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base">Filtros</CardTitle>
-                <Button variant="ghost" size="sm" onClick={() => setShowFilters(!showFilters)}>
-                  <Filter className="mr-2 h-4 w-4" />
-                  {showFilters ? "Ocultar" : "Mostrar"}
-                </Button>
-              </div>
-            </CardHeader>
-            {showFilters && (
-              <CardContent className="bg-muted/10">
-                <div className="grid gap-4 md:grid-cols-3">
-                  <div className="space-y-2">
-                    <Label>Estado del Envío</Label>
-                    <Select value={filters.status} onValueChange={(v) => setFilters({ ...filters, status: v })}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todos</SelectItem>
-                        <SelectItem value="pending">Pendiente</SelectItem>
-                        <SelectItem value="handling">Preparando</SelectItem>
-                        <SelectItem value="ready_to_ship">Listo para Enviar</SelectItem>
-                        <SelectItem value="shipped">Enviado</SelectItem>
-                        <SelectItem value="delivered">Entregado</SelectItem>
-                        <SelectItem value="not_delivered">No Entregado</SelectItem>
-                        <SelectItem value="cancelled">Cancelado</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Modo de Envío</Label>
-                    <Select
-                      value={filters.shipping_mode}
-                      onValueChange={(v) => setFilters({ ...filters, shipping_mode: v })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todos</SelectItem>
-                        <SelectItem value="me1">Mercado Envíos 1</SelectItem>
-                        <SelectItem value="me2">Mercado Envíos 2</SelectItem>
-                        <SelectItem value="custom">Acordar Entrega</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Estado de Etiqueta</Label>
-                    <Select
-                      value={filters.label_status}
-                      onValueChange={(v) => setFilters({ ...filters, label_status: v })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todas</SelectItem>
-                        <SelectItem value="ready">Con Etiqueta</SelectItem>
-                        <SelectItem value="pending">Etiqueta Pendiente</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Tracking</Label>
-                    <Select
-                      value={filters.has_tracking}
-                      onValueChange={(v) => setFilters({ ...filters, has_tracking: v })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todos</SelectItem>
-                        <SelectItem value="yes">Con Tracking</SelectItem>
-                        <SelectItem value="no">Sin Tracking</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Fecha Desde</Label>
-                    <div className="relative">
-                      <Calendar className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        type="date"
-                        value={filters.date_from}
-                        onChange={(e) => setFilters({ ...filters, date_from: e.target.value })}
-                        className="pl-10"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Fecha Hasta</Label>
-                    <div className="relative">
-                      <Calendar className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        type="date"
-                        value={filters.date_to}
-                        onChange={(e) => setFilters({ ...filters, date_to: e.target.value })}
-                        className="pl-10"
-                      />
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-4 flex justify-end">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setFilters({
-                        status: "all",
-                        shipping_mode: "all",
-                        date_from: "",
-                        date_to: "",
-                        label_status: "all",
-                        has_tracking: "all",
-                      })
-                      setCurrentPage(1)
-                    }}
+                <div className="space-y-2">
+                  <Label>Modo de Envío</Label>
+                  <Select
+                    value={filters.shipping_mode}
+                    onValueChange={(v) => setFilters({ ...filters, shipping_mode: v })}
                   >
-                    Limpiar Filtros
-                  </Button>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos</SelectItem>
+                      <SelectItem value="me1">Mercado Envíos 1</SelectItem>
+                      <SelectItem value="me2">Mercado Envíos 2</SelectItem>
+                      <SelectItem value="custom">Acordar Entrega</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-              </CardContent>
-            )}
-          </Card>
 
-          {/* Shipments Table */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Lista de Envíos</CardTitle>
-                  <CardDescription>
-                    {loading
-                      ? "Cargando..."
-                      : `Mostrando ${sortedShipments.length} envíos (Página ${currentPage} de ${totalPages})`}
-                  </CardDescription>
+                <div className="space-y-2">
+                  <Label>Estado de Etiqueta</Label>
+                  <Select
+                    value={filters.label_status}
+                    onValueChange={(v) => setFilters({ ...filters, label_status: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todas</SelectItem>
+                      <SelectItem value="ready">Con Etiqueta</SelectItem>
+                      <SelectItem value="pending">Etiqueta Pendiente</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-                <SortSelector
-                  options={sortOptions}
-                  value={sortConfig.key}
-                  direction={sortConfig.direction}
-                  onSortChange={handleSortChange}
-                />
-              </div>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="flex h-[400px] items-center justify-center text-sm text-muted-foreground">
-                  Cargando envíos...
-                </div>
-              ) : sortedShipments.length === 0 ? (
-                <div className="flex h-[400px] flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
-                  <Truck className="h-12 w-12 opacity-20" />
-                  <p>No hay envíos disponibles.</p>
-                  <p className="text-xs">Los envíos aparecerán aquí cuando realices ventas.</p>
-                </div>
-              ) : (
-                <>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-12">
-                          <Checkbox
-                            checked={allPrintableSelected}
-                            onCheckedChange={toggleAllShipments}
-                            disabled={printableShipments.length === 0}
-                          />
-                        </TableHead>
-                        <TableHead>ID Envío</TableHead>
-                        <TableHead>Orden</TableHead>
-                        <TableHead>Destinatario</TableHead>
-                        <TableHead>Tracking</TableHead>
-                        <TableHead>Estado</TableHead>
-                        <TableHead>Modo</TableHead>
-                        <TableHead>Fecha</TableHead>
-                        <TableHead className="text-right">Acciones</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {sortedShipments.map((shipment) => {
-                        const canPrint = shipment.status !== "pending" && shipment.status !== "cancelled"
-                        const hasLabel = shipment.has_label || false
-                        const receiverName =
-                          shipment.receiver_address?.receiver_name || shipment.buyer?.nickname || "Sin información"
-                        const cityName = shipment.receiver_address?.city?.name || ""
-                        const stateName = shipment.receiver_address?.state?.name || ""
-                        const dateCreated = shipment.date_created || shipment.last_updated
-                        const isValidDate = dateCreated && !isNaN(new Date(dateCreated).getTime())
-                        const labelPending =
-                          !hasLabel && shipment.status !== "cancelled" && shipment.status !== "pending"
 
-                        return (
-                          <TableRow key={shipment.id}>
-                            <TableCell>
-                              <Checkbox
-                                checked={selectedShipments.has(shipment.id)}
-                                onCheckedChange={() => toggleShipmentSelection(shipment.id)}
-                                disabled={!canPrint}
-                              />
-                            </TableCell>
-                            <TableCell className="font-medium">#{shipment.id}</TableCell>
-                            <TableCell>
-                              <Badge variant="outline">#{shipment.order_id}</Badge>
-                            </TableCell>
-                            <TableCell>
-                              <div>
-                                <div className="font-medium">{receiverName}</div>
-                                {(cityName || stateName) && (
-                                  <div className="text-sm text-muted-foreground">
-                                    {cityName}
-                                    {stateName && `, ${stateName}`}
-                                  </div>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              {shipment.tracking_number ? (
-                                <span className="font-mono text-sm">{shipment.tracking_number}</span>
-                              ) : (
-                                <span className="text-sm text-muted-foreground">Sin tracking</span>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex flex-col gap-1">
-                                {getStatusBadge(shipment.status, shipment.substatus)}
-                                {labelPending && (
-                                  <Badge variant="outline" className="text-xs text-orange-600 border-orange-600">
-                                    Etiqueta Pendiente
-                                  </Badge>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>{getShippingModeBadge(shipment.shipping_mode)}</TableCell>
-                            <TableCell>
-                              <div className="text-sm">
-                                {isValidDate ? new Date(dateCreated).toLocaleDateString() : "N/A"}
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                {isValidDate ? new Date(dateCreated).toLocaleTimeString() : ""}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2">
-                                <Button variant="ghost" size="icon" onClick={() => viewShipmentDetails(shipment)}>
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant={labelPending ? "outline" : "ghost"}
-                                  size="icon"
-                                  onClick={() => printLabel(shipment.id)}
-                                  disabled={!canPrint || printingLabels || labelPending}
-                                  className={labelPending ? "opacity-50 cursor-not-allowed" : ""}
-                                  title={labelPending ? "Etiqueta no disponible aún" : "Imprimir etiqueta"}
-                                >
-                                  <Printer className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )
-                      })}
-                    </TableBody>
-                  </Table>
+                <div className="space-y-2">
+                  <Label>Tracking</Label>
+                  <Select
+                    value={filters.has_tracking}
+                    onValueChange={(v) => setFilters({ ...filters, has_tracking: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos</SelectItem>
+                      <SelectItem value="yes">Con Tracking</SelectItem>
+                      <SelectItem value="no">Sin Tracking</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-                  {totalPages > 1 && (
-                    <AdvancedPagination
-                      currentPage={currentPage}
-                      totalPages={totalPages}
-                      onPageChange={setCurrentPage}
-                      disabled={loading}
-                      itemsPerPage={paging.limit}
-                      totalItems={paging.total}
-                      offset={paging.offset}
+                <div className="space-y-2">
+                  <Label>Fecha Desde</Label>
+                  <div className="relative">
+                    <Calendar className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="date"
+                      value={filters.date_from}
+                      onChange={(e) => setFilters({ ...filters, date_from: e.target.value })}
+                      className="pl-10"
                     />
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </main>
-      </div>
-
-      {/* Shipment Details Dialog */}
-      <Dialog open={showShipmentDetails} onOpenChange={setShowShipmentDetails}>
-        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Detalles del Envío #{selectedShipment?.id}</DialogTitle>
-            <DialogDescription>Información completa del envío y seguimiento</DialogDescription>
-          </DialogHeader>
-
-          {selectedShipment && (
-            <div className="space-y-6">
-              <ShipmentTrackingTimeline shipmentId={selectedShipment.id} initialStatus={selectedShipment.status} />
-
-              <Separator />
-
-              {/* Shipping Status */}
-              <div>
-                <h3 className="font-semibold mb-3">Estado del Envío</h3>
-                <div className="grid gap-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Estado:</span>
-                    {getStatusBadge(selectedShipment.status, selectedShipment.substatus)}
                   </div>
-                  {selectedShipment.shipping_mode && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Modo:</span>
-                      {getShippingModeBadge(selectedShipment.shipping_mode)}
-                    </div>
-                  )}
-                  {selectedShipment.tracking_number && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Tracking:</span>
-                      <span className="font-mono font-medium">{selectedShipment.tracking_number}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Método:</span>
-                    <span className="font-medium">{selectedShipment.shipping_option?.name || "N/A"}</span>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Fecha Hasta</Label>
+                  <div className="relative">
+                    <Calendar className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="date"
+                      value={filters.date_to}
+                      onChange={(e) => setFilters({ ...filters, date_to: e.target.value })}
+                      className="pl-10"
+                    />
                   </div>
                 </div>
               </div>
-
-              <Separator />
-
-              {/* Addresses */}
-              <div className="grid gap-6 md:grid-cols-2">
-                <div>
-                  <h3 className="font-semibold mb-3 flex items-center gap-2">
-                    <MapPin className="h-4 w-4" />
-                    Dirección de Origen
-                  </h3>
-                  {selectedShipment.sender_address ? (
-                    <div className="text-sm space-y-1">
-                      <p>{selectedShipment.sender_address.address_line}</p>
-                      <p>
-                        {selectedShipment.sender_address.city.name}, {selectedShipment.sender_address.state.name}
-                      </p>
-                      <p>CP: {selectedShipment.sender_address.zip_code}</p>
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No disponible</p>
-                  )}
-                </div>
-
-                <div>
-                  <h3 className="font-semibold mb-3 flex items-center gap-2">
-                    <MapPin className="h-4 w-4" />
-                    Dirección de Destino
-                  </h3>
-                  {selectedShipment.receiver_address ? (
-                    <div className="text-sm space-y-1">
-                      <p className="font-medium">{selectedShipment.receiver_address.receiver_name}</p>
-                      <p>{selectedShipment.receiver_address.address_line}</p>
-                      <p>
-                        {selectedShipment.receiver_address.city.name}, {selectedShipment.receiver_address.state.name}
-                      </p>
-                      <p>CP: {selectedShipment.receiver_address.zip_code}</p>
-                      {selectedShipment.receiver_address.receiver_phone && (
-                        <p>Tel: {selectedShipment.receiver_address.receiver_phone}</p>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No disponible</p>
-                  )}
-                </div>
-              </div>
-
-              <Separator />
-
-              {/* Shipping Items */}
-              {selectedShipment.items && selectedShipment.items.length > 0 && (
-                <>
-                  <div>
-                    <h3 className="font-semibold mb-3">Items del Envío</h3>
-                    <div className="space-y-2">
-                      {selectedShipment.items.map((item, index) => (
-                        <div key={index} className="flex items-center justify-between rounded-lg border p-3">
-                          <div>
-                            <p className="font-medium">{item.item.title}</p>
-                            <p className="text-sm text-muted-foreground">ID: {item.item.id}</p>
-                          </div>
-                          <Badge variant="outline">Cantidad: {item.quantity}</Badge>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <Separator />
-                </>
-              )}
-
-              {/* Timeline */}
-              <div>
-                <h3 className="font-semibold mb-3">Historial</h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Creado:</span>
-                    <span className="font-medium">{new Date(selectedShipment.date_created).toLocaleString()}</span>
-                  </div>
-                  {selectedShipment.status_history.date_shipped && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Enviado:</span>
-                      <span className="font-medium">
-                        {new Date(selectedShipment.status_history.date_shipped).toLocaleString()}
-                      </span>
-                    </div>
-                  )}
-                  {selectedShipment.status_history.date_delivered && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Entregado:</span>
-                      <span className="font-medium">
-                        {new Date(selectedShipment.status_history.date_delivered).toLocaleString()}
-                      </span>
-                    </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Última Actualización:</span>
-                    <span className="font-medium">{new Date(selectedShipment.last_updated).toLocaleString()}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 border-t pt-4">
-                <Button variant="outline" onClick={() => setShowShipmentDetails(false)}>
-                  Cerrar
-                </Button>
+              <div className="mt-4 flex justify-end">
                 <Button
-                  onClick={() => printLabel(selectedShipment.id)}
-                  disabled={
-                    selectedShipment.status === "pending" || selectedShipment.status === "cancelled" || printingLabels
-                  }
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setFilters({
+                      status: "all",
+                      shipping_mode: "all",
+                      date_from: "",
+                      date_to: "",
+                      label_status: "all",
+                      has_tracking: "all",
+                    })
+                    setCurrentPage(1)
+                  }}
                 >
-                  <Printer className="mr-2 h-4 w-4" />
-                  Imprimir Etiqueta
+                  Limpiar Filtros
                 </Button>
               </div>
-            </div>
+            </CardContent>
           )}
-        </DialogContent>
-      </Dialog>
+        </Card>
+
+        {/* Shipments Table */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Lista de Envíos</CardTitle>
+                <CardDescription>
+                  {loading
+                    ? "Cargando..."
+                    : `Mostrando ${sortedShipments.length} envíos (Página ${currentPage} de ${totalPages})`}
+                </CardDescription>
+              </div>
+              <SortSelector
+                options={sortOptions}
+                value={sortConfig.key}
+                direction={sortConfig.direction}
+                onSortChange={handleSortChange}
+              />
+            </div>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="flex h-[400px] items-center justify-center text-sm text-muted-foreground">
+                Cargando envíos...
+              </div>
+            ) : sortedShipments.length === 0 ? (
+              <div className="flex h-[400px] flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+                <Truck className="h-12 w-12 opacity-20" />
+                <p>No hay envíos disponibles.</p>
+                <p className="text-xs">Los envíos aparecerán aquí cuando realices ventas.</p>
+              </div>
+            ) : (
+              <>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">
+                        <Checkbox
+                          checked={allPrintableSelected}
+                          onCheckedChange={toggleAllShipments}
+                          disabled={printableShipments.length === 0}
+                        />
+                      </TableHead>
+                      <TableHead>ID Envío</TableHead>
+                      <TableHead>Orden</TableHead>
+                      <TableHead>Destinatario</TableHead>
+                      <TableHead>Tracking</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead>Modo</TableHead>
+                      <TableHead>Fecha</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sortedShipments.map((shipment) => {
+                      const canPrint = shipment.status !== "pending" && shipment.status !== "cancelled"
+                      const hasLabel = shipment.has_label || false
+                      const receiverName =
+                        shipment.receiver_address?.receiver_name || shipment.buyer?.nickname || "Sin información"
+                      const cityName = shipment.receiver_address?.city?.name || ""
+                      const stateName = shipment.receiver_address?.state?.name || ""
+                      const dateCreated = shipment.date_created || shipment.last_updated
+                      const isValidDate = dateCreated && !isNaN(new Date(dateCreated).getTime())
+                      const labelPending =
+                        !hasLabel && shipment.status !== "cancelled" && shipment.status !== "pending"
+
+                      return (
+                        <TableRow key={shipment.id}>
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedShipments.has(shipment.id)}
+                              onCheckedChange={() => toggleShipmentSelection(shipment.id)}
+                              disabled={!canPrint}
+                            />
+                          </TableCell>
+                          <TableCell className="font-medium">#{shipment.id}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">#{shipment.order_id}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="font-medium">{receiverName}</div>
+                              {(cityName || stateName) && (
+                                <div className="text-sm text-muted-foreground">
+                                  {cityName}
+                                  {stateName && `, ${stateName}`}
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {shipment.tracking_number ? (
+                              <span className="font-mono text-sm">{shipment.tracking_number}</span>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">Sin tracking</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col gap-1">
+                              {getStatusBadge(shipment.status, shipment.substatus)}
+                              {labelPending && (
+                                <Badge variant="outline" className="text-xs text-orange-600 border-orange-600">
+                                  Etiqueta Pendiente
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>{getShippingModeBadge(shipment.shipping_mode)}</TableCell>
+                          <TableCell>
+                            <div className="text-sm">
+                              {isValidDate ? new Date(dateCreated).toLocaleDateString() : "N/A"}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {isValidDate ? new Date(dateCreated).toLocaleTimeString() : ""}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button variant="ghost" size="icon" onClick={() => viewShipmentDetails(shipment)}>
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant={labelPending ? "outline" : "ghost"}
+                                size="icon"
+                                onClick={() => printLabel(shipment.id)}
+                                disabled={!canPrint || printingLabels || labelPending}
+                                className={labelPending ? "opacity-50 cursor-not-allowed" : ""}
+                                title={labelPending ? "Etiqueta no disponible aún" : "Imprimir etiqueta"}
+                              >
+                                <Printer className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+
+                {totalPages > 1 && (
+                  <AdvancedPagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    onPageChange={setCurrentPage}
+                    disabled={loading}
+                    itemsPerPage={paging.limit}
+                    totalItems={paging.total}
+                    offset={paging.offset}
+                  />
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </main>
     </div>
   )
 }

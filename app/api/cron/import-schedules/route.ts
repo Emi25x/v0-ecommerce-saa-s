@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { executeFullImport } from "@/lib/import/batch-import"
+// TODO: Implementar sync ML como función directa en lugar de fetch
+// import { syncStockWithML } from "@/lib/ml/sync-stock"
 
 // Este endpoint debe ser llamado por un cron job (ej: Vercel Cron)
 // Configurar en vercel.json:
@@ -51,19 +54,12 @@ export async function GET(request: Request) {
 
     for (const schedule of schedules) {
       try {
-        console.log(`[v0] Ejecutando importación para fuente: ${schedule.import_sources.name}`)
+        const source = schedule.import_sources
+        console.log(`[v0] Ejecutando importación para fuente: ${source.name} (feed_type: ${source.feed_type})`)
 
-        // Ejecutar la importación
-        const importResponse = await fetch(
-          `${process.env.NEXT_PUBLIC_VERCEL_URL ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` : "http://localhost:3000"}/api/inventory/import/csv`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sourceId: schedule.source_id }),
-          },
-        )
-
-        const importResult = await importResponse.json()
+        // Ejecutar importación directamente (sin fetch interno)
+        console.log(`[v0] Ejecutando importación directa para ${source.name}`)
+        const importResult = await executeFullImport(schedule.source_id, source.feed_type)
 
         // Calcular próxima ejecución
         const nextRunAt = calculateNextRun(schedule)
@@ -79,9 +75,16 @@ export async function GET(request: Request) {
 
         results.push({
           source: schedule.import_sources.name,
-          success: importResponse.ok,
+          success: importResult.success,
           result: importResult,
         })
+        
+        // TODO: Si es una importación de stock/precio, sincronizar con ML
+        // Esto se implementará como función directa cuando el cron funcione en producción
+        if (source.feed_type === "stock_price" && (importResult.success || importResult.updated > 0)) {
+          console.log(`[v0] Importación de stock completada. Sync con ML pendiente de implementar como función directa.`)
+          // La sincronización con ML se puede hacer manualmente desde la UI por ahora
+        }
       } catch (error: any) {
         console.error(`[v0] Error ejecutando importación para schedule ${schedule.id}:`, error)
         results.push({
