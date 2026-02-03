@@ -41,22 +41,34 @@ export async function POST(request: Request) {
       }
     }
 
-    // Obtener todos los productos de nuestra DB para relacionar por EAN
-    const { data: products } = await supabase
-      .from("products")
-      .select("id, ean, sku, title")
-      .not("ean", "is", null)
-
+    // Obtener TODOS los productos de nuestra DB para relacionar por EAN (paginado)
     const eanToProductId = new Map<string, string>()
-    for (const product of products || []) {
-      if (product.ean) eanToProductId.set(product.ean, product.id)
-      if (product.sku) eanToProductId.set(product.sku, product.id)
+    let productOffset = 0
+    const productLimit = 10000
+    let hasMoreProducts = true
+    
+    while (hasMoreProducts) {
+      const { data: products, error: productsError } = await supabase
+        .from("products")
+        .select("id, ean, sku")
+        .not("ean", "is", null)
+        .range(productOffset, productOffset + productLimit - 1)
+      
+      if (productsError || !products || products.length === 0) {
+        hasMoreProducts = false
+        break
+      }
+      
+      for (const product of products) {
+        if (product.ean) eanToProductId.set(product.ean, product.id)
+        if (product.sku) eanToProductId.set(product.sku, product.id)
+      }
+      
+      hasMoreProducts = products.length === productLimit
+      productOffset += productLimit
     }
     
     console.log(`[v0] Productos en DB con EAN: ${eanToProductId.size}`)
-    // Mostrar algunos EANs de ejemplo
-    const sampleEans = Array.from(eanToProductId.keys()).slice(0, 3)
-    console.log(`[v0] Ejemplo de EANs en DB: ${sampleEans.join(", ")}`)
 
     // Obtener todas las publicaciones de ML (paginado con scroll_id para > 1000 items)
     const mlUserId = account.ml_user_id
