@@ -81,7 +81,8 @@ export async function POST(request: NextRequest) {
       account_id,      // ID de la cuenta ML
       override_price,  // Precio manual (opcional)
       preview_only = true, // Solo generar preview, no publicar
-      publish_mode = "linked" // "linked", "catalog" o "traditional"
+      publish_mode = "linked", // "linked", "catalog" o "traditional"
+      force_republish = false // Si es true, no verifica si ya está publicado
     } = body
 
     if (!product_id || !template_id || !account_id) {
@@ -237,18 +238,18 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Si ya está publicado y NO es preview, rechazar
-    if (alreadyPublishedInfo.exists && !preview_only) {
-      return NextResponse.json({
-        success: false,
-        skipped: true,
-        reason: alreadyPublishedInfo.source === "mercadolibre" ? "already_published" : "already_in_db",
-        existing_item_id: alreadyPublishedInfo.item_id,
-        message: `El EAN ${product.ean} ya está publicado (${alreadyPublishedInfo.item_id})`,
-        product_title: product.title,
-        product_ean: product.ean
-      })
-    }
+// Si ya está publicado y NO es preview, rechazar (excepto si es force_republish)
+  if (alreadyPublishedInfo.exists && !preview_only && !force_republish) {
+  return NextResponse.json({
+  success: false,
+  skipped: true,
+  reason: alreadyPublishedInfo.source === "mercadolibre" ? "already_published" : "already_in_db",
+  existing_item_id: alreadyPublishedInfo.item_id,
+  message: `El EAN ${product.ean} ya está publicado (${alreadyPublishedInfo.item_id})`,
+  product_title: product.title,
+  product_ean: product.ean
+  })
+  }
 
     // Calcular el precio
     let finalPrice = override_price

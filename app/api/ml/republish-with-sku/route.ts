@@ -55,7 +55,6 @@ export async function POST(request: Request) {
           title,
           stock,
           price,
-          cost,
           author,
           publisher,
           image_url
@@ -141,50 +140,65 @@ export async function POST(request: Request) {
         // 3. Esperar un poco antes de republicar
         await new Promise(resolve => setTimeout(resolve, 500))
 
-        // 4. Crear nueva publicación con seller_sku
-        const newItemData: any = {
-          site_id: "MLA",
-          title: currentItem.title,
-          category_id: currentItem.category_id,
-          price: currentItem.price,
-          currency_id: currentItem.currency_id || "ARS",
-          available_quantity: product.stock || 1,
-          buying_mode: "buy_it_now",
-          condition: currentItem.condition || "new",
-          listing_type_id: currentItem.listing_type_id || "gold_special",
-          seller_sku: product.ean, // EAN como SKU
-          pictures: currentItem.pictures?.map((p: any) => ({ source: p.url || p.secure_url })) || [],
-          shipping: {
-            mode: "me2",
-            local_pick_up: true,
-            free_shipping: false,
-          },
-          attributes: currentItem.attributes || []
+        // 4. Llamar al endpoint de publish existente para crear la publicación
+        // Esto asegura que se use exactamente la misma lógica y formato
+        const baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL || ""
+        
+        // Obtener el template por defecto de la cuenta
+        const { data: defaultTemplate } = await supabase
+          .from("ml_publication_templates")
+          .select("id")
+          .eq("account_id", account_id)
+          .eq("is_default", true)
+          .single()
+        
+        const templateId = defaultTemplate?.id
+        
+        if (!templateId) {
+          results.push({ 
+            ml_item_id: pub.ml_item_id, 
+            status: "error", 
+            error: "No hay template por defecto configurado" 
+          })
+          errors++
+          // Reabrir la publicación cerrada
+          await fetch(
+            `https://api.mercadolibre.com/items/${pub.ml_item_id}`,
+            {
+              method: "PUT",
+              headers: {
+                "Authorization": `Bearer ${accessToken}`,
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({ status: "active" })
+            }
+          )
+          continue
         }
 
-        // Si es publicación de catálogo
-        if (currentItem.catalog_product_id) {
-          newItemData.catalog_product_id = currentItem.catalog_product_id
-          newItemData.catalog_listing = true
-          delete newItemData.title
-          delete newItemData.category_id
-          delete newItemData.attributes
-        }
-
-        const createResponse = await fetch(
-          "https://api.mercadolibre.com/items",
+        // Determinar el modo de publicación basado en si tiene catalog_product_id
+        const publishMode = currentItem.catalog_product_id ? "catalog" : "traditional"
+        
+        const publishResponse = await fetch(
+          `${baseUrl}/api/ml/publish`,
           {
             method: "POST",
-            headers: {
-              "Authorization": `Bearer ${accessToken}`,
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify(newItemData)
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              product_id: product.id,
+              template_id: templateId,
+              account_id: account_id,
+              preview_only: false,
+              publish_mode: publishMode,
+              force_republish: true // Evita verificación de duplicados
+            })
           }
         )
 
-        if (createResponse.ok) {
-          const newItem = await createResponse.json()
+        const publishResult = await publishResponse.json()
+        
+        if (publishResponse.ok && publishResult.success) {
+          const newItem = publishResult.data
           console.log(`[v0] Nueva publicación creada: ${newItem.id} con seller_sku: ${product.ean}`)
 
           // Actualizar registro en ml_publications
@@ -204,7 +218,7 @@ export async function POST(request: Request) {
             new_item_id: newItem.id 
           })
         } else {
-          const createError = await createResponse.json()
+          const createError = publishResult.error
           console.error(`[v0] Error al crear nueva publicación:`, createError)
           
           // Reabrir la publicación cerrada si falla la creación
@@ -230,7 +244,6 @@ export async function POST(request: Request) {
 
         // Delay entre publicaciones para no saturar la API
         await new Promise(resolve => setTimeout(resolve, 1000))
-
       } catch (err) {
         console.error(`[v0] Error procesando ${pub.ml_item_id}:`, err)
         results.push({ 
@@ -250,7 +263,6 @@ export async function POST(request: Request) {
       message: `Republicadas: ${republished}, Errores: ${errors}`,
       results
     })
-
   } catch (error) {
     console.error("Error en republish-with-sku:", error)
     return NextResponse.json({ 
