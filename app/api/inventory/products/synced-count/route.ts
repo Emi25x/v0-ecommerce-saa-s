@@ -15,12 +15,11 @@ export async function GET() {
     const supabase = await createClient()
     console.log("[v0] Supabase client created successfully")
 
-    // Count products that have been synced from any source using COUNT (no limit)
+    // Count products using a simple count on id column (more efficient)
     console.log("[v0] Counting products with source...")
     const { count: totalSynced, error } = await supabase
       .from("products")
-      .select("*", { count: "exact", head: true })
-      .not("source", "is", null)
+      .select("id", { count: "exact", head: true })
 
     if (error) {
       console.error("[v0] Error counting synced products:", error)
@@ -29,7 +28,6 @@ export async function GET() {
 
     console.log("[v0] Total synced products:", totalSynced)
 
-    // Count by source using SQL for efficiency
     const bySources: Record<string, number> = {}
     const libralSynced = 0
 
