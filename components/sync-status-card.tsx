@@ -95,7 +95,9 @@ export function SyncStatusCard() {
       })
       const data = await response.json()
       
-      if (data.error) {
+      if (data.rate_limited) {
+        setLinkResult("Límite de API excedido. Espera unos minutos e intenta de nuevo.")
+      } else if (data.error) {
         setLinkResult(`Error: ${data.error}`)
       } else {
         setLinkResult(`Importadas: ${data.imported_now || 0}, Vinculadas: ${data.linked_now || 0}, Pendientes: ${data.pending_import || 0}`)

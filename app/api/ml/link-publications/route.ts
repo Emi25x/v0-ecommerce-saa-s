@@ -42,10 +42,24 @@ export async function POST(request: Request) {
     )
 
     if (!searchResponse.ok) {
+      if (searchResponse.status === 429) {
+        return NextResponse.json({ 
+          error: "Límite de API de MercadoLibre excedido. Intenta en unos minutos.",
+          rate_limited: true 
+        }, { status: 429 })
+      }
       return NextResponse.json({ error: "Error fetching ML items" }, { status: 500 })
     }
 
-    const searchData = await searchResponse.json()
+    let searchData
+    try {
+      searchData = await searchResponse.json()
+    } catch (e) {
+      return NextResponse.json({ 
+        error: "Error parsing ML response. Posible rate limit.",
+        rate_limited: true 
+      }, { status: 429 })
+    }
     const totalInML = searchData.paging?.total || 0
     const allItemIds = searchData.results || []
 
