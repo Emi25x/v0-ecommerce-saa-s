@@ -71,55 +71,22 @@ export default function DashboardPage() {
       }
     }
     fetchAccounts()
-    const interval = setInterval(fetchAccounts, 30000)
-    return () => clearInterval(interval)
+    // Desactivar el interval para evitar rate limit
+    // const interval = setInterval(fetchAccounts, 30000)
+    // return () => clearInterval(interval)
   }, [])
 
   useEffect(() => {
     const fetchProducts = async () => {
-      try {
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 segundos timeout
-
-        const res = await fetch("/api/ml/items?limit=1", {
-          signal: controller.signal,
-        })
-
-        clearTimeout(timeoutId)
-
-        if (!res.ok) {
-          console.error("[v0] Failed to fetch products - HTTP", res.status)
-          setProductsData({ products: [], paging: { total: 0, limit: 1, offset: 0 } })
-          return
-        }
-
-        const contentType = res.headers.get("content-type")
-        if (!contentType || !contentType.includes("application/json")) {
-          console.error("[v0] Response is not JSON:", contentType)
-          setProductsData({ products: [], paging: { total: 0, limit: 1, offset: 0 } })
-          return
-        }
-
-        const data = await res.json()
-        setProductsData(data)
-      } catch (error) {
-        if (error instanceof Error) {
-          if (error.name === "AbortError") {
-            console.error("[v0] Fetch products timeout after 10 seconds")
-          } else {
-            console.error("[v0] Failed to fetch products:", error.message)
-          }
-        } else {
-          console.error("[v0] Failed to fetch products:", error)
-        }
-        setProductsData({ products: [], paging: { total: 0, limit: 1, offset: 0 } })
-      } finally {
-        setProductsLoading(false)
-      }
+      // DESACTIVADO: No hacer llamadas a ML cada 30s - consume cuota
+      // Los datos se sincronizan automáticamente con el cron a las 9:00 AM
+      console.log("[v0] ML items fetch desactivado (se sincroniza con cron)")
+      setProductsData({ products: [], paging: { total: 0, limit: 1, offset: 0 } })
+      setProductsLoading(false)
     }
     fetchProducts()
-    const interval = setInterval(fetchProducts, 30000)
-    return () => clearInterval(interval)
+    // const interval = setInterval(fetchProducts, 30000)
+    // return () => clearInterval(interval)
   }, [])
 
   useEffect(() => {
@@ -217,12 +184,16 @@ export default function DashboardPage() {
         localStorage.setItem("lastSync", syncTime)
         setSyncMessage(`Sincronización completada: ${data.synced || 0} productos`)
 
-        const [accountsRes, productsRes] = await Promise.all([
-          fetch("/api/mercadolibre/accounts"),
-          fetch("/api/ml/items?limit=1"),
-        ])
-        setAccountsData(await accountsRes.json())
-        setProductsData(await productsRes.json())
+        // Solo refrescar accounts (mercadolibre/accounts no hace llamadas a ML)
+        try {
+          const accountsRes = await fetch("/api/mercadolibre/accounts")
+          if (accountsRes.ok) {
+            const accountsData = await accountsRes.json()
+            setAccountsData(accountsData)
+          }
+        } catch (e) {
+          console.error("[v0] Error refreshing accounts:", e)
+        }
 
         setTimeout(() => setSyncMessage(""), 5000)
       } else {
