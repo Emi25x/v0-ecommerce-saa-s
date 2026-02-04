@@ -80,11 +80,11 @@ export async function POST(request: Request) {
       total_ml_publications: totalInML 
     }).eq("id", account_id)
 
-    let updated = 0
     let linked = 0
     let noEan = 0
     let noProductMatch = 0
     let errors = 0
+    let updated = 0 // Declare the updated variable
 
     // PASO 2: Obtener detalles en batches de 20 (límite de ML)
     for (let i = 0; i < itemIds.length; i += 20) {
@@ -154,64 +154,41 @@ export async function POST(request: Request) {
 
         if (!product) {
           noProductMatch++
+          // Guardar publicación sin vincular
+          await supabase.from("ml_publications").upsert({
+            account_id: account.id,
+            ml_item_id: item.id,
+            title: item.title,
+            status: item.status,
+            price: item.price,
+            current_stock: item.available_quantity,
+            permalink: item.permalink,
+            updated_at: new Date().toISOString()
+          }, { onConflict: "ml_item_id" })
           continue
         }
 
-        // PASO 4: Si hay match y el stock difiere, actualizar en ML
-        const newStock = product.stock || 0
-        if (item.available_quantity !== newStock) {
-          const updateResponse = await fetch(
-            `https://api.mercadolibre.com/items/${item.id}`,
-            {
-              method: "PUT",
-              headers: {
-                Authorization: `Bearer ${accessToken}`,
-                "Content-Type": "application/json"
-              },
-              body: JSON.stringify({ available_quantity: newStock })
-            }
-          )
-
-          if (updateResponse.status === 429) {
-            return NextResponse.json({
-              success: true,
-              rate_limited: true,
-              message: "Rate limit en actualización.",
-              processed: i + items.indexOf(itemWrapper),
-              updated,
-              linked,
-              no_ean: noEan,
-              no_product_match: noProductMatch,
-              errors,
-              total_in_ml: totalInML
-            })
-          }
-
-          if (updateResponse.ok) {
-            updated++
-          } else {
-            errors++
-          }
-        }
-
-        // PASO 5: Guardar/actualizar en ml_publications con vinculación
+        // PASO 4: Guardar/actualizar en ml_publications con vinculación
         const { data: existingPub } = await supabase
           .from("ml_publications")
           .select("id, product_id")
           .eq("ml_item_id", item.id)
           .maybeSingle()
 
+        const updateData = {
+          current_stock: item.available_quantity,
+          updated_at: new Date().toISOString()
+        }
+
         if (existingPub) {
-          const updateData: Record<string, unknown> = {
-            current_stock: newStock,
-            updated_at: new Date().toISOString()
-          }
           if (!existingPub.product_id) {
+            // Vincular por primera vez
             updateData.product_id = product.id
             linked++
           }
           await supabase.from("ml_publications").update(updateData).eq("id", existingPub.id)
         } else {
+          // Crear nueva entrada vinculada
           await supabase.from("ml_publications").insert({
             account_id: account.id,
             ml_item_id: item.id,
@@ -219,11 +196,13 @@ export async function POST(request: Request) {
             title: item.title,
             status: item.status,
             price: item.price,
-            current_stock: newStock,
+            current_stock: item.available_quantity,
             permalink: item.permalink
           })
           linked++
         }
+
+        updated++ // Increment the updated variable
       }
 
       // Delay entre batches
@@ -232,24 +211,22 @@ export async function POST(request: Request) {
 
     // Actualizar estadísticas de la cuenta
     await supabase.from("ml_accounts").update({
-      last_stock_sync_at: new Date().toISOString(),
-      stock_sync_count: (account.stock_sync_count || 0) + updated
+      last_stock_sync_at: new Date().toISOString()
     }).eq("id", account_id)
 
     const result = {
       success: true,
       processed: itemIds.length,
-      updated,
       linked,
       no_ean: noEan,
       no_product_match: noProductMatch,
       errors,
       total_in_ml: totalInML,
-      has_more: offset + limit < totalInML
+      has_more: offset + limit < totalInML,
+      next_offset: offset + limit
     }
     console.log("[v0] Sync-stock RESULTADO:", JSON.stringify(result))
     return NextResponse.json(result)
-
   } catch (error) {
     console.error("Error en sync-stock:", error)
     return NextResponse.json({ error: error instanceof Error ? error.message : "Error interno" }, { status: 500 })

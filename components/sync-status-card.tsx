@@ -83,7 +83,7 @@ export function SyncStatusCard() {
       } else if (data.error) {
         setSyncResult(`Error: ${data.error}`)
       } else {
-        setSyncResult(`Procesados: ${data.processed}, Actualizados: ${data.updated}, Vinculados: ${data.linked}, Sin EAN: ${data.no_ean || 0}`)
+        setSyncResult(`Procesados: ${data.processed}, Vinculados: ${data.linked}, Sin EAN: ${data.no_ean || 0}, Sin producto: ${data.no_product_match || 0}${data.has_more ? " - Hay más" : ""}`)
       }
       
       // Refrescar datos
