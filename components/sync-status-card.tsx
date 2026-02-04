@@ -181,22 +181,20 @@ export function SyncStatusCard() {
               <div className="flex items-center justify-between">
                 <span className="font-medium">{account.nickname}</span>
                 <div className="flex gap-2">
-                  {accountStats[account.id]?.unlinked_publications > 0 && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleLinkPublications(account.id)}
-                      disabled={linking === account.id}
-                      className="bg-transparent"
-                    >
-                      {linking === account.id ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <Package className="h-3 w-3" />
-                      )}
-                      <span className="ml-1">Vincular</span>
-                    </Button>
-                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleLinkPublications(account.id)}
+                    disabled={linking === account.id}
+                    className="bg-transparent"
+                  >
+                    {linking === account.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Package className="h-3 w-3" />
+                    )}
+                    <span className="ml-1">Vincular</span>
+                  </Button>
                   <Button
                     size="sm"
                     variant="outline"
