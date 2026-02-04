@@ -86,11 +86,9 @@ export function SyncStatusCard() {
         setSyncResult(`Procesados: ${data.processed}, Vinculados: ${data.linked}, Sin EAN: ${data.no_ean || 0}, Sin producto: ${data.no_product_match || 0}${data.has_more ? " - Hay más" : ""}`)
       }
       
-      // Refrescar datos
-      await fetchAccounts()
-      fetchAccountStats(accountId)
-      
-      setTimeout(() => setSyncResult(null), 10000)
+      // NO refrescar automáticamente para evitar rate limit
+      // Solo mostrar el resultado
+      setTimeout(() => setSyncResult(null), 8000)
     } catch (error) {
       console.error("Error syncing stock:", error)
       setSyncResult("Error al sincronizar")
