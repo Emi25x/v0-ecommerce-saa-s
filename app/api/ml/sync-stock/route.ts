@@ -5,9 +5,12 @@ export const maxDuration = 300
 
 // Sincroniza stock: extrae publicaciones de ML con su SKU, busca match en DB, actualiza stock
 export async function POST(request: Request) {
+  console.log("[v0] ========== SYNC-STOCK POST ==========")
   try {
     const supabase = await createClient()
-    const { account_id, limit = 50, offset = 0 } = await request.json()
+    const body = await request.json()
+    console.log("[v0] Request body:", JSON.stringify(body))
+    const { account_id, limit = 50, offset = 0 } = body
 
     if (!account_id) {
       return NextResponse.json({ error: "account_id requerido" }, { status: 400 })
@@ -62,6 +65,7 @@ export async function POST(request: Request) {
     const searchData = JSON.parse(searchText)
     const itemIds: string[] = searchData.results || []
     const totalInML = searchData.paging?.total || 0
+    console.log("[v0] ML items encontrados:", itemIds.length, "Total en ML:", totalInML)
 
     if (itemIds.length === 0) {
       return NextResponse.json({ 
@@ -232,7 +236,7 @@ export async function POST(request: Request) {
       stock_sync_count: (account.stock_sync_count || 0) + updated
     }).eq("id", account_id)
 
-    return NextResponse.json({
+    const result = {
       success: true,
       processed: itemIds.length,
       updated,
@@ -242,7 +246,9 @@ export async function POST(request: Request) {
       errors,
       total_in_ml: totalInML,
       has_more: offset + limit < totalInML
-    })
+    }
+    console.log("[v0] Sync-stock RESULTADO:", JSON.stringify(result))
+    return NextResponse.json(result)
 
   } catch (error) {
     console.error("Error en sync-stock:", error)
