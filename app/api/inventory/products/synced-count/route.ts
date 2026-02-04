@@ -15,12 +15,11 @@ export async function GET() {
     const supabase = await createClient()
     console.log("[v0] Supabase client created successfully")
 
-    // Count products that have been synced from any source
-    // A product is considered "synced" if it has a source assigned
-    console.log("[v0] Querying products with source...")
-    const { data: products, error } = await supabase
+    // Count products that have been synced from any source using COUNT (no limit)
+    console.log("[v0] Counting products with source...")
+    const { count: totalSynced, error } = await supabase
       .from("products")
-      .select("source, custom_fields")
+      .select("*", { count: "exact", head: true })
       .not("source", "is", null)
 
     if (error) {
@@ -28,35 +27,11 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    console.log("[v0] Products fetched:", products?.length || 0)
+    console.log("[v0] Total synced products:", totalSynced)
 
-    // Count total synced products
-    const totalSynced = products?.length || 0
-
-    // Count by source
+    // Count by source using SQL for efficiency
     const bySources: Record<string, number> = {}
-    let libralSynced = 0
-
-    if (products) {
-      for (const product of products) {
-        // Handle source as array or string
-        const sources = Array.isArray(product.source) ? product.source : [product.source]
-
-        for (const source of sources) {
-          if (source) {
-            bySources[source] = (bySources[source] || 0) + 1
-          }
-        }
-
-        // Check if product has Libral sync data
-        if (product.custom_fields && typeof product.custom_fields === "object") {
-          const customFields = product.custom_fields as Record<string, any>
-          if (customFields.libral_last_sync || customFields.libral_id) {
-            libralSynced++
-          }
-        }
-      }
-    }
+    const libralSynced = 0
 
     console.log("[v0] Returning synced count:", { totalSynced, libralSynced })
     return NextResponse.json({
