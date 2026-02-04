@@ -1,64 +1,52 @@
+import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import type { NextRequest } from "next/server"
 
-export async function GET(request: NextRequest) {
-  console.log("[v0] ===== ORDERS ENDPOINT EXECUTING =====")
-
+export async function GET(request: Request) {
   try {
-    const { createClient } = await import("@/lib/supabase/server")
-    console.log("[v0] Orders - Imported createClient")
-
-    const searchParams = request.nextUrl.searchParams
-    const accountId = searchParams.get("account_id")
-
-    console.log("[v0] Orders - Params:", { accountId })
-
     const supabase = await createClient()
-    console.log("[v0] Orders - Supabase client created")
+    const { searchParams } = new URL(request.url)
+    const accountId = searchParams.get("account_id")
+    const status = searchParams.get("status")
+    const limit = Number.parseInt(searchParams.get("limit") || "50")
+    const offset = Number.parseInt(searchParams.get("offset") || "0")
 
-    // Solo leer de la DB sin hacer llamadas a ML
-    // Las órdenes se sincronizarán automáticamente con el cron
-    
-    let accountsQuery = supabase.from("ml_accounts").select("*")
-    if (accountId && accountId !== "all") {
-      accountsQuery = accountsQuery.eq("id", accountId)
+    console.log("[v0] Fetching orders from DB - account:", accountId, "status:", status)
+
+    // Construir query para leer de ml_orders
+    let query = supabase.from("ml_orders").select("*", { count: "exact" })
+
+    if (accountId) {
+      query = query.eq("account_id", accountId)
     }
 
-    const { data: accounts, error: accountsError } = await accountsQuery
-
-    if (accountsError) {
-      console.error("[v0] Orders - Database error:", accountsError)
-      return NextResponse.json({ error: "Database error", details: accountsError.message }, { status: 500 })
+    if (status) {
+      query = query.eq("status", status)
     }
 
-    console.log("[v0] Orders - Found accounts:", accounts?.length || 0)
+    // Ordenar por fecha descendente y paginar
+    const { data: orders, count, error } = await query
+      .order("date_created", { ascending: false })
+      .range(offset, offset + limit - 1)
 
-    if (!accounts || accounts.length === 0) {
+    if (error) {
+      console.error("[v0] Error fetching orders from DB:", error)
       return NextResponse.json({
         orders: [],
-        paging: { total: 0, limit: 0, offset: 0 },
-        message: "No hay cuentas configuradas"
+        paging: { total: 0, limit, offset }
       })
     }
 
-    // DESACTIVADO: No hacer llamadas a ML API
-    // Las órdenes se sincronizarán automáticamente con el cron diariamente
-    console.log("[v0] Orders - NOT fetching from ML API (cuota desactivada)")
-    
+    console.log("[v0] Found", orders?.length || 0, "orders in DB")
+
     return NextResponse.json({
-      orders: [],
-      paging: { total: 0, limit: 0, offset: 0 },
-      message: "Las órdenes se sincronizan automáticamente. Próxima sincronización a las 9:00 AM",
-      status: "sync_pending"
+      orders: orders || [],
+      paging: { total: count || 0, limit, offset }
     })
-
-  } catch (error: any) {
-    console.error("[v0] Orders - FATAL ERROR:", error.message)
-    console.error("[v0] Orders - Stack:", error.stack)
-
+  } catch (error) {
+    console.error("[v0] Error in orders endpoint:", error)
     return NextResponse.json(
-      { error: "Internal server error", message: error.message },
-      { status: 500 },
+      { error: error instanceof Error ? error.message : "Unknown error" },
+      { status: 500 }
     )
   }
 }
