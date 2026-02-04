@@ -67,24 +67,33 @@ export async function POST(request: Request) {
           { headers: { Authorization: `Bearer ${accessToken}` } }
         )
 
+        // Verificar rate limit incluso si el status parece OK
+        const searchText = await searchResponse.text()
+        if (searchText.includes("Too Many") || searchResponse.status === 429) {
+          return NextResponse.json({
+            success: true,
+            rate_limited: true,
+            message: "Límite de API de MercadoLibre alcanzado. Espera 1 hora e intenta de nuevo.",
+            processed: products.indexOf(product),
+            updated,
+            linked,
+            not_found_in_ml: notFoundInML,
+            errors
+          })
+        }
+
         if (!searchResponse.ok) {
-          if (searchResponse.status === 429) {
-            return NextResponse.json({
-              success: true,
-              rate_limited: true,
-              message: "Rate limit alcanzado. Continuar más tarde.",
-              processed: products.indexOf(product),
-              updated,
-              linked,
-              not_found_in_ml: notFoundInML,
-              errors
-            })
-          }
           errors++
           continue
         }
 
-        const searchData = await searchResponse.json()
+        let searchData
+        try {
+          searchData = JSON.parse(searchText)
+        } catch {
+          errors++
+          continue
+        }
         
         // Si no hay resultados, no existe publicación con ese EAN
         if (!searchData.results || searchData.results.length === 0) {
