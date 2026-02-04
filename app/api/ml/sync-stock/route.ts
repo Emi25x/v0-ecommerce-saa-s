@@ -61,10 +61,43 @@ export async function POST(request: Request) {
     // Procesar cada producto
     for (const product of products) {
       try {
-        // Intentar actualizar stock en ML usando el EAN como seller_sku
-        // ML busca la publicación por seller_sku (que es nuestro EAN)
+        // Buscar publicación en ML por seller_sku (EAN)
+        const searchResponse = await fetch(
+          `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?seller_sku=${product.ean}`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        )
+
+        if (!searchResponse.ok) {
+          if (searchResponse.status === 429) {
+            return NextResponse.json({
+              success: true,
+              rate_limited: true,
+              message: "Rate limit alcanzado. Continuar más tarde.",
+              processed: products.indexOf(product),
+              updated,
+              linked,
+              not_found_in_ml: notFoundInML,
+              errors
+            })
+          }
+          errors++
+          continue
+        }
+
+        const searchData = await searchResponse.json()
+        
+        // Si no hay resultados, no existe publicación con ese EAN
+        if (!searchData.results || searchData.results.length === 0) {
+          notFoundInML++
+          continue
+        }
+
+        // Obtener el item_id de la publicación encontrada
+        const itemId = searchData.results[0]
+
+        // Actualizar stock en ML
         const updateResponse = await fetch(
-          `https://api.mercadolibre.com/items/${account.ml_user_id}:${product.ean}`,
+          `https://api.mercadolibre.com/items/${itemId}`,
           {
             method: "PUT",
             headers: {
@@ -76,7 +109,7 @@ export async function POST(request: Request) {
         )
 
         if (updateResponse.ok) {
-          // La actualización fue exitosa - hay publicación con este EAN
+          // La actualización fue exitosa
           const updatedItem = await updateResponse.json()
           updated++
 
