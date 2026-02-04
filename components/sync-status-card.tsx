@@ -26,18 +26,12 @@ interface AccountStats {
   pending_import: number
 }
 
-const handleLinkPublications = async (accountId: string) => {
-  // Placeholder implementation for handleLinkPublications
-}
-
 export function SyncStatusCard() {
   const [accounts, setAccounts] = useState<AccountSyncStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState<string | null>(null)
   const [syncResult, setSyncResult] = useState<string | null>(null)
   const [accountStats, setAccountStats] = useState<Record<string, AccountStats>>({})
-  const [linking, setLinking] = useState<string | null>(null)
-  const [linkResult, setLinkResult] = useState<string | null>(null)
 
   useEffect(() => {
     fetchAccounts()
@@ -89,7 +83,7 @@ export function SyncStatusCard() {
       } else if (data.error) {
         setSyncResult(`Error: ${data.error}`)
       } else {
-        setSyncResult(`Actualizados: ${data.updated}, Vinculados: ${data.linked}, Sin EAN: ${data.no_ean}`)
+        setSyncResult(`Actualizados: ${data.updated}, Vinculados: ${data.linked}, No en ML: ${data.not_found_in_ml || 0}`)
       }
       
       // Refrescar datos
