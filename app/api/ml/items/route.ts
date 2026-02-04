@@ -129,6 +129,15 @@ export async function GET(request: NextRequest) {
     if (!searchResponse.ok) {
       const errorText = await searchResponse.text()
       console.error("[v0] ML API error:", searchResponse.status, errorText)
+      
+      // Si es rate limit, devolver error claro
+      if (searchResponse.status === 429 || errorText.includes("Too Many Requests")) {
+        return NextResponse.json({ 
+          error: "Límite de API excedido. Intenta en unos minutos.",
+          rate_limited: true 
+        }, { status: 429 })
+      }
+      
       return NextResponse.json({ error: "Failed to fetch from MercadoLibre" }, { status: searchResponse.status })
     }
 

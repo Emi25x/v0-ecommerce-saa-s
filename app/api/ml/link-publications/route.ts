@@ -8,7 +8,7 @@ export const maxDuration = 300
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { account_id, limit = 200 } = body
+    const { account_id, limit = 100 } = body
 
     if (!account_id) {
       return NextResponse.json({ error: "account_id required" }, { status: 400 })
@@ -79,6 +79,20 @@ export async function POST(request: Request) {
         )
 
         if (!detailsResponse.ok) {
+          // Si es rate limit, parar y devolver lo que tenemos
+          if (detailsResponse.status === 429) {
+            return NextResponse.json({
+              total_in_ml: totalInML,
+              total_in_db: existingItemIds.size + imported,
+              pending_import: totalInML - existingItemIds.size - imported,
+              imported_now: imported,
+              linked_now: linked,
+              not_found_product: notFoundProduct,
+              errors,
+              rate_limited: true,
+              message: "Límite de API alcanzado. Continuar más tarde."
+            })
+          }
           errors += batch.length
           continue
         }
@@ -145,7 +159,8 @@ export async function POST(request: Request) {
           }
         }
 
-        await new Promise(resolve => setTimeout(resolve, 200))
+        // Delay más largo para evitar rate limit (500ms entre batches)
+        await new Promise(resolve => setTimeout(resolve, 500))
 
       } catch (error) {
         console.error("Error processing batch:", error)
