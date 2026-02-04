@@ -1,17 +1,20 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 
-// Sincroniza el stock de productos publicados en ML con el stock actual de la BD
+export const maxDuration = 300
+
+// Sincroniza el stock de ML con productos de nuestra DB por EAN
+// Si una publicación se actualiza exitosamente, se marca como vinculada
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
-    const { account_id } = await request.json()
+    const { account_id, limit = 100 } = await request.json()
 
     if (!account_id) {
       return NextResponse.json({ error: "account_id requerido" }, { status: 400 })
     }
 
-    // Obtener cuenta ML y verificar token
+    // Obtener cuenta ML
     const { data: account, error: accountError } = await supabase
       .from("ml_accounts")
       .select("*")
@@ -20,14 +23,6 @@ export async function POST(request: Request) {
 
     if (accountError || !account) {
       return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
-    }
-
-    // Verificar si tiene auto_sync_stock habilitado
-    if (!account.auto_sync_stock) {
-      return NextResponse.json({ 
-        success: false, 
-        message: "Sincronización automática de stock deshabilitada para esta cuenta" 
-      })
     }
 
     // Refrescar token si es necesario
@@ -46,118 +41,197 @@ export async function POST(request: Request) {
       }
     }
 
-    // Obtener todas las publicaciones de esta cuenta
-    const { data: publications, error: pubError } = await supabase
-      .from("ml_publications")
-      .select("id, ml_item_id, product_id")
-      .eq("account_id", account_id)
-      .eq("status", "active")
+    // Obtener lista de publicaciones activas de ML
+    const searchResponse = await fetch(
+      `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?status=active&limit=${limit}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    )
 
-    if (pubError) {
-      return NextResponse.json({ error: "Error al obtener publicaciones" }, { status: 500 })
+    if (!searchResponse.ok) {
+      if (searchResponse.status === 429) {
+        return NextResponse.json({ error: "Rate limit de ML. Intenta más tarde.", rate_limited: true }, { status: 429 })
+      }
+      return NextResponse.json({ error: "Error al obtener items de ML" }, { status: 500 })
     }
 
-    if (!publications || publications.length === 0) {
-      return NextResponse.json({ 
-        success: true, 
-        message: "No hay publicaciones activas para sincronizar",
-        updated: 0 
-      })
+    const searchData = await searchResponse.json()
+    const totalInML = searchData.paging?.total || 0
+    const itemIds = searchData.results || []
+
+    // Actualizar total de publicaciones en la cuenta
+    await supabase.from("ml_accounts").update({ total_ml_publications: totalInML }).eq("id", account_id)
+
+    if (itemIds.length === 0) {
+      return NextResponse.json({ success: true, message: "No hay publicaciones activas", updated: 0 })
     }
 
-    // Obtener el stock actual de cada producto
-    const productIds = publications.map(p => p.product_id)
-    const { data: products, error: productsError } = await supabase
-      .from("products")
-      .select("id, stock, title")
-      .in("id", productIds)
-
-    if (productsError) {
-      return NextResponse.json({ error: "Error al obtener productos" }, { status: 500 })
-    }
-
-    const productStockMap = new Map(products?.map(p => [p.id, { stock: p.stock, title: p.title }]) || [])
-
-    // Actualizar stock en ML para cada publicación
     let updated = 0
+    let linked = 0
+    let noStock = 0
+    let noEan = 0
     let errors = 0
-    const results: Array<{ ml_item_id: string; status: string; error?: string }> = []
 
-    for (const pub of publications) {
-      const productInfo = productStockMap.get(pub.product_id)
-      if (!productInfo) continue
-
-      const newStock = productInfo.stock || 0
+    // Procesar en lotes de 20 (límite de ML API multiget)
+    for (let i = 0; i < itemIds.length; i += 20) {
+      const batch = itemIds.slice(i, i + 20)
+      const idsParam = batch.join(",")
 
       try {
-        // Actualizar stock en ML
-        const updateResponse = await fetch(`https://api.mercadolibre.com/items/${pub.ml_item_id}`, {
-          method: "PUT",
-          headers: {
-            "Authorization": `Bearer ${accessToken}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            available_quantity: newStock
-          })
-        })
+        const detailsResponse = await fetch(
+          `https://api.mercadolibre.com/items?ids=${idsParam}&attributes=id,title,seller_sku,seller_custom_field,attributes,available_quantity`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        )
 
-        if (updateResponse.ok) {
-          updated++
-          results.push({ ml_item_id: pub.ml_item_id, status: "updated" })
-          
-          // Actualizar fecha de sync en la publicación
-          await supabase
-            .from("ml_publications")
-            .update({ 
-              current_stock: newStock,
-              last_sync_at: new Date().toISOString()
+        if (!detailsResponse.ok) {
+          if (detailsResponse.status === 429) {
+            // Rate limit, devolver lo que tenemos
+            return NextResponse.json({
+              success: true,
+              rate_limited: true,
+              message: "Rate limit alcanzado. Ejecuta de nuevo más tarde.",
+              total_in_ml: totalInML,
+              processed: i,
+              updated,
+              linked,
+              no_stock: noStock,
+              no_ean: noEan,
+              errors
             })
-            .eq("id", pub.id)
-        } else {
-          const errorData = await updateResponse.json()
-          errors++
-          results.push({ 
-            ml_item_id: pub.ml_item_id, 
-            status: "error", 
-            error: errorData.message || "Error al actualizar" 
-          })
+          }
+          errors += batch.length
+          continue
         }
 
-        // Pequeño delay para no saturar la API
-        await new Promise(resolve => setTimeout(resolve, 200))
-      } catch (err) {
-        errors++
-        results.push({ 
-          ml_item_id: pub.ml_item_id, 
-          status: "error", 
-          error: "Error de conexión" 
-        })
+        const items = await detailsResponse.json()
+
+        for (const itemWrapper of items) {
+          if (itemWrapper.code !== 200 || !itemWrapper.body) {
+            errors++
+            continue
+          }
+
+          const item = itemWrapper.body
+
+          // Extraer EAN: primero seller_sku, luego seller_custom_field, luego GTIN
+          let ean = item.seller_sku || item.seller_custom_field || null
+
+          if (!ean && item.attributes) {
+            for (const attr of item.attributes) {
+              if (["GTIN", "EAN", "ISBN"].includes(attr.id) && attr.value_name) {
+                ean = attr.value_name
+                break
+              }
+            }
+          }
+
+          if (!ean) {
+            noEan++
+            continue
+          }
+
+          // Buscar producto por EAN en nuestra DB
+          const { data: product } = await supabase
+            .from("products")
+            .select("id, stock")
+            .eq("ean", ean)
+            .maybeSingle()
+
+          if (!product) {
+            noStock++
+            continue
+          }
+
+          const newStock = product.stock || 0
+
+          // Actualizar stock en ML
+          const updateResponse = await fetch(`https://api.mercadolibre.com/items/${item.id}`, {
+            method: "PUT",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ available_quantity: newStock })
+          })
+
+          if (updateResponse.ok) {
+            updated++
+
+            // Verificar si ya existe en ml_publications
+            const { data: existingPub } = await supabase
+              .from("ml_publications")
+              .select("id, product_id")
+              .eq("ml_item_id", item.id)
+              .maybeSingle()
+
+            if (existingPub) {
+              // Actualizar con product_id si no lo tenía (vincular)
+              if (!existingPub.product_id) {
+                await supabase
+                  .from("ml_publications")
+                  .update({ 
+                    product_id: product.id,
+                    current_stock: newStock,
+                    last_sync_at: new Date().toISOString()
+                  })
+                  .eq("id", existingPub.id)
+                linked++
+              } else {
+                // Solo actualizar stock
+                await supabase
+                  .from("ml_publications")
+                  .update({ 
+                    current_stock: newStock,
+                    last_sync_at: new Date().toISOString()
+                  })
+                  .eq("id", existingPub.id)
+              }
+            } else {
+              // Crear nueva entrada vinculada
+              await supabase.from("ml_publications").insert({
+                account_id: account.id,
+                ml_item_id: item.id,
+                product_id: product.id,
+                title: item.title,
+                status: "active",
+                current_stock: newStock,
+                last_sync_at: new Date().toISOString()
+              })
+              linked++
+            }
+          } else {
+            errors++
+          }
+        }
+
+        // Delay para no saturar ML API
+        await new Promise(resolve => setTimeout(resolve, 300))
+
+      } catch (error) {
+        console.error("Error processing batch:", error)
+        errors += batch.length
       }
     }
 
     // Actualizar estadísticas de la cuenta
-    await supabase
-      .from("ml_accounts")
-      .update({
-        last_stock_sync_at: new Date().toISOString(),
-        stock_sync_count: updated
-      })
-      .eq("id", account_id)
+    await supabase.from("ml_accounts").update({
+      last_stock_sync_at: new Date().toISOString(),
+      stock_sync_count: updated
+    }).eq("id", account_id)
 
     return NextResponse.json({
       success: true,
+      total_in_ml: totalInML,
+      processed: itemIds.length,
       updated,
-      errors,
-      total: publications.length,
-      results
+      linked,
+      no_stock: noStock,
+      no_ean: noEan,
+      errors
     })
 
   } catch (error) {
     console.error("Error en sync-stock:", error)
-    return NextResponse.json({ 
-      error: error instanceof Error ? error.message : "Error interno" 
-    }, { status: 500 })
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Error interno" }, { status: 500 })
   }
 }
 
@@ -166,7 +240,6 @@ export async function GET() {
   try {
     const supabase = await createClient()
 
-    // Obtener todas las cuentas con sync automático habilitado
     const { data: accounts, error } = await supabase
       .from("ml_accounts")
       .select("id, nickname")
@@ -182,18 +255,12 @@ export async function GET() {
         const response = await fetch(`${process.env.NEXT_PUBLIC_VERCEL_URL || ""}/api/ml/sync-stock`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ account_id: account.id })
+          body: JSON.stringify({ account_id: account.id, limit: 200 })
         })
         const data = await response.json()
-        results.push({
-          account: account.nickname,
-          ...data
-        })
+        results.push({ account: account.nickname, ...data })
       } catch (err) {
-        results.push({
-          account: account.nickname,
-          error: "Error al sincronizar"
-        })
+        results.push({ account: account.nickname, error: "Error al sincronizar" })
       }
     }
 
@@ -205,8 +272,6 @@ export async function GET() {
 
   } catch (error) {
     console.error("Error en sync-stock GET:", error)
-    return NextResponse.json({ 
-      error: error instanceof Error ? error.message : "Error interno" 
-    }, { status: 500 })
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Error interno" }, { status: 500 })
   }
 }

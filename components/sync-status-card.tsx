@@ -26,13 +26,18 @@ interface AccountStats {
   pending_import: number
 }
 
+const handleLinkPublications = async (accountId: string) => {
+  // Placeholder implementation for handleLinkPublications
+}
+
 export function SyncStatusCard() {
   const [accounts, setAccounts] = useState<AccountSyncStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState<string | null>(null)
+  const [syncResult, setSyncResult] = useState<string | null>(null)
+  const [accountStats, setAccountStats] = useState<Record<string, AccountStats>>({})
   const [linking, setLinking] = useState<string | null>(null)
   const [linkResult, setLinkResult] = useState<string | null>(null)
-  const [accountStats, setAccountStats] = useState<Record<string, AccountStats>>({})
 
   useEffect(() => {
     fetchAccounts()
@@ -70,48 +75,33 @@ export function SyncStatusCard() {
 
   const handleSyncStock = async (accountId: string) => {
     setSyncing(accountId)
+    setSyncResult(null)
     try {
-      await fetch("/api/ml/sync-stock", {
+      const response = await fetch("/api/ml/sync-stock", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account_id: accountId }),
-      })
-      await fetchAccounts()
-    } catch (error) {
-      console.error("Error syncing stock:", error)
-    } finally {
-      setSyncing(null)
-    }
-  }
-
-  const handleLinkPublications = async (accountId: string) => {
-    setLinking(accountId)
-    setLinkResult(null)
-    try {
-      const response = await fetch("/api/ml/link-publications", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account_id: accountId, limit: 500 }),
+        body: JSON.stringify({ account_id: accountId, limit: 100 }),
       })
       const data = await response.json()
       
       if (data.rate_limited) {
-        setLinkResult("Límite de API excedido. Espera unos minutos e intenta de nuevo.")
+        setSyncResult("Límite de API. Intenta más tarde.")
       } else if (data.error) {
-        setLinkResult(`Error: ${data.error}`)
+        setSyncResult(`Error: ${data.error}`)
       } else {
-        setLinkResult(`Importadas: ${data.imported_now || 0}, Vinculadas: ${data.linked_now || 0}, Pendientes: ${data.pending_import || 0}`)
+        setSyncResult(`Actualizados: ${data.updated}, Vinculados: ${data.linked}, Sin EAN: ${data.no_ean}`)
       }
       
-      // Refrescar stats
+      // Refrescar datos
+      await fetchAccounts()
       fetchAccountStats(accountId)
       
-      setTimeout(() => setLinkResult(null), 10000)
+      setTimeout(() => setSyncResult(null), 10000)
     } catch (error) {
-      console.error("Error linking publications:", error)
-      setLinkResult("Error al vincular")
+      console.error("Error syncing stock:", error)
+      setSyncResult("Error al sincronizar")
     } finally {
-      setLinking(null)
+      setSyncing(null)
     }
   }
 
@@ -182,39 +172,23 @@ export function SyncStatusCard() {
             <div key={account.id} className="p-3 border rounded-lg space-y-3">
               <div className="flex items-center justify-between">
                 <span className="font-medium">{account.nickname}</span>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleLinkPublications(account.id)}
-                    disabled={linking === account.id}
-                    className="bg-transparent"
-                  >
-                    {linking === account.id ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Package className="h-3 w-3" />
-                    )}
-                    <span className="ml-1">Vincular</span>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleSyncStock(account.id)}
-                    disabled={syncing === account.id}
-                    className="bg-transparent"
-                  >
-                    {syncing === account.id ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-3 w-3" />
-                    )}
-                    <span className="ml-1">Sync</span>
-                  </Button>
-                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleSyncStock(account.id)}
+                  disabled={syncing === account.id}
+                  className="bg-transparent"
+                >
+                  {syncing === account.id ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3 w-3" />
+                  )}
+                  <span className="ml-1">Sync Stock</span>
+                </Button>
               </div>
-              {linkResult && (
-                <div className="text-sm text-primary bg-primary/10 p-2 rounded">{linkResult}</div>
+              {syncResult && (
+                <div className="text-sm text-primary bg-primary/10 p-2 rounded">{syncResult}</div>
               )}
 
               <div className="grid grid-cols-2 gap-3">
