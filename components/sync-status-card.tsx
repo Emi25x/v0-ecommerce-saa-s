@@ -83,7 +83,7 @@ export function SyncStatusCard() {
       } else if (data.error) {
         setSyncResult(`Error: ${data.error}`)
       } else {
-        setSyncResult(`Actualizados: ${data.updated}, Vinculados: ${data.linked}, No en ML: ${data.not_found_in_ml || 0}`)
+        setSyncResult(`Procesados: ${data.processed}, Actualizados: ${data.updated}, Vinculados: ${data.linked}, Sin EAN: ${data.no_ean || 0}`)
       }
       
       // Refrescar datos
