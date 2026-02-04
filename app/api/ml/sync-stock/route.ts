@@ -128,7 +128,7 @@ export async function POST(request: Request) {
                 .update({ 
                   product_id: product.id,
                   current_stock: product.stock || 0,
-                  last_sync_at: new Date().toISOString()
+                  updated_at: new Date().toISOString()
                 })
                 .eq("id", existingPub.id)
               linked++
@@ -138,7 +138,7 @@ export async function POST(request: Request) {
                 .from("ml_publications")
                 .update({ 
                   current_stock: product.stock || 0,
-                  last_sync_at: new Date().toISOString()
+                  updated_at: new Date().toISOString()
                 })
                 .eq("id", existingPub.id)
             }
@@ -150,8 +150,7 @@ export async function POST(request: Request) {
               product_id: product.id,
               title: updatedItem.title || product.title,
               status: updatedItem.status || "active",
-              current_stock: product.stock || 0,
-              last_sync_at: new Date().toISOString()
+              current_stock: product.stock || 0
             })
             linked++
           }
