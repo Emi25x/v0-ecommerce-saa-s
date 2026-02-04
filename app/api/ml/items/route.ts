@@ -1,6 +1,13 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { createServerClient } from "@/lib/supabase/server" // Declared the variable here
+
+// Cache en memoria simple (dura mientras el servidor esté activo)
+let itemsCache: {
+  data: any
+  timestamp: number
+  key: string
+} | null = null
+const CACHE_TTL = 5 * 60 * 1000 // 5 minutos de cache
 
 // Helper para fetch con reintentos
 async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3): Promise<Response> {
@@ -24,10 +31,6 @@ async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3)
 }
 
 export async function GET(request: NextRequest) {
-  console.log("[v0] ========================================")
-  console.log("[v0] GET /api/ml/items - STARTING")
-  console.log("[v0] ========================================")
-
   const searchParams = request.nextUrl.searchParams
   const limit = Number.parseInt(searchParams.get("limit") || "50")
   const offset = Number.parseInt(searchParams.get("offset") || "0")
@@ -38,13 +41,19 @@ export async function GET(request: NextRequest) {
   const tags = searchParams.get("tags")
   const subStatus = searchParams.get("sub_status")
   const sort = searchParams.get("sort") || "sold_quantity_desc"
+  const noCache = searchParams.get("no_cache") === "true"
+
+  // Generar clave de cache única
+  const cacheKey = `${limit}-${offset}-${accountId}-${status}-${sort}`
+  
+  // Verificar cache (solo para consultas básicas sin forzar refresh)
+  if (!noCache && itemsCache && itemsCache.key === cacheKey && Date.now() - itemsCache.timestamp < CACHE_TTL) {
+    console.log("[v0] Returning cached items data")
+    return NextResponse.json(itemsCache.data)
+  }
 
   try {
-    console.log("[v0] Creating Supabase client...")
     const supabase = await createClient()
-    console.log("[v0] Supabase client created successfully")
-
-    console.log("[v0] Querying ml_accounts...")
     let accountsQuery = supabase.from("ml_accounts").select("*")
 
     if (accountId && accountId !== "all") {
@@ -212,13 +221,19 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    console.log("[v0] Returning", sortedProducts.length, "products")
-    console.log("[v0] ========================================")
-
-    return NextResponse.json({
+    const responseData = {
       products: sortedProducts,
       paging: searchData.paging || { total: allProducts.length, limit, offset },
-    })
+    }
+
+    // Guardar en cache
+    itemsCache = {
+      data: responseData,
+      timestamp: Date.now(),
+      key: cacheKey
+    }
+
+    return NextResponse.json(responseData)
   } catch (error) {
     console.error("[v0] ❌❌❌ CRITICAL ERROR in GET /api/ml/items:", error)
     console.error("[v0] Error type:", error instanceof Error ? error.constructor.name : typeof error)
