@@ -703,8 +703,16 @@ export default function OrdersPage() {
 
   const fetchMlAccounts = async () => {
     try {
-      console.log("[v0] Fetching ML accounts...")
+      console.log("[v0] Fetching ML accounts from DB (no ML API calls)...")
       const response = await fetch("/api/mercadolibre/accounts")
+      
+      // Si falla, mostrar mensaje pero no fallar
+      if (!response.ok) {
+        console.warn("[v0] Failed to fetch accounts, will use empty list")
+        setMlAccounts({})
+        return
+      }
+      
       const data = await response.json()
       console.log("[v0] ML accounts response:", data)
 
@@ -735,6 +743,8 @@ export default function OrdersPage() {
       setMlAccounts(accountsRecord)
     } catch (error) {
       console.error("[v0] Failed to fetch ML accounts:", error)
+      // No hacer crash, solo mostrar error
+      setMlAccounts({})
     }
   }
 
