@@ -295,7 +295,7 @@ export function AppSidebar() {
               >
                 <div className="flex items-center gap-3">
                   <ShoppingBag className="h-4 w-4" />
-                  <span>Pedidos</span>
+                  <span>Ventas</span>
                 </div>
                 {notifications?.orders > 0 && (
                   <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-green-500 px-1.5 text-xs font-semibold text-white">
