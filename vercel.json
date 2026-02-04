@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/import-schedules",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/sync-ml-stock",
+      "schedule": "0 9 * * *"
     }
   ]
 }

@@ -28,6 +28,8 @@ export function SyncStatusCard() {
   const [accounts, setAccounts] = useState<AccountSyncStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState<string | null>(null)
+  const [linking, setLinking] = useState<string | null>(null)
+  const [linkResult, setLinkResult] = useState<string | null>(null)
   const [accountStats, setAccountStats] = useState<Record<string, AccountStats>>({})
 
   useEffect(() => {
@@ -77,6 +79,37 @@ export function SyncStatusCard() {
       console.error("Error syncing stock:", error)
     } finally {
       setSyncing(null)
+    }
+  }
+
+  const handleLinkPublications = async (accountId: string) => {
+    setLinking(accountId)
+    setLinkResult(null)
+    try {
+      const response = await fetch("/api/ml/link-publications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: accountId, limit: 500 }),
+      })
+      const data = await response.json()
+      
+      if (data.error) {
+        setLinkResult(`Error: ${data.error}`)
+      } else if (data.message) {
+        setLinkResult(data.message)
+      } else {
+        setLinkResult(`Vinculadas: ${data.linked}, No encontradas: ${data.not_found}, Pendientes: ${data.remaining_unlinked}`)
+      }
+      
+      // Refrescar stats
+      fetchAccountStats(accountId)
+      
+      setTimeout(() => setLinkResult(null), 10000)
+    } catch (error) {
+      console.error("Error linking publications:", error)
+      setLinkResult("Error al vincular")
+    } finally {
+      setLinking(null)
     }
   }
 
@@ -147,21 +180,42 @@ export function SyncStatusCard() {
             <div key={account.id} className="p-3 border rounded-lg space-y-3">
               <div className="flex items-center justify-between">
                 <span className="font-medium">{account.nickname}</span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleSyncStock(account.id)}
-                  disabled={syncing === account.id}
-                  className="bg-transparent"
-                >
-                  {syncing === account.id ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-3 w-3" />
+                <div className="flex gap-2">
+                  {accountStats[account.id]?.unlinked_publications > 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleLinkPublications(account.id)}
+                      disabled={linking === account.id}
+                      className="bg-transparent"
+                    >
+                      {linking === account.id ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Package className="h-3 w-3" />
+                      )}
+                      <span className="ml-1">Vincular</span>
+                    </Button>
                   )}
-                  <span className="ml-1">Sync</span>
-                </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleSyncStock(account.id)}
+                    disabled={syncing === account.id}
+                    className="bg-transparent"
+                  >
+                    {syncing === account.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3 w-3" />
+                    )}
+                    <span className="ml-1">Sync</span>
+                  </Button>
+                </div>
               </div>
+              {linkResult && (
+                <div className="text-sm text-primary bg-primary/10 p-2 rounded">{linkResult}</div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 {/* Stock Status */}
