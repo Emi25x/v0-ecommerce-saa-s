@@ -63,21 +63,46 @@ export async function GET(request: Request) {
     // Guardar en cache para futuro uso si ML falla
     if (orders.length > 0) {
       for (const order of orders) {
-        await supabase.from("ml_orders").upsert({
-          account_id: account.id,
-          ml_order_id: order.id,
-          buyer_id: order.buyer.id,
-          buyer_nickname: order.buyer.nickname,
-          status: order.status,
-          date_created: order.date_created,
-          total_amount: order.total_amount,
-          currency_id: order.currency_id,
-          packing_status: order.packing_status,
-          shipping_status: order.shipping_status,
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: "account_id,ml_order_id"
-        }).catch(err => console.log("[v0] Cache write error (non-critical):", err.message))
+        try {
+          // Verificar si existe
+          const { data: existing } = await supabase
+            .from("ml_orders")
+            .select("id")
+            .eq("account_id", account.id)
+            .eq("ml_order_id", order.id)
+            .maybeSingle()
+
+          if (existing) {
+            // Actualizar
+            await supabase.from("ml_orders").update({
+              buyer_id: order.buyer.id,
+              buyer_nickname: order.buyer.nickname,
+              status: order.status,
+              date_created: order.date_created,
+              total_amount: order.total_amount,
+              currency_id: order.currency_id,
+              packing_status: order.packing_status,
+              shipping_status: order.shipping_status,
+              updated_at: new Date().toISOString()
+            }).eq("id", existing.id)
+          } else {
+            // Crear nuevo
+            await supabase.from("ml_orders").insert({
+              account_id: account.id,
+              ml_order_id: order.id,
+              buyer_id: order.buyer.id,
+              buyer_nickname: order.buyer.nickname,
+              status: order.status,
+              date_created: order.date_created,
+              total_amount: order.total_amount,
+              currency_id: order.currency_id,
+              packing_status: order.packing_status,
+              shipping_status: order.shipping_status
+            })
+          }
+        } catch (err) {
+          console.log("[v0] Cache write error for order", order.id, ":", err instanceof Error ? err.message : err)
+        }
       }
     }
 
