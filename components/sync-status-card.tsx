@@ -17,10 +17,18 @@ interface AccountSyncStatus {
   new_listings_count: number
 }
 
+interface AccountStats {
+  total_publications: number
+  linked_publications: number
+  active_publications: number
+  unlinked_publications: number
+}
+
 export function SyncStatusCard() {
   const [accounts, setAccounts] = useState<AccountSyncStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState<string | null>(null)
+  const [accountStats, setAccountStats] = useState<Record<string, AccountStats>>({})
 
   useEffect(() => {
     fetchAccounts()
@@ -32,11 +40,27 @@ export function SyncStatusCard() {
       const data = await response.json()
       if (data.accounts) {
         setAccounts(data.accounts)
+        // Fetch stats for each account
+        for (const account of data.accounts) {
+          fetchAccountStats(account.id)
+        }
       }
     } catch (error) {
       console.error("Error fetching accounts:", error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchAccountStats = async (accountId: string) => {
+    try {
+      const response = await fetch(`/api/ml/account-stats?account_id=${accountId}`)
+      const stats = await response.json()
+      if (!stats.error) {
+        setAccountStats(prev => ({ ...prev, [accountId]: stats }))
+      }
+    } catch (error) {
+      console.error("Error fetching account stats:", error)
     }
   }
 
@@ -171,32 +195,27 @@ export function SyncStatusCard() {
                   )}
                 </div>
 
-                {/* New Listings Status */}
+                {/* Publications Stats */}
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <TrendingUp className="h-4 w-4 text-muted-foreground" />
                     <span className="text-sm font-medium">Publicaciones</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {newListingsThisWeek ? (
-                      <Badge className="bg-green-500 text-white">
-                        <CheckCircle className="h-3 w-3 mr-1" />
-                        Esta semana
-                      </Badge>
-                    ) : account.last_new_listings_sync_at ? (
-                      <Badge variant="outline" className="text-yellow-600 border-yellow-600">
-                        {new Date(account.last_new_listings_sync_at).toLocaleDateString("es-AR")}
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-muted-foreground">
-                        Sin publicaciones
-                      </Badge>
-                    )}
-                  </div>
-                  {account.new_listings_count > 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      {account.new_listings_count} nuevas
-                    </p>
+                  {accountStats[account.id] ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Badge className="bg-green-500 text-white">
+                          {accountStats[account.id].linked_publications} vinculadas
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {accountStats[account.id].total_publications} en DB / {accountStats[account.id].unlinked_publications} sin vincular
+                      </p>
+                    </div>
+                  ) : (
+                    <Badge variant="outline" className="text-muted-foreground">
+                      Cargando...
+                    </Badge>
                   )}
                 </div>
               </div>
