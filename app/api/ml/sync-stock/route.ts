@@ -155,71 +155,81 @@ export async function POST(request: Request) {
         if (!product) {
           noProductMatch++
           // Guardar publicación sin vincular (verificar si existe primero)
-          const { data: existingUnlinked } = await supabase
-            .from("ml_publications")
-            .select("id")
-            .eq("ml_item_id", item.id)
-            .maybeSingle()
-          
-          if (existingUnlinked) {
-            await supabase.from("ml_publications")
-              .update({
+          try {
+            const { data: existingUnlinked } = await supabase
+              .from("ml_publications")
+              .select("id")
+              .eq("ml_item_id", item.id)
+              .maybeSingle()
+            
+            if (existingUnlinked) {
+              await supabase.from("ml_publications")
+                .update({
+                  title: item.title,
+                  status: item.status,
+                  price: item.price,
+                  current_stock: item.available_quantity,
+                  updated_at: new Date().toISOString()
+                })
+                .eq("id", existingUnlinked.id)
+            } else {
+              await supabase.from("ml_publications").insert({
+                account_id: account.id,
+                ml_item_id: item.id,
                 title: item.title,
                 status: item.status,
                 price: item.price,
                 current_stock: item.available_quantity,
-                updated_at: new Date().toISOString()
+                permalink: item.permalink
               })
-              .eq("id", existingUnlinked.id)
+            }
+          } catch (e) {
+            console.error("[v0] Error guardando publicación sin vincular:", e)
+            errors++
+          }
+          continue
+        }
+
+        // PASO 4: Guardar/actualizar en ml_publications con vinculación
+        try {
+          const { data: existingPub } = await supabase
+            .from("ml_publications")
+            .select("id, product_id")
+            .eq("ml_item_id", item.id)
+            .maybeSingle()
+
+          const updateData: Record<string, any> = {
+            current_stock: item.available_quantity,
+            updated_at: new Date().toISOString()
+          }
+
+          if (existingPub) {
+            if (!existingPub.product_id) {
+              // Vincular por primera vez
+              updateData.product_id = product.id
+              linked++
+            }
+            await supabase.from("ml_publications").update(updateData).eq("id", existingPub.id)
           } else {
+            // Crear nueva entrada vinculada
             await supabase.from("ml_publications").insert({
               account_id: account.id,
               ml_item_id: item.id,
+              product_id: product.id,
               title: item.title,
               status: item.status,
               price: item.price,
               current_stock: item.available_quantity,
               permalink: item.permalink
             })
-          }
-          continue
-        }
-
-        // PASO 4: Guardar/actualizar en ml_publications con vinculación
-        const { data: existingPub } = await supabase
-          .from("ml_publications")
-          .select("id, product_id")
-          .eq("ml_item_id", item.id)
-          .maybeSingle()
-
-        const updateData = {
-          current_stock: item.available_quantity,
-          updated_at: new Date().toISOString()
-        }
-
-        if (existingPub) {
-          if (!existingPub.product_id) {
-            // Vincular por primera vez
-            updateData.product_id = product.id
             linked++
           }
-          await supabase.from("ml_publications").update(updateData).eq("id", existingPub.id)
-        } else {
-          // Crear nueva entrada vinculada
-          await supabase.from("ml_publications").insert({
-            account_id: account.id,
-            ml_item_id: item.id,
-            product_id: product.id,
-            title: item.title,
-            status: item.status,
-            price: item.price,
-            current_stock: item.available_quantity,
-            permalink: item.permalink
-          })
-          linked++
-        }
 
-        updated++ // Increment the updated variable
+          updated++ // Increment the updated variable
+        } catch (e) {
+          console.error("[v0] Error guardando publicación vinculada:", item.id, e)
+          errors++
+        }
       }
 
       // Delay entre batches
