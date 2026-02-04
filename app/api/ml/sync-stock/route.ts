@@ -154,17 +154,34 @@ export async function POST(request: Request) {
 
         if (!product) {
           noProductMatch++
-          // Guardar publicación sin vincular
-          await supabase.from("ml_publications").upsert({
-            account_id: account.id,
-            ml_item_id: item.id,
-            title: item.title,
-            status: item.status,
-            price: item.price,
-            current_stock: item.available_quantity,
-            permalink: item.permalink,
-            updated_at: new Date().toISOString()
-          }, { onConflict: "ml_item_id" })
+          // Guardar publicación sin vincular (verificar si existe primero)
+          const { data: existingUnlinked } = await supabase
+            .from("ml_publications")
+            .select("id")
+            .eq("ml_item_id", item.id)
+            .maybeSingle()
+          
+          if (existingUnlinked) {
+            await supabase.from("ml_publications")
+              .update({
+                title: item.title,
+                status: item.status,
+                price: item.price,
+                current_stock: item.available_quantity,
+                updated_at: new Date().toISOString()
+              })
+              .eq("id", existingUnlinked.id)
+          } else {
+            await supabase.from("ml_publications").insert({
+              account_id: account.id,
+              ml_item_id: item.id,
+              title: item.title,
+              status: item.status,
+              price: item.price,
+              current_stock: item.available_quantity,
+              permalink: item.permalink
+            })
+          }
           continue
         }
 
