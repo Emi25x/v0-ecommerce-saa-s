@@ -2469,6 +2469,16 @@ export default function OrdersPage() {
                       </CardDescription>
                     </div>
                     <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fetchOrdersEffect()}
+                        disabled={loading}
+                        className="bg-transparent"
+                        title="Refrescar órdenes"
+                      >
+                        <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+                      </Button>
                       <SortSelector
                         options={sortOptions}
                         value={sortConfig.key}
