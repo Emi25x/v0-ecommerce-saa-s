@@ -18,10 +18,12 @@ interface AccountSyncStatus {
 }
 
 interface AccountStats {
+  total_in_ml: number
   total_publications: number
   linked_publications: number
   active_publications: number
   unlinked_publications: number
+  pending_import: number
 }
 
 export function SyncStatusCard() {
@@ -95,10 +97,8 @@ export function SyncStatusCard() {
       
       if (data.error) {
         setLinkResult(`Error: ${data.error}`)
-      } else if (data.message) {
-        setLinkResult(data.message)
       } else {
-        setLinkResult(`Vinculadas: ${data.linked}, No encontradas: ${data.not_found}, Pendientes: ${data.remaining_unlinked}`)
+        setLinkResult(`Importadas: ${data.imported_now || 0}, Vinculadas: ${data.linked_now || 0}, Pendientes: ${data.pending_import || 0}`)
       }
       
       // Refrescar stats
@@ -259,9 +259,14 @@ export function SyncStatusCard() {
                         <Badge className="bg-green-500 text-white">
                           {accountStats[account.id].linked_publications} vinculadas
                         </Badge>
+                        {accountStats[account.id].pending_import > 0 && (
+                          <Badge variant="outline" className="text-yellow-600 border-yellow-600">
+                            {accountStats[account.id].pending_import} pendientes
+                          </Badge>
+                        )}
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {accountStats[account.id].total_publications} en DB / {accountStats[account.id].unlinked_publications} sin vincular
+                        {accountStats[account.id].total_in_ml} en ML / {accountStats[account.id].total_publications} importadas / {accountStats[account.id].unlinked_publications} sin producto
                       </p>
                     </div>
                   ) : (
