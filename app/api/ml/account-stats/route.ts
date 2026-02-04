@@ -11,6 +11,15 @@ export async function GET(request: Request) {
   }
 
   try {
+    // Obtener el total de ML guardado en la cuenta (cache)
+    const { data: account } = await supabase
+      .from("ml_accounts")
+      .select("total_ml_publications")
+      .eq("id", accountId)
+      .single()
+
+    const totalInML = account?.total_ml_publications || 0
+
     // Contar publicaciones totales de esta cuenta en nuestra DB
     const { count: totalPublications } = await supabase
       .from("ml_publications")
@@ -24,22 +33,15 @@ export async function GET(request: Request) {
       .eq("account_id", accountId)
       .not("product_id", "is", null)
 
-    // No hacer llamada a ML API para evitar consumir cuota
-    // El total de ML se actualiza durante el proceso de vincular/importar
-    // Por ahora usamos el total conocido o una estimación
     const totalInDB = totalPublications || 0
     const linkedInDB = linkedPublications || 0
-    
-    // Estimación: si hay diferencia significativa entre vinculadas y total en DB,
-    // probablemente hay más en ML que no hemos importado
-    // El total real de ML (~44926) se debe sincronizar con el proceso de vincular
 
     return NextResponse.json({
-      total_in_ml: 44926, // Total conocido - se actualiza con el proceso de vincular
+      total_in_ml: totalInML,
       total_publications: totalInDB,
       linked_publications: linkedInDB,
       unlinked_publications: totalInDB - linkedInDB,
-      pending_import: 44926 - totalInDB
+      pending_import: Math.max(0, totalInML - totalInDB)
     })
   } catch (error) {
     console.error("Error fetching account stats:", error)

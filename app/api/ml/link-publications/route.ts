@@ -49,6 +49,14 @@ export async function POST(request: Request) {
     const totalInML = searchData.paging?.total || 0
     const allItemIds = searchData.results || []
 
+    // Guardar el total real de ML en la cuenta (cache)
+    if (totalInML > 0) {
+      await supabase
+        .from("ml_accounts")
+        .update({ total_ml_publications: totalInML })
+        .eq("id", account_id)
+    }
+
     // Filtrar solo los que NO tenemos en nuestra DB
     const newItemIds = allItemIds.filter((id: string) => !existingItemIds.has(id))
 
