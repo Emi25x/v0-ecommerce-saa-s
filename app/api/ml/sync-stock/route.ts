@@ -108,9 +108,28 @@ export async function POST(request: Request) {
           }
         )
 
+        // Verificar rate limit antes de parsear
+        if (updateResponse.status === 429) {
+          return NextResponse.json({
+            success: true,
+            rate_limited: true,
+            message: "Rate limit alcanzado. Continuar más tarde.",
+            processed: products.indexOf(product),
+            updated,
+            linked,
+            not_found_in_ml: notFoundInML,
+            errors
+          })
+        }
+
         if (updateResponse.ok) {
           // La actualización fue exitosa
-          const updatedItem = await updateResponse.json()
+          let updatedItem
+          try {
+            updatedItem = await updateResponse.json()
+          } catch {
+            updatedItem = { id: itemId, title: product.title, status: "active" }
+          }
           updated++
 
           // Verificar si ya existe en ml_publications
