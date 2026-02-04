@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
       override_price,  // Precio manual (opcional)
       preview_only = true, // Solo generar preview, no publicar
       publish_mode = "linked", // "linked", "catalog" o "traditional"
-      force_republish = false // Si es true, no verifica si ya está publicado
+      force_republish = false // Variable para forzar republicación
     } = body
 
     if (!product_id || !template_id || !account_id) {
@@ -238,18 +238,18 @@ export async function POST(request: NextRequest) {
       }
     }
     
-// Si ya está publicado y NO es preview, rechazar (excepto si es force_republish)
-  if (alreadyPublishedInfo.exists && !preview_only && !force_republish) {
-  return NextResponse.json({
-  success: false,
-  skipped: true,
-  reason: alreadyPublishedInfo.source === "mercadolibre" ? "already_published" : "already_in_db",
-  existing_item_id: alreadyPublishedInfo.item_id,
-  message: `El EAN ${product.ean} ya está publicado (${alreadyPublishedInfo.item_id})`,
-  product_title: product.title,
-  product_ean: product.ean
-  })
-  }
+// Si ya está publicado y NO es preview, rechazar
+    if (alreadyPublishedInfo.exists && !preview_only) {
+      return NextResponse.json({
+        success: false,
+        skipped: true,
+        reason: alreadyPublishedInfo.source === "mercadolibre" ? "already_published" : "already_in_db",
+        existing_item_id: alreadyPublishedInfo.item_id,
+        message: `El EAN ${product.ean} ya está publicado (${alreadyPublishedInfo.item_id})`,
+        product_title: product.title,
+        product_ean: product.ean
+      })
+    }
 
     // Calcular el precio
     let finalPrice = override_price
@@ -603,12 +603,12 @@ Libro nuevo. Envíos a todo el país.`
         attributes.push({ id: "PAGES_NUMBER", value_name: product.pages.toString() })
       }
       
-// Usar el ID de imagen subido a ML (NO usamos fallback a URL porque ML la rechazará si es pequeña)
-  const pictures: Array<{ id?: string; source?: string }> = []
-  if (mlPictureId) {
-  pictures.push({ id: mlPictureId })
-  }
-  // Si no hay mlPictureId, se publica sin imagen (mejor que fallar)
+      // Usar el ID de imagen subido a ML (NO usamos fallback a URL porque ML la rechazará si es pequeña)
+      const pictures: Array<{ id?: string; source?: string }> = []
+      if (mlPictureId) {
+        pictures.push({ id: mlPictureId })
+      }
+      // Si no hay mlPictureId, se publica sin imagen (mejor que fallar)
       
       return {
         site_id: "MLA",
@@ -649,12 +649,12 @@ Libro nuevo. Envíos a todo el país.`
     
     // Helper para construir publicacion de catalogo
     const buildCatalogItem = () => {
-// Usar el ID de imagen subido a ML (NO usamos fallback a URL porque ML la rechazará si es pequeña)
-  const pictures: Array<{ id?: string; source?: string }> = []
-  if (mlPictureId) {
-  pictures.push({ id: mlPictureId })
-  }
-  // Si no hay mlPictureId, se publica sin imagen (mejor que fallar)
+      // Usar el ID de imagen subido a ML (NO usamos fallback a URL porque ML la rechazará si es pequeña)
+      const pictures: Array<{ id?: string; source?: string }> = []
+      if (mlPictureId) {
+        pictures.push({ id: mlPictureId })
+      }
+      // Si no hay mlPictureId, se publica sin imagen (mejor que fallar)
       
       return {
         site_id: "MLA",
@@ -694,13 +694,13 @@ Libro nuevo. Envíos a todo el país.`
     // RESPETAR el modo seleccionado por el usuario
     if (publish_mode === "catalog") {
       // Usuario quiere SOLO catalogo
-if (!catalogProductId) {
-  return NextResponse.json({
-  success: false,
-  error: `No está en catálogo ML (ISBN: ${product.ean}). Usa modo "Tradicional".`,
-  not_in_catalog: true
-  }, { status: 400 })
-  }
+      if (!catalogProductId) {
+        return NextResponse.json({
+          success: false,
+          error: `No está en catálogo ML (ISBN: ${product.ean}). Usa modo "Tradicional".`,
+          not_in_catalog: true
+        }, { status: 400 })
+      }
       mlItem = buildCatalogItem()
     } else if (publish_mode === "traditional") {
       // Usuario quiere SOLO tradicional - siempre usar tradicional
@@ -918,7 +918,6 @@ if (!catalogProductId) {
         ml_account_id: account.id,
         ml_status: mlData.status || "active",
         ml_published_at: new Date().toISOString(),
-        ml_last_checked_at: new Date().toISOString(),
         ml_permalink: mlData.permalink
       })
       .eq("id", product_id)
