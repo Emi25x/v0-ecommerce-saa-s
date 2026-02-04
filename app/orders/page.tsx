@@ -685,14 +685,8 @@ export default function OrdersPage() {
 
     if (selectedAccount) {
       fetchOrdersEffect()
-      
-      // Refrescar órdenes cada 5 minutos para mostrar cambios en tiempo real
-      const interval = setInterval(() => {
-        console.log("[v0] Refreshing orders (every 5 minutes)...")
-        fetchOrdersEffect()
-      }, 300000)
-      
-      return () => clearInterval(interval)
+      // Solo consulta cuando se abre la página o cambia la cuenta
+      // Sin refresh automático
     }
   }, [selectedAccount])
 
