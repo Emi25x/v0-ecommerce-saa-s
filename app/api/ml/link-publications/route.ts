@@ -134,7 +134,7 @@ export async function POST(request: Request) {
               title: item.title,
               status: item.status,
               price: item.price,
-              stock: item.available_quantity,
+              current_stock: item.available_quantity,
               permalink: item.permalink
             })
 
