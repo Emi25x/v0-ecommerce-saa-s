@@ -102,14 +102,20 @@ export async function POST(request: NextRequest) {
       if (accounts.length > 0) {
         try {
           const billingUrl = `https://api.mercadolibre.com/orders/${order.id}/billing_info`
+          console.log(`[v0] Obteniendo billing_info para orden ${order.id}...`)
           const billingResponse = await fetch(billingUrl, {
             headers: { 
               Authorization: `Bearer ${accounts[0].access_token}`,
               'x-version': '2'
             }
           })
+          console.log(`[v0] Billing response status: ${billingResponse.status}`)
           if (billingResponse.ok) {
             billingInfo = await billingResponse.json()
+            console.log(`[v0] Billing info recibido:`, JSON.stringify(billingInfo, null, 2))
+          } else {
+            const errorText = await billingResponse.text()
+            console.log(`[v0] Error en billing_info: ${errorText}`)
           }
         } catch (error) {
           console.error(`[v0] Error fetching billing info for order ${order.id}:`, error)
