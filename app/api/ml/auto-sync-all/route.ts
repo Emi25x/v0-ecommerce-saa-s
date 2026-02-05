@@ -89,12 +89,9 @@ export async function POST(request: Request) {
           product_id: product?.id || null,
           title: item.title,
           price: item.price,
-          available_quantity: item.available_quantity,
-          sold_quantity: item.sold_quantity,
+          current_stock: item.available_quantity,
           status: item.status,
           permalink: item.permalink,
-          thumbnail: item.thumbnail,
-          ean: gtin || sku,
           updated_at: new Date().toISOString()
         }
 
