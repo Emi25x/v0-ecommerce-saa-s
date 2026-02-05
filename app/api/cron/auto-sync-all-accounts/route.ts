@@ -6,12 +6,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-export async function GET(request: Request) {
-  const authHeader = request.headers.get("authorization")
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
-
+async function syncAllAccounts() {
   console.log("[v0] Iniciando sincronización automática de todas las cuentas...")
 
   try {
@@ -57,15 +52,41 @@ export async function GET(request: Request) {
 
     console.log("[v0] Sincronización automática iniciada para todas las cuentas")
 
-    return NextResponse.json({
+    return {
       success: true,
       message: "Sincronización automática iniciada",
+      summary: `${accounts.length} cuenta(s) procesada(s)`,
       accounts: accounts.length,
       results
-    })
+    }
 
   } catch (error) {
     console.error("[v0] Error en cron auto-sync:", error)
+    throw error
+  }
+}
+
+export async function GET(request: Request) {
+  const authHeader = request.headers.get("authorization")
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  try {
+    const result = await syncAllAccounts()
+    return NextResponse.json(result)
+  } catch (error) {
+    return NextResponse.json({ 
+      error: error instanceof Error ? error.message : "Error desconocido" 
+    }, { status: 500 })
+  }
+}
+
+export async function POST() {
+  try {
+    const result = await syncAllAccounts()
+    return NextResponse.json(result)
+  } catch (error) {
     return NextResponse.json({ 
       error: error instanceof Error ? error.message : "Error desconocido" 
     }, { status: 500 })
