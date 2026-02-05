@@ -73,21 +73,19 @@ export function SyncStatusCard() {
 
   const handleAutoSyncComplete = async () => {
     setAutoSyncing(true)
-    setAutoSyncResult("Iniciando sincronización completa (se continuará automáticamente)...")
+    setAutoSyncResult("Iniciando sincronización completa con método SCAN (sin límites)...")
     
     try {
-      // Iniciar sync con auto_continue para cada cuenta
+      // Iniciar sync con método scan para cada cuenta
       for (const account of accounts) {
-        setAutoSyncResult(`Iniciando ${account.nickname}... (continuará solo)`)
+        setAutoSyncResult(`Iniciando ${account.nickname}... (procesará TODO automáticamente)`)
         
-        const response = await fetch("/api/ml/sync-stock", {
+        const response = await fetch("/api/ml/sync-stock-scan", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ 
             account_id: account.id,
-            limit: 200,
-            offset: 0,
-            auto_continue: true
+            scroll_id: null // null = empezar desde el inicio
           })
         })
         
@@ -98,16 +96,16 @@ export function SyncStatusCard() {
         }
         
         const data = await response.json()
-        setAutoSyncResult(`${account.nickname}: Procesando ${data.total_in_ml} items en segundo plano...`)
+        setAutoSyncResult(`${account.nickname}: Sincronizando todas las publicaciones en segundo plano...`)
       }
       
-      setAutoSyncResult(`✓ Sincronización iniciada. Se completará automáticamente en segundo plano.`)
-      // Refrescar cada 10 segundos para ver progreso
-      const interval = setInterval(() => fetchAccounts(), 10000)
+      setAutoSyncResult(`✓ Sincronización completa iniciada. Procesará TODAS las publicaciones automáticamente.`)
+      // Refrescar cada 15 segundos para ver progreso
+      const interval = setInterval(() => fetchAccounts(), 15000)
       setTimeout(() => {
         clearInterval(interval)
         setAutoSyncResult(null)
-      }, 60000)
+      }, 120000) // 2 minutos de monitoreo
     } catch (error) {
       console.error("Error auto sync:", error)
       setAutoSyncResult("Error al iniciar sincronización")
