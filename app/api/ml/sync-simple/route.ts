@@ -104,22 +104,37 @@ export async function POST(request: Request) {
               }
             }
             
-            // Guardar/actualizar publicación
-            await supabase
+            // Verificar si ya existe la publicación
+            const { data: existing } = await supabase
               .from("ml_publications")
-              .upsert({
-                account_id: account.id,
-                ml_item_id: item.id,
-                product_id,
-                title: item.title,
-                price: item.price,
-                current_stock: item.available_quantity,
-                status: item.status,
-                permalink: item.permalink,
-                updated_at: new Date().toISOString()
-              }, {
-                onConflict: "ml_item_id"
-              })
+              .select("id")
+              .eq("ml_item_id", item.id)
+              .maybeSingle()
+            
+            const publicationData = {
+              account_id: account.id,
+              ml_item_id: item.id,
+              product_id,
+              title: item.title,
+              price: item.price,
+              current_stock: item.available_quantity,
+              status: item.status,
+              permalink: item.permalink,
+              updated_at: new Date().toISOString()
+            }
+            
+            if (existing) {
+              // Actualizar
+              await supabase
+                .from("ml_publications")
+                .update(publicationData)
+                .eq("id", existing.id)
+            } else {
+              // Insertar
+              await supabase
+                .from("ml_publications")
+                .insert(publicationData)
+            }
             
             processed++
             
