@@ -84,12 +84,30 @@ export async function POST(request: NextRequest) {
       })
 
       if (!itemsResponse.ok) {
-        console.error("[v0] Error fetching chunk:", itemsResponse.status)
+        const errorText = await itemsResponse.text()
+        console.error("[v0] Error fetching chunk:", itemsResponse.status, errorText.substring(0, 100))
+        
+        // Si es rate limit, esperar y reintentar después
+        if (itemsResponse.status === 429) {
+          console.log("[v0] Rate limit alcanzado. Deteniendo sincronización para reintentar después.")
+          return NextResponse.json({
+            success: false,
+            processed,
+            has_more: true,
+            scroll_id: nextScrollId,
+            error: "Rate limit alcanzado. Reintente en unos minutos.",
+            message: `Procesados ${processed} items antes del rate limit`
+          })
+        }
+        
         errors += chunk.length
         continue
       }
 
       const itemsData = await itemsResponse.json()
+      
+      // Pequeño delay entre chunks para evitar rate limit
+      await new Promise(resolve => setTimeout(resolve, 500))
       
       for (const itemWrapper of itemsData) {
         const item = itemWrapper.body
