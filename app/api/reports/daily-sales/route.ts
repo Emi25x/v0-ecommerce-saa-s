@@ -162,15 +162,18 @@ export async function POST(request: NextRequest) {
         const receiver = shippingData.receiver_address || {}
 
         // Usar datos de billing_info (facturación) primero, luego shipping como fallback
-        const billing = billingInfo.billing_info || billingInfo
-        const billingAddress = billing.additional_info || {}
+        const buyerBilling = billingInfo.buyer?.billing_info || {}
+        const billingAddress = buyerBilling.address || {}
+        const identification = buyerBilling.identification || {}
         
         // Si billing_info no tiene dirección, usar datos de shipping
-        const finalName = billingAddress.receiver_name || receiver.receiver_name || order.buyer?.nickname || ""
-        const finalDocNumber = billing.doc_number || ""
+        const finalName = buyerBilling.name && buyerBilling.last_name 
+          ? `${buyerBilling.name} ${buyerBilling.last_name}`.trim()
+          : receiver.receiver_name || order.buyer?.nickname || ""
+        const finalDocNumber = identification.number || ""
         const finalStreetName = billingAddress.street_name || receiver.street_name || ""
         const finalStreetNumber = billingAddress.street_number || receiver.street_number || ""
-        const finalCity = billingAddress.city?.name || receiver.city?.name || ""
+        const finalCity = billingAddress.city_name || receiver.city?.name || ""
         const finalState = billingAddress.state?.name || receiver.state?.name || ""
         const finalZipCode = billingAddress.zip_code || receiver.zip_code || ""
         
