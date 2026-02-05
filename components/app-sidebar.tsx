@@ -406,6 +406,17 @@ export function AppSidebar() {
                 <FeatherUpload className="h-4 w-4" />
                 <span>Publicar en ML</span>
               </a>
+              <a
+                href="/settings/reports"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname === "/settings/reports"
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <FeatherFileText className="h-4 w-4" />
+                <span>Reportes de Ventas</span>
+              </a>
             </div>
           )}
         </div>
