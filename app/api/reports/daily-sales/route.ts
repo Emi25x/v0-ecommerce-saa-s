@@ -143,6 +143,16 @@ export async function POST(request: NextRequest) {
         if (!emailResponse.ok) {
           const errorData = await emailResponse.json()
           console.error("[v0] Error enviando email:", errorData)
+          
+          // Mensaje específico para error de dominio no verificado
+          if (errorData.statusCode === 403 || errorData.message?.includes("verify a domain")) {
+            return NextResponse.json({ 
+              error: "Resend requiere verificar un dominio", 
+              message: "Para enviar a múltiples destinatarios, verifica un dominio en resend.com/domains. Temporalmente, cambia el email a xemilianox@gmail.com para testing.",
+              details: errorData 
+            }, { status: 403 })
+          }
+          
           return NextResponse.json({ error: "Error enviando email", details: errorData }, { status: 500 })
         }
 

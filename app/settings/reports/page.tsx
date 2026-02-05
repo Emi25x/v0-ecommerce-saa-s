@@ -87,7 +87,7 @@ export default function ReportsSettingsPage() {
   const handleSendReport = async () => {
     setGenerating(true)
     try {
-      await fetch("/api/reports/daily-sales", {
+      const res = await fetch("/api/reports/daily-sales", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -96,7 +96,19 @@ export default function ReportsSettingsPage() {
           email_recipients: emails
         })
       })
-      alert("Reporte enviado por email")
+      
+      const data = await res.json()
+      
+      if (res.ok) {
+        alert("Reporte enviado por email correctamente")
+      } else {
+        // Mostrar mensaje específico si es error de dominio
+        if (res.status === 403 && data.message) {
+          alert(`${data.error}\n\n${data.message}`)
+        } else {
+          alert(`Error: ${data.error || "Error al enviar reporte"}`)
+        }
+      }
     } catch (error) {
       console.error("Error sending report:", error)
       alert("Error al enviar reporte")
