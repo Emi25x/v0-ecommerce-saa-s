@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     const supabase = await createClient()
     const body = await request.json()
     console.log("[v0] Request body:", JSON.stringify(body))
-    const { account_id, limit = 50, offset = 0 } = body
+    const { account_id, limit = 200, offset = 0, auto_continue = false } = body
 
     if (!account_id) {
       return NextResponse.json({ error: "account_id requerido" }, { status: 400 })
@@ -253,6 +253,23 @@ export async function POST(request: Request) {
       next_offset: offset + limit
     }
     console.log("[v0] Sync-stock RESULTADO:", JSON.stringify(result))
+    
+    // Auto-continuar si hay más items y está habilitado
+    if (auto_continue && result.has_more) {
+      console.log("[v0] Auto-continuando desde offset:", result.next_offset)
+      // No await - dispara y olvida para no bloquear respuesta
+      fetch(`${process.env.NEXT_PUBLIC_VERCEL_URL || "http://localhost:3000"}/api/ml/sync-stock`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          account_id, 
+          limit, 
+          offset: result.next_offset,
+          auto_continue: true 
+        })
+      }).catch(e => console.error("[v0] Error en auto-continue:", e))
+    }
+    
     return NextResponse.json(result)
   } catch (error) {
     console.error("Error en sync-stock:", error)

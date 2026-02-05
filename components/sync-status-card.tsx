@@ -73,19 +73,21 @@ export function SyncStatusCard() {
 
   const handleAutoSyncComplete = async () => {
     setAutoSyncing(true)
-    setAutoSyncResult("Iniciando sincronización automática completa...")
+    setAutoSyncResult("Iniciando sincronización completa (se continuará automáticamente)...")
     
     try {
-      // Iniciar sync para cada cuenta
+      // Iniciar sync con auto_continue para cada cuenta
       for (const account of accounts) {
-        setAutoSyncResult(`Sincronizando ${account.nickname}...`)
+        setAutoSyncResult(`Iniciando ${account.nickname}... (continuará solo)`)
         
-        const response = await fetch("/api/ml/auto-sync-all", {
+        const response = await fetch("/api/ml/sync-stock", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ 
-            offset: 0, 
-            accountId: account.id 
+            account_id: account.id,
+            limit: 200,
+            offset: 0,
+            auto_continue: true
           })
         })
         
@@ -94,17 +96,21 @@ export function SyncStatusCard() {
           setAutoSyncResult(`Error en ${account.nickname}: ${error.error}`)
           break
         }
+        
+        const data = await response.json()
+        setAutoSyncResult(`${account.nickname}: Procesando ${data.total_in_ml} items en segundo plano...`)
       }
       
-      setAutoSyncResult(`✓ Sincronización iniciada para ${accounts.length} cuenta(s)`)
-      // Refrescar cuentas después de 3 segundos
+      setAutoSyncResult(`✓ Sincronización iniciada. Se completará automáticamente en segundo plano.`)
+      // Refrescar cada 10 segundos para ver progreso
+      const interval = setInterval(() => fetchAccounts(), 10000)
       setTimeout(() => {
-        fetchAccounts()
+        clearInterval(interval)
         setAutoSyncResult(null)
-      }, 3000)
+      }, 60000)
     } catch (error) {
       console.error("Error auto sync:", error)
-      setAutoSyncResult("Error al iniciar sincronización automática")
+      setAutoSyncResult("Error al iniciar sincronización")
     } finally {
       setAutoSyncing(false)
     }
