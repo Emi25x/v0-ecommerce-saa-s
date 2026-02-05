@@ -34,6 +34,8 @@ export function SyncStatusCard() {
   const [accountStats, setAccountStats] = useState<Record<string, AccountStats>>({})
   const [syncingAll, setSyncingAll] = useState(false)
   const [syncAllResult, setSyncAllResult] = useState<string | null>(null)
+  const [autoSyncing, setAutoSyncing] = useState(false)
+  const [autoSyncResult, setAutoSyncResult] = useState<string | null>(null)
 
   useEffect(() => {
     fetchAccounts()
@@ -66,6 +68,35 @@ export function SyncStatusCard() {
       }
     } catch (error) {
       console.error("Error fetching account stats:", error)
+    }
+  }
+
+  const handleAutoSyncComplete = async () => {
+    setAutoSyncing(true)
+    setAutoSyncResult("Iniciando sincronización automática completa...")
+    
+    try {
+      const response = await fetch("/api/cron/auto-sync-all-accounts", {
+        method: "POST"
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setAutoSyncResult(`✓ Sincronización iniciada: ${data.summary}`)
+        // Refrescar cuentas después de 5 segundos
+        setTimeout(() => {
+          fetchAccounts()
+          setAutoSyncResult(null)
+        }, 5000)
+      } else {
+        const error = await response.json()
+        setAutoSyncResult(`Error: ${error.error || "Error desconocido"}`)
+      }
+    } catch (error) {
+      console.error("Error auto sync:", error)
+      setAutoSyncResult("Error al iniciar sincronización automática")
+    } finally {
+      setAutoSyncing(false)
     }
   }
 
@@ -198,25 +229,49 @@ export function SyncStatusCard() {
               Última actualización de stock y publicaciones
             </CardDescription>
           </div>
-          <Button
-            onClick={handleSyncAll}
-            disabled={syncingAll}
-            size="sm"
-            className="bg-primary hover:bg-primary/90"
-          >
-            {syncingAll ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Sincronizando...
-              </>
-            ) : (
-              <>
-                <TrendingUp className="h-4 w-4 mr-2" />
-                Sincronizar Todo
-              </>
-            )}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              onClick={handleAutoSyncComplete}
+              disabled={autoSyncing}
+              size="sm"
+              variant="default"
+              className="bg-green-600 hover:bg-green-700 text-white"
+            >
+              {autoSyncing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Sincronizando...
+                </>
+              ) : (
+                <>
+                  <Package className="h-4 w-4 mr-2" />
+                  Sincronizar Completo
+                </>
+              )}
+            </Button>
+            <Button
+              onClick={handleSyncAll}
+              disabled={syncingAll}
+              size="sm"
+              className="bg-primary hover:bg-primary/90"
+            >
+              {syncingAll ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Sincronizando...
+                </>
+              ) : (
+                <>
+                  <TrendingUp className="h-4 w-4 mr-2" />
+                  Sincronizar Todo
+                </>
+              )}
+            </Button>
+          </div>
         </div>
+        {autoSyncResult && (
+          <div className="mt-2 text-sm text-green-700 bg-green-50 border border-green-200 p-2 rounded">{autoSyncResult}</div>
+        )}
         {syncAllResult && (
           <div className="mt-2 text-sm text-primary bg-primary/10 p-2 rounded">{syncAllResult}</div>
         )}
