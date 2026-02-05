@@ -108,12 +108,53 @@ export async function POST(request: NextRequest) {
 
     // Si se solicita envío por email
     if (send_email && email_recipients.length > 0) {
-      // TODO: Integrar con Resend
       console.log("[v0] Enviando email a:", email_recipients)
-      // Aquí irá la integración con Resend
+      
+      const resendApiKey = process.env.RESEND_API_KEY
+      if (!resendApiKey) {
+        return NextResponse.json({ error: "RESEND_API_KEY no configurada" }, { status: 500 })
+      }
+
+      try {
+        const base64Excel = buffer.toString('base64')
+        
+        const emailResponse = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${resendApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            from: 'Reportes <onboarding@resend.dev>',
+            to: email_recipients,
+            subject: `Reporte de Ventas - ${targetDate}`,
+            html: `
+              <h2>Reporte de Ventas Diarias</h2>
+              <p>Adjunto encontrarás el reporte de ventas del día ${targetDate}</p>
+              <p>Total de órdenes: ${allOrders.length}</p>
+            `,
+            attachments: [{
+              filename: `ventas-${targetDate}.xlsx`,
+              content: base64Excel
+            }]
+          })
+        })
+
+        if (!emailResponse.ok) {
+          const errorData = await emailResponse.json()
+          console.error("[v0] Error enviando email:", errorData)
+          return NextResponse.json({ error: "Error enviando email", details: errorData }, { status: 500 })
+        }
+
+        console.log("[v0] Email enviado exitosamente")
+        return NextResponse.json({ success: true, message: "Email enviado correctamente" })
+      } catch (emailError) {
+        console.error("[v0] Error en envío de email:", emailError)
+        return NextResponse.json({ error: "Error enviando email" }, { status: 500 })
+      }
     }
 
-    // Devolver el archivo Excel
+    // Devolver el archivo Excel para descarga
     return new NextResponse(buffer, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
