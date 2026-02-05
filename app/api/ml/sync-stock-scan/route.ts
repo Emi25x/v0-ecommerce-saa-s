@@ -29,8 +29,8 @@ export async function POST(request: NextRequest) {
 
     console.log("[v0] Cuenta encontrada:", account.nickname)
 
-    // Construir URL con search_type=scan
-    let searchUrl = `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?search_type=scan&limit=100`
+    // Construir URL con search_type=scan (reducido a 50 items para evitar rate limit)
+    let searchUrl = `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?search_type=scan&limit=50`
     
     if (scroll_id) {
       searchUrl += `&scroll_id=${scroll_id}`
@@ -106,8 +106,8 @@ export async function POST(request: NextRequest) {
 
       const itemsData = await itemsResponse.json()
       
-      // Pequeño delay entre chunks para evitar rate limit
-      await new Promise(resolve => setTimeout(resolve, 500))
+      // Delay de 2 segundos entre chunks para evitar rate limit
+      await new Promise(resolve => setTimeout(resolve, 2000))
       
       for (const itemWrapper of itemsData) {
         const item = itemWrapper.body
@@ -188,23 +188,25 @@ export async function POST(request: NextRequest) {
 
     console.log("[v0] Procesados:", processed, "Vinculados:", linked, "Errores:", errors)
 
-    // Si hay más items, auto-continuar
+    // Si hay más items, auto-continuar con delay para respetar rate limit
     const hasMore = !!nextScrollId
     if (hasMore) {
-      console.log("[v0] Hay más items, auto-continuando...")
+      console.log("[v0] Hay más items, esperando 5 segundos antes de continuar...")
       const baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL 
         ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` 
         : "http://localhost:3000"
       
-      // Disparar siguiente batch sin esperar
-      fetch(`${baseUrl}/api/ml/sync-stock-scan`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          account_id,
-          scroll_id: nextScrollId
-        })
-      }).catch(e => console.error("[v0] Error auto-continue:", e))
+      // Esperar 5 segundos y disparar siguiente batch
+      setTimeout(() => {
+        fetch(`${baseUrl}/api/ml/sync-stock-scan`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            account_id,
+            scroll_id: nextScrollId
+          })
+        }).catch(e => console.error("[v0] Error auto-continue:", e))
+      }, 5000)
     }
 
     return NextResponse.json({
