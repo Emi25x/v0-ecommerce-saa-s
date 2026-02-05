@@ -117,29 +117,41 @@ export async function POST(request: NextRequest) {
       }
 
       for (const item of order.order_items || []) {
-        // Debug: ver estructura del item para encontrar el EAN
-        console.log("[v0] Item structure:", JSON.stringify({
-          id: item.item.id,
-          title: item.item.title,
-          seller_sku: item.item.seller_sku,
-          seller_custom_field: item.item.seller_custom_field,
-          variation_id: item.item.variation_id,
-          variation_attributes: item.item.variation_attributes,
-          attributes: item.item.attributes
-        }, null, 2))
-
-        // Buscar EAN en diferentes campos posibles
+        // Buscar EAN: primero en seller_sku
         let ean = item.item.seller_sku || item.item.seller_custom_field || ""
         
-        // Si no hay EAN, buscar en attributes (GTIN)
-        if (!ean && item.item.attributes) {
-          const gtinAttr = item.item.attributes.find((attr: any) => attr.id === 'GTIN' || attr.id === 'EAN')
-          if (gtinAttr) {
-            ean = gtinAttr.value_name || ""
+        // Si no hay EAN, obtener los datos completos del item de ML
+        if (!ean && item.item.id && accounts.length > 0) {
+          try {
+            const itemUrl = `https://api.mercadolibre.com/items/${item.item.id}`
+            const itemResponse = await fetch(itemUrl, {
+              headers: { Authorization: `Bearer ${accounts[0].access_token}` }
+            })
+            
+            if (itemResponse.ok) {
+              const itemData = await itemResponse.json()
+              
+              // Buscar ISBN en attributes
+              if (itemData.attributes) {
+                const isbnAttr = itemData.attributes.find((attr: any) => 
+                  attr.id === 'ISBN' || attr.id === 'GTIN' || attr.id === 'EAN'
+                )
+                if (isbnAttr && isbnAttr.value_name) {
+                  ean = isbnAttr.value_name
+                }
+              }
+              
+              // Si no está en attributes, buscar en descripción
+              if (!ean && itemData.seller_custom_field) {
+                ean = itemData.seller_custom_field
+              }
+            }
+          } catch (error) {
+            console.error(`[v0] Error fetching item ${item.item.id}:`, error)
           }
         }
 
-        console.log("[v0] EAN encontrado:", ean, "para producto:", item.item.title)
+        console.log("[v0] EAN/ISBN encontrado:", ean, "para:", item.item.title)
 
         const receiver = shippingData.receiver_address || {}
 
