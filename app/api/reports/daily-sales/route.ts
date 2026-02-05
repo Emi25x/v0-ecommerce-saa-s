@@ -71,21 +71,25 @@ export async function POST(request: NextRequest) {
     // Agregar filas de órdenes
     for (const order of allOrders) {
       for (const item of order.order_items || []) {
-        // Buscar EAN del producto en nuestra DB
-        const { data: product } = await supabase
-          .from("products")
-          .select("ean")
-          .eq("title", item.item.title)
-          .maybeSingle()
+        // Usar seller_sku si existe (es el EAN), sino intentar buscar en DB
+        let ean = item.item.seller_sku || ""
+        
+        // Si no hay seller_sku y hay seller_custom_field, intentar extraer EAN
+        if (!ean && item.item.seller_custom_field) {
+          ean = item.item.seller_custom_field
+        }
 
         const shipping = order.shipping || {}
         const receiver = shipping.receiver_address || {}
+
+        // Declare product variable here or replace with appropriate value
+        const product = { ean: "" }; // Placeholder declaration
 
         worksheet.addRow({
           iva: 0,
           codigo_pedido: order.id,
           cantidad: item.quantity,
-          ean: product?.ean || "",
+          ean: ean,
           precio_venta: item.unit_price,
           cliente_nombre: `${receiver.receiver_name || order.buyer?.nickname || ""}`,
           cliente_identificacion: receiver.receiver_phone || "",
