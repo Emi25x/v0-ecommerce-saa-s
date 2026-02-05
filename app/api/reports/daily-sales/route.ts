@@ -46,6 +46,22 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`[v0] Total órdenes encontradas: ${allOrders.length}`)
+    
+    // Debug: Ver estructura de la primera orden
+    if (allOrders.length > 0) {
+      console.log("[v0] Estructura de orden de ejemplo:", JSON.stringify({
+        id: allOrders[0].id,
+        buyer: allOrders[0].buyer,
+        shipping: allOrders[0].shipping,
+        order_items: allOrders[0].order_items?.map((item: any) => ({
+          title: item.item.title,
+          seller_sku: item.item.seller_sku,
+          seller_custom_field: item.item.seller_custom_field,
+          quantity: item.quantity,
+          unit_price: item.unit_price
+        }))
+      }, null, 2))
+    }
 
     // Crear Excel con formato de la plantilla
     const workbook = new ExcelJS.Workbook()
@@ -80,7 +96,7 @@ export async function POST(request: NextRequest) {
         // Crear fila con el formato exacto de la plantilla (62 columnas)
         const row = new Array(62).fill("")
         row[0] = 0 // IVA
-        row[1] = order.id // CODIGO_PEDIDO
+        row[1] = Number(order.id) || order.id // CODIGO_PEDIDO como número
         row[7] = item.quantity // CANTIDAD
         row[21] = ean // EAN
         row[25] = item.unit_price // PRECIO_VENTA
