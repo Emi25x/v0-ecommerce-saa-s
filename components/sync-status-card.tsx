@@ -72,43 +72,71 @@ export function SyncStatusCard() {
   }
 
   const handleAutoSyncComplete = async () => {
+    if (accounts.length === 0) {
+      setAutoSyncResult("No hay cuentas para sincronizar")
+      return
+    }
+    
     setAutoSyncing(true)
-    setAutoSyncResult("Iniciando sincronización completa con método SCAN (sin límites)...")
+    setAutoSyncResult("Sincronizando publicaciones de a 50 por vez...")
     
     try {
-      // Iniciar sync con método scan para cada cuenta
-      for (const account of accounts) {
-        setAutoSyncResult(`Iniciando ${account.nickname}... (procesará TODO automáticamente)`)
+      const account = accounts[0] // Primera cuenta
+      let offset = 0
+      let hasMore = true
+      let totalProcessed = 0
+      
+      while (hasMore && totalProcessed < 500) { // Máximo 500 items por sesión
+        setAutoSyncResult(`Procesando items ${offset}-${offset + 50}... (total: ${totalProcessed})`)
         
-        const response = await fetch("/api/ml/sync-stock-scan", {
+        const response = await fetch("/api/ml/sync-simple", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ 
             account_id: account.id,
-            scroll_id: null // null = empezar desde el inicio
+            limit: 50,
+            offset: offset
           })
         })
         
         if (!response.ok) {
           const error = await response.json()
-          setAutoSyncResult(`Error en ${account.nickname}: ${error.error}`)
+          if (response.status === 429) {
+            setAutoSyncResult(`Rate limit alcanzado después de ${totalProcessed} items. Esperá 5 minutos y apretá de nuevo.`)
+            break
+          }
+          setAutoSyncResult(`Error: ${error.error}`)
           break
         }
         
         const data = await response.json()
-        setAutoSyncResult(`${account.nickname}: Sincronizando todas las publicaciones en segundo plano...`)
+        totalProcessed += data.processed
+        hasMore = data.has_more
+        offset = data.next_offset
+        
+        setAutoSyncResult(`Procesados ${totalProcessed} - Progreso: ${data.progress}`)
+        
+        if (!hasMore) {
+          setAutoSyncResult(`✓ Completado: ${totalProcessed} publicaciones sincronizadas`)
+          break
+        }
+        
+        // Delay de 2 segundos entre batches
+        await new Promise(resolve => setTimeout(resolve, 2000))
       }
       
-      setAutoSyncResult(`✓ Sincronización completa iniciada. Procesará TODAS las publicaciones automáticamente.`)
-      // Refrescar cada 15 segundos para ver progreso
-      const interval = setInterval(() => fetchAccounts(), 15000)
+      if (hasMore && totalProcessed >= 500) {
+        setAutoSyncResult(`✓ ${totalProcessed} items sincronizados. Apretá de nuevo para continuar.`)
+      }
+      
+      // Refrescar cuentas
       setTimeout(() => {
-        clearInterval(interval)
-        setAutoSyncResult(null)
-      }, 120000) // 2 minutos de monitoreo
+        fetchAccounts()
+      }, 2000)
+      
     } catch (error) {
       console.error("Error auto sync:", error)
-      setAutoSyncResult("Error al iniciar sincronización")
+      setAutoSyncResult("Error al sincronizar")
     } finally {
       setAutoSyncing(false)
     }
@@ -165,7 +193,6 @@ export function SyncStatusCard() {
           break
         }
         
-        const data = await response.json()
         setSyncAllResult(`${account.nickname}: Sincronización iniciada en segundo plano...`)
       }
       
