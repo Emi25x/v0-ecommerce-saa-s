@@ -32,6 +32,8 @@ export function SyncStatusCard() {
   const [syncing, setSyncing] = useState<string | null>(null)
   const [syncResult, setSyncResult] = useState<string | null>(null)
   const [accountStats, setAccountStats] = useState<Record<string, AccountStats>>({})
+  const [syncingAll, setSyncingAll] = useState(false)
+  const [syncAllResult, setSyncAllResult] = useState<string | null>(null)
 
   useEffect(() => {
     fetchAccounts()
@@ -64,6 +66,45 @@ export function SyncStatusCard() {
       }
     } catch (error) {
       console.error("Error fetching account stats:", error)
+    }
+  }
+
+  const handleSyncAll = async () => {
+    setSyncingAll(true)
+    setSyncAllResult("Sincronizando proveedores...")
+    
+    try {
+      // 1. Sync Libral (proveedores)
+      const libralRes = await fetch("/api/cron/sync-libral", { method: "POST" })
+      if (!libralRes.ok) throw new Error("Error en sync proveedores")
+      
+      setSyncAllResult("Sincronizando MercadoLibre...")
+      
+      // 2. Sync ML Stock para cada cuenta
+      for (const account of accounts) {
+        const mlRes = await fetch("/api/ml/sync-stock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ account_id: account.id, limit: 200 })
+        })
+        if (!mlRes.ok) throw new Error("Error en sync ML")
+      }
+      
+      setSyncAllResult("Sincronizando órdenes...")
+      
+      // 3. Sync Orders
+      const ordersRes = await fetch("/api/ml/sync-orders", { method: "POST" })
+      if (!ordersRes.ok) throw new Error("Error en sync órdenes")
+      
+      setSyncAllResult("✓ Sincronización completa exitosa")
+      await fetchAccounts()
+      setTimeout(() => setSyncAllResult(null), 8000)
+    } catch (error) {
+      console.error("Error syncing all:", error)
+      setSyncAllResult(`Error: ${error instanceof Error ? error.message : "Desconocido"}`)
+      setTimeout(() => setSyncAllResult(null), 8000)
+    } finally {
+      setSyncingAll(false)
     }
   }
 
@@ -147,13 +188,38 @@ export function SyncStatusCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <RefreshCw className="h-5 w-5" />
-          Estado de Sincronización ML
-        </CardTitle>
-        <CardDescription>
-          Última actualización de stock y publicaciones
-        </CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5" />
+              Estado de Sincronización ML
+            </CardTitle>
+            <CardDescription>
+              Última actualización de stock y publicaciones
+            </CardDescription>
+          </div>
+          <Button
+            onClick={handleSyncAll}
+            disabled={syncingAll}
+            size="sm"
+            className="bg-primary hover:bg-primary/90"
+          >
+            {syncingAll ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Sincronizando...
+              </>
+            ) : (
+              <>
+                <TrendingUp className="h-4 w-4 mr-2" />
+                Sincronizar Todo
+              </>
+            )}
+          </Button>
+        </div>
+        {syncAllResult && (
+          <div className="mt-2 text-sm text-primary bg-primary/10 p-2 rounded">{syncAllResult}</div>
+        )}
       </CardHeader>
       <CardContent className="space-y-4">
         {accounts.map((account) => {
