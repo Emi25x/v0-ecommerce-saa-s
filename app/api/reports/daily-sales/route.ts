@@ -81,6 +81,22 @@ export async function POST(request: NextRequest) {
 
     // Agregar filas de órdenes
     for (const order of allOrders) {
+      // Obtener datos completos de envío si existe shipping ID
+      let shippingData: any = {}
+      if (order.shipping?.id && accounts.length > 0) {
+        try {
+          const shipmentUrl = `https://api.mercadolibre.com/shipments/${order.shipping.id}`
+          const shipmentResponse = await fetch(shipmentUrl, {
+            headers: { Authorization: `Bearer ${accounts[0].access_token}` }
+          })
+          if (shipmentResponse.ok) {
+            shippingData = await shipmentResponse.json()
+          }
+        } catch (error) {
+          console.error(`[v0] Error fetching shipment ${order.shipping.id}:`, error)
+        }
+      }
+
       for (const item of order.order_items || []) {
         // Usar seller_sku si existe (es el EAN), sino intentar buscar en DB
         let ean = item.item.seller_sku || ""
@@ -90,8 +106,7 @@ export async function POST(request: NextRequest) {
           ean = item.item.seller_custom_field
         }
 
-        const shipping = order.shipping || {}
-        const receiver = shipping.receiver_address || {}
+        const receiver = shippingData.receiver_address || {}
 
         // Crear fila con el formato exacto de la plantilla (62 columnas)
         const row = new Array(62).fill("")
