@@ -257,8 +257,12 @@ export async function POST(request: Request) {
     // Auto-continuar si hay más items y está habilitado
     if (auto_continue && result.has_more) {
       console.log("[v0] Auto-continuando desde offset:", result.next_offset)
+      const baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL 
+        ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` 
+        : "http://localhost:3000"
+      
       // No await - dispara y olvida para no bloquear respuesta
-      fetch(`${process.env.NEXT_PUBLIC_VERCEL_URL || "http://localhost:3000"}/api/ml/sync-stock`, {
+      fetch(`${baseUrl}/api/ml/sync-stock`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
