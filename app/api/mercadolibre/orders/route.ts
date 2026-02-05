@@ -57,6 +57,27 @@ export async function GET(request: Request) {
 
     const mlData = await mlResponse.json()
     console.log("[v0] Got", mlData.results?.length || 0, "orders from ML")
+    
+    // Debug: mostrar estructura completa de la primera orden
+    if (mlData.results && mlData.results.length > 0) {
+      const firstOrder = mlData.results[0]
+      console.log("[v0] ESTRUCTURA DE ORDEN COMPLETA:", JSON.stringify({
+        id: firstOrder.id,
+        buyer: firstOrder.buyer,
+        shipping: firstOrder.shipping,
+        order_items: firstOrder.order_items?.map((item: any) => ({
+          item: {
+            id: item.item?.id,
+            title: item.item?.title,
+            seller_sku: item.item?.seller_sku,
+            seller_custom_field: item.item?.seller_custom_field,
+            variation_attributes: item.item?.variation_attributes
+          },
+          quantity: item.quantity,
+          unit_price: item.unit_price
+        }))
+      }, null, 2))
+    }
 
     return NextResponse.json({
       orders: mlData.results || [],
