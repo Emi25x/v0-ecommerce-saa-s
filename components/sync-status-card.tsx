@@ -32,10 +32,10 @@ export function SyncStatusCard() {
   const [syncing, setSyncing] = useState<string | null>(null)
   const [syncResult, setSyncResult] = useState<string | null>(null)
   const [accountStats, setAccountStats] = useState<Record<string, AccountStats>>({})
-  const [syncingAll, setSyncingAll] = useState(false)
-  const [syncAllResult, setSyncAllResult] = useState<string | null>(null)
   const [autoSyncing, setAutoSyncing] = useState(false)
   const [autoSyncResult, setAutoSyncResult] = useState<string | null>(null)
+  const [syncingAll, setSyncingAll] = useState(false)
+  const [syncAllResult, setSyncAllResult] = useState<string | null>(null)
 
   useEffect(() => {
     fetchAccounts()
@@ -114,45 +114,6 @@ export function SyncStatusCard() {
     }
   }
 
-  const handleSyncAll = async () => {
-    setSyncingAll(true)
-    setSyncAllResult("Sincronizando proveedores...")
-    
-    try {
-      // 1. Sync Libral (proveedores)
-      const libralRes = await fetch("/api/cron/sync-libral", { method: "POST" })
-      if (!libralRes.ok) throw new Error("Error en sync proveedores")
-      
-      setSyncAllResult("Sincronizando MercadoLibre...")
-      
-      // 2. Sync ML Stock para cada cuenta
-      for (const account of accounts) {
-        const mlRes = await fetch("/api/ml/sync-stock", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ account_id: account.id, limit: 200 })
-        })
-        if (!mlRes.ok) throw new Error("Error en sync ML")
-      }
-      
-      setSyncAllResult("Sincronizando órdenes...")
-      
-      // 3. Sync Orders
-      const ordersRes = await fetch("/api/ml/sync-orders", { method: "POST" })
-      if (!ordersRes.ok) throw new Error("Error en sync órdenes")
-      
-      setSyncAllResult("✓ Sincronización completa exitosa")
-      await fetchAccounts()
-      setTimeout(() => setSyncAllResult(null), 8000)
-    } catch (error) {
-      console.error("Error syncing all:", error)
-      setSyncAllResult(`Error: ${error instanceof Error ? error.message : "Desconocido"}`)
-      setTimeout(() => setSyncAllResult(null), 8000)
-    } finally {
-      setSyncingAll(false)
-    }
-  }
-
   const handleSyncStock = async (accountId: string) => {
     setSyncing(accountId)
     setSyncResult(null)
@@ -180,6 +141,46 @@ export function SyncStatusCard() {
       setSyncResult("Error al sincronizar")
     } finally {
       setSyncing(null)
+    }
+  }
+
+  const handleSyncAll = async () => {
+    setSyncingAll(true)
+    setSyncAllResult("Iniciando sincronización completa...")
+    
+    try {
+      // Implementación para sincronizar todas las cuentas
+      for (const account of accounts) {
+        setSyncAllResult(`Iniciando ${account.nickname}...`)
+        
+        const response = await fetch("/api/ml/sync-all", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ account_id: account.id }),
+        })
+        
+        if (!response.ok) {
+          const error = await response.json()
+          setSyncAllResult(`Error en ${account.nickname}: ${error.error}`)
+          break
+        }
+        
+        const data = await response.json()
+        setSyncAllResult(`${account.nickname}: Sincronización iniciada en segundo plano...`)
+      }
+      
+      setSyncAllResult(`✓ Sincronización completa iniciada.`)
+      // Refrescar cada 15 segundos para ver progreso
+      const interval = setInterval(() => fetchAccounts(), 15000)
+      setTimeout(() => {
+        clearInterval(interval)
+        setSyncAllResult(null)
+      }, 120000) // 2 minutos de monitoreo
+    } catch (error) {
+      console.error("Error sync all:", error)
+      setSyncAllResult("Error al iniciar sincronización")
+    } finally {
+      setSyncingAll(false)
     }
   }
 
@@ -243,51 +244,28 @@ export function SyncStatusCard() {
               Última actualización de stock y publicaciones
             </CardDescription>
           </div>
-          <div className="flex gap-2">
-            <Button
-              onClick={handleAutoSyncComplete}
-              disabled={autoSyncing}
-              size="sm"
-              variant="default"
-              className="bg-green-600 hover:bg-green-700 text-white"
-            >
-              {autoSyncing ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  Sincronizando...
-                </>
-              ) : (
-                <>
-                  <Package className="h-4 w-4 mr-2" />
-                  Sincronizar Completo
-                </>
-              )}
-            </Button>
-            <Button
-              onClick={handleSyncAll}
-              disabled={syncingAll}
-              size="sm"
-              className="bg-primary hover:bg-primary/90"
-            >
-              {syncingAll ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  Sincronizando...
-                </>
-              ) : (
-                <>
-                  <TrendingUp className="h-4 w-4 mr-2" />
-                  Sincronizar Todo
-                </>
-              )}
-            </Button>
-          </div>
+          <Button
+            onClick={handleAutoSyncComplete}
+            disabled={autoSyncing}
+            size="sm"
+            variant="default"
+            className="bg-green-600 hover:bg-green-700 text-white"
+          >
+            {autoSyncing ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Sincronizando...
+              </>
+            ) : (
+              <>
+                <Package className="h-4 w-4 mr-2" />
+                Sincronizar Completo
+              </>
+            )}
+          </Button>
         </div>
         {autoSyncResult && (
           <div className="mt-2 text-sm text-green-700 bg-green-50 border border-green-200 p-2 rounded">{autoSyncResult}</div>
-        )}
-        {syncAllResult && (
-          <div className="mt-2 text-sm text-primary bg-primary/10 p-2 rounded">{syncAllResult}</div>
         )}
       </CardHeader>
       <CardContent className="space-y-4">
