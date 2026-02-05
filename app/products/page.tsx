@@ -49,6 +49,9 @@ export default function ProductsPage() {
     listing_type: "all",
     platform: "mercadolibre",
   })
+  
+  const [saving, setSaving] = useState(false)
+  const [saveResult, setSaveResult] = useState<string | null>(null)
 
   const fetchMlAccounts = async () => {
     try {
@@ -67,6 +70,34 @@ export default function ProductsPage() {
   useEffect(() => {
     loadProducts()
   }, [currentPage, filters, selectedAccount])
+
+  const handleSaveToDatabase = async () => {
+    setSaving(true)
+    setSaveResult("Guardando publicaciones en la base de datos...")
+    
+    try {
+      const mlProducts = products.filter(p => p.platform === "mercadolibre")
+      
+      const response = await fetch("/api/ml/save-publications-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ publications: mlProducts })
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        setSaveResult(`✓ ${data.saved} nuevas, ${data.updated} actualizadas, ${data.linked} vinculadas`)
+      } else {
+        setSaveResult("Error al guardar publicaciones")
+      }
+    } catch (error) {
+      console.error("Error:", error)
+      setSaveResult("Error al guardar publicaciones")
+    } finally {
+      setSaving(false)
+      setTimeout(() => setSaveResult(null), 5000)
+    }
+  }
 
   const loadProducts = async () => {
     setLoading(true)
@@ -260,10 +291,25 @@ export default function ProductsPage() {
                   : `Mostrando ${filteredProducts.length} productos (Página ${currentPage} de ${totalPages})`}
               </CardDescription>
             </div>
-            <Button onClick={loadProducts} disabled={loading}>
-              Actualizar
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={loadProducts} disabled={loading}>
+                Actualizar
+              </Button>
+              <Button 
+                onClick={handleSaveToDatabase} 
+                disabled={saving || products.length === 0}
+                variant="default"
+                className="bg-green-600 hover:bg-green-700"
+              >
+                {saving ? "Guardando..." : "Guardar en BD"}
+              </Button>
+            </div>
           </div>
+          {saveResult && (
+            <div className="mt-2 text-sm bg-green-50 border border-green-200 text-green-700 p-2 rounded">
+              {saveResult}
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {loading ? (
