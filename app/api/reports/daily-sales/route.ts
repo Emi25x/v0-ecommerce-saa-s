@@ -155,9 +155,18 @@ export async function POST(request: NextRequest) {
 
         const receiver = shippingData.receiver_address || {}
 
-        // Usar datos de billing_info (facturación) en lugar de shipping
+        // Usar datos de billing_info (facturación) primero, luego shipping como fallback
         const billing = billingInfo.billing_info || billingInfo
         const billingAddress = billing.additional_info || {}
+        
+        // Si billing_info no tiene dirección, usar datos de shipping
+        const finalName = billingAddress.receiver_name || receiver.receiver_name || order.buyer?.nickname || ""
+        const finalDocNumber = billing.doc_number || ""
+        const finalStreetName = billingAddress.street_name || receiver.street_name || ""
+        const finalStreetNumber = billingAddress.street_number || receiver.street_number || ""
+        const finalCity = billingAddress.city?.name || receiver.city?.name || ""
+        const finalState = billingAddress.state?.name || receiver.state?.name || ""
+        const finalZipCode = billingAddress.zip_code || receiver.zip_code || ""
         
         // Crear fila con el formato exacto de la plantilla (62 columnas)
         const row = new Array(62).fill("")
@@ -166,14 +175,14 @@ export async function POST(request: NextRequest) {
         row[7] = item.quantity // CANTIDAD
         row[21] = ean // EAN
         row[25] = item.unit_price // PRECIO_VENTA
-        row[32] = billingAddress.receiver_name || order.buyer?.nickname || "" // CLIENTE_NOMBRE (datos fiscales)
-        row[33] = billing.doc_number || "" // CLIENTE_IDENTIFICACION (CUIT/DNI)
-        row[34] = billingAddress.street_name ? `${billingAddress.street_name} ${billingAddress.street_number || ""}` : "" // CLIENTE_DIRECCION
-        row[35] = billingAddress.city?.name || "" // CLIENTE_POBLACION
-        row[36] = billingAddress.state?.name || "" // CLIENTE_PROVINCIA
-        row[37] = billingAddress.zip_code || "" // CLIENTE_CODIGOPOSTAL
+        row[32] = finalName // CLIENTE_NOMBRE
+        row[33] = finalDocNumber // CLIENTE_IDENTIFICACION (CUIT/DNI)
+        row[34] = finalStreetName ? `${finalStreetName} ${finalStreetNumber}`.trim() : "" // CLIENTE_DIRECCION
+        row[35] = finalCity // CLIENTE_POBLACION
+        row[36] = finalState // CLIENTE_PROVINCIA
+        row[37] = finalZipCode // CLIENTE_CODIGOPOSTAL
         row[38] = "AR" // CLIENTE_PAIS
-        row[61] = `${billingAddress.street_name || ""} ${billingAddress.street_number || ""}, ${billingAddress.city?.name || ""}, ${billingAddress.state?.name || ""}`.trim() // CLIENTE_DIRECCIONCOMPLETA
+        row[61] = `${finalStreetName} ${finalStreetNumber}, ${finalCity}, ${finalState}`.trim().replace(/^,\s*|,\s*$/g, '') // CLIENTE_DIRECCIONCOMPLETA
 
         worksheet.addRow(row)
       }
