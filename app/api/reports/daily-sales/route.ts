@@ -97,6 +97,25 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Obtener datos de facturación (CUIT/DNI del comprador)
+      let billingInfo: any = {}
+      if (accounts.length > 0) {
+        try {
+          const billingUrl = `https://api.mercadolibre.com/orders/${order.id}/billing_info`
+          const billingResponse = await fetch(billingUrl, {
+            headers: { 
+              Authorization: `Bearer ${accounts[0].access_token}`,
+              'x-version': '2'
+            }
+          })
+          if (billingResponse.ok) {
+            billingInfo = await billingResponse.json()
+          }
+        } catch (error) {
+          console.error(`[v0] Error fetching billing info for order ${order.id}:`, error)
+        }
+      }
+
       for (const item of order.order_items || []) {
         // Usar seller_sku si existe (es el EAN), sino intentar buscar en DB
         let ean = item.item.seller_sku || ""
@@ -116,7 +135,7 @@ export async function POST(request: NextRequest) {
         row[21] = ean // EAN
         row[25] = item.unit_price // PRECIO_VENTA
         row[32] = receiver.receiver_name || order.buyer?.nickname || "" // CLIENTE_NOMBRE
-        row[33] = receiver.receiver_phone || "" // CLIENTE_IDENTIFICACION
+        row[33] = billingInfo.doc_number || receiver.receiver_phone || "" // CLIENTE_IDENTIFICACION (CUIT/DNI)
         row[34] = receiver.street_name ? `${receiver.street_name} ${receiver.street_number || ""}` : "" // CLIENTE_DIRECCION
         row[35] = receiver.city?.name || "" // CLIENTE_POBLACION
         row[36] = receiver.state?.name || "" // CLIENTE_PROVINCIA
