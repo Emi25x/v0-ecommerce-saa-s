@@ -117,13 +117,29 @@ export async function POST(request: NextRequest) {
       }
 
       for (const item of order.order_items || []) {
-        // Usar seller_sku si existe (es el EAN), sino intentar buscar en DB
-        let ean = item.item.seller_sku || ""
+        // Debug: ver estructura del item para encontrar el EAN
+        console.log("[v0] Item structure:", JSON.stringify({
+          id: item.item.id,
+          title: item.item.title,
+          seller_sku: item.item.seller_sku,
+          seller_custom_field: item.item.seller_custom_field,
+          variation_id: item.item.variation_id,
+          variation_attributes: item.item.variation_attributes,
+          attributes: item.item.attributes
+        }, null, 2))
+
+        // Buscar EAN en diferentes campos posibles
+        let ean = item.item.seller_sku || item.item.seller_custom_field || ""
         
-        // Si no hay seller_sku y hay seller_custom_field, intentar extraer EAN
-        if (!ean && item.item.seller_custom_field) {
-          ean = item.item.seller_custom_field
+        // Si no hay EAN, buscar en attributes (GTIN)
+        if (!ean && item.item.attributes) {
+          const gtinAttr = item.item.attributes.find((attr: any) => attr.id === 'GTIN' || attr.id === 'EAN')
+          if (gtinAttr) {
+            ean = gtinAttr.value_name || ""
+          }
         }
+
+        console.log("[v0] EAN encontrado:", ean, "para producto:", item.item.title)
 
         const receiver = shippingData.receiver_address || {}
 
@@ -134,7 +150,7 @@ export async function POST(request: NextRequest) {
         // Crear fila con el formato exacto de la plantilla (62 columnas)
         const row = new Array(62).fill("")
         row[0] = 0 // IVA
-        row[1] = Number(order.id) || order.id // CODIGO_PEDIDO como número
+        row[1] = String(order.id) // CODIGO_PEDIDO como texto para evitar notación científica
         row[7] = item.quantity // CANTIDAD
         row[21] = ean // EAN
         row[25] = item.unit_price // PRECIO_VENTA
