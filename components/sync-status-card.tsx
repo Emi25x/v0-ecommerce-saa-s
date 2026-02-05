@@ -76,22 +76,32 @@ export function SyncStatusCard() {
     setAutoSyncResult("Iniciando sincronización automática completa...")
     
     try {
-      const response = await fetch("/api/cron/auto-sync-all-accounts", {
-        method: "POST"
-      })
-      
-      if (response.ok) {
-        const data = await response.json()
-        setAutoSyncResult(`✓ Sincronización iniciada: ${data.summary}`)
-        // Refrescar cuentas después de 5 segundos
-        setTimeout(() => {
-          fetchAccounts()
-          setAutoSyncResult(null)
-        }, 5000)
-      } else {
-        const error = await response.json()
-        setAutoSyncResult(`Error: ${error.error || "Error desconocido"}`)
+      // Iniciar sync para cada cuenta
+      for (const account of accounts) {
+        setAutoSyncResult(`Sincronizando ${account.nickname}...`)
+        
+        const response = await fetch("/api/ml/auto-sync-all", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            offset: 0, 
+            accountId: account.id 
+          })
+        })
+        
+        if (!response.ok) {
+          const error = await response.json()
+          setAutoSyncResult(`Error en ${account.nickname}: ${error.error}`)
+          break
+        }
       }
+      
+      setAutoSyncResult(`✓ Sincronización iniciada para ${accounts.length} cuenta(s)`)
+      // Refrescar cuentas después de 3 segundos
+      setTimeout(() => {
+        fetchAccounts()
+        setAutoSyncResult(null)
+      }, 3000)
     } catch (error) {
       console.error("Error auto sync:", error)
       setAutoSyncResult("Error al iniciar sincronización automática")
