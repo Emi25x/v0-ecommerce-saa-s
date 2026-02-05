@@ -30,7 +30,7 @@
     },
     {
       "path": "/api/cron/daily-sales-report",
-      "schedule": "59 23 * * *"
+      "schedule": "0 1 * * *"
     }
   ]
 }

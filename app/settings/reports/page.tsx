@@ -15,6 +15,7 @@ export default function ReportsSettingsPage() {
   const [generating, setGenerating] = useState(false)
   const [emails, setEmails] = useState<string[]>([])
   const [newEmail, setNewEmail] = useState("")
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0])
 
   useEffect(() => {
     fetchSettings()
@@ -60,7 +61,7 @@ export default function ReportsSettingsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          date: new Date().toISOString().split("T")[0],
+          date: selectedDate,
           send_email: false
         })
       })
@@ -70,7 +71,7 @@ export default function ReportsSettingsPage() {
         const url = window.URL.createObjectURL(blob)
         const a = document.createElement("a")
         a.href = url
-        a.download = `ventas-${new Date().toISOString().split("T")[0]}.xlsx`
+        a.download = `ventas-${selectedDate}.xlsx`
         a.click()
       } else {
         alert("Error generando reporte")
@@ -90,7 +91,7 @@ export default function ReportsSettingsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          date: new Date().toISOString().split("T")[0],
+          date: selectedDate,
           send_email: true,
           email_recipients: emails
         })
@@ -140,7 +141,7 @@ export default function ReportsSettingsPage() {
             <div>
               <Label>Activar envío automático</Label>
               <p className="text-sm text-muted-foreground">
-                Se enviará automáticamente todos los días a las 23:59
+                Se enviará automáticamente todos los días a la 1:00 AM (ventas del día anterior)
               </p>
             </div>
             <Switch
@@ -185,18 +186,29 @@ export default function ReportsSettingsPage() {
         <CardHeader>
           <CardTitle>Generar Reporte Manual</CardTitle>
           <CardDescription>
-            Genera y descarga el reporte de ventas de hoy
+            Genera y descarga el reporte de ventas de un día específico
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex gap-2">
-          <Button onClick={handleGenerateReport} disabled={generating} variant="outline">
-            {generating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
-            Descargar Excel
-          </Button>
-          <Button onClick={handleSendReport} disabled={generating || emails.length === 0}>
-            {generating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Mail className="h-4 w-4 mr-2" />}
-            Enviar por Email
-          </Button>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label>Seleccionar Fecha</Label>
+            <Input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              max={new Date().toISOString().split("T")[0]}
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={handleGenerateReport} disabled={generating} variant="outline">
+              {generating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Download className="h-4 w-4 mr-2" />}
+              Descargar Excel
+            </Button>
+            <Button onClick={handleSendReport} disabled={generating || emails.length === 0}>
+              {generating ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Mail className="h-4 w-4 mr-2" />}
+              Enviar por Email
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>
