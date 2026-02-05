@@ -51,22 +51,17 @@ export async function POST(request: NextRequest) {
     const workbook = new ExcelJS.Workbook()
     const worksheet = workbook.addWorksheet("Ventas")
 
-    // Headers según la plantilla
-    worksheet.columns = [
-      { header: "IVA", key: "iva", width: 10 },
-      { header: "CODIGO_PEDIDO", key: "codigo_pedido", width: 20 },
-      { header: "CANTIDAD", key: "cantidad", width: 12 },
-      { header: "EAN", key: "ean", width: 15 },
-      { header: "PRECIO_VENTA", key: "precio_venta", width: 15 },
-      { header: "CLIENTE_NOMBRE", key: "cliente_nombre", width: 30 },
-      { header: "CLIENTE_IDENTIFICACION", key: "cliente_identificacion", width: 20 },
-      { header: "CLIENTE_DIRECCION", key: "cliente_direccion", width: 40 },
-      { header: "CLIENTE_POBLACION", key: "cliente_poblacion", width: 25 },
-      { header: "CLIENTE_PROVINCIA", key: "cliente_provincia", width: 25 },
-      { header: "CLIENTE_CODIGOPOSTAL", key: "cliente_codigopostal", width: 15 },
-      { header: "CLIENTE_PAIS", key: "cliente_pais", width: 15 },
-      { header: "CLIENTE_DIRECCIONCOMPLETA", key: "cliente_direccioncompleta", width: 50 }
+    // Headers según la plantilla (con columnas vacías para coincidir con formato exacto)
+    const headers = [
+      "IVA", "CODIGO_PEDIDO", "", "", "", "", "", "CANTIDAD", "", "", "", "", "", "", 
+      "", "", "", "", "", "", "", "EAN", "", "", "", "PRECIO_VENTA", "", "", "", "", 
+      "", "", "CLIENTE_NOMBRE", "CLIENTE_IDENTIFICACION", "CLIENTE_DIRECCION", 
+      "CLIENTE_POBLACION", "CLIENTE_PROVINCIA", "CLIENTE_CODIGOPOSTAL", "CLIENTE_PAIS",
+      "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", 
+      "", "", "", "", "", "", "CLIENTE_DIRECCIONCOMPLETA"
     ]
+    
+    worksheet.addRow(headers)
 
     // Agregar filas de órdenes
     for (const order of allOrders) {
@@ -82,24 +77,23 @@ export async function POST(request: NextRequest) {
         const shipping = order.shipping || {}
         const receiver = shipping.receiver_address || {}
 
-        // Declare product variable here or replace with appropriate value
-        const product = { ean: "" }; // Placeholder declaration
+        // Crear fila con el formato exacto de la plantilla (62 columnas)
+        const row = new Array(62).fill("")
+        row[0] = 0 // IVA
+        row[1] = order.id // CODIGO_PEDIDO
+        row[7] = item.quantity // CANTIDAD
+        row[21] = ean // EAN
+        row[25] = item.unit_price // PRECIO_VENTA
+        row[32] = receiver.receiver_name || order.buyer?.nickname || "" // CLIENTE_NOMBRE
+        row[33] = receiver.receiver_phone || "" // CLIENTE_IDENTIFICACION
+        row[34] = receiver.street_name ? `${receiver.street_name} ${receiver.street_number || ""}` : "" // CLIENTE_DIRECCION
+        row[35] = receiver.city?.name || "" // CLIENTE_POBLACION
+        row[36] = receiver.state?.name || "" // CLIENTE_PROVINCIA
+        row[37] = receiver.zip_code || "" // CLIENTE_CODIGOPOSTAL
+        row[38] = "AR" // CLIENTE_PAIS
+        row[61] = `${receiver.street_name || ""} ${receiver.street_number || ""}, ${receiver.city?.name || ""}, ${receiver.state?.name || ""}`.trim() // CLIENTE_DIRECCIONCOMPLETA
 
-        worksheet.addRow({
-          iva: 0,
-          codigo_pedido: order.id,
-          cantidad: item.quantity,
-          ean: ean,
-          precio_venta: item.unit_price,
-          cliente_nombre: `${receiver.receiver_name || order.buyer?.nickname || ""}`,
-          cliente_identificacion: receiver.receiver_phone || "",
-          cliente_direccion: receiver.street_name || "",
-          cliente_poblacion: receiver.city?.name || "",
-          cliente_provincia: receiver.state?.name || "",
-          cliente_codigopostal: receiver.zip_code || "",
-          cliente_pais: "AR",
-          cliente_direccioncompleta: `${receiver.street_name || ""} ${receiver.street_number || ""}, ${receiver.city?.name || ""}, ${receiver.state?.name || ""}`
-        })
+        worksheet.addRow(row)
       }
     }
 
