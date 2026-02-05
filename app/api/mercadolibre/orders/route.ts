@@ -12,7 +12,33 @@ export async function GET(request: Request) {
 
     console.log("[v0] GET /api/mercadolibre/orders - account:", accountId, "status:", status)
 
-    // Obtener cuenta para acceder a ML
+    // Si account_id es "all", obtener todas las cuentas
+    if (accountId === "all" || !accountId) {
+      // Obtener todas las cuentas y combinar sus órdenes
+      const { data: accounts } = await supabase
+        .from("ml_accounts")
+        .select("id, ml_user_id, access_token, nickname")
+
+      if (!accounts || accounts.length === 0) {
+        return NextResponse.json({ orders: [], paging: { total: 0, limit, offset } })
+      }
+
+      // Por ahora, obtener órdenes desde cache para todas las cuentas
+      let query = supabase.from("ml_orders").select("*", { count: "exact" })
+      if (status !== "all") query = query.eq("status", status)
+      
+      const { data: allOrders, count } = await query
+        .order("date_created", { ascending: false })
+        .range(offset, offset + limit - 1)
+
+      return NextResponse.json({
+        orders: allOrders || [],
+        paging: { total: count || 0, limit, offset },
+        from_cache: true
+      })
+    }
+
+    // Obtener cuenta específica para acceder a ML
     const { data: account } = await supabase
       .from("ml_accounts")
       .select("id, ml_user_id, access_token, nickname")
