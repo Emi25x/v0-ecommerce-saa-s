@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     
     // Obtener cuenta
     const { data: account } = await supabase
-      .from("mercadolibre_accounts")
+      .from("ml_accounts")
       .select("*")
       .eq("id", account_id)
       .single()
