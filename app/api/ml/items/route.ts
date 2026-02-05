@@ -198,6 +198,59 @@ export async function GET(request: NextRequest) {
         account_nickname: account.nickname,
       }))
 
+      // Guardar productos en ml_publications en background (sin esperar)
+      Promise.all(products.map(async (product: any) => {
+        try {
+          // Buscar SKU/GTIN en attributes
+          let sku = product.seller_custom_field || ""
+          if (!sku && product.attributes) {
+            const isbnAttr = product.attributes.find((attr: any) => 
+              attr.id === 'ISBN' || attr.id === 'GTIN' || attr.id === 'EAN'
+            )
+            if (isbnAttr) sku = isbnAttr.value_name || ""
+          }
+          
+          // Buscar product_id por SKU
+          let product_id = null
+          if (sku) {
+            const { data: productMatch } = await supabase
+              .from("products")
+              .select("id")
+              .eq("ean", sku)
+              .maybeSingle()
+            product_id = productMatch?.id || null
+          }
+          
+          // Verificar si existe
+          const { data: existing } = await supabase
+            .from("ml_publications")
+            .select("id")
+            .eq("ml_item_id", product.id)
+            .maybeSingle()
+          
+          const pubData = {
+            account_id: account.id,
+            ml_item_id: product.id,
+            product_id,
+            title: product.title,
+            price: product.price,
+            current_stock: product.available_quantity,
+            status: product.status,
+            permalink: product.permalink,
+            updated_at: new Date().toISOString()
+          }
+          
+          if (existing) {
+            await supabase.from("ml_publications").update(pubData).eq("id", existing.id)
+          } else {
+            await supabase.from("ml_publications").insert(pubData)
+          }
+        } catch (err) {
+          // Silenciar errores para no romper la consulta principal
+          console.error("[v0] Error guardando publicación:", err)
+        }
+      })).catch(() => {}) // Ignorar errores en background
+
       allProducts = allProducts.concat(productsWithAccount)
       console.log("[v0] Total products so far:", allProducts.length)
     }
