@@ -42,6 +42,8 @@ export default function ProductsPage() {
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set())
   const [mlAccounts, setMlAccounts] = useState<any[]>([])
   const [selectedAccount, setSelectedAccount] = useState<string>("all")
+  const [saving, setSaving] = useState(false)
+  const [saveResult, setSaveResult] = useState<string | null>(null)
 
   const [filters, setFilters] = useState({
     status: "all",
@@ -49,9 +51,6 @@ export default function ProductsPage() {
     listing_type: "all",
     platform: "mercadolibre",
   })
-  
-  const [saving, setSaving] = useState(false)
-  const [saveResult, setSaveResult] = useState<string | null>(null)
 
   const fetchMlAccounts = async () => {
     try {
@@ -70,74 +69,6 @@ export default function ProductsPage() {
   useEffect(() => {
     loadProducts()
   }, [currentPage, filters, selectedAccount])
-
-  const syncAllPublicationsInBackground = async () => {
-    console.log("[v0] Iniciando sincronización automática en background...")
-    let offset = 0
-    let hasMore = true
-    let totalSynced = 0
-    
-    while (hasMore && totalSynced < 1000) { // Límite de 1000 items por sesión para evitar rate limit
-      try {
-        const params = new URLSearchParams({
-          limit: "50",
-          offset: offset.toString(),
-        })
-        
-        if (selectedAccount && selectedAccount !== "all") {
-          params.append("account_id", selectedAccount)
-        }
-        
-        const response = await fetch(`/api/ml/items?${params.toString()}`)
-        
-        if (!response.ok) {
-          if (response.status === 429) {
-            console.log("[v0] Rate limit alcanzado, deteniendo sincronización background")
-            break
-          }
-          break
-        }
-        
-        const data = await response.json()
-        
-        if (!data.products || data.products.length === 0) {
-          hasMore = false
-          break
-        }
-        
-        totalSynced += data.products.length
-        offset += 50
-        
-        // Verificar si hay más páginas
-        if (data.paging && offset >= data.paging.total) {
-          hasMore = false
-        }
-        
-        console.log(`[v0] Background sync: ${totalSynced} items procesados`)
-        
-        // Delay de 2 segundos entre requests para evitar rate limit
-        await new Promise(resolve => setTimeout(resolve, 2000))
-        
-      } catch (error) {
-        console.error("[v0] Error en background sync:", error)
-        break
-      }
-    }
-    
-    console.log(`[v0] Background sync completado: ${totalSynced} items sincronizados`)
-  }
-
-  const handleSaveToDatabase = async () => {
-    setSaving(true)
-    setSaveResult("Sincronizando TODAS las publicaciones en background...")
-    
-    // Iniciar sincronización en background sin esperar
-    syncAllPublicationsInBackground().catch(console.error)
-    
-    setSaveResult("✓ Sincronización iniciada en background. Se procesarán automáticamente.")
-    setSaving(false)
-    setTimeout(() => setSaveResult(null), 5000)
-  }
 
   const loadProducts = async () => {
     setLoading(true)
@@ -331,25 +262,10 @@ export default function ProductsPage() {
                   : `Mostrando ${filteredProducts.length} productos (Página ${currentPage} de ${totalPages})`}
               </CardDescription>
             </div>
-            <div className="flex gap-2">
-              <Button onClick={loadProducts} disabled={loading}>
-                Actualizar
-              </Button>
-              <Button 
-                onClick={handleSaveToDatabase} 
-                disabled={saving || products.length === 0}
-                variant="default"
-                className="bg-green-600 hover:bg-green-700"
-              >
-                {saving ? "Guardando..." : "Guardar en BD"}
-              </Button>
-            </div>
+            <Button onClick={loadProducts} disabled={loading}>
+              Actualizar
+            </Button>
           </div>
-          {saveResult && (
-            <div className="mt-2 text-sm bg-green-50 border border-green-200 text-green-700 p-2 rounded">
-              {saveResult}
-            </div>
-          )}
         </CardHeader>
         <CardContent>
           {loading ? (
