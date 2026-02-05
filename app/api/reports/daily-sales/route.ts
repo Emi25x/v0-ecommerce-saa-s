@@ -127,6 +127,10 @@ export async function POST(request: NextRequest) {
 
         const receiver = shippingData.receiver_address || {}
 
+        // Usar datos de billing_info (facturación) en lugar de shipping
+        const billing = billingInfo.billing_info || billingInfo
+        const billingAddress = billing.additional_info || {}
+        
         // Crear fila con el formato exacto de la plantilla (62 columnas)
         const row = new Array(62).fill("")
         row[0] = 0 // IVA
@@ -134,14 +138,14 @@ export async function POST(request: NextRequest) {
         row[7] = item.quantity // CANTIDAD
         row[21] = ean // EAN
         row[25] = item.unit_price // PRECIO_VENTA
-        row[32] = receiver.receiver_name || order.buyer?.nickname || "" // CLIENTE_NOMBRE
-        row[33] = billingInfo.doc_number || receiver.receiver_phone || "" // CLIENTE_IDENTIFICACION (CUIT/DNI)
-        row[34] = receiver.street_name ? `${receiver.street_name} ${receiver.street_number || ""}` : "" // CLIENTE_DIRECCION
-        row[35] = receiver.city?.name || "" // CLIENTE_POBLACION
-        row[36] = receiver.state?.name || "" // CLIENTE_PROVINCIA
-        row[37] = receiver.zip_code || "" // CLIENTE_CODIGOPOSTAL
+        row[32] = billingAddress.receiver_name || order.buyer?.nickname || "" // CLIENTE_NOMBRE (datos fiscales)
+        row[33] = billing.doc_number || "" // CLIENTE_IDENTIFICACION (CUIT/DNI)
+        row[34] = billingAddress.street_name ? `${billingAddress.street_name} ${billingAddress.street_number || ""}` : "" // CLIENTE_DIRECCION
+        row[35] = billingAddress.city?.name || "" // CLIENTE_POBLACION
+        row[36] = billingAddress.state?.name || "" // CLIENTE_PROVINCIA
+        row[37] = billingAddress.zip_code || "" // CLIENTE_CODIGOPOSTAL
         row[38] = "AR" // CLIENTE_PAIS
-        row[61] = `${receiver.street_name || ""} ${receiver.street_number || ""}, ${receiver.city?.name || ""}, ${receiver.state?.name || ""}`.trim() // CLIENTE_DIRECCIONCOMPLETA
+        row[61] = `${billingAddress.street_name || ""} ${billingAddress.street_number || ""}, ${billingAddress.city?.name || ""}, ${billingAddress.state?.name || ""}`.trim() // CLIENTE_DIRECCIONCOMPLETA
 
         worksheet.addRow(row)
       }
