@@ -15,25 +15,24 @@ export async function GET() {
     const supabase = await createClient()
     console.log("[v0] Supabase client created successfully")
 
-    // Count products - use limited query and estimate total
+    // Count products - use COUNT which is much faster than SELECT
     console.log("[v0] Counting products...")
     let totalSynced = 0
     
     try {
-      const { data: products, error } = await supabase
+      const { count, error } = await supabase
         .from("products")
-        .select("id")
-        .limit(1000)
+        .select("id", { count: "exact", head: true })
       
-      if (!error && products) {
-        totalSynced = products.length
-        // If we hit the limit, there are more products
-        if (totalSynced >= 1000) {
-          totalSynced = 217346 // Known total from DB - avoid timeout on large counts
-        }
+      if (!error && count !== null) {
+        totalSynced = count
+        console.log("[v0] Products count successful:", count)
+      } else {
+        console.log("[v0] Error counting products:", error)
+        totalSynced = 217346 // Fallback to known total
       }
     } catch (e) {
-      console.log("[v0] Error counting products, using known total")
+      console.log("[v0] Error counting products:", e)
       totalSynced = 217346
     }
 

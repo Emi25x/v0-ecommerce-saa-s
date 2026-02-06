@@ -272,7 +272,21 @@ export function SyncStatusCard() {
             </CardDescription>
           </div>
           <Button
-            onClick={handleAutoSyncComplete}
+            onClick={async () => {
+              setAutoSyncing(true)
+              setAutoSyncResult("Importando CSV3 completo (9,200 publicaciones)...")
+              try {
+                const res = await fetch("/api/ml/import-csv3", { method: "POST" })
+                const data = await res.json()
+                setAutoSyncResult(`✓ CSV3: ${data.processed} procesadas, ${data.inserted} nuevas, ${data.updated} actualizadas, ${data.linked} vinculadas`)
+                fetchAccounts()
+              } catch (e) {
+                setAutoSyncResult("Error al importar CSV3")
+              } finally {
+                setAutoSyncing(false)
+                setTimeout(() => setAutoSyncResult(null), 8000)
+              }
+            }}
             disabled={autoSyncing}
             size="sm"
             variant="default"
@@ -281,12 +295,12 @@ export function SyncStatusCard() {
             {autoSyncing ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Sincronizando...
+                Importando...
               </>
             ) : (
               <>
                 <Package className="h-4 w-4 mr-2" />
-                Sincronizar Completo
+                Importar CSV3
               </>
             )}
           </Button>
