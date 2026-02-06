@@ -5,31 +5,38 @@ export const maxDuration = 60
 
 /**
  * Normaliza SKU/ISBN para matching consistente
- * - Trim, lowercase, quitar guiones/espacios
- * - Dejar solo dígitos para ISBN/EAN
+ * - Para ISBN/GTIN numérico: dejar solo dígitos
+ * - Para SKU alfanumérico: trim + remover [-\s.] + toUpperCase
  * - Convertir ISBN-10 a ISBN-13 si aplica
  */
 function normalizeSKU(sku: string | null | undefined): string | null {
   if (!sku) return null
   
-  let normalized = sku.trim().toLowerCase()
+  const trimmed = sku.trim()
   
-  // Quitar guiones, espacios, puntos
-  normalized = normalized.replace(/[-\s.]/g, '')
+  // Detectar si es numérico (ISBN/GTIN)
+  const isNumeric = /^[\d\s\-\.]+$/.test(trimmed)
   
-  // Si es numérico y tiene 10 dígitos (ISBN-10), convertir a ISBN-13
-  if (/^\d{10}$/.test(normalized)) {
-    // ISBN-10 a ISBN-13: agregar prefijo 978 y recalcular dígito verificador
-    const base = '978' + normalized.slice(0, 9)
-    let sum = 0
-    for (let i = 0; i < 12; i++) {
-      sum += parseInt(base[i]) * (i % 2 === 0 ? 1 : 3)
+  if (isNumeric) {
+    // ISBN/GTIN: dejar SOLO dígitos
+    let normalized = trimmed.replace(/\D/g, '')
+    
+    // Si es ISBN-10 (10 dígitos), convertir a ISBN-13
+    if (normalized.length === 10) {
+      const base = '978' + normalized.slice(0, 9)
+      let sum = 0
+      for (let i = 0; i < 12; i++) {
+        sum += parseInt(base[i]) * (i % 2 === 0 ? 1 : 3)
+      }
+      const checkDigit = (10 - (sum % 10)) % 10
+      normalized = base + checkDigit
     }
-    const checkDigit = (10 - (sum % 10)) % 10
-    normalized = base + checkDigit
+    
+    return normalized
+  } else {
+    // SKU alfanumérico: remover [-\s.] y toUpperCase
+    return trimmed.replace(/[-\s.]/g, '').toUpperCase()
   }
-  
-  return normalized
 }
 
 /**
@@ -77,15 +84,15 @@ export async function POST(request: Request) {
     if (!pendingItems || pendingItems.length === 0) {
       console.log("[v0] No items claimed, checking if job is complete")
       
-      // Verificar si realmente no quedan items pendientes
+      // Verificar si NO existen items en estado pending O processing
       const { count } = await supabase
         .from("ml_import_queue")
         .select("id", { count: "exact", head: true })
         .eq("job_id", job_id)
-        .eq("status", "pending")
+        .in("status", ["pending", "processing"])
       
       if (count === 0) {
-        // No hay más items pendientes, completar job
+        // No hay más items pendientes ni en proceso, completar job
         await supabase
           .from("ml_import_jobs")
           .update({ 
@@ -161,16 +168,19 @@ export async function POST(request: Request) {
       
       if (!item || itemResponse.code !== 200) {
         failed++
-        // No incrementar attempts aquí, claim_import_items ya lo hace
-        await supabase
-          .from("ml_import_queue")
-          .update({ 
-            status: "failed",
-            last_error: `ML API returned ${itemResponse.code}`,
-            processed_at: new Date().toISOString()
-          })
-          .eq("ml_item_id", itemResponse.id)
-          .eq("job_id", job_id)
+        // Obtener currentItem por ml_item_id para actualizar por id
+        const currentItem = pendingItems.find((i: any) => i.ml_item_id === itemResponse.id)
+        if (currentItem) {
+          // No incrementar attempts aquí, claim_import_items ya lo hace
+          await supabase
+            .from("ml_import_queue")
+            .update({ 
+              status: "failed",
+              last_error: `ML API returned ${itemResponse.code}`,
+              processed_at: new Date().toISOString()
+            })
+            .eq("id", currentItem.id)
+        }
         continue
       }
 
@@ -266,7 +276,7 @@ export async function POST(request: Request) {
             permalink: item.permalink,
             updated_at: new Date().toISOString()
           }, {
-            onConflict: "ml_item_id"
+            onConflict: "account_id,ml_item_id"
           })
 
         // Marcar como completado
