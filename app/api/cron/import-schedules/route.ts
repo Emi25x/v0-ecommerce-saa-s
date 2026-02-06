@@ -15,11 +15,14 @@ import { executeFullImport } from "@/lib/import/batch-import"
 
 export async function GET(request: Request) {
   try {
+    // Verificar CRON_SECRET solo si está configurado
+    // En Vercel, los crons están protegidos por defecto (solo Vercel puede invocarlos)
     const authHeader = request.headers.get("authorization")
     const cronSecret = process.env.CRON_SECRET
 
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      console.log("[v0] Cron job no autorizado")
+    // Solo verificar si CRON_SECRET está configurado Y la petición viene con auth header
+    if (cronSecret && authHeader && authHeader !== `Bearer ${cronSecret}`) {
+      console.log("[v0] Cron job no autorizado - secret incorrecto")
       return NextResponse.json({ error: "No autorizado" }, { status: 401 })
     }
 

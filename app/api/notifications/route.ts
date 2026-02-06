@@ -22,12 +22,16 @@ export async function GET(request: Request) {
           .gte("date_created", lastVisitOrders)
 
         if (error) {
-          console.log("[v0] ml_orders query error:", error.message)
+          if (error.message.includes("relation") || error.message.includes("does not exist")) {
+            console.log("[v0] ml_orders table does not exist yet - skipping")
+          } else {
+            console.log("[v0] ml_orders query error:", error.message)
+          }
         } else {
           newOrdersCount = count || 0
         }
       } catch (error) {
-        console.log("[v0] ml_orders table not found, skipping")
+        console.log("[v0] ml_orders error (caught):", error instanceof Error ? error.message : error)
       }
     }
 
@@ -41,12 +45,16 @@ export async function GET(request: Request) {
           .gte("created_at", lastVisitProducts)
 
         if (error) {
-          console.log("[v0] ml_listings query error:", error.message)
+          if (error.message.includes("relation") || error.message.includes("does not exist")) {
+            console.log("[v0] ml_listings table does not exist yet - skipping")
+          } else {
+            console.log("[v0] ml_listings query error:", error.message)
+          }
         } else {
           newProductsCount = count || 0
         }
       } catch (error) {
-        console.log("[v0] ml_listings table not found, skipping")
+        console.log("[v0] ml_listings error (caught):", error instanceof Error ? error.message : error)
       }
     }
 
@@ -59,12 +67,16 @@ export async function GET(request: Request) {
         .eq("status", "ready_to_ship")
 
       if (error) {
-        console.log("[v0] ml_shipments query error:", error.message)
+        if (error.message.includes("relation") || error.message.includes("does not exist")) {
+          console.log("[v0] ml_shipments table does not exist yet - skipping")
+        } else {
+          console.log("[v0] ml_shipments query error:", error.message)
+        }
       } else {
         readyToShipCountValue = readyToShipCount || 0
       }
     } catch (error) {
-      console.log("[v0] ml_shipments table not found, skipping")
+      console.log("[v0] ml_shipments error (caught):", error instanceof Error ? error.message : error)
     }
 
     return NextResponse.json({

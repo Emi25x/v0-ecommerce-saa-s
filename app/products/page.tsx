@@ -42,12 +42,15 @@ export default function ProductsPage() {
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set())
   const [mlAccounts, setMlAccounts] = useState<any[]>([])
   const [selectedAccount, setSelectedAccount] = useState<string>("all")
+  const [saving, setSaving] = useState(false)
+  const [saveResult, setSaveResult] = useState<string | null>(null)
 
   const [filters, setFilters] = useState({
     status: "all",
     catalog_listing: "all",
     listing_type: "all",
     platform: "mercadolibre",
+    category: "all",
   })
 
   const fetchMlAccounts = async () => {
@@ -87,6 +90,11 @@ export default function ProductsPage() {
       if (filters.catalog_listing && filters.catalog_listing !== "all")
         params.append("catalog_listing", filters.catalog_listing)
       if (filters.listing_type && filters.listing_type !== "all") params.append("listing_type", filters.listing_type)
+      
+      // Manejar filtros de categoría ML (filtros de BD, no de API)
+      if (filters.category && filters.category !== "all") {
+        params.append("health_filter", filters.category)
+      }
 
       const mlResponse = await fetch(`/api/ml/items?${params.toString()}`)
 
@@ -232,6 +240,20 @@ export default function ProductsPage() {
                   <SelectItem value="gold_special">Clásica</SelectItem>
                   <SelectItem value="gold_pro">Premium</SelectItem>
                   <SelectItem value="free">Gratuita</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Categoría ML</Label>
+              <Select value={filters.category} onValueChange={(v) => setFilters({ ...filters, category: v })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar categoría" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  <SelectItem value="para_ganar_competencia">Para ganar la competencia de ML</SelectItem>
+                  <SelectItem value="elegibles_para_competir">Elegibles para competir</SelectItem>
                 </SelectContent>
               </Select>
             </div>

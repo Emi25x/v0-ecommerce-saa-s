@@ -2,15 +2,43 @@
   "crons": [
     {
       "path": "/api/cron/sync-libral",
-      "schedule": "0 0 * * *"
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/sync-ml-stock",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/sync-ml-orders",
+      "schedule": "30 9 * * *"
+    },
+    {
+      "path": "/api/cron/process-orders",
+      "schedule": "0 */2 * * *"
+    },
+    {
+      "path": "/api/cron/import-schedules",
+      "schedule": "0 * * * *"
     },
     {
       "path": "/api/cron/analyze-competition",
       "schedule": "0 */6 * * *"
     },
     {
-      "path": "/api/cron/import-schedules",
-      "schedule": "0 * * * *"
+      "path": "/api/cron/auto-price-tracking",
+      "schedule": "0 */3 * * *"
+    },
+    {
+      "path": "/api/cron/daily-sales-report",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/auto-sync-all-accounts",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/ml-import-worker",
+      "schedule": "* * * * *"
     }
   ]
 }

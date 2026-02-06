@@ -685,6 +685,8 @@ export default function OrdersPage() {
 
     if (selectedAccount) {
       fetchOrdersEffect()
+      // Solo consulta cuando se abre la página o cambia la cuenta
+      // Sin refresh automático
     }
   }, [selectedAccount])
 
@@ -703,8 +705,16 @@ export default function OrdersPage() {
 
   const fetchMlAccounts = async () => {
     try {
-      console.log("[v0] Fetching ML accounts...")
+      console.log("[v0] Fetching ML accounts from DB (no ML API calls)...")
       const response = await fetch("/api/mercadolibre/accounts")
+      
+      // Si falla, mostrar mensaje pero no fallar
+      if (!response.ok) {
+        console.warn("[v0] Failed to fetch accounts, will use empty list")
+        setMlAccounts({})
+        return
+      }
+      
       const data = await response.json()
       console.log("[v0] ML accounts response:", data)
 
@@ -735,6 +745,8 @@ export default function OrdersPage() {
       setMlAccounts(accountsRecord)
     } catch (error) {
       console.error("[v0] Failed to fetch ML accounts:", error)
+      // No hacer crash, solo mostrar error
+      setMlAccounts({})
     }
   }
 
@@ -2457,6 +2469,16 @@ export default function OrdersPage() {
                       </CardDescription>
                     </div>
                     <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fetchOrdersEffect()}
+                        disabled={loading}
+                        className="bg-transparent"
+                        title="Refrescar órdenes"
+                      >
+                        <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+                      </Button>
                       <SortSelector
                         options={sortOptions}
                         value={sortConfig.key}
