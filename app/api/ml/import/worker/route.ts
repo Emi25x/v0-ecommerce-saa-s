@@ -222,8 +222,10 @@ export async function POST(request: Request) {
 
       } catch (itemError: any) {
         console.error("[v0] Error processing item", item.id, itemError)
-        const currentItem = pendingItems.find(i => i.ml_item_id === item.id)
-        const attempts = (currentItem?.attempts || 0) + 1
+        const currentItem = pendingItems.find((i: any) => i.ml_item_id === item.id)
+        
+        // La función claim_import_items ya incrementó attempts con COALESCE
+        const attempts = currentItem?.attempts || 1
         
         // Decidir si reintentar o marcar como fallido
         const shouldRetry = attempts < 3 && (
@@ -236,17 +238,16 @@ export async function POST(request: Request) {
           const delayMinutes = Math.pow(2, attempts)
           const nextRetryAt = new Date(Date.now() + delayMinutes * 60 * 1000)
           
-          console.log(`[v0] Will retry item ${item.id} in ${delayMinutes} minutes (attempt ${attempts})`)
+          console.log(`[v0] Will retry item ${item.id} in ${delayMinutes} minutes (attempt ${attempts}/3)`)
           
           await supabase
             .from("ml_import_queue")
             .update({ 
               status: "pending",
-              last_error: itemError.message,
+              last_error: itemError.message || "Unknown error",
               next_retry_at: nextRetryAt.toISOString()
             })
-            .eq("ml_item_id", item.id)
-            .eq("job_id", job_id)
+            .eq("id", currentItem?.id)
         } else {
           failed++
           
@@ -254,11 +255,10 @@ export async function POST(request: Request) {
             .from("ml_import_queue")
             .update({ 
               status: "failed",
-              last_error: itemError.message,
+              last_error: itemError.message || "Max retries exceeded or non-retryable error",
               processed_at: new Date().toISOString()
             })
-            .eq("ml_item_id", item.id)
-            .eq("job_id", job_id)
+            .eq("id", currentItem?.id)
         }
       }
     }
