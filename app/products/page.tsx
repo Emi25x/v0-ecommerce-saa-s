@@ -90,7 +90,17 @@ export default function ProductsPage() {
       if (filters.catalog_listing && filters.catalog_listing !== "all")
         params.append("catalog_listing", filters.catalog_listing)
       if (filters.listing_type && filters.listing_type !== "all") params.append("listing_type", filters.listing_type)
-      if (filters.category && filters.category !== "all") params.append("tags", filters.category)
+      
+      // Manejar filtros de categoría ML
+      if (filters.category && filters.category !== "all") {
+        if (filters.category === "paused" || filters.category === "under_review") {
+          // Estos van como status
+          params.set("status", filters.category)
+        } else {
+          // Estos van como tags (moderation_penalty, poor_quality_picture, etc)
+          params.append("tags", filters.category)
+        }
+      }
 
       const mlResponse = await fetch(`/api/ml/items?${params.toString()}`)
 
@@ -241,20 +251,17 @@ export default function ProductsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Categoría</Label>
+              <Label>Categoría ML</Label>
               <Select value={filters.category} onValueChange={(v) => setFilters({ ...filters, category: v })}>
                 <SelectTrigger>
                   <SelectValue placeholder="Seleccionar categoría" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas</SelectItem>
-                  <SelectItem value="proximas_a_pausarse">Próximas a pausarse</SelectItem>
-                  <SelectItem value="pendientes_de_corregir">Pendientes de corregir</SelectItem>
-                  <SelectItem value="para_ganar_competencia">Para ganar la competencia de ML</SelectItem>
-                  <SelectItem value="para_volver_a_vender">Para volver a vender</SelectItem>
-                  <SelectItem value="elegibles_para_competir">Elegibles para competir</SelectItem>
-                  <SelectItem value="inactivas_por_incumplir">Inactivas por incumplir políticas</SelectItem>
-                  <SelectItem value="con_objetivos_de_calidad">Con objetivos de calidad por lograr</SelectItem>
+                  <SelectItem value="moderation_penalty">Pausadas por moderación</SelectItem>
+                  <SelectItem value="poor_quality_picture">Con fotos de baja calidad</SelectItem>
+                  <SelectItem value="under_review">En revisión</SelectItem>
+                  <SelectItem value="paused">Pausadas</SelectItem>
                 </SelectContent>
               </Select>
             </div>
