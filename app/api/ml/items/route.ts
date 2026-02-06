@@ -155,6 +155,15 @@ export async function GET(request: NextRequest) {
 
     console.log("[v0] ML Search Response - total:", searchData.paging?.total, "results:", itemIds.length)
     console.log("[v0] Found", itemIds.length, "product IDs")
+    
+    // Actualizar el total de publicaciones en ML automáticamente
+    if (searchData.paging?.total && accountId) {
+      await supabase
+        .from("ml_accounts")
+        .update({ total_ml_publications: searchData.paging.total })
+        .eq("id", accountId)
+      console.log("[v0] Updated total_ml_publications to:", searchData.paging.total)
+    }
 
     if (itemIds.length === 0) {
       console.log("[v0] No products found, returning empty array")
