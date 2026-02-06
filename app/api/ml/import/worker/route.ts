@@ -175,71 +175,90 @@ export async function POST(request: Request) {
       }
 
       try {
-        // Extraer SKU/GTIN
-        let sku = item.seller_custom_field || null
-        let gtin = null
-
-        // Buscar GTIN en attributes
+        // 1) Extraer candidateSku del seller_custom_field
+        let candidateSku = item.seller_custom_field || null
+        
+        // 2) Extraer candidateGtin desde attributes
+        let candidateGtin = null
         if (item.attributes && Array.isArray(item.attributes)) {
           const gtinAttr = item.attributes.find((attr: any) => attr.id === "GTIN")
-          if (gtinAttr) gtin = gtinAttr.value_name
+          if (gtinAttr) candidateGtin = gtinAttr.value_name
+        }
+        
+        // También buscar GTIN en variations si no se encontró en attributes
+        if (!candidateGtin && item.variations && item.variations.length > 0) {
+          for (const variation of item.variations) {
+            if (variation.attributes && Array.isArray(variation.attributes)) {
+              const varGtinAttr = variation.attributes.find((attr: any) => attr.id === "GTIN")
+              if (varGtinAttr) {
+                candidateGtin = varGtinAttr.value_name
+                break
+              }
+            }
+          }
+        }
+        
+        // Si no hay candidateSku en seller_custom_field, buscar en variations
+        if (!candidateSku && item.variations && item.variations.length > 0) {
+          candidateSku = item.variations[0].seller_custom_field || item.variations[0].sku || null
         }
 
-        // Si hay variaciones, usar SKU de la primera variación
-        if (!sku && item.variations && item.variations.length > 0) {
-          sku = item.variations[0].seller_custom_field || item.variations[0].sku
-        }
+        // 3) Normalizar ambos: trim + quitar guiones/espacios + dejar solo dígitos
+        const normalizedSku = normalizeSKU(candidateSku)
+        const normalizedGtin = normalizeSKU(candidateGtin)
 
-        // NORMALIZAR SKU/GTIN antes del match
-        const normalizedSku = normalizeSKU(sku)
-        const normalizedGtin = normalizeSKU(gtin)
-
-        // Buscar producto por SKU o GTIN (primero en products, luego en variations)
+        // 4) Buscar product_id en products.sku
         let product_id = null
-        let variation_id = null
+        let matched_by: 'sku' | 'gtin' | null = null
         
         if (normalizedSku || normalizedGtin) {
-          // 1. Buscar en products
-          const searchValue = normalizedSku || normalizedGtin
-          const { data: product } = await supabase
-            .from("products")
-            .select("id")
-            .or(`sku.eq.${searchValue},ean.eq.${searchValue}`)
-            .limit(1)
-            .single()
-
-          if (product) {
-            product_id = product.id
-            linked++
-          } else {
-            // 2. Buscar en variations (el item ML puede ser una variación)
-            const { data: variation } = await supabase
-              .from("product_variations")
-              .select("id, product_id")
-              .or(`sku.eq.${searchValue},ean.eq.${searchValue}`)
+          // Primero buscar por products.sku == candidateSku
+          if (normalizedSku) {
+            const { data: productBySku } = await supabase
+              .from("products")
+              .select("id")
+              .eq("sku", normalizedSku)
               .limit(1)
               .single()
-            
-            if (variation) {
-              product_id = variation.product_id
-              variation_id = variation.id
+
+            if (productBySku) {
+              product_id = productBySku.id
+              matched_by = 'sku'
+              linked++
+            }
+          }
+          
+          // Si no matcheó, buscar por products.sku == candidateGtin
+          if (!product_id && normalizedGtin) {
+            const { data: productByGtin } = await supabase
+              .from("products")
+              .select("id")
+              .eq("sku", normalizedGtin)
+              .limit(1)
+              .single()
+
+            if (productByGtin) {
+              product_id = productByGtin.id
+              matched_by = 'gtin'
               linked++
             } else {
               unmatched++ // SKU/GTIN no encontrado
             }
+          } else if (!product_id) {
+            unmatched++ // No matcheó por SKU ni GTIN
           }
         } else {
           unmatched++ // No tiene SKU ni GTIN
         }
 
-        // UPSERT en ml_publications
+        // 5) UPSERT en ml_publications con matched_by
         await supabase
           .from("ml_publications")
           .upsert({
             account_id: account.id,
             ml_item_id: item.id,
             product_id,
-            variation_id,
+            matched_by,
             title: item.title,
             price: item.price,
             current_stock: item.available_quantity,
