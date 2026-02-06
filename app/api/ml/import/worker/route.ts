@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   
   try {
     const supabase = await createClient()
-    const { job_id, batch_size = 50 } = await request.json()
+    const { job_id, batch_size = 20 } = await request.json() // Límite de 20 para multiget
 
     if (!job_id) {
       return NextResponse.json({ error: "job_id requerido" }, { status: 400 })
@@ -115,6 +115,7 @@ export async function POST(request: Request) {
     let processed = 0
     let failed = 0
     let linked = 0
+    let unmatched = 0 // SKU/GTIN no encontrado en productos
 
     // Procesar cada item
     for (const itemResponse of itemsData) {
@@ -164,7 +165,11 @@ export async function POST(request: Request) {
           if (product) {
             product_id = product.id
             linked++
+          } else {
+            unmatched++ // SKU/GTIN no encontrado en productos
           }
+        } else {
+          unmatched++ // No tiene SKU ni GTIN
         }
 
         // UPSERT en ml_publications
@@ -223,13 +228,15 @@ export async function POST(request: Request) {
       })
       .eq("id", job_id)
 
-    console.log("[v0] Worker completed:", { processed, failed, linked })
+    console.log("[v0] Worker completed:", { processed, failed, linked, unmatched })
 
     return NextResponse.json({
       success: true,
       processed,
       failed,
       linked,
+      unmatched,
+      unmatched_percent: processed > 0 ? Math.round((unmatched / processed) * 100) : 0,
       has_more: pendingItems.length === batch_size
     })
 

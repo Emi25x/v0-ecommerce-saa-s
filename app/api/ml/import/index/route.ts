@@ -80,23 +80,15 @@ export async function POST(request: Request) {
       })
       .eq("id", job_id)
 
-    // Si hay más items, continuar indexando
+    // Si hay más items, retornar estado "indexing" para que el cron lo reintente
     if (itemIds.length === BATCH_SIZE && newOffset < totalItems) {
-      console.log("[v0] More items to index, continuing...")
-      
-      // Llamar recursivamente para el siguiente lote
-      setTimeout(async () => {
-        await fetch(request.url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ job_id, account_id, offset: newOffset })
-        })
-      }, 1000) // Esperar 1 segundo entre lotes para evitar rate limit
+      console.log("[v0] More items to index:", newOffset, "/", totalItems)
 
       return NextResponse.json({
         success: true,
         status: "indexing",
         items_indexed: itemsIndexed,
+        progress: Math.round((newOffset / totalItems) * 100),
         total_offset: newOffset,
         total_items: totalItems,
         progress: Math.round((newOffset / totalItems) * 100)
