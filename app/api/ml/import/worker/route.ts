@@ -1,0 +1,227 @@
+import { createClient } from "@/lib/supabase/server"
+import { NextResponse } from "next/server"
+
+export const maxDuration = 60
+
+/**
+ * POST /api/ml/import/worker
+ * Fase B (Worker): Procesa lotes pequeños de items pendientes
+ * Usa multiget /items?ids=... para obtener detalles de múltiples items
+ * Extrae SKU/GTIN y vincula con productos
+ */
+export async function POST(request: Request) {
+  console.log("[v0] ========== ML IMPORT WORKER ==========")
+  
+  try {
+    const supabase = await createClient()
+    const { job_id, batch_size = 50 } = await request.json()
+
+    if (!job_id) {
+      return NextResponse.json({ error: "job_id requerido" }, { status: 400 })
+    }
+
+    // Obtener job
+    const { data: job } = await supabase
+      .from("ml_import_jobs")
+      .select("*, ml_accounts(*)")
+      .eq("id", job_id)
+      .single()
+
+    if (!job) {
+      return NextResponse.json({ error: "Job no encontrado" }, { status: 404 })
+    }
+
+    const account = job.ml_accounts
+
+    // Obtener batch de items pendientes
+    const { data: pendingItems } = await supabase
+      .from("ml_import_queue")
+      .select("*")
+      .eq("job_id", job_id)
+      .eq("status", "pending")
+      .limit(batch_size)
+
+    if (!pendingItems || pendingItems.length === 0) {
+      console.log("[v0] No pending items, completing job")
+      
+      // No hay más items pendientes, completar job
+      await supabase
+        .from("ml_import_jobs")
+        .update({ 
+          status: "completed",
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", job_id)
+
+      return NextResponse.json({
+        success: true,
+        status: "completed",
+        message: "Importación completada"
+      })
+    }
+
+    console.log("[v0] Processing", pendingItems.length, "items")
+
+    // Marcar items como processing
+    const itemIds = pendingItems.map(item => item.ml_item_id)
+    await supabase
+      .from("ml_import_queue")
+      .update({ status: "processing" })
+      .in("ml_item_id", itemIds)
+      .eq("job_id", job_id)
+
+    // Obtener detalles de múltiples items con multiget (1 sola llamada)
+    const idsParam = itemIds.join(",")
+    const multigetUrl = `https://api.mercadolibre.com/items?ids=${idsParam}&attributes=id,title,price,available_quantity,status,permalink,seller_custom_field,attributes,variations`
+    
+    const multigetResponse = await fetch(multigetUrl, {
+      headers: { Authorization: `Bearer ${account.access_token}` }
+    })
+
+    if (!multigetResponse.ok) {
+      if (multigetResponse.status === 429) {
+        // Rate limit, marcar items como pending de nuevo
+        await supabase
+          .from("ml_import_queue")
+          .update({ status: "pending" })
+          .in("ml_item_id", itemIds)
+          .eq("job_id", job_id)
+
+        return NextResponse.json({ 
+          success: false, 
+          error: "Rate limit alcanzado", 
+          retry_after: 3600 
+        }, { status: 429 })
+      }
+      throw new Error(`ML multiget error: ${multigetResponse.status}`)
+    }
+
+    const itemsData = await multigetResponse.json()
+    
+    let processed = 0
+    let failed = 0
+    let linked = 0
+
+    // Procesar cada item
+    for (const itemResponse of itemsData) {
+      const item = itemResponse.body
+      
+      if (!item || itemResponse.code !== 200) {
+        failed++
+        await supabase
+          .from("ml_import_queue")
+          .update({ 
+            status: "failed",
+            last_error: `ML API returned ${itemResponse.code}`,
+            attempts: pendingItems.find(i => i.ml_item_id === itemResponse.id)?.attempts + 1 || 1,
+            processed_at: new Date().toISOString()
+          })
+          .eq("ml_item_id", itemResponse.id)
+          .eq("job_id", job_id)
+        continue
+      }
+
+      try {
+        // Extraer SKU/GTIN
+        let sku = item.seller_custom_field || null
+        let gtin = null
+
+        // Buscar GTIN en attributes
+        if (item.attributes && Array.isArray(item.attributes)) {
+          const gtinAttr = item.attributes.find((attr: any) => attr.id === "GTIN")
+          if (gtinAttr) gtin = gtinAttr.value_name
+        }
+
+        // Si hay variaciones, usar SKU de la primera variación
+        if (!sku && item.variations && item.variations.length > 0) {
+          sku = item.variations[0].seller_custom_field || item.variations[0].sku
+        }
+
+        // Buscar producto por SKU o GTIN
+        let product_id = null
+        if (sku || gtin) {
+          const { data: product } = await supabase
+            .from("products")
+            .select("id")
+            .or(sku ? `sku.eq.${sku},ean.eq.${sku}` : `ean.eq.${gtin}`)
+            .limit(1)
+            .single()
+
+          if (product) {
+            product_id = product.id
+            linked++
+          }
+        }
+
+        // UPSERT en ml_publications
+        await supabase
+          .from("ml_publications")
+          .upsert({
+            account_id: account.id,
+            ml_item_id: item.id,
+            product_id,
+            title: item.title,
+            price: item.price,
+            current_stock: item.available_quantity,
+            status: item.status,
+            permalink: item.permalink,
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: "ml_item_id"
+          })
+
+        // Marcar como completado
+        await supabase
+          .from("ml_import_queue")
+          .update({ 
+            status: "completed",
+            processed_at: new Date().toISOString()
+          })
+          .eq("ml_item_id", item.id)
+          .eq("job_id", job_id)
+
+        processed++
+
+      } catch (itemError: any) {
+        console.error("[v0] Error processing item", item.id, itemError)
+        failed++
+        
+        await supabase
+          .from("ml_import_queue")
+          .update({ 
+            status: "failed",
+            last_error: itemError.message,
+            attempts: pendingItems.find(i => i.ml_item_id === item.id)?.attempts + 1 || 1,
+            processed_at: new Date().toISOString()
+          })
+          .eq("ml_item_id", item.id)
+          .eq("job_id", job_id)
+      }
+    }
+
+    // Actualizar estadísticas del job
+    await supabase
+      .from("ml_import_jobs")
+      .update({
+        processed_items: job.processed_items + processed,
+        failed_items: job.failed_items + failed,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", job_id)
+
+    console.log("[v0] Worker completed:", { processed, failed, linked })
+
+    return NextResponse.json({
+      success: true,
+      processed,
+      failed,
+      linked,
+      has_more: pendingItems.length === batch_size
+    })
+
+  } catch (error: any) {
+    console.error("[v0] Error in worker:", error)
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}

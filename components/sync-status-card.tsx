@@ -36,6 +36,8 @@ export function SyncStatusCard() {
   const [autoSyncResult, setAutoSyncResult] = useState<string | null>(null)
   const [syncingAll, setSyncingAll] = useState(false)
   const [syncAllResult, setSyncAllResult] = useState<string | null>(null)
+  const [batchImporting, setBatchImporting] = useState<string | null>(null)
+  const [batchImportProgress, setBatchImportProgress] = useState<Record<string, any>>({})
 
   useEffect(() => {
     fetchAccounts()
@@ -140,6 +142,55 @@ export function SyncStatusCard() {
       setAutoSyncResult("Error al sincronizar")
     } finally {
       setAutoSyncing(false)
+    }
+  }
+
+  const handleBatchImport = async (accountId: string) => {
+    setBatchImporting(accountId)
+    try {
+      // Iniciar importación
+      const startResponse = await fetch("/api/ml/import/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: accountId })
+      })
+      
+      const startData = await startResponse.json()
+      
+      if (!startResponse.ok || !startData.success) {
+        alert(startData.message || "Error iniciando importación")
+        setBatchImporting(null)
+        return
+      }
+      
+      const jobId = startData.job_id
+      
+      // Monitorear progreso cada 3 segundos
+      const interval = setInterval(async () => {
+        try {
+          const statusResponse = await fetch(`/api/ml/import/status?job_id=${jobId}`)
+          const statusData = await statusResponse.json()
+          
+          setBatchImportProgress(prev => ({
+            ...prev,
+            [accountId]: statusData
+          }))
+          
+          // Si completó o falló, detener monitoreo
+          if (statusData.status === "completed" || statusData.status === "failed") {
+            clearInterval(interval)
+            setBatchImporting(null)
+            fetchAccounts() // Actualizar estadísticas
+          }
+        } catch (error) {
+          console.error("Error monitoring import:", error)
+        }
+      }, 3000)
+      
+    } catch (error: any) {
+      console.error("Error in batch import:", error)
+      alert("Error: " + error.message)
+      setBatchImporting(null)
     }
   }
 
@@ -287,20 +338,37 @@ export function SyncStatusCard() {
             <div key={account.id} className="p-3 border rounded-lg space-y-3">
               <div className="flex items-center justify-between">
                 <span className="font-medium">{account.nickname}</span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleSyncStock(account.id)}
-                  disabled={syncing === account.id}
-                  className="bg-transparent"
-                >
-                  {syncing === account.id ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-3 w-3" />
-                  )}
-                  <span className="ml-1">Sync Stock</span>
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleSyncStock(account.id)}
+                    disabled={syncing === account.id || batchImporting === account.id}
+                    className="bg-transparent"
+                  >
+                    {syncing === account.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      "Sincronizar"
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={() => handleBatchImport(account.id)}
+                    disabled={batchImporting === account.id || syncing === account.id}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    {batchImporting === account.id ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        Importando...
+                      </>
+                    ) : (
+                      "Importación Completa"
+                    )}
+                  </Button>
+                </div>
               </div>
               {syncResult && (
                 <div className="text-sm text-primary bg-primary/10 p-2 rounded">{syncResult}</div>
@@ -378,6 +446,43 @@ export function SyncStatusCard() {
                   {account.auto_sync_new_listings ? "Auto-publicar activo" : "Auto-publicar inactivo"}
                 </span>
               </div>
+
+              {/* Batch import progress */}
+              {batchImportProgress[account.id] && (
+                <div className="space-y-2 p-3 bg-blue-50 border border-blue-200 rounded mt-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium">Importación por Lotes</span>
+                    <Badge variant={
+                      batchImportProgress[account.id].status === "completed" ? "default" :
+                      batchImportProgress[account.id].status === "failed" ? "destructive" :
+                      "secondary"
+                    }>
+                      {batchImportProgress[account.id].status}
+                    </Badge>
+                  </div>
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    <div className="flex justify-between">
+                      <span>Progreso:</span>
+                      <span className="font-medium">{batchImportProgress[account.id].progress}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="bg-blue-600 h-2 rounded-full transition-all"
+                        style={{ width: `${batchImportProgress[account.id].progress}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Procesadas: {batchImportProgress[account.id].processed_items || 0}</span>
+                      <span>Total: {batchImportProgress[account.id].total_items || 0}</span>
+                    </div>
+                    {batchImportProgress[account.id].failed_items > 0 && (
+                      <div className="text-red-600">
+                        Fallidas: {batchImportProgress[account.id].failed_items}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )
         })}
