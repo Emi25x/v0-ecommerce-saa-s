@@ -36,11 +36,11 @@ export async function POST(request: Request) {
       .select("*")
       .eq("account_id", account_id)
       .in("status", ["pending", "indexing", "processing"])
-      .single()
+      .maybeSingle()
 
     if (activeJob) {
       return NextResponse.json({
-        success: false,
+        success: true,
         message: "Ya hay una importación en progreso",
         job_id: activeJob.id
       })
