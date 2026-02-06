@@ -274,14 +274,18 @@ export function SyncStatusCard() {
           <Button
             onClick={async () => {
               setAutoSyncing(true)
-              setAutoSyncResult("Importando CSV3 completo (9,200 publicaciones)...")
+              setAutoSyncResult("Consultando API de ML para verificar total real...")
               try {
-                const res = await fetch("/api/ml/import-csv3", { method: "POST" })
+                const res = await fetch("/api/ml/verify-total", { method: "POST" })
                 const data = await res.json()
-                setAutoSyncResult(`✓ CSV3: ${data.processed} procesadas, ${data.inserted} nuevas, ${data.updated} actualizadas, ${data.linked} vinculadas`)
-                fetchAccounts()
+                if (data.success) {
+                  setAutoSyncResult(`✓ Total real en ML: ${data.total_in_ml} publicaciones`)
+                  fetchAccounts()
+                } else {
+                  setAutoSyncResult(`Error: ${data.error}`)
+                }
               } catch (e) {
-                setAutoSyncResult("Error al importar CSV3")
+                setAutoSyncResult("Error al consultar ML API")
               } finally {
                 setAutoSyncing(false)
                 setTimeout(() => setAutoSyncResult(null), 8000)
@@ -290,17 +294,17 @@ export function SyncStatusCard() {
             disabled={autoSyncing}
             size="sm"
             variant="default"
-            className="bg-green-600 hover:bg-green-700 text-white"
+            className="bg-blue-600 hover:bg-blue-700 text-white"
           >
             {autoSyncing ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Importando...
+                Verificando...
               </>
             ) : (
               <>
                 <Package className="h-4 w-4 mr-2" />
-                Importar CSV3
+                Verificar Total ML
               </>
             )}
           </Button>
