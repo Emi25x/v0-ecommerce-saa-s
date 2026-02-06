@@ -154,35 +154,20 @@ export async function POST(request: Request) {
 
         if (!product) {
           noProductMatch++
-          // Guardar publicación sin vincular (verificar si existe primero)
+          // Guardar publicación sin vincular usando upsert
           try {
-            const { data: existingUnlinked } = await supabase
-              .from("ml_publications")
-              .select("id")
-              .eq("ml_item_id", item.id)
-              .maybeSingle()
-            
-            if (existingUnlinked) {
-              await supabase.from("ml_publications")
-                .update({
-                  title: item.title,
-                  status: item.status,
-                  price: item.price,
-                  current_stock: item.available_quantity,
-                  updated_at: new Date().toISOString()
-                })
-                .eq("id", existingUnlinked.id)
-            } else {
-              await supabase.from("ml_publications").insert({
-                account_id: account.id,
-                ml_item_id: item.id,
-                title: item.title,
-                status: item.status,
-                price: item.price,
-                current_stock: item.available_quantity,
-                permalink: item.permalink
-              })
-            }
+            await supabase.from("ml_publications").upsert({
+              account_id: account.id,
+              ml_item_id: item.id,
+              title: item.title,
+              status: item.status,
+              price: item.price,
+              current_stock: item.available_quantity,
+              permalink: item.permalink,
+              updated_at: new Date().toISOString()
+            }, {
+              onConflict: "account_id,ml_item_id"
+            })
           } catch (e) {
             console.error("[v0] Error guardando publicación sin vincular:", e)
             errors++
@@ -190,7 +175,7 @@ export async function POST(request: Request) {
           continue
         }
 
-        // PASO 4: Guardar/actualizar en ml_publications con vinculación
+        // PASO 4: Guardar/actualizar en ml_publications con vinculación usando upsert
         try {
           const { data: existingPub } = await supabase
             .from("ml_publications")
@@ -198,34 +183,29 @@ export async function POST(request: Request) {
             .eq("ml_item_id", item.id)
             .maybeSingle()
 
-          const updateData: Record<string, any> = {
-            current_stock: item.available_quantity,
-            updated_at: new Date().toISOString()
-          }
-
-          if (existingPub) {
-            if (!existingPub.product_id) {
-              // Vincular por primera vez
-              updateData.product_id = product.id
-              linked++
-            }
-            await supabase.from("ml_publications").update(updateData).eq("id", existingPub.id)
-          } else {
-            // Crear nueva entrada vinculada
-            await supabase.from("ml_publications").insert({
-              account_id: account.id,
-              ml_item_id: item.id,
-              product_id: product.id,
-              title: item.title,
-              status: item.status,
-              price: item.price,
-              current_stock: item.available_quantity,
-              permalink: item.permalink
-            })
+          // Si ya existe y no tenía product_id, contarlo como vinculado
+          if (existingPub && !existingPub.product_id) {
+            linked++
+          } else if (!existingPub) {
+            // Si no existe, también es un nuevo vínculo
             linked++
           }
 
-          updated++ // Increment the updated variable
+          await supabase.from("ml_publications").upsert({
+            account_id: account.id,
+            ml_item_id: item.id,
+            product_id: product.id,
+            title: item.title,
+            status: item.status,
+            price: item.price,
+            current_stock: item.available_quantity,
+            permalink: item.permalink,
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: "account_id,ml_item_id"
+          })
+
+          updated++
         } catch (e) {
           console.error("[v0] Error guardando publicación vinculada:", item.id, e)
           errors++
