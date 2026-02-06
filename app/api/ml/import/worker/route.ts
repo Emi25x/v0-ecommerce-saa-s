@@ -152,13 +152,17 @@ export async function POST(request: Request) {
           sku = item.variations[0].seller_custom_field || item.variations[0].sku
         }
 
-        // Buscar producto por SKU o GTIN
+        // Buscar producto por SKU o GTIN (primero en products, luego en variations)
         let product_id = null
+        let variation_id = null
+        
         if (sku || gtin) {
+          // 1. Buscar en products
+          const searchValue = sku || gtin
           const { data: product } = await supabase
             .from("products")
             .select("id")
-            .or(sku ? `sku.eq.${sku},ean.eq.${sku}` : `ean.eq.${gtin}`)
+            .or(`sku.eq.${searchValue},ean.eq.${searchValue}`)
             .limit(1)
             .single()
 
@@ -166,7 +170,21 @@ export async function POST(request: Request) {
             product_id = product.id
             linked++
           } else {
-            unmatched++ // SKU/GTIN no encontrado en productos
+            // 2. Buscar en variations (el item ML puede ser una variación)
+            const { data: variation } = await supabase
+              .from("product_variations")
+              .select("id, product_id")
+              .or(`sku.eq.${searchValue},ean.eq.${searchValue}`)
+              .limit(1)
+              .single()
+            
+            if (variation) {
+              product_id = variation.product_id
+              variation_id = variation.id
+              linked++
+            } else {
+              unmatched++ // SKU/GTIN no encontrado
+            }
           }
         } else {
           unmatched++ // No tiene SKU ni GTIN
@@ -179,6 +197,7 @@ export async function POST(request: Request) {
             account_id: account.id,
             ml_item_id: item.id,
             product_id,
+            variation_id,
             title: item.title,
             price: item.price,
             current_stock: item.available_quantity,
@@ -203,18 +222,44 @@ export async function POST(request: Request) {
 
       } catch (itemError: any) {
         console.error("[v0] Error processing item", item.id, itemError)
-        failed++
+        const currentItem = pendingItems.find(i => i.ml_item_id === item.id)
+        const attempts = (currentItem?.attempts || 0) + 1
         
-        await supabase
-          .from("ml_import_queue")
-          .update({ 
-            status: "failed",
-            last_error: itemError.message,
-            attempts: pendingItems.find(i => i.ml_item_id === item.id)?.attempts + 1 || 1,
-            processed_at: new Date().toISOString()
-          })
-          .eq("ml_item_id", item.id)
-          .eq("job_id", job_id)
+        // Decidir si reintentar o marcar como fallido
+        const shouldRetry = attempts < 3 && (
+          itemError.status === 429 || 
+          (itemError.status >= 500 && itemError.status < 600)
+        )
+        
+        if (shouldRetry) {
+          // Backoff exponencial: 2^attempts minutos
+          const delayMinutes = Math.pow(2, attempts)
+          const nextRetryAt = new Date(Date.now() + delayMinutes * 60 * 1000)
+          
+          console.log(`[v0] Will retry item ${item.id} in ${delayMinutes} minutes (attempt ${attempts})`)
+          
+          await supabase
+            .from("ml_import_queue")
+            .update({ 
+              status: "pending",
+              last_error: itemError.message,
+              next_retry_at: nextRetryAt.toISOString()
+            })
+            .eq("ml_item_id", item.id)
+            .eq("job_id", job_id)
+        } else {
+          failed++
+          
+          await supabase
+            .from("ml_import_queue")
+            .update({ 
+              status: "failed",
+              last_error: itemError.message,
+              processed_at: new Date().toISOString()
+            })
+            .eq("ml_item_id", item.id)
+            .eq("job_id", job_id)
+        }
       }
     }
 
