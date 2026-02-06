@@ -50,6 +50,7 @@ export default function ProductsPage() {
     catalog_listing: "all",
     listing_type: "all",
     platform: "mercadolibre",
+    category: "all",
   })
 
   const fetchMlAccounts = async () => {
@@ -89,6 +90,7 @@ export default function ProductsPage() {
       if (filters.catalog_listing && filters.catalog_listing !== "all")
         params.append("catalog_listing", filters.catalog_listing)
       if (filters.listing_type && filters.listing_type !== "all") params.append("listing_type", filters.listing_type)
+      if (filters.category && filters.category !== "all") params.append("tags", filters.category)
 
       const mlResponse = await fetch(`/api/ml/items?${params.toString()}`)
 
@@ -234,6 +236,25 @@ export default function ProductsPage() {
                   <SelectItem value="gold_special">Clásica</SelectItem>
                   <SelectItem value="gold_pro">Premium</SelectItem>
                   <SelectItem value="free">Gratuita</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Categoría</Label>
+              <Select value={filters.category} onValueChange={(v) => setFilters({ ...filters, category: v })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar categoría" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  <SelectItem value="proximas_a_pausarse">Próximas a pausarse</SelectItem>
+                  <SelectItem value="pendientes_de_corregir">Pendientes de corregir</SelectItem>
+                  <SelectItem value="para_ganar_competencia">Para ganar la competencia de ML</SelectItem>
+                  <SelectItem value="para_volver_a_vender">Para volver a vender</SelectItem>
+                  <SelectItem value="elegibles_para_competir">Elegibles para competir</SelectItem>
+                  <SelectItem value="inactivas_por_incumplir">Inactivas por incumplir políticas</SelectItem>
+                  <SelectItem value="con_objetivos_de_calidad">Con objetivos de calidad por lograr</SelectItem>
                 </SelectContent>
               </Select>
             </div>
