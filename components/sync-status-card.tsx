@@ -89,13 +89,14 @@ export function SyncStatusCard() {
       while (hasMore && totalProcessed < 500) { // Máximo 500 items por sesión
         setAutoSyncResult(`Procesando items ${offset}-${offset + 50}... (total: ${totalProcessed})`)
         
-        const response = await fetch("/api/ml/sync-simple", {
+        const response = await fetch("/api/ml/sync-stock", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ 
             account_id: account.id,
             limit: 50,
-            offset: offset
+            offset: offset,
+            auto_continue: false
           })
         })
         
@@ -271,43 +272,7 @@ export function SyncStatusCard() {
               Última actualización de stock y publicaciones
             </CardDescription>
           </div>
-          <Button
-            onClick={async () => {
-              setAutoSyncing(true)
-              setAutoSyncResult("Consultando API de ML para verificar total real...")
-              try {
-                const res = await fetch("/api/ml/verify-total", { method: "POST" })
-                const data = await res.json()
-                if (data.success) {
-                  setAutoSyncResult(`✓ Total real en ML: ${data.total_in_ml} publicaciones`)
-                  fetchAccounts()
-                } else {
-                  setAutoSyncResult(`Error: ${data.error}`)
-                }
-              } catch (e) {
-                setAutoSyncResult("Error al consultar ML API")
-              } finally {
-                setAutoSyncing(false)
-                setTimeout(() => setAutoSyncResult(null), 8000)
-              }
-            }}
-            disabled={autoSyncing}
-            size="sm"
-            variant="default"
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            {autoSyncing ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Verificando...
-              </>
-            ) : (
-              <>
-                <Package className="h-4 w-4 mr-2" />
-                Verificar Total ML
-              </>
-            )}
-          </Button>
+
         </div>
         {autoSyncResult && (
           <div className="mt-2 text-sm text-green-700 bg-green-50 border border-green-200 p-2 rounded">{autoSyncResult}</div>
