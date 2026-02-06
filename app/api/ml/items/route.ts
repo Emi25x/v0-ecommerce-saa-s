@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
   const subStatus = searchParams.get("sub_status")
   const sort = searchParams.get("sort") || "sold_quantity_desc"
   const noCache = searchParams.get("no_cache") === "true"
+  const healthFilter = searchParams.get("health_filter")
 
   // Generar clave de cache única
   const cacheKey = `${limit}-${offset}-${accountId}-${status}-${sort}`
@@ -118,6 +119,62 @@ export async function GET(request: NextRequest) {
     if (!accessToken) {
       console.error("[v0] No access token available for account:", account.id)
       return NextResponse.json({ error: "No access token available" }, { status: 401 })
+    }
+
+    // Si hay health_filter, consultar desde BD en lugar de API de ML
+    if (healthFilter && healthFilter !== "all") {
+      console.log("[v0] Using database query for health filter:", healthFilter)
+      
+      let dbQuery = supabase
+        .from("ml_publications")
+        .select("*")
+        .eq("account_id", account.id)
+        .range(offset, offset + limit - 1)
+      
+      if (healthFilter === "para_ganar_competencia") {
+        dbQuery = dbQuery.eq("is_competing", true)
+      } else if (healthFilter === "elegibles_para_competir") {
+        dbQuery = dbQuery.eq("catalog_listing_eligible", true)
+      }
+      
+      const { data: publications, error: dbError } = await dbQuery
+      
+      if (dbError) {
+        console.error("[v0] DB query error:", dbError)
+        return NextResponse.json({ error: "Database query failed" }, { status: 500 })
+      }
+      
+      // Contar total para paginación
+      let countQuery = supabase
+        .from("ml_publications")
+        .select("id", { count: "exact", head: true })
+        .eq("account_id", account.id)
+      
+      if (healthFilter === "para_ganar_competencia") {
+        countQuery = countQuery.eq("is_competing", true)
+      } else if (healthFilter === "elegibles_para_competir") {
+        countQuery = countQuery.eq("catalog_listing_eligible", true)
+      }
+      
+      const { count } = await countQuery
+      
+      const formattedProducts = publications?.map((pub: any) => ({
+        id: pub.ml_item_id,
+        title: pub.title,
+        price: pub.price,
+        available_quantity: pub.current_stock,
+        status: pub.status,
+        permalink: pub.permalink,
+        catalog_listing: pub.catalog_listing_eligible,
+        thumbnail: null,
+        account_id: pub.account_id,
+        account_nickname: account.nickname,
+      })) || []
+      
+      return NextResponse.json({
+        products: formattedProducts,
+        paging: { total: count || 0, limit, offset },
+      })
     }
 
     let searchUrl = `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?limit=${limit}&offset=${offset}`
@@ -237,7 +294,7 @@ export async function GET(request: NextRequest) {
             .eq("ml_item_id", product.id)
             .maybeSingle()
           
-          const pubData = {
+          const pubData: any = {
             account_id: account.id,
             ml_item_id: product.id,
             product_id,
@@ -247,6 +304,40 @@ export async function GET(request: NextRequest) {
             status: product.status,
             permalink: product.permalink,
             updated_at: new Date().toISOString()
+          }
+          
+          // Consultar elegibilidad de catálogo y competencia (max 1 vez por día por publicación)
+          const shouldCheckHealth = !existing || 
+            !existing.health_checked_at || 
+            new Date(existing.health_checked_at).getTime() < Date.now() - 24 * 60 * 60 * 1000
+          
+          if (shouldCheckHealth && product.catalog_listing === true) {
+            try {
+              // Verificar elegibilidad para competir
+              const eligibilityResponse = await fetch(
+                `https://api.mercadolibre.com/items/${product.id}/catalog_listing_eligibility`,
+                { headers: { Authorization: `Bearer ${account.access_token}` } }
+              )
+              if (eligibilityResponse.ok) {
+                const eligibility = await eligibilityResponse.json()
+                pubData.catalog_listing_eligible = eligibility.eligible === true
+              }
+              
+              // Verificar si está compitiendo
+              const priceResponse = await fetch(
+                `https://api.mercadolibre.com/items/${product.id}/price_to_win`,
+                { headers: { Authorization: `Bearer ${account.access_token}` } }
+              )
+              if (priceResponse.ok) {
+                const priceData = await priceResponse.json()
+                pubData.is_competing = priceData.is_winning === false
+                pubData.price_to_win = priceData.price_to_win?.amount || null
+              }
+              
+              pubData.health_checked_at = new Date().toISOString()
+            } catch (healthErr) {
+              console.error("[v0] Error checking health for", product.id, healthErr)
+            }
           }
           
           if (existing) {

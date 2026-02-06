@@ -91,15 +91,9 @@ export default function ProductsPage() {
         params.append("catalog_listing", filters.catalog_listing)
       if (filters.listing_type && filters.listing_type !== "all") params.append("listing_type", filters.listing_type)
       
-      // Manejar filtros de categoría ML
+      // Manejar filtros de categoría ML (filtros de BD, no de API)
       if (filters.category && filters.category !== "all") {
-        if (filters.category === "paused" || filters.category === "under_review") {
-          // Estos van como status
-          params.set("status", filters.category)
-        } else {
-          // Estos van como tags (moderation_penalty, poor_quality_picture, etc)
-          params.append("tags", filters.category)
-        }
+        params.append("health_filter", filters.category)
       }
 
       const mlResponse = await fetch(`/api/ml/items?${params.toString()}`)
@@ -258,10 +252,8 @@ export default function ProductsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas</SelectItem>
-                  <SelectItem value="moderation_penalty">Pausadas por moderación</SelectItem>
-                  <SelectItem value="poor_quality_picture">Con fotos de baja calidad</SelectItem>
-                  <SelectItem value="under_review">En revisión</SelectItem>
-                  <SelectItem value="paused">Pausadas</SelectItem>
+                  <SelectItem value="para_ganar_competencia">Para ganar la competencia de ML</SelectItem>
+                  <SelectItem value="elegibles_para_competir">Elegibles para competir</SelectItem>
                 </SelectContent>
               </Select>
             </div>
