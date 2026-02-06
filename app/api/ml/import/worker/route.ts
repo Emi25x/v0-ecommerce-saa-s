@@ -33,43 +33,56 @@ export async function POST(request: Request) {
 
     const account = job.ml_accounts
 
-    // Obtener batch de items pendientes
-    const { data: pendingItems } = await supabase
-      .from("ml_import_queue")
-      .select("*")
-      .eq("job_id", job_id)
-      .eq("status", "pending")
-      .limit(batch_size)
+    // ATÓMICO: Reclamar batch de items pendientes (evita race conditions)
+    // La función claim_import_items usa FOR UPDATE SKIP LOCKED
+    const { data: pendingItems, error: claimError } = await supabase.rpc(
+      'claim_import_items',
+      { p_job_id: job_id, p_limit: batch_size }
+    )
+
+    if (claimError) {
+      console.error("[v0] Error claiming items:", claimError)
+      return NextResponse.json({ error: "Error claiming items" }, { status: 500 })
+    }
 
     if (!pendingItems || pendingItems.length === 0) {
-      console.log("[v0] No pending items, completing job")
+      console.log("[v0] No items claimed, checking if job is complete")
       
-      // No hay más items pendientes, completar job
-      await supabase
-        .from("ml_import_jobs")
-        .update({ 
-          status: "completed",
-          completed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", job_id)
+      // Verificar si realmente no quedan items pendientes
+      const { count } = await supabase
+        .from("ml_import_queue")
+        .select("id", { count: "exact", head: true })
+        .eq("job_id", job_id)
+        .eq("status", "pending")
+      
+      if (count === 0) {
+        // No hay más items pendientes, completar job
+        await supabase
+          .from("ml_import_jobs")
+          .update({ 
+            status: "completed",
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", job_id)
 
+        return NextResponse.json({
+          success: true,
+          status: "completed",
+          message: "Importación completada"
+        })
+      }
+      
+      // Items siendo procesados por otros workers
       return NextResponse.json({
         success: true,
-        status: "completed",
-        message: "Importación completada"
+        status: "processing",
+        message: "Items being processed by other workers"
       })
     }
 
-    console.log("[v0] Processing", pendingItems.length, "items")
-
-    // Marcar items como processing
-    const itemIds = pendingItems.map(item => item.ml_item_id)
-    await supabase
-      .from("ml_import_queue")
-      .update({ status: "processing" })
-      .in("ml_item_id", itemIds)
-      .eq("job_id", job_id)
+    console.log("[v0] Claimed", pendingItems.length, "items atomically")
+    const itemIds = pendingItems.map((item: any) => item.ml_item_id)
 
     // Obtener detalles de múltiples items con multiget (1 sola llamada)
     const idsParam = itemIds.join(",")
