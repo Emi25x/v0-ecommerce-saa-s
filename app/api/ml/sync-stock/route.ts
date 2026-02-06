@@ -154,16 +154,13 @@ export async function POST(request: Request) {
 
         if (!product) {
           noProductMatch++
-          // Guardar publicación sin vincular usando upsert
+          // Guardar publicación sin vincular usando upsert (solo campos dinámicos)
           try {
             await supabase.from("ml_publications").upsert({
               account_id: account.id,
               ml_item_id: item.id,
-              title: item.title,
-              status: item.status,
               price: item.price,
               current_stock: item.available_quantity,
-              permalink: item.permalink,
               updated_at: new Date().toISOString()
             }, {
               onConflict: "account_id,ml_item_id"
@@ -195,11 +192,8 @@ export async function POST(request: Request) {
             account_id: account.id,
             ml_item_id: item.id,
             product_id: product.id,
-            title: item.title,
-            status: item.status,
             price: item.price,
             current_stock: item.available_quantity,
-            permalink: item.permalink,
             updated_at: new Date().toISOString()
           }, {
             onConflict: "account_id,ml_item_id"
