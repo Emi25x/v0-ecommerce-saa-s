@@ -4,6 +4,35 @@ import { NextResponse } from "next/server"
 export const maxDuration = 60
 
 /**
+ * Normaliza SKU/ISBN para matching consistente
+ * - Trim, lowercase, quitar guiones/espacios
+ * - Dejar solo dígitos para ISBN/EAN
+ * - Convertir ISBN-10 a ISBN-13 si aplica
+ */
+function normalizeSKU(sku: string | null | undefined): string | null {
+  if (!sku) return null
+  
+  let normalized = sku.trim().toLowerCase()
+  
+  // Quitar guiones, espacios, puntos
+  normalized = normalized.replace(/[-\s.]/g, '')
+  
+  // Si es numérico y tiene 10 dígitos (ISBN-10), convertir a ISBN-13
+  if (/^\d{10}$/.test(normalized)) {
+    // ISBN-10 a ISBN-13: agregar prefijo 978 y recalcular dígito verificador
+    const base = '978' + normalized.slice(0, 9)
+    let sum = 0
+    for (let i = 0; i < 12; i++) {
+      sum += parseInt(base[i]) * (i % 2 === 0 ? 1 : 3)
+    }
+    const checkDigit = (10 - (sum % 10)) % 10
+    normalized = base + checkDigit
+  }
+  
+  return normalized
+}
+
+/**
  * POST /api/ml/import/worker
  * Fase B (Worker): Procesa lotes pequeños de items pendientes
  * Usa multiget /items?ids=... para obtener detalles de múltiples items
@@ -94,17 +123,26 @@ export async function POST(request: Request) {
 
     if (!multigetResponse.ok) {
       if (multigetResponse.status === 429) {
-        // Rate limit, marcar items como pending de nuevo
+        // Rate limit, marcar items como pending con next_retry_at
+        const retryAfterHeader = multigetResponse.headers.get('Retry-After')
+        const retryAfterSeconds = retryAfterHeader ? parseInt(retryAfterHeader) : 120 // 2 minutos por defecto
+        const nextRetryAt = new Date(Date.now() + retryAfterSeconds * 1000)
+        
+        console.log(`[v0] Rate limit 429, retrying in ${retryAfterSeconds}s`)
+        
         await supabase
           .from("ml_import_queue")
-          .update({ status: "pending" })
+          .update({ 
+            status: "pending",
+            next_retry_at: nextRetryAt.toISOString()
+          })
           .in("ml_item_id", itemIds)
           .eq("job_id", job_id)
 
         return NextResponse.json({ 
           success: false, 
           error: "Rate limit alcanzado", 
-          retry_after: 3600 
+          retry_after: retryAfterSeconds 
         }, { status: 429 })
       }
       throw new Error(`ML multiget error: ${multigetResponse.status}`)
@@ -123,12 +161,12 @@ export async function POST(request: Request) {
       
       if (!item || itemResponse.code !== 200) {
         failed++
+        // No incrementar attempts aquí, claim_import_items ya lo hace
         await supabase
           .from("ml_import_queue")
           .update({ 
             status: "failed",
             last_error: `ML API returned ${itemResponse.code}`,
-            attempts: pendingItems.find(i => i.ml_item_id === itemResponse.id)?.attempts + 1 || 1,
             processed_at: new Date().toISOString()
           })
           .eq("ml_item_id", itemResponse.id)
@@ -152,13 +190,17 @@ export async function POST(request: Request) {
           sku = item.variations[0].seller_custom_field || item.variations[0].sku
         }
 
+        // NORMALIZAR SKU/GTIN antes del match
+        const normalizedSku = normalizeSKU(sku)
+        const normalizedGtin = normalizeSKU(gtin)
+
         // Buscar producto por SKU o GTIN (primero en products, luego en variations)
         let product_id = null
         let variation_id = null
         
-        if (sku || gtin) {
+        if (normalizedSku || normalizedGtin) {
           // 1. Buscar en products
-          const searchValue = sku || gtin
+          const searchValue = normalizedSku || normalizedGtin
           const { data: product } = await supabase
             .from("products")
             .select("id")
