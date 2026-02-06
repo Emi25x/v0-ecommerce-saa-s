@@ -10,7 +10,8 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const q = searchParams.get("q")
-    const limit = parseInt(searchParams.get("limit") || "20")
+    const requestedLimit = parseInt(searchParams.get("limit") || "20")
+    const limit = Math.min(requestedLimit, 50) // Máximo 50 resultados
 
     if (!q || q.trim().length < 2) {
       return NextResponse.json({ 

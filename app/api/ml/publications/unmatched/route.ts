@@ -19,56 +19,52 @@ export async function GET(request: Request) {
     const supabase = await createClient()
     const offset = (page - 1) * pageSize
 
-    // Query base: publicaciones sin match
-    let query = supabase
-      .from("ml_publications")
-      .select(`
-        id,
-        account_id,
-        ml_item_id,
-        title,
-        status,
-        price,
-        current_stock,
-        created_at,
-        updated_at,
-        ml_accounts!inner(nickname)
-      `, { count: "exact" })
-      .is("product_id", null)
-      .order("created_at", { ascending: false })
-
-    // Filtros opcionales
+    // Construir query con NOT EXISTS para publicaciones sin match en ml_publication_matches
+    // Necesitamos usar SQL directo porque Supabase no soporta NOT EXISTS nativamente
+    const filters = []
+    const params: any = { 
+      limit_val: pageSize, 
+      offset_val: offset 
+    }
+    
     if (accountId) {
-      query = query.eq("account_id", accountId)
+      filters.push("p.account_id = @account_id")
+      params.account_id = accountId
     }
-
+    
     if (q) {
-      query = query.or(`title.ilike.%${q}%,ml_item_id.ilike.%${q}%`)
+      filters.push("(p.title ILIKE @search OR p.ml_item_id ILIKE @search)")
+      params.search = `%${q}%`
     }
-
-    // Aplicar paginación
-    query = query.range(offset, offset + pageSize - 1)
-
-    const { data: items, error, count } = await query
+    
+    const whereClause = filters.length > 0 ? `AND ${filters.join(" AND ")}` : ""
+    
+    // Query usando RPC para obtener publicaciones sin match
+    const { data: items, error } = await supabase.rpc('get_unmatched_publications', {
+      p_account_id: accountId || null,
+      p_search: q || null,
+      p_limit: pageSize,
+      p_offset: offset
+    })
+    
+    // Count total (necesitamos una query separada)
+    const { count, error: countError } = await supabase.rpc('count_unmatched_publications', {
+      p_account_id: accountId || null,
+      p_search: q || null
+    })
 
     if (error) {
       console.error("[v0] Error fetching unmatched publications:", error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // Formatear resultados
-    const formattedItems = items?.map(item => ({
-      id: item.id,
-      account_id: item.account_id,
-      account_nickname: (item.ml_accounts as any)?.nickname || "Unknown",
-      ml_item_id: item.ml_item_id,
-      title: item.title,
-      status: item.status,
-      price: item.price,
-      current_stock: item.current_stock,
-      created_at: item.created_at,
-      updated_at: item.updated_at,
-    })) || []
+    if (countError) {
+      console.error("[v0] Error counting unmatched publications:", countError)
+      return NextResponse.json({ error: countError.message }, { status: 500 })
+    }
+
+    // Los items ya vienen formateados de la función RPC
+    const formattedItems = items || []
 
     return NextResponse.json({
       items: formattedItems,

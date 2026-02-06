@@ -19,80 +19,52 @@ export async function POST(request: Request) {
 
     const supabase = await createClient()
 
-    // Validar que el producto existe
-    const { data: product, error: productError } = await supabase
+    // Usar función RPC atómica para el match (valida y actualiza ambas tablas en una transacción)
+    const { data: result, error: rpcError } = await supabase.rpc('manual_match_publication', {
+      p_account_id: account_id,
+      p_ml_item_id: ml_item_id,
+      p_product_id: product_id,
+      p_user_id: null // TODO: agregar user_id cuando se implemente auth
+    })
+
+    if (rpcError) {
+      console.error("[v0] Error calling manual_match_publication:", rpcError)
+      return NextResponse.json({ error: rpcError.message }, { status: 500 })
+    }
+
+    // La función RPC retorna { success: boolean, error?: string, message?: string }
+    if (!result?.success) {
+      return NextResponse.json({ 
+        error: result?.error || "Error desconocido al crear match" 
+      }, { status: 400 })
+    }
+
+    // Obtener datos para respuesta
+    const { data: publication } = await supabase
+      .from("ml_publications")
+      .select("ml_item_id, title")
+      .eq("account_id", account_id)
+      .eq("ml_item_id", ml_item_id)
+      .single()
+
+    const { data: product } = await supabase
       .from("products")
       .select("id, sku, title")
       .eq("id", product_id)
       .single()
 
-    if (productError || !product) {
-      return NextResponse.json({ 
-        error: "Producto no encontrado" 
-      }, { status: 404 })
-    }
-
-    // Validar que la publicación existe
-    const { data: publication, error: pubError } = await supabase
-      .from("ml_publications")
-      .select("id, ml_item_id, title")
-      .eq("account_id", account_id)
-      .eq("ml_item_id", ml_item_id)
-      .single()
-
-    if (pubError || !publication) {
-      return NextResponse.json({ 
-        error: "Publicación no encontrada" 
-      }, { status: 404 })
-    }
-
-    // Crear el match manual
-    const { error: matchError } = await supabase
-      .from("ml_publication_matches")
-      .upsert({
-        account_id,
-        ml_item_id,
-        product_id,
-        matched_by: 'manual',
-        matched_value: matched_value || null,
-        matched_at: new Date().toISOString()
-      }, {
-        onConflict: "account_id,ml_item_id"
-      })
-
-    if (matchError) {
-      console.error("[v0] Error creating match:", matchError)
-      return NextResponse.json({ error: matchError.message }, { status: 500 })
-    }
-
-    // Actualizar ml_publications con el product_id y matched_by
-    const { error: updateError } = await supabase
-      .from("ml_publications")
-      .update({
-        product_id,
-        matched_by: 'manual',
-        updated_at: new Date().toISOString()
-      })
-      .eq("account_id", account_id)
-      .eq("ml_item_id", ml_item_id)
-
-    if (updateError) {
-      console.error("[v0] Error updating publication:", updateError)
-      return NextResponse.json({ error: updateError.message }, { status: 500 })
-    }
-
     return NextResponse.json({
       success: true,
-      message: "Match creado correctamente",
+      message: result.message || "Match creado correctamente",
       match: {
         publication: {
-          ml_item_id: publication.ml_item_id,
-          title: publication.title
+          ml_item_id: publication?.ml_item_id,
+          title: publication?.title
         },
         product: {
-          id: product.id,
-          sku: product.sku,
-          title: product.title
+          id: product?.id,
+          sku: product?.sku,
+          title: product?.title
         }
       }
     })
