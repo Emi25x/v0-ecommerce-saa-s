@@ -65,20 +65,35 @@ export async function POST(request: Request) {
 
     console.log("[v0] Job created:", newJob.id)
 
-    // Iniciar indexado en background (usando search_type=scan si está disponible)
-    const indexResponse = await fetch(`${request.url.replace('/start', '/index')}`, {
+    // Construir URL absoluta para el index endpoint
+    const indexUrl = new URL("/api/ml/import/index", request.url)
+    console.log("[v0] Calling index endpoint:", indexUrl.toString())
+
+    // Iniciar indexado en background
+    const indexResponse = await fetch(indexUrl.toString(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ job_id: newJob.id, account_id })
     })
 
+    console.log("[v0] Index response status:", indexResponse.status)
+    const indexData = await indexResponse.json()
+    console.log("[v0] Index response body:", indexData)
+
     if (!indexResponse.ok) {
-      await supabase
+      const errorMsg = indexData.error || "Error iniciando indexado"
+      console.error("[v0] Index endpoint failed:", errorMsg)
+      
+      const { error: updateError } = await supabase
         .from("ml_import_jobs")
-        .update({ status: "failed", error_message: "Error iniciando indexado" })
+        .update({ status: "failed", error_message: errorMsg })
         .eq("id", newJob.id)
       
-      return NextResponse.json({ error: "Error iniciando indexado" }, { status: 500 })
+      if (updateError) {
+        console.error("[v0] Supabase update error:", updateError.code, updateError.message)
+      }
+      
+      return NextResponse.json({ error: errorMsg }, { status: 500 })
     }
 
     return NextResponse.json({
