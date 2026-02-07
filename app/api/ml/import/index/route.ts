@@ -4,6 +4,15 @@ import { NextResponse } from "next/server"
 export const maxDuration = 60
 
 /**
+ * GET /api/ml/import/index (TEMPORAL - solo para testing)
+ * Confirma que el endpoint existe en producción
+ */
+export async function GET() {
+  console.log("[v0] GET /api/ml/import/index called - endpoint exists")
+  return NextResponse.json({ ok: true, message: "Index endpoint exists", timestamp: new Date().toISOString() })
+}
+
+/**
  * POST /api/ml/import/index
  * Fase A (Indexado): Recorre el catálogo completo de ML y encola todos los item_ids
  * Procesa en batches para evitar timeouts
