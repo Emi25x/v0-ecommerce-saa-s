@@ -142,6 +142,12 @@ export async function POST(request: Request) {
 
   } catch (error: any) {
     console.error("[v0] Error in index:", error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error("[v0] Error stack:", error.stack)
+    
+    // Asegurar que siempre devolvemos JSON
+    return NextResponse.json(
+      { error: error.message || "Error desconocido en indexado" }, 
+      { status: 500 }
+    )
   }
 }

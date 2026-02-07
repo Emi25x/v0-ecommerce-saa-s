@@ -77,8 +77,50 @@ export async function POST(request: Request) {
     })
 
     console.log("[v0] Index response status:", indexResponse.status)
-    const indexData = await indexResponse.json()
-    console.log("[v0] Index response body:", indexData)
+    console.log("[v0] Index response content-type:", indexResponse.headers.get("content-type"))
+    console.log("[v0] Index response url:", indexResponse.url)
+
+    // Leer el body como texto primero
+    const bodyText = await indexResponse.text()
+    console.log("[v0] Index response body (text):", bodyText.substring(0, 300))
+
+    // Verificar content-type antes de parsear JSON
+    const contentType = indexResponse.headers.get("content-type")
+    if (!contentType || !contentType.includes("application/json")) {
+      const errorMsg = `Index endpoint devolvió ${contentType} en vez de JSON. Status: ${indexResponse.status}. Body: ${bodyText.substring(0, 300)}`
+      console.error("[v0] Invalid content-type:", errorMsg)
+      
+      const { error: updateError } = await supabase
+        .from("ml_import_jobs")
+        .update({ status: "failed", error_message: "Error iniciando indexado: respuesta inválida" })
+        .eq("id", newJob.id)
+      
+      if (updateError) {
+        console.error("[v0] Supabase update error:", updateError.code, updateError.message)
+      }
+      
+      return NextResponse.json({ error: "Error iniciando indexado: respuesta inválida del servidor" }, { status: 500 })
+    }
+
+    // Parsear JSON
+    let indexData
+    try {
+      indexData = JSON.parse(bodyText)
+      console.log("[v0] Index response body (parsed):", indexData)
+    } catch (parseError: any) {
+      console.error("[v0] Failed to parse JSON:", parseError.message)
+      
+      const { error: updateError } = await supabase
+        .from("ml_import_jobs")
+        .update({ status: "failed", error_message: "Error iniciando indexado: JSON inválido" })
+        .eq("id", newJob.id)
+      
+      if (updateError) {
+        console.error("[v0] Supabase update error:", updateError.code, updateError.message)
+      }
+      
+      return NextResponse.json({ error: "Error iniciando indexado: respuesta JSON inválida" }, { status: 500 })
+    }
 
     if (!indexResponse.ok) {
       const errorMsg = indexData.error || "Error iniciando indexado"
