@@ -15,6 +15,8 @@ export async function POST(request: Request) {
     const supabase = await createClient()
     const { job_id, account_id, offset = 0 } = await request.json()
 
+    console.log("[v0] INDEX - job_id:", job_id, "account_id:", account_id, "offset:", offset)
+
     if (!job_id || !account_id) {
       return NextResponse.json({ error: "job_id y account_id requeridos" }, { status: 400 })
     }
@@ -42,7 +44,7 @@ export async function POST(request: Request) {
     let itemsIndexed = 0
     let currentOffset = offset
 
-    console.log("[v0] Indexing from offset:", currentOffset)
+    console.log("[v0] INDEX - Starting from offset:", currentOffset, "| job status:", job.status)
 
     // Consultar ML con search (no usa scan porque tiene limitaciones)
     const searchUrl = `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?limit=${BATCH_SIZE}&offset=${currentOffset}`
@@ -67,8 +69,9 @@ export async function POST(request: Request) {
 
     const searchData = await searchResponse.json()
     const itemIds = searchData.results || []
+    const totalItems = searchData.paging?.total || 0
     
-    console.log("[v0] Found", itemIds.length, "items at offset", currentOffset)
+    console.log("[v0] INDEX - Found", itemIds.length, "items at offset", currentOffset, "| total ML items:", totalItems)
 
     // Insertar item_ids en la cola (usando UPSERT para evitar duplicados)
     if (itemIds.length > 0) {
@@ -78,7 +81,7 @@ export async function POST(request: Request) {
         status: "pending"
       }))
 
-      console.log("[v0] Inserting", queueItems.length, "items into queue")
+      console.log("[v0] INDEX - Enqueuing", queueItems.length, "items to ml_import_queue")
       
       const { error: queueError } = await supabase.from("ml_import_queue").upsert(queueItems, { 
         onConflict: "job_id,ml_item_id",
@@ -91,11 +94,13 @@ export async function POST(request: Request) {
       }
 
       itemsIndexed = itemIds.length
+      console.log("[v0] INDEX - Successfully enqueued", itemsIndexed, "items")
     }
 
     // Actualizar job con progreso
     const newOffset = currentOffset + itemIds.length
-    const totalItems = searchData.paging?.total || job.total_items || 0
+    
+    console.log("[v0] INDEX - Updating job checkpoint: new_offset =", newOffset, "| total =", totalItems)
     
     await supabase
       .from("ml_import_jobs")
@@ -108,13 +113,13 @@ export async function POST(request: Request) {
 
     // Si hay más items, retornar estado "indexing" para que el cron lo reintente
     if (itemIds.length === BATCH_SIZE && newOffset < totalItems) {
-      console.log("[v0] More items to index:", newOffset, "/", totalItems)
+      const progress = Math.round((newOffset / totalItems) * 100)
+      console.log("[v0] INDEX - More items to index:", newOffset, "/", totalItems, `(${progress}%)`)
 
       return NextResponse.json({
         success: true,
         status: "indexing",
         items_indexed: itemsIndexed,
-        progress: Math.round((newOffset / totalItems) * 100),
         total_offset: newOffset,
         total_items: totalItems,
         progress: Math.round((newOffset / totalItems) * 100)
@@ -122,6 +127,8 @@ export async function POST(request: Request) {
     }
 
     // Indexado completo, cambiar estado a processing
+    console.log("[v0] INDEX - INDEXING COMPLETE! Changing job status to 'processing'")
+    
     await supabase
       .from("ml_import_jobs")
       .update({ 
@@ -130,7 +137,7 @@ export async function POST(request: Request) {
       })
       .eq("id", job_id)
 
-    console.log("[v0] Indexing completed. Total items:", totalItems)
+    console.log("[v0] INDEX - Indexing completed. Total items:", totalItems)
 
     return NextResponse.json({
       success: true,

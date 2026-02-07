@@ -26,21 +26,24 @@ export async function POST(request: Request) {
       .maybeSingle()
 
     if (!activeJob) {
-      console.log("[v0] No active jobs to process")
+      console.log("[v0] TICK - No active jobs to process")
       return NextResponse.json({ 
         success: true, 
         message: "No active jobs" 
       })
     }
 
-    console.log("[v0] Processing job:", activeJob.id, "status:", activeJob.status)
+    const currentOffset = activeJob.current_offset || 0
+    const totalItems = activeJob.total_items || 0
+    
+    console.log("[v0] TICK - Processing job:", activeJob.id, "| status:", activeJob.status, "| offset:", currentOffset, "/", totalItems)
 
     const baseUrl = request.url.split("/api/")[0]
 
     // Si está en indexing, llamar a /index
     if (activeJob.status === "indexing") {
       const indexUrl = `${baseUrl}/api/ml/import/index`
-      console.log("[v0] Calling index:", indexUrl)
+      console.log("[v0] TICK - Calling index with offset:", currentOffset)
 
       const indexResponse = await fetch(indexUrl, {
         method: "POST",
@@ -48,7 +51,7 @@ export async function POST(request: Request) {
         body: JSON.stringify({ 
           job_id: activeJob.id, 
           account_id: activeJob.account_id,
-          offset: activeJob.current_offset || 0
+          offset: currentOffset
         })
       })
 
@@ -62,7 +65,7 @@ export async function POST(request: Request) {
       }
 
       const indexData = await indexResponse.json()
-      console.log("[v0] Index result:", indexData)
+      console.log("[v0] TICK - Index result:", JSON.stringify(indexData))
 
       return NextResponse.json({
         success: true,
@@ -75,7 +78,7 @@ export async function POST(request: Request) {
     // Si está en processing, llamar a /worker
     if (activeJob.status === "processing") {
       const workerUrl = `${baseUrl}/api/ml/import/worker`
-      console.log("[v0] Calling worker:", workerUrl)
+      console.log("[v0] TICK - Calling worker with batch_size: 20")
 
       const workerResponse = await fetch(workerUrl, {
         method: "POST",
@@ -96,7 +99,7 @@ export async function POST(request: Request) {
       }
 
       const workerData = await workerResponse.json()
-      console.log("[v0] Worker result:", workerData)
+      console.log("[v0] TICK - Worker result:", JSON.stringify(workerData))
 
       return NextResponse.json({
         success: true,
