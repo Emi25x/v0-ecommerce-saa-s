@@ -84,6 +84,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       job_id: newJob.id,
+      status: "indexing",
       message: "Importación iniciada. Indexando publicaciones...",
       total_items: account.total_ml_publications || 0
     })
