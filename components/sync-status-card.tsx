@@ -149,6 +149,8 @@ export function SyncStatusCard() {
   const handleBatchImport = async (accountId: string) => {
     setBatchImporting(accountId)
     try {
+      console.log("[v0] CLIENT: Initiating batch import for account:", accountId)
+      
       // Iniciar importación
       const startResponse = await fetch("/api/ml/import/start", {
         method: "POST",
@@ -156,10 +158,16 @@ export function SyncStatusCard() {
         body: JSON.stringify({ account_id: accountId })
       })
       
+      console.log("[v0] CLIENT: Start response status:", startResponse.status)
+      console.log("[v0] CLIENT: Start response content-type:", startResponse.headers.get("content-type"))
+      
       const startData = await startResponse.json()
+      console.log("[v0] CLIENT: Start response data:", startData)
       
       if (!startResponse.ok || !startData.success) {
-        alert(startData.message || startData.error || "Error iniciando importación")
+        const errorMsg = startData.message || startData.error || "Error iniciando importación"
+        console.error("[v0] CLIENT: Start failed:", errorMsg)
+        alert(errorMsg)
         setBatchImporting(null)
         return
       }
