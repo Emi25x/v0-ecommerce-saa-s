@@ -1,4 +1,3 @@
-import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 
 export const maxDuration = 60
@@ -13,7 +12,11 @@ export async function POST(request: Request) {
     console.log("[v0] ========== ML IMPORT START ==========")
     console.log("[v0] Request URL:", request.url)
     console.log("[v0] Request method:", request.method)
+    
+    // Import Supabase DENTRO del try-catch para capturar errores de importación
+    const { createClient } = await import("@/lib/supabase/server")
     const supabase = await createClient()
+    
     const { account_id } = await request.json()
 
     if (!account_id) {
