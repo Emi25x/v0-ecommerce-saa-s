@@ -4,6 +4,14 @@ import { NextResponse } from "next/server"
 export const maxDuration = 60
 
 /**
+ * GET /api/ml/import/tick
+ * Permite ejecución manual desde el browser
+ */
+export async function GET(request: Request) {
+  return POST(request)
+}
+
+/**
  * POST /api/ml/import/tick
  * Avanza un paso del proceso de importación ML:
  * - Si hay job en "indexing": llama a /index para indexar un batch
