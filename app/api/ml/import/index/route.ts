@@ -20,10 +20,21 @@ export async function POST(request: Request) {
     }
 
     // Obtener job y cuenta
-    const { data: job } = await supabase.from("ml_import_jobs").select("*").eq("id", job_id).single()
-    const { data: account } = await supabase.from("ml_accounts").select("*").eq("id", account_id).single()
+    const { data: job, error: jobError } = await supabase.from("ml_import_jobs").select("*").eq("id", job_id).single()
+    const { data: account, error: accountError } = await supabase.from("ml_accounts").select("*").eq("id", account_id).single()
+
+    if (jobError) {
+      console.error("[v0] Supabase job query error:", jobError.code, jobError.message)
+      return NextResponse.json({ error: `Error buscando job: ${jobError.message}` }, { status: 500 })
+    }
+
+    if (accountError) {
+      console.error("[v0] Supabase account query error:", accountError.code, accountError.message)
+      return NextResponse.json({ error: `Error buscando cuenta: ${accountError.message}` }, { status: 500 })
+    }
 
     if (!job || !account) {
+      console.error("[v0] Job or account not found. job_id:", job_id, "account_id:", account_id)
       return NextResponse.json({ error: "Job o cuenta no encontrados" }, { status: 404 })
     }
 
@@ -35,15 +46,23 @@ export async function POST(request: Request) {
 
     // Consultar ML con search (no usa scan porque tiene limitaciones)
     const searchUrl = `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?limit=${BATCH_SIZE}&offset=${currentOffset}`
+    console.log("[v0] Calling ML API:", searchUrl)
+    
     const searchResponse = await fetch(searchUrl, {
       headers: { Authorization: `Bearer ${account.access_token}` }
     })
 
+    console.log("[v0] ML API response status:", searchResponse.status)
+
     if (!searchResponse.ok) {
+      const errorText = await searchResponse.text()
+      console.error("[v0] ML API error:", searchResponse.status, errorText)
+      
       if (searchResponse.status === 429) {
         return NextResponse.json({ error: "Rate limit alcanzado", retry_after: 3600 }, { status: 429 })
       }
-      throw new Error(`ML API error: ${searchResponse.status}`)
+      
+      throw new Error(`ML API error ${searchResponse.status}: ${errorText}`)
     }
 
     const searchData = await searchResponse.json()
@@ -59,10 +78,17 @@ export async function POST(request: Request) {
         status: "pending"
       }))
 
-      await supabase.from("ml_import_queue").upsert(queueItems, { 
+      console.log("[v0] Inserting", queueItems.length, "items into queue")
+      
+      const { error: queueError } = await supabase.from("ml_import_queue").upsert(queueItems, { 
         onConflict: "job_id,ml_item_id",
         ignoreDuplicates: true 
       })
+
+      if (queueError) {
+        console.error("[v0] Supabase queue insert error:", queueError.code, queueError.message)
+        throw new Error(`Error insertando en queue: ${queueError.message}`)
+      }
 
       itemsIndexed = itemIds.length
     }
@@ -116,6 +142,12 @@ export async function POST(request: Request) {
 
   } catch (error: any) {
     console.error("[v0] Error in index:", error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error("[v0] Error stack:", error.stack)
+    
+    // Asegurar que siempre devolvemos JSON
+    return NextResponse.json(
+      { error: error.message || "Error desconocido en indexado" }, 
+      { status: 500 }
+    )
   }
 }

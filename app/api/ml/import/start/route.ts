@@ -65,25 +65,83 @@ export async function POST(request: Request) {
 
     console.log("[v0] Job created:", newJob.id)
 
-    // Iniciar indexado en background (usando search_type=scan si está disponible)
-    const indexResponse = await fetch(`${request.url.replace('/start', '/index')}`, {
+    // Construir URL absoluta para el index endpoint
+    const indexUrl = new URL("/api/ml/import/index", request.url)
+    console.log("[v0] Calling index endpoint:", indexUrl.toString())
+
+    // Iniciar indexado en background
+    const indexResponse = await fetch(indexUrl.toString(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ job_id: newJob.id, account_id })
     })
 
-    if (!indexResponse.ok) {
-      await supabase
+    console.log("[v0] Index response status:", indexResponse.status)
+    console.log("[v0] Index response content-type:", indexResponse.headers.get("content-type"))
+    console.log("[v0] Index response url:", indexResponse.url)
+
+    // Leer el body como texto primero
+    const bodyText = await indexResponse.text()
+    console.log("[v0] Index response body (text):", bodyText.substring(0, 300))
+
+    // Verificar content-type antes de parsear JSON
+    const contentType = indexResponse.headers.get("content-type")
+    if (!contentType || !contentType.includes("application/json")) {
+      const errorMsg = `Index endpoint devolvió ${contentType} en vez de JSON. Status: ${indexResponse.status}. Body: ${bodyText.substring(0, 300)}`
+      console.error("[v0] Invalid content-type:", errorMsg)
+      
+      const { error: updateError } = await supabase
         .from("ml_import_jobs")
-        .update({ status: "failed", error_message: "Error iniciando indexado" })
+        .update({ status: "failed", error_message: "Error iniciando indexado: respuesta inválida" })
         .eq("id", newJob.id)
       
-      return NextResponse.json({ error: "Error iniciando indexado" }, { status: 500 })
+      if (updateError) {
+        console.error("[v0] Supabase update error:", updateError.code, updateError.message)
+      }
+      
+      return NextResponse.json({ error: "Error iniciando indexado: respuesta inválida del servidor" }, { status: 500 })
+    }
+
+    // Parsear JSON
+    let indexData
+    try {
+      indexData = JSON.parse(bodyText)
+      console.log("[v0] Index response body (parsed):", indexData)
+    } catch (parseError: any) {
+      console.error("[v0] Failed to parse JSON:", parseError.message)
+      
+      const { error: updateError } = await supabase
+        .from("ml_import_jobs")
+        .update({ status: "failed", error_message: "Error iniciando indexado: JSON inválido" })
+        .eq("id", newJob.id)
+      
+      if (updateError) {
+        console.error("[v0] Supabase update error:", updateError.code, updateError.message)
+      }
+      
+      return NextResponse.json({ error: "Error iniciando indexado: respuesta JSON inválida" }, { status: 500 })
+    }
+
+    if (!indexResponse.ok) {
+      const errorMsg = indexData.error || "Error iniciando indexado"
+      console.error("[v0] Index endpoint failed:", errorMsg)
+      
+      const { error: updateError } = await supabase
+        .from("ml_import_jobs")
+        .update({ status: "failed", error_message: errorMsg })
+        .eq("id", newJob.id)
+      
+      if (updateError) {
+        console.error("[v0] Supabase update error:", updateError.code, updateError.message)
+      }
+      
+      return NextResponse.json({ error: errorMsg }, { status: 500 })
     }
 
     return NextResponse.json({
       success: true,
       job_id: newJob.id,
+      status: "indexing",
       message: "Importación iniciada. Indexando publicaciones...",
       total_items: account.total_ml_publications || 0
     })

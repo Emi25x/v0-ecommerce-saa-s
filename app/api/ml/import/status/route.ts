@@ -16,15 +16,26 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "job_id o account_id requerido" }, { status: 400 })
     }
 
-    let query = supabase.from("ml_import_jobs").select("*")
+    let job = null
     
     if (job_id) {
-      query = query.eq("id", job_id)
+      const { data } = await supabase
+        .from("ml_import_jobs")
+        .select("*")
+        .eq("id", job_id)
+        .maybeSingle()
+      job = data
     } else if (account_id) {
-      query = query.eq("account_id", account_id).order("started_at", { ascending: false }).limit(1)
+      // Fallback: buscar último job activo por account_id
+      const { data } = await supabase
+        .from("ml_import_jobs")
+        .select("*")
+        .eq("account_id", account_id)
+        .order("started_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      job = data
     }
-
-    const { data: job } = await query.single()
 
     if (!job) {
       return NextResponse.json({ error: "Job no encontrado" }, { status: 404 })
