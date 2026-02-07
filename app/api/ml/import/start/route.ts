@@ -9,9 +9,10 @@ export const maxDuration = 60
  * Fase A: Indexa todos los item_ids y los encola para procesamiento
  */
 export async function POST(request: Request) {
-  console.log("[v0] ========== ML IMPORT START ==========")
-  
   try {
+    console.log("[v0] ========== ML IMPORT START ==========")
+    console.log("[v0] Request URL:", request.url)
+    console.log("[v0] Request method:", request.method)
     const supabase = await createClient()
     const { account_id } = await request.json()
 
