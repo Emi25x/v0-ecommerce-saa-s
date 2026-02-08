@@ -61,8 +61,9 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const fetchAccounts = async () => {
+      console.log("[v0] Fetching ML accounts...")
       try {
-        const res = await fetch("/api/mercadolibre/accounts")
+        const res = await fetch("/api/mercadolibre/accounts", { cache: 'no-store' })
         
         // Verificar si la respuesta es exitosa
         if (!res.ok) {
