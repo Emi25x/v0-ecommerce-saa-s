@@ -44,6 +44,8 @@ const AlertCircleIcon = ({ className }: { className?: string }) => (
 )
 
 export default function DashboardPage() {
+  console.log("[v0] DashboardPage mounting...")
+  
   const [syncing, setSyncing] = useState(false)
   const [lastSync, setLastSync] = useState<string | null>(null)
   const [syncMessage, setSyncMessage] = useState<string>("")
