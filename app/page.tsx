@@ -50,6 +50,7 @@ export default function DashboardPage() {
 
   const [accountsData, setAccountsData] = useState<any>(null)
   const [accountsLoading, setAccountsLoading] = useState(true)
+  const [accountsError, setAccountsError] = useState(false)
   const [productsData, setProductsData] = useState<any>({ products: [], paging: { total: 0, limit: 1, offset: 0 } })
   const [productsLoading, setProductsLoading] = useState(true)
   const [competitionStats, setCompetitionStats] = useState<any>(null)
@@ -62,10 +63,19 @@ export default function DashboardPage() {
     const fetchAccounts = async () => {
       try {
         const res = await fetch("/api/mercadolibre/accounts")
+        
+        // Verificar si la respuesta es exitosa
+        if (!res.ok) {
+          console.error("[v0] ML accounts fetch failed with status:", res.status)
+          setAccountsError(true)
+          setAccountsData({ accounts: [] })
+          return
+        }
+        
         const json = await res.json()
         
         // Debug: log formato de respuesta (solo en desarrollo)
-        if (process.env.NODE_ENV === 'development') {
+        if (process.env.NODE_ENV !== 'production') {
           console.log("[v0] ML accounts response format:", json)
         }
         
@@ -76,8 +86,10 @@ export default function DashboardPage() {
         const accounts = Array.isArray(json) ? json : (json.accounts ?? json.data ?? [])
         
         setAccountsData({ accounts })
+        setAccountsError(false)
       } catch (error) {
         console.error("[v0] Failed to fetch accounts:", error)
+        setAccountsError(true)
         setAccountsData({ accounts: [] })
       } finally {
         setAccountsLoading(false)
@@ -255,9 +267,9 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{loading ? "..." : mlAccounts.length}</div>
-              <p className="text-xs text-muted-foreground">
-                {mlAccounts.length === 0 ? "No hay cuentas conectadas" : "Cuentas activas"}
-              </p>
+  <p className="text-xs text-muted-foreground">
+  {accountsError ? "Error cargando cuentas" : mlAccounts.length === 0 ? "No hay cuentas conectadas" : "Cuentas activas"}
+  </p>
             </CardContent>
           </Card>
 
@@ -348,11 +360,15 @@ export default function DashboardPage() {
               <CardDescription>Gestiona tus cuentas conectadas</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {loading ? (
-                <div className="text-sm text-muted-foreground">Cargando...</div>
-              ) : mlAccounts.length === 0 ? (
-                <div className="text-center py-4">
-                  <p className="text-sm text-muted-foreground mb-4">No hay cuentas conectadas</p>
+  {loading ? (
+  <div className="text-sm text-muted-foreground">Cargando...</div>
+  ) : accountsError ? (
+  <div className="text-center py-4">
+  <p className="text-sm text-red-500 mb-4">Error cargando cuentas. Intenta recargar la página.</p>
+  </div>
+  ) : mlAccounts.length === 0 ? (
+  <div className="text-center py-4">
+  <p className="text-sm text-muted-foreground mb-4">No hay cuentas conectadas</p>
                   <Button asChild>
                     <a href="/integrations">Conectar Cuenta</a>
                   </Button>
