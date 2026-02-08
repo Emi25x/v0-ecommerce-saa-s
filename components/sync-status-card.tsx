@@ -440,27 +440,25 @@ export function SyncStatusCard() {
                       "Importación Completa"
                     )}
                   </Button>
-                  {batchImporting === account.id && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleAdvanceImport}
-                      disabled={advancingImport}
-                      className="border-blue-600 text-blue-600 hover:bg-blue-50 bg-transparent"
-                    >
-                      {advancingImport ? (
-                        <>
-                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                          Avanzando...
-                        </>
-                      ) : (
-                        <>
-                          <RefreshCw className="h-3 w-3 mr-1" />
-                          Avanzar
-                        </>
-                      )}
-                    </Button>
-                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleAdvanceImport}
+                    disabled={advancingImport}
+                    className="border-blue-600 text-blue-600 hover:bg-blue-50 bg-transparent"
+                  >
+                    {advancingImport ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        Avanzando...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="h-3 w-3 mr-1" />
+                        Avanzar Importación
+                      </>
+                    )}
+                  </Button>
                 </div>
               </div>
               {syncResult && (
