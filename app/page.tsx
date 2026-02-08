@@ -53,6 +53,8 @@ export default function DashboardPage() {
   const [accountsData, setAccountsData] = useState<any>(null)
   const [accountsLoading, setAccountsLoading] = useState(true)
   const [accountsError, setAccountsError] = useState(false)
+  const [advancingImport, setAdvancingImport] = useState(false)
+  const [advanceResult, setAdvanceResult] = useState<string | null>(null)
   const [productsData, setProductsData] = useState<any>({ products: [], paging: { total: 0, limit: 1, offset: 0 } })
   const [productsLoading, setProductsLoading] = useState(true)
   const [competitionStats, setCompetitionStats] = useState<any>(null)
@@ -199,9 +201,41 @@ export default function DashboardPage() {
     }
   }
 
+  const handleAdvanceImport = async () => {
+    console.log("[v0] CLIENT: Advancing ML import manually...")
+    setAdvancingImport(true)
+    setAdvanceResult(null)
+    try {
+      const cronSecret = process.env.NEXT_PUBLIC_CRON_SECRET || ""
+      console.log("[v0] CLIENT: Using CRON_SECRET, calling /api/ml/import/run")
+      
+      const response = await fetch(`/api/ml/import/run?secret=${cronSecret}`, {
+        method: "POST"
+      })
+      
+      const data = await response.json()
+      console.log("[v0] CLIENT: Run response:", data)
+      
+      if (!response.ok || !data.ok) {
+        setAdvanceResult(`Error: ${data.error || 'Failed'}`)
+        setTimeout(() => setAdvanceResult(null), 5000)
+        return
+      }
+      
+      setAdvanceResult(`✓ ${data.ticksRun} ticks | ${data.offset_before} → ${data.offset_after}`)
+      setTimeout(() => setAdvanceResult(null), 8000)
+      
+    } catch (error: any) {
+      console.error("[v0] CLIENT: Error advancing import:", error)
+      setAdvanceResult(`Error: ${error.message}`)
+      setTimeout(() => setAdvanceResult(null), 5000)
+    } finally {
+      setAdvancingImport(false)
+    }
+  }
+
   const handleSync = async () => {
     setSyncing(true)
-    setSyncMessage("Sincronizando productos...")
     try {
       const response = await fetch("/api/sync", { method: "POST" })
       const data = await response.json()
@@ -249,9 +283,24 @@ export default function DashboardPage() {
               <RefreshIcon className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
               {syncing ? "Sincronizando..." : "Sincronizar"}
             </Button>
+            <Button 
+              onClick={handleAdvanceImport} 
+              disabled={advancingImport}
+              size="sm"
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <RefreshIcon className={`mr-2 h-4 w-4 ${advancingImport ? "animate-spin" : ""}`} />
+              {advancingImport ? "Avanzando..." : "Avanzar Importación"}
+            </Button>
           </div>
         </div>
       </header>
+      
+      {advanceResult && (
+        <div className="mx-6 mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm font-medium">
+          {advanceResult}
+        </div>
+      )}
 
       <main className="flex-1 p-6">
         <div className="mb-8">
