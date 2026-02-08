@@ -62,10 +62,23 @@ export default function DashboardPage() {
     const fetchAccounts = async () => {
       try {
         const res = await fetch("/api/mercadolibre/accounts")
-        const data = await res.json()
-        setAccountsData(data)
+        const json = await res.json()
+        
+        // Debug: log formato de respuesta (solo en desarrollo)
+        if (process.env.NODE_ENV === 'development') {
+          console.log("[v0] ML accounts response format:", json)
+        }
+        
+        // Robustecer parseo: soportar múltiples formatos
+        // A) { accounts: [...] } - formato actual
+        // B) { data: [...] } - formato alternativo
+        // C) [...] - array directo
+        const accounts = Array.isArray(json) ? json : (json.accounts ?? json.data ?? [])
+        
+        setAccountsData({ accounts })
       } catch (error) {
         console.error("[v0] Failed to fetch accounts:", error)
+        setAccountsData({ accounts: [] })
       } finally {
         setAccountsLoading(false)
       }
