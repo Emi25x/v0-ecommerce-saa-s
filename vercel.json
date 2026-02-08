@@ -41,7 +41,7 @@
       "schedule": "* * * * *"
     },
     {
-      "path": "/api/ml/import/tick",
+      "path": "/api/cron/ml-import-tick",
       "schedule": "* * * * *"
     }
   ]
