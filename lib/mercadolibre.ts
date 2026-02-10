@@ -209,15 +209,15 @@ export async function refreshTokenIfNeeded(account: {
  * Get a valid access token for a user, refreshing if necessary
  * This function checks the database for the token and refreshes it if expired
  */
-export async function getValidAccessToken(userId: string): Promise<string> {
+export async function getValidAccessToken(accountId: string): Promise<string> {
   const { createClient } = await import("@/lib/supabase/server")
   const supabase = await createClient()
-
-  const { data: account, error } = await supabase.from("ml_accounts").select("*").eq("user_id", userId).single()
-
+  
+  const { data: account, error } = await supabase.from("ml_accounts").select("*").eq("id", accountId).single()
+  
   if (error || !account) {
-    console.error("[v0] ML Token - Account not found for user:", userId, error)
-    throw new Error("MercadoLibre account not found. Please connect your MercadoLibre account first.")
+  console.error("[v0] ML Token - Account not found for account_id:", accountId, error)
+  throw new Error("MercadoLibre account not found. Please connect your MercadoLibre account first.")
   }
 
   console.log("[v0] ML Token - Account found:", account.id)

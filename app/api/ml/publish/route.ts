@@ -180,7 +180,7 @@ export async function POST(request: NextRequest) {
                 .from("products")
                 .update({
                   ml_item_id: mlItemId,
-                  ml_account_id: account_id,
+                  account_id: account_id,
                   ml_status: "active",
                   ml_last_checked_at: new Date().toISOString()
                 })
@@ -226,7 +226,7 @@ export async function POST(request: NextRequest) {
               .from("products")
               .update({
                 ml_item_id: existingPub.ml_item_id,
-                ml_account_id: account_id,
+                account_id: account_id,
                 ml_status: "active",
                 ml_last_checked_at: new Date().toISOString()
               })

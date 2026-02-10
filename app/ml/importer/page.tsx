@@ -163,12 +163,39 @@ export default function MLImporterPage() {
 
   const handleReset = async () => {
     if (!selectedAccountId) return
-    if (!confirm("¿Reiniciar importación desde cero? Esto no borra publicaciones ya importadas.")) return
+    if (
+      !confirm(
+        "¿Reiniciar importación desde cero? Esto no borra publicaciones ya importadas ni desconecta la cuenta."
+      )
+    )
+      return
 
     try {
-      alert("Reset function needs server endpoint implementation")
+      const response = await fetch("/api/ml/import-pro/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: selectedAccountId }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.ok) {
+        alert(`Error al resetear: ${data.error || "Unknown error"}`)
+        return
+      }
+
+      // Recargar progreso
+      await fetch(`/api/ml/import-pro/status?account_id=${selectedAccountId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.ok) {
+            setProgress(data.progress)
+          }
+        })
+      alert("Importación reseteada exitosamente")
     } catch (error: any) {
       console.error("[IMPORTER] Reset error:", error)
+      alert(`Error al resetear: ${error.message}`)
     }
   }
 
