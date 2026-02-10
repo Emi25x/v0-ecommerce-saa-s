@@ -71,17 +71,22 @@ export default function MLImporterPage() {
     loadData()
   }, [selectedAccountId])
 
-  // Auto-mode: ejecutar cada 3s si está en running
+  // Auto-mode: ejecutar cada 3s cuando está activo
   useEffect(() => {
-    if (!autoMode || !selectedAccountId || !progress) return
-    if (progress.status !== "running") return
+    if (!autoMode || !selectedAccountId || running) return
 
+    console.log("[v0] Auto-mode active - setting up 3s interval")
+    
     const interval = setInterval(() => {
+      console.log("[v0] Auto-mode tick - calling handleRun()")
       handleRun()
     }, 3000)
 
-    return () => clearInterval(interval)
-  }, [autoMode, selectedAccountId, progress])
+    return () => {
+      console.log("[v0] Auto-mode cleanup - clearing interval")
+      clearInterval(interval)
+    }
+  }, [autoMode, selectedAccountId, running])
 
   const handleRun = async () => {
     if (!selectedAccountId) return
