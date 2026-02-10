@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
       .from("ml_accounts")
       .select("*")
       .eq("id", accountId)
-      .eq("owner_id", user.id)
+      .eq("user_id", user.id)
       .single()
 
     if (accountError || !account) {
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Account not found or you don't have permission to access it" }, { status: 403 })
     }
 
-    console.log(`[IMPORT-PRO] Access granted for account ${accountId} (owner: ${user.id})`)
+    console.log(`[IMPORT-PRO] Access granted for account ${accountId} (user: ${user.id})`)
 
     let { data: progress, error: progressError } = await supabase
       .from("ml_import_progress")

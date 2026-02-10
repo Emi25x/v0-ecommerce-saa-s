@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       .from("ml_accounts")
       .select("id")
       .eq("id", account_id)
-      .eq("owner_id", user.id)
+      .eq("user_id", user.id)
       .single()
 
     if (!account) {

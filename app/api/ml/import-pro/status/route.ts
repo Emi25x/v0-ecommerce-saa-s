@@ -17,17 +17,27 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "account_id required" }, { status: 400 })
     }
 
-    const supabase = await createClient()
+    // Authentication check
+    const supabaseAuth = await createClient()
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
 
-    // Verificar que la cuenta ML existe
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    // Use service role to bypass RLS
+    const supabase = await createClient({ useServiceRole: true })
+
+    // Verify account ownership - SECURITY CHECK
     const { data: account, error: accountError } = await supabase
       .from("ml_accounts")
       .select("id, nickname")
       .eq("id", accountId)
+      .eq("user_id", user.id)
       .single()
 
     if (accountError || !account) {
-      return NextResponse.json({ error: "Account not found" }, { status: 404 })
+      return NextResponse.json({ error: "Account not found or access denied" }, { status: 403 })
     }
 
     // Obtener o crear progress
