@@ -109,6 +109,13 @@ export default function MLImporterPage() {
       const data = await res.json()
       setRunResult(data)
 
+      // Si hay error detallado de ML API, mostrarlo
+      if (!data.ok && data.where && data.body) {
+        const errorMsg = `Error en ${data.where}\nStatus: ${data.status}\nURL: ${data.url}\n\nRespuesta de ML:\n${data.body}`
+        alert(errorMsg)
+        console.error("[IMPORTER] ML API Error Details:", data)
+      }
+
       // Agregar a log de ejecución
       const logEntry = {
         ranAt: new Date().toISOString(),
@@ -116,7 +123,8 @@ export default function MLImporterPage() {
         imported_delta: data.publications_processed || 0,
         matched_delta: data.matched || 0,
         retry_after: data.paused ? data.wait_seconds : null,
-        elapsed: ((Date.now() - startTime) / 1000).toFixed(1)
+        elapsed: ((Date.now() - startTime) / 1000).toFixed(1),
+        error_details: !data.ok && data.where ? `${data.where}: ${data.status}` : null
       }
       
       setExecutionLog(prev => [logEntry, ...prev].slice(0, 10))

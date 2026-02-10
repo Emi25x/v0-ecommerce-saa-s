@@ -158,7 +158,19 @@ export async function POST(request: NextRequest) {
             message: `Rate limited, paused for ${retryAfter}s`,
           })
         }
-        throw new Error(`ML API error: ${searchRes.status}`)
+        
+        // Capture error details
+        const errText = await searchRes.text()
+        const safeUrl = searchUrl.replace(/Bearer [^"]+/, 'Bearer ***')
+        console.error(`[IMPORT-PRO] ML API Error - URL: ${safeUrl}, Status: ${searchRes.status}, Body: ${errText.slice(0, 500)}`)
+        
+        return NextResponse.json({
+          ok: false,
+          where: "ml_fetch_search",
+          status: searchRes.status,
+          url: safeUrl,
+          body: errText.slice(0, 500)
+        }, { status: 500 })
       }
 
       const searchData = await searchRes.json()
@@ -207,7 +219,19 @@ export async function POST(request: NextRequest) {
               wait_seconds: retryAfter,
             })
           }
-          continue
+          
+          // Capture error details for details fetch
+          const errText = await detailsRes.text()
+          const safeUrl = detailsUrl.replace(/Bearer [^"]+/, 'Bearer ***')
+          console.error(`[IMPORT-PRO] ML API Error - URL: ${safeUrl}, Status: ${detailsRes.status}, Body: ${errText.slice(0, 500)}`)
+          
+          return NextResponse.json({
+            ok: false,
+            where: "ml_fetch_details",
+            status: detailsRes.status,
+            url: safeUrl,
+            body: errText.slice(0, 500)
+          }, { status: 500 })
         }
 
         const details = await detailsRes.json()
