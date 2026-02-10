@@ -1,5 +1,7 @@
 "use client"
 
+import Link from "next/link"
+
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -540,14 +542,36 @@ export default function MLImporterPage() {
         )}
 
         {progress?.status === "done" && (
-          <div className="mt-3 p-4 bg-green-50 border border-green-200 rounded-md">
-            <p className="text-green-800 font-semibold mb-1">Importación inicial finalizada correctamente</p>
-            <p className="text-sm text-green-700">La importación terminó. No hay tareas pendientes.</p>
-            <div className="mt-3">
-              <Button onClick={handleReset} size="sm" variant="outline" className="bg-transparent border-green-600 text-green-700 hover:bg-green-100">
-                <RotateCcw className="mr-2 h-3 w-3" />
-                Reiniciar importación
-              </Button>
+          <div className="mt-3 space-y-3">
+            <div className="p-4 bg-green-50 border border-green-200 rounded-md">
+              <p className="text-green-800 font-semibold mb-1">Importación inicial finalizada correctamente</p>
+              <p className="text-sm text-green-700">
+                Se importaron {progress.publications_total || 0} publicaciones de MercadoLibre.
+              </p>
+              <div className="mt-3">
+                <Button onClick={handleReset} size="sm" variant="outline" className="bg-transparent border-green-600 text-green-700 hover:bg-green-100">
+                  <RotateCcw className="mr-2 h-3 w-3" />
+                  Reiniciar importación
+                </Button>
+              </div>
+            </div>
+
+            {/* CTA para ir al matcher */}
+            <div className="p-4 bg-blue-50 border border-blue-200 rounded-md">
+              <p className="text-blue-900 font-semibold mb-1">Siguiente paso: Vincular publicaciones con tu catálogo</p>
+              <p className="text-sm text-blue-700 mb-3">
+                Las publicaciones importadas deben vincularse con tus productos para que se sincronicen automáticamente.
+              </p>
+              <Link href="/ml/matcher">
+                <Button size="sm" className="bg-blue-600 hover:bg-blue-700">
+                  <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z" />
+                    <rect width="4" height="12" x="2" y="9" />
+                    <circle cx="4" cy="4" r="2" />
+                  </svg>
+                  Ir a Vinculación de publicaciones
+                </Button>
+              </Link>
             </div>
           </div>
         )}
