@@ -21,6 +21,8 @@ export default function MLImporterPage() {
   const [diagnosticData, setDiagnosticData] = useState<any>(null)
   const [loadingDiagnostic, setLoadingDiagnostic] = useState(false)
   const [executionLog, setExecutionLog] = useState<any[]>([])
+  const [accountDebug, setAccountDebug] = useState<any>(null)
+  const [loadingAccountDebug, setLoadingAccountDebug] = useState(false)
 
   // Cargar cuentas ML
   useEffect(() => {
@@ -199,6 +201,28 @@ export default function MLImporterPage() {
     }
   }
 
+  const handleAccountDebug = async () => {
+    if (!selectedAccountId) return
+    
+    setLoadingAccountDebug(true)
+    
+    try {
+      const response = await fetch(`/api/debug/ml-account?account_id=${selectedAccountId}`)
+      const data = await response.json()
+      
+      if (!response.ok) {
+        setAccountDebug({ error: data.error || 'Failed to fetch account debug' })
+      } else {
+        setAccountDebug(data)
+      }
+    } catch (error: any) {
+      console.error("[IMPORTER] Account debug error:", error)
+      setAccountDebug({ error: error.message })
+    } finally {
+      setLoadingAccountDebug(false)
+    }
+  }
+
   const handleDiagnostic = async () => {
     if (!selectedAccountId) return
     
@@ -266,7 +290,23 @@ export default function MLImporterPage() {
 
       {/* Selector de cuenta */}
       <Card className="p-4 mb-6">
-        <label className="text-sm font-medium mb-2 block">Cuenta de MercadoLibre</label>
+        <div className="flex items-center gap-3 mb-2">
+          <label className="text-sm font-medium flex-1">Cuenta de MercadoLibre</label>
+          <Button
+            onClick={handleAccountDebug}
+            disabled={loadingAccountDebug || !selectedAccountId}
+            size="sm"
+            variant="outline"
+            className="bg-transparent"
+          >
+            {loadingAccountDebug ? (
+              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+            ) : (
+              <AlertCircle className="h-3 w-3 mr-1" />
+            )}
+            Diagnóstico cuenta
+          </Button>
+        </div>
         <select
           value={selectedAccountId || ""}
           onChange={(e) => setSelectedAccountId(e.target.value)}
@@ -279,6 +319,30 @@ export default function MLImporterPage() {
             </option>
           ))}
         </select>
+
+        {/* Mostrar debug de cuenta si existe */}
+        {accountDebug && (
+          <div className="mt-4 p-3 bg-gray-50 border rounded-md">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-xs font-medium">Diagnóstico de cuenta</h4>
+              <Button
+                onClick={() => setAccountDebug(null)}
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-xs"
+              >
+                Cerrar
+              </Button>
+            </div>
+            {accountDebug.error ? (
+              <div className="text-xs text-red-600">{accountDebug.error}</div>
+            ) : (
+              <pre className="text-xs overflow-auto">
+                {JSON.stringify(accountDebug, null, 2)}
+              </pre>
+            )}
+          </div>
+        )}
       </Card>
 
       {/* Card Alcance */}
