@@ -11,15 +11,18 @@ export const maxDuration = 60
  */
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
+  let accountId: string | null = null
   
   try {
     const body = await request.json()
     const {
-      account_id: accountId,
+      account_id,
       max_seconds = 20,
       publications_page = 50,
       detail_batch = 20,
     } = body
+
+    accountId = account_id
 
     if (!accountId) {
       return NextResponse.json({ error: "account_id required" }, { status: 400 })
@@ -312,18 +315,19 @@ export async function POST(request: NextRequest) {
       elapsed_seconds: elapsed,
     })
   } catch (error: any) {
-    console.error("[IMPORT-PRO] Run error:", error)
+    console.error("[IMPORT-PRO] Run error:", error.message)
     
-    // Marcar como error
-    try {
-      const body = await request.json()
-      const supabase = await createClient()
-      await supabase
-        .from("ml_import_progress")
-        .update({ status: "error", last_error: error.message })
-        .eq("account_id", body.account_id)
-    } catch (e) {
-      // Ignore
+    // Marcar como error si tenemos accountId
+    if (accountId) {
+      try {
+        const supabase = await createClient()
+        await supabase
+          .from("ml_import_progress")
+          .update({ status: "error", last_error: error.message })
+          .eq("account_id", accountId)
+      } catch (e) {
+        console.error("[IMPORT-PRO] Failed to update error status:", e)
+      }
     }
 
     return NextResponse.json({ error: error.message }, { status: 500 })
