@@ -1,10 +1,13 @@
 "use client"
 
+import React from "react"
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
 import { useState, useEffect } from "react"
-import { SyncStatusCard } from "@/components/sync-status-card"
-
+import Link from "next/link"
 
 const PackageIcon = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -20,139 +23,130 @@ const RefreshIcon = ({ className }: { className?: string }) => (
   </svg>
 )
 
-const ShoppingBagIcon = ({ className }: { className?: string }) => (
+const CheckCircleIcon = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
-    <line x1="3" y1="6" x2="21" y2="6" />
-    <path d="M16 10a4 4 0 0 1-8 0" />
+    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+    <polyline points="22 4 12 14.01 9 11.01" />
   </svg>
 )
 
-const TrendingUpIcon = ({ className }: { className?: string }) => (
+const AlertTriangleIcon = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
-    <polyline points="17 6 23 6 23 12" />
+    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+    <line x1="12" y1="9" x2="12" y2="13" />
+    <line x1="12" y1="17" x2="12.01" y2="17" />
   </svg>
 )
 
-const AlertCircleIcon = ({ className }: { className?: string }) => (
+const ExternalLinkIcon = ({ className }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <circle cx="12" cy="12" r="10" />
-    <line x1="12" y1="8" x2="12" y2="12" />
-    <line x1="12" y1="16" x2="12.01" y2="16" />
+    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    <polyline points="15 3 21 3 21 9" />
+    <line x1="10" y1="14" x2="21" y2="3" />
   </svg>
 )
 
 export default function DashboardPage() {
-  console.log("[v0] DashboardPage mounting...")
-  
-  const [syncing, setSyncing] = useState(false)
-  const [lastSync, setLastSync] = useState<string | null>(null)
-  const [syncMessage, setSyncMessage] = useState<string>("")
-
-  const [accountsData, setAccountsData] = useState<any>(null)
+  const [mlAccounts, setMlAccounts] = useState<any[]>([])
   const [accountsLoading, setAccountsLoading] = useState(true)
-  const [accountsError, setAccountsError] = useState(false)
-  const [advancingImport, setAdvancingImport] = useState(false)
-  const [advanceResult, setAdvanceResult] = useState<string | null>(null)
-  const [productsData, setProductsData] = useState<any>({ products: [], paging: { total: 0, limit: 1, offset: 0 } })
-  const [productsLoading, setProductsLoading] = useState(true)
-  const [competitionStats, setCompetitionStats] = useState<any>(null)
-  const [syncedData, setSyncedData] = useState<any>({ totalSynced: 0, libralSynced: 0 })
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
+  
+  const [importStatus, setImportStatus] = useState<any>(null)
+  const [importLoading, setImportLoading] = useState(false)
+  
+  const [stats, setStats] = useState<any>(null)
+  const [statsLoading, setStatsLoading] = useState(false)
+  
+  const [syncedCount, setSyncedCount] = useState(0)
   const [syncedLoading, setSyncedLoading] = useState(true)
-  const [updatingStock, setUpdatingStock] = useState(false)
-  const [stockMessage, setStockMessage] = useState<string>("")
 
+  // Fetch ML accounts
   useEffect(() => {
     const fetchAccounts = async () => {
-      console.log("[v0] Fetching ML accounts...")
       try {
         const res = await fetch("/api/mercadolibre/accounts", { cache: 'no-store' })
-        
-        // Verificar si la respuesta es exitosa
         if (!res.ok) {
-          console.error("[v0] ML accounts fetch failed with status:", res.status)
-          setAccountsError(true)
-          setAccountsData({ accounts: [] })
+          setMlAccounts([])
           return
         }
         
         const json = await res.json()
-        
-        // Debug: log formato de respuesta (solo en desarrollo)
-        if (process.env.NODE_ENV !== 'production') {
-          console.log("[v0] ML accounts response format:", json)
-        }
-        
-        // Robustecer parseo: soportar múltiples formatos
-        // A) { accounts: [...] } - formato actual
-        // B) { data: [...] } - formato alternativo
-        // C) [...] - array directo
         const accounts = Array.isArray(json) ? json : (json.accounts ?? json.data ?? [])
+        setMlAccounts(accounts)
         
-        setAccountsData({ accounts })
-        setAccountsError(false)
+        // Auto-select first account
+        if (accounts.length > 0 && !selectedAccountId) {
+          setSelectedAccountId(accounts[0].id)
+        }
       } catch (error) {
         console.error("[v0] Failed to fetch accounts:", error)
-        setAccountsError(true)
-        setAccountsData({ accounts: [] })
+        setMlAccounts([])
       } finally {
         setAccountsLoading(false)
       }
     }
     fetchAccounts()
-    // Desactivar el interval para evitar rate limit
-    // const interval = setInterval(fetchAccounts, 30000)
-    // return () => clearInterval(interval)
   }, [])
 
+  // Fetch import status when account selected
   useEffect(() => {
-    const fetchProducts = async () => {
-      // DESACTIVADO: No hacer llamadas a ML cada 30s - consume cuota
-      // Los datos se sincronizan automáticamente con el cron a las 9:00 AM
-      console.log("[v0] ML items fetch desactivado (se sincroniza con cron)")
-      setProductsData({ products: [], paging: { total: 0, limit: 1, offset: 0 } })
-      setProductsLoading(false)
-    }
-    fetchProducts()
-    // const interval = setInterval(fetchProducts, 30000)
-    // return () => clearInterval(interval)
-  }, [])
-
-  useEffect(() => {
-    const fetchCompetition = async () => {
+    if (!selectedAccountId) return
+    
+    const fetchImportStatus = async () => {
+      setImportLoading(true)
       try {
-        const res = await fetch("/api/competition/stats")
-        const data = await res.json()
-        setCompetitionStats(data)
+        const res = await fetch(`/api/ml/import-pro/status?account_id=${selectedAccountId}`)
+        if (res.ok) {
+          const data = await res.json()
+          setImportStatus(data)
+        }
       } catch (error) {
-        console.error("[v0] Failed to fetch competition stats:", error)
+        console.error("[v0] Failed to fetch import status:", error)
+      } finally {
+        setImportLoading(false)
       }
     }
-    fetchCompetition()
-    const interval = setInterval(fetchCompetition, 60000)
+    
+    fetchImportStatus()
+    const interval = setInterval(fetchImportStatus, 10000) // Poll every 10s
     return () => clearInterval(interval)
-  }, [])
+  }, [selectedAccountId])
 
+  // Fetch publication stats
+  useEffect(() => {
+    if (!selectedAccountId) return
+    
+    const fetchStats = async () => {
+      setStatsLoading(true)
+      try {
+        const res = await fetch(`/api/debug/import-queue-stats?account_id=${selectedAccountId}`)
+        if (res.ok) {
+          const data = await res.json()
+          setStats(data)
+        }
+      } catch (error) {
+        console.error("[v0] Failed to fetch stats:", error)
+      } finally {
+        setStatsLoading(false)
+      }
+    }
+    
+    fetchStats()
+    const interval = setInterval(fetchStats, 30000) // Poll every 30s
+    return () => clearInterval(interval)
+  }, [selectedAccountId])
+
+  // Fetch synced count (incremental sync)
   useEffect(() => {
     const fetchSynced = async () => {
       try {
-        console.log("[v0] Fetching synced count...")
         const res = await fetch("/api/inventory/products/synced-count")
-        console.log("[v0] Synced count response status:", res.status)
-
-        if (!res.ok) {
-          const text = await res.text()
-          console.error("[v0] Synced count error response:", text)
-          throw new Error(`HTTP ${res.status}: ${text.substring(0, 100)}`)
+        if (res.ok) {
+          const data = await res.json()
+          setSyncedCount(data.totalSynced || 0)
         }
-
-        const data = await res.json()
-        console.log("[v0] Synced count data:", data)
-        setSyncedData(data)
       } catch (error) {
         console.error("[v0] Failed to fetch synced count:", error)
-        setSyncedData({ totalSynced: 0, libralSynced: 0 })
       } finally {
         setSyncedLoading(false)
       }
@@ -162,112 +156,47 @@ export default function DashboardPage() {
     return () => clearInterval(interval)
   }, [])
 
-  useEffect(() => {
-    const savedLastSync = localStorage.getItem("lastSync")
-    if (savedLastSync) {
-      setLastSync(savedLastSync)
-    }
-  }, [])
-
-  const mlAccounts = accountsData?.accounts || []
-  const mlProductsCount = productsData?.paging?.total || 0
-  const syncedProductsCount = syncedData?.totalSynced || 0
-  const loading = accountsLoading || productsLoading
-
-  const handleUpdateStock = async () => {
-    setUpdatingStock(true)
-    setStockMessage("Actualizando stock desde proveedores...")
+  const handleRunImport = async () => {
+    if (!selectedAccountId) return
+    
     try {
-      const response = await fetch("/api/cron/import-schedules", { method: "GET" })
-      const data = await response.json()
-      
-      if (data.success || data.executed) {
-        setStockMessage(`Stock actualizado: ${data.executed || 0} fuentes procesadas`)
-        // Refrescar datos
-        const syncedRes = await fetch("/api/inventory/products/synced-count")
-        const syncedResult = await syncedRes.json()
-        setSyncedData(syncedResult)
-        setTimeout(() => setStockMessage(""), 5000)
-      } else {
-        setStockMessage(data.message || "No hay actualizaciones pendientes")
-        setTimeout(() => setStockMessage(""), 5000)
-      }
-    } catch (error) {
-      console.error("[v0] Stock update failed:", error)
-      setStockMessage("Error al actualizar stock")
-      setTimeout(() => setStockMessage(""), 5000)
-    } finally {
-      setUpdatingStock(false)
-    }
-  }
-
-  const handleAdvanceImport = async () => {
-    console.log("[v0] CLIENT: Advancing ML import manually...")
-    setAdvancingImport(true)
-    setAdvanceResult(null)
-    try {
-      const cronSecret = process.env.NEXT_PUBLIC_CRON_SECRET || ""
-      console.log("[v0] CLIENT: Using CRON_SECRET, calling /api/ml/import/run")
-      
-      const response = await fetch(`/api/ml/import/run?secret=${cronSecret}`, {
-        method: "POST"
+      const res = await fetch(`/api/ml/import-pro/run?account_id=${selectedAccountId}`, {
+        method: 'POST'
       })
       
-      const data = await response.json()
-      console.log("[v0] CLIENT: Run response:", data)
-      
-      if (!response.ok || !data.ok) {
-        setAdvanceResult(`Error: ${data.error || 'Failed'}`)
-        setTimeout(() => setAdvanceResult(null), 5000)
-        return
-      }
-      
-      setAdvanceResult(`✓ ${data.ticksRun} ticks | ${data.offset_before} → ${data.offset_after}`)
-      setTimeout(() => setAdvanceResult(null), 8000)
-      
-    } catch (error: any) {
-      console.error("[v0] CLIENT: Error advancing import:", error)
-      setAdvanceResult(`Error: ${error.message}`)
-      setTimeout(() => setAdvanceResult(null), 5000)
-    } finally {
-      setAdvancingImport(false)
-    }
-  }
-
-  const handleSync = async () => {
-    setSyncing(true)
-    try {
-      const response = await fetch("/api/sync", { method: "POST" })
-      const data = await response.json()
-
-      if (data.success) {
-        const syncTime = new Date().toLocaleString("es-ES")
-        setLastSync(syncTime)
-        localStorage.setItem("lastSync", syncTime)
-        setSyncMessage(`Sincronización completada: ${data.synced || 0} productos`)
-
-        // Solo refrescar accounts (mercadolibre/accounts no hace llamadas a ML)
-        try {
-          const accountsRes = await fetch("/api/mercadolibre/accounts")
-          if (accountsRes.ok) {
-            const accountsData = await accountsRes.json()
-            setAccountsData(accountsData)
-          }
-        } catch (e) {
-          console.error("[v0] Error refreshing accounts:", e)
+      if (res.ok) {
+        // Refresh import status immediately
+        const statusRes = await fetch(`/api/ml/import-pro/status?account_id=${selectedAccountId}`)
+        if (statusRes.ok) {
+          const data = await statusRes.json()
+          setImportStatus(data)
         }
-
-        setTimeout(() => setSyncMessage(""), 5000)
-      } else {
-        setSyncMessage("Error en la sincronización")
       }
     } catch (error) {
-      console.error("[v0] Sync failed:", error)
-      setSyncMessage("Error en la sincronización")
-    } finally {
-      setSyncing(false)
+      console.error("[v0] Failed to run import:", error)
     }
   }
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'idle':
+        return <Badge variant="secondary">Inactivo</Badge>
+      case 'running':
+        return <Badge className="bg-blue-600">Ejecutando</Badge>
+      case 'paused':
+        return <Badge variant="outline" className="border-yellow-600 text-yellow-600 bg-transparent">Pausado</Badge>
+      case 'done':
+        return <Badge className="bg-green-600">Completado</Badge>
+      case 'error':
+        return <Badge variant="destructive">Error</Badge>
+      default:
+        return <Badge variant="secondary">{status}</Badge>
+    }
+  }
+
+  const progress = importStatus?.publications_total > 0 
+    ? (importStatus.publications_offset / importStatus.publications_total) * 100 
+    : 0
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -275,245 +204,251 @@ export default function DashboardPage() {
         <div className="flex h-16 items-center gap-4 px-6">
           <div className="flex items-center gap-2">
             <PackageIcon className="h-6 w-6" />
-            <h1 className="text-xl font-semibold">Ecommerce Manager</h1>
-          </div>
-          <div className="ml-auto flex items-center gap-4">
-            {syncMessage && <span className="text-sm text-muted-foreground">{syncMessage}</span>}
-            <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing}>
-              <RefreshIcon className={`mr-2 h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-              {syncing ? "Sincronizando..." : "Sincronizar"}
-            </Button>
-            <Button 
-              onClick={handleAdvanceImport} 
-              disabled={advancingImport}
-              size="sm"
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              <RefreshIcon className={`mr-2 h-4 w-4 ${advancingImport ? "animate-spin" : ""}`} />
-              {advancingImport ? "Avanzando..." : "Avanzar Importación"}
-            </Button>
+            <h1 className="text-xl font-semibold">Centro de Control ML</h1>
           </div>
         </div>
       </header>
-      
-      {advanceResult && (
-        <div className="mx-6 mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm font-medium">
-          {advanceResult}
-        </div>
-      )}
 
       <main className="flex-1 p-6">
         <div className="mb-8">
           <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
           <p className="text-muted-foreground">
-            Gestiona tus productos y sincroniza entre plataformas
-            {lastSync && <span className="ml-2 text-xs">• Última actualización: {lastSync}</span>}
+            Gestiona tu importación y sincronización de MercadoLibre
           </p>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Cuentas ML</CardTitle>
-              <PackageIcon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{loading ? "..." : mlAccounts.length}</div>
-  <p className="text-xs text-muted-foreground">
-  {accountsError ? "Error cargando cuentas" : mlAccounts.length === 0 ? "No hay cuentas conectadas" : "Cuentas activas"}
-  </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Publicaciones ML</CardTitle>
-              <PackageIcon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{loading ? "..." : mlProductsCount.toLocaleString()}</div>
-              <p className="text-xs text-muted-foreground">Total en todas las cuentas</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Productos Sincronizados</CardTitle>
-              <RefreshIcon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{syncedLoading ? "..." : syncedProductsCount.toLocaleString()}</div>
-              <p className="text-xs text-muted-foreground">
-                {syncedData?.libralSynced ? `${syncedData.libralSynced} desde Libral` : "Desde fuentes externas"}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Competencia</CardTitle>
-              <TrendingUpIcon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{competitionStats?.winning || 0}</div>
-              <p className="text-xs text-muted-foreground">
-                Productos ganando • {competitionStats?.losing || 0} perdiendo
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Botón prominente para actualizar stock */}
-        <div className="mt-6">
-          <Card className="border-primary/20 bg-primary/5">
-            <CardContent className="flex flex-col sm:flex-row items-center justify-between gap-4 p-6">
-              <div>
-                <h3 className="text-lg font-semibold">Actualizar Stock de Proveedores</h3>
-                <p className="text-sm text-muted-foreground">
-                  Ejecuta la importación de stock desde Arnoia y otras fuentes
-                  {stockMessage && <span className="ml-2 text-primary font-medium">• {stockMessage}</span>}
-                </p>
+        {/* Sección: Cuentas de Mercado Libre */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Cuentas de Mercado Libre</CardTitle>
+            <CardDescription>Selecciona una cuenta para gestionar su importación</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {accountsLoading ? (
+              <div className="text-sm text-muted-foreground">Cargando cuentas...</div>
+            ) : mlAccounts.length === 0 ? (
+              <div className="text-center py-8">
+                <AlertTriangleIcon className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-sm text-muted-foreground mb-4">No hay cuentas conectadas</p>
+                <Button asChild>
+                  <Link href="/integrations">Conectar Cuenta ML</Link>
+                </Button>
               </div>
-              <Button 
-                onClick={handleUpdateStock} 
-                disabled={updatingStock}
-                size="lg"
-                className="min-w-[200px]"
-              >
-                <RefreshIcon className={`mr-2 h-5 w-5 ${updatingStock ? "animate-spin" : ""}`} />
-                {updatingStock ? "Actualizando..." : "Actualizar Stock Ahora"}
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="mt-6 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Alertas</CardTitle>
-              <AlertCircleIcon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{competitionStats?.penalized || 0}</div>
-              <p className="text-xs text-muted-foreground">Productos penalizados</p>
-            </CardContent>
-          </Card>
-          
-          {/* Card de Estado de Sincronización ML */}
-          <div className="md:col-span-2">
-            <SyncStatusCard />
-          </div>
-        </div>
-
-        <div className="mt-6 grid gap-6 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Cuentas de Mercado Libre</CardTitle>
-              <CardDescription>Gestiona tus cuentas conectadas</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-  {loading ? (
-  <div className="text-sm text-muted-foreground">Cargando...</div>
-  ) : accountsError ? (
-  <div className="text-center py-4">
-  <p className="text-sm text-red-500 mb-4">Error cargando cuentas. Intenta recargar la página.</p>
-  </div>
-  ) : mlAccounts.length === 0 ? (
-  <div className="text-center py-4">
-  <p className="text-sm text-muted-foreground mb-4">No hay cuentas conectadas</p>
-                  <Button asChild>
-                    <a href="/integrations">Conectar Cuenta</a>
-                  </Button>
-                </div>
-              ) : (
-                <>
-                  {mlAccounts.slice(0, 3).map((account: any) => (
-                    <div
-                      key={account.id}
-                      className="flex items-center justify-between rounded-lg border border-border p-4"
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                {mlAccounts.map((account: any) => (
+                  <button
+                    key={account.id}
+                    onClick={() => setSelectedAccountId(account.id)}
+                    className={`flex items-center gap-3 p-4 rounded-lg border transition-all ${
+                      selectedAccountId === account.id
+                        ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
+                        : 'border-border hover:border-primary/50 bg-transparent'
+                    }`}
+                  >
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                      <PackageIcon className="h-5 w-5" />
+                    </div>
+                    <div className="flex-1 text-left">
+                      <p className="font-medium">{account.nickname || account.ml_user_id}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        {account.tokenExpired ? (
+                          <>
+                            <AlertTriangleIcon className="h-3 w-3 text-red-500" />
+                            <span className="text-xs text-red-500">Token expirado</span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircleIcon className="h-3 w-3 text-green-500" />
+                            <span className="text-xs text-green-500">Conectado</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      asChild
+                      onClick={(e: React.MouseEvent) => e.stopPropagation()}
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                          <PackageIcon className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <p className="font-medium">{account.nickname || account.ml_user_id}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {account.expired ? (
-                              <span className="text-red-500">Token expirado</span>
-                            ) : (
-                              <span className="text-green-500">Conectado</span>
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                      <Button variant="outline" size="sm" asChild>
-                        <a href="/integrations">Ver</a>
-                      </Button>
-                    </div>
-                  ))}
-                  {mlAccounts.length > 3 && (
-                    <Button variant="outline" className="w-full bg-transparent" asChild>
-                      <a href="/integrations">Ver todas las cuentas ({mlAccounts.length})</a>
+                      <Link href={`/ml/importer?account_id=${account.id}`}>
+                        <ExternalLinkIcon className="h-4 w-4" />
+                      </Link>
                     </Button>
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
+                  </button>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Actividad Reciente</CardTitle>
-              <CardDescription>Últimas sincronizaciones y cambios</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {lastSync || mlProductsCount > 0 || competitionStats?.analyzed > 0 ? (
-                <div className="space-y-3">
-                  {lastSync && (
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
-                        <RefreshIcon className="h-4 w-4 text-primary" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">Sincronización completada</p>
-                        <p className="text-xs text-muted-foreground">{lastSync}</p>
+        {selectedAccountId && (
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Card grande: Importación Inicial */}
+            <Card className="lg:row-span-2">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Importación Inicial</CardTitle>
+                    <CardDescription>Estado de la importación de publicaciones</CardDescription>
+                  </div>
+                  {importStatus && getStatusBadge(importStatus.status)}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {importLoading ? (
+                  <div className="text-sm text-muted-foreground">Cargando estado...</div>
+                ) : !importStatus ? (
+                  <div className="text-center py-8">
+                    <p className="text-sm text-muted-foreground mb-4">No hay datos de importación</p>
+                    <Button onClick={handleRunImport}>Iniciar Importación</Button>
+                  </div>
+                ) : (
+                  <>
+                    {/* Alcance */}
+                    <div>
+                      <h4 className="text-sm font-medium mb-2">Alcance</h4>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="outline" className="bg-transparent">
+                          Publicaciones: {importStatus.publications_scope === 'active_only' ? 'Solo activas' : 'Todas'}
+                        </Badge>
+                        <Badge variant="outline" className="bg-transparent">
+                          Actividad: últimos {importStatus.activity_days || 30} días
+                        </Badge>
                       </div>
                     </div>
-                  )}
-                  {mlProductsCount > 0 && (
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
-                        <PackageIcon className="h-4 w-4 text-muted-foreground" />
+
+                    {/* Progreso */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-medium">Progreso de Publicaciones</h4>
+                        <span className="text-sm text-muted-foreground">
+                          {importStatus.publications_offset?.toLocaleString() || 0} / {importStatus.publications_total?.toLocaleString() || 0}
+                        </span>
                       </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">{mlProductsCount.toLocaleString()} productos activos</p>
-                        <p className="text-xs text-muted-foreground">En Mercado Libre</p>
-                      </div>
+                      <Progress value={progress} className="h-2" />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {progress.toFixed(1)}% completado
+                      </p>
                     </div>
-                  )}
-                  {competitionStats && competitionStats.analyzed > 0 && (
-                    <div className="flex items-start gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-500/10">
-                        <TrendingUpIcon className="h-4 w-4 text-green-500" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">{competitionStats.analyzed} productos analizados</p>
-                        <p className="text-xs text-muted-foreground">
-                          {competitionStats.winning} ganando, {competitionStats.losing} perdiendo
+
+                    {/* Última ejecución */}
+                    {importStatus.last_run_at && (
+                      <div>
+                        <h4 className="text-sm font-medium mb-1">Última ejecución</h4>
+                        <p className="text-sm text-muted-foreground">
+                          {new Date(importStatus.last_run_at).toLocaleString('es-ES')}
                         </p>
                       </div>
+                    )}
+
+                    {/* Pausado */}
+                    {importStatus.status === 'paused' && importStatus.paused_until && (
+                      <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                        <p className="text-sm text-yellow-800">
+                          Pausado por rate limit. Reintento automático en{' '}
+                          {Math.max(0, Math.ceil((new Date(importStatus.paused_until).getTime() - Date.now()) / 1000))}s
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Error */}
+                    {importStatus.last_error && (
+                      <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                        <p className="text-xs text-red-800">{importStatus.last_error}</p>
+                      </div>
+                    )}
+
+                    {/* Acciones */}
+                    <div className="flex gap-3">
+                      <Button onClick={handleRunImport} className="flex-1">
+                        {importStatus.status === 'idle' ? 'Iniciar' : 'Reanudar'}
+                      </Button>
+                      <Button variant="outline" asChild className="bg-transparent">
+                        <Link href={`/ml/importer?account_id=${selectedAccountId}`}>
+                          Ver Detalles
+                          <ExternalLinkIcon className="ml-2 h-4 w-4" />
+                        </Link>
+                      </Button>
                     </div>
-                  )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Card: Publicaciones */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Publicaciones</CardTitle>
+                <CardDescription>Estado de publicaciones importadas</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {statsLoading ? (
+                  <div className="text-sm text-muted-foreground">Cargando métricas...</div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 bg-muted rounded-lg">
+                      <p className="text-2xl font-bold">{stats?.total_publications?.toLocaleString() || 0}</p>
+                      <p className="text-xs text-muted-foreground">Total importadas</p>
+                    </div>
+                    <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                      <p className="text-2xl font-bold text-green-700">{stats?.matched_publications?.toLocaleString() || 0}</p>
+                      <p className="text-xs text-green-700">Vinculadas</p>
+                    </div>
+                    <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                      <p className="text-2xl font-bold text-yellow-700">{stats?.unmatched_publications?.toLocaleString() || 0}</p>
+                      <p className="text-xs text-yellow-700">Sin producto</p>
+                    </div>
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-2xl font-bold text-blue-700">{stats?.updated_last_hour?.toLocaleString() || 0}</p>
+                      <p className="text-xs text-blue-700">Última hora</p>
+                    </div>
+                  </div>
+                )}
+                
+                <div className="flex gap-2 pt-2">
+                  <Button variant="outline" className="flex-1 bg-transparent" asChild>
+                    <Link href="/ml/publications">Ver Publicaciones</Link>
+                  </Button>
+                  <Button variant="outline" className="flex-1 bg-transparent" asChild>
+                    <Link href="/ml/unmatched">Resolver Sin Producto</Link>
+                  </Button>
                 </div>
-              ) : (
-                <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
-                  No hay actividad reciente
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+              </CardContent>
+            </Card>
+
+            {/* Card: Sincronización Incremental */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Sincronización Incremental</CardTitle>
+                <CardDescription>Stock y precio en tiempo real</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {syncedLoading ? (
+                  <div className="text-sm text-muted-foreground">Cargando...</div>
+                ) : (
+                  <>
+                    <div className="p-4 bg-muted rounded-lg">
+                      <p className="text-2xl font-bold">{syncedCount.toLocaleString()}</p>
+                      <p className="text-xs text-muted-foreground">Productos sincronizados</p>
+                    </div>
+                    
+                    <p className="text-xs text-muted-foreground">
+                      La sincronización de stock y precio se ejecuta automáticamente cada hora. Los cambios en inventario se reflejan en MercadoLibre en tiempo real.
+                    </p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {!selectedAccountId && mlAccounts.length > 0 && (
+          <div className="text-center py-12">
+            <AlertTriangleIcon className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <p className="text-muted-foreground">Selecciona una cuenta para ver el estado de importación</p>
+          </div>
+        )}
       </main>
     </div>
   )
