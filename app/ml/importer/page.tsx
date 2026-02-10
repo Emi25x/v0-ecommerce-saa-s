@@ -71,9 +71,23 @@ export default function MLImporterPage() {
     loadData()
   }, [selectedAccountId])
 
-  // Auto-mode: ejecutar cada 3s cuando está activo
+  // Auto-mode: ejecutar cada 3s cuando está activo y hay trabajo pendiente
   useEffect(() => {
     if (!autoMode || !selectedAccountId || running) return
+
+    // Si ya completó, apagar auto-mode
+    if (progress && progress.publications_total && progress.publications_offset >= progress.publications_total) {
+      console.log("[v0] Import complete - disabling auto-mode")
+      setAutoMode(false)
+      return
+    }
+
+    // Si status es 'done', apagar auto-mode
+    if (progress?.status === 'done') {
+      console.log("[v0] Status is done - disabling auto-mode")
+      setAutoMode(false)
+      return
+    }
 
     console.log("[v0] Auto-mode active - setting up 3s interval")
     
@@ -86,7 +100,7 @@ export default function MLImporterPage() {
       console.log("[v0] Auto-mode cleanup - clearing interval")
       clearInterval(interval)
     }
-  }, [autoMode, selectedAccountId, running])
+  }, [autoMode, selectedAccountId, running, progress])
 
   const handleRun = async () => {
     if (!selectedAccountId) return
@@ -483,55 +497,68 @@ export default function MLImporterPage() {
       {/* Card Acciones */}
       <Card className="p-5 mb-6">
         <h3 className="font-semibold mb-4">Acciones</h3>
-        <div className="flex flex-wrap gap-3">
-          {!autoMode && progress?.status !== "done" && (
-            <Button onClick={handleStart} disabled={running} size="lg" className="flex-1 min-w-[180px]">
-              {running ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Ejecutando...
-                </>
-              ) : (
-                <>
-                  <Play className="mr-2 h-4 w-4" />
-                  {progress?.publications_offset > 0 ? "Reanudar" : "Iniciar"}
-                </>
-              )}
-            </Button>
-          )}
+        
+        {progress?.status !== "done" && (
+          <div className="flex flex-wrap gap-3">
+            {!autoMode && (
+              <Button onClick={handleStart} disabled={running} size="lg" className="flex-1 min-w-[180px]">
+                {running ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Ejecutando...
+                  </>
+                ) : (
+                  <>
+                    <Play className="mr-2 h-4 w-4" />
+                    {progress?.publications_offset > 0 ? "Reanudar" : "Iniciar"}
+                  </>
+                )}
+              </Button>
+            )}
 
-          {autoMode && (
-            <Button onClick={handlePause} size="lg" variant="outline" className="flex-1 min-w-[180px] bg-transparent">
-              <Pause className="mr-2 h-4 w-4" />
-              Pausar
-            </Button>
-          )}
+            {autoMode && (
+              <Button onClick={handlePause} size="lg" variant="outline" className="flex-1 min-w-[180px] bg-transparent">
+                <Pause className="mr-2 h-4 w-4" />
+                Pausar
+              </Button>
+            )}
 
-          {!autoMode && !running && progress?.status !== "done" && (
-            <Button onClick={handleRun} disabled={running} size="lg" variant="outline" className="bg-transparent">
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Paso (1 corrida)
-            </Button>
-          )}
+            {!autoMode && !running && (
+              <Button onClick={handleRun} disabled={running} size="lg" variant="outline" className="bg-transparent">
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Paso (1 corrida)
+              </Button>
+            )}
 
-          {!autoMode && !running && progress && progress.publications_offset > 0 && (
-            <Button onClick={handleReset} size="lg" variant="destructive">
-              <RotateCcw className="mr-2 h-4 w-4" />
-              Reset
-            </Button>
-          )}
-        </div>
-
-        {progress?.status === "done" && (
-          <div className="mt-3 p-4 bg-green-50 border border-green-200 rounded-md text-center">
-            <p className="text-green-700 font-medium">✓ Importación completada</p>
+            {!autoMode && !running && progress && progress.publications_offset > 0 && (
+              <Button onClick={handleReset} size="lg" variant="outline" className="bg-transparent border-red-600 text-red-700 hover:bg-red-50">
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Reiniciar desde cero
+              </Button>
+            )}
           </div>
         )}
 
-        {autoMode && (
+        {progress?.status === "done" && (
+          <div className="mt-3 p-4 bg-green-50 border border-green-200 rounded-md">
+            <p className="text-green-800 font-semibold mb-1">Importación inicial finalizada correctamente</p>
+            <p className="text-sm text-green-700">La importación terminó. No hay tareas pendientes.</p>
+            <div className="mt-3">
+              <Button onClick={handleReset} size="sm" variant="outline" className="bg-transparent border-green-600 text-green-700 hover:bg-green-100">
+                <RotateCcw className="mr-2 h-3 w-3" />
+                Reiniciar importación
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {autoMode && progress?.status !== "done" && (
           <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
-            <p className="text-sm text-blue-700">
-              🔄 Modo automático activo - ejecutando cada 3 segundos
+            <p className="text-sm text-blue-700 font-medium mb-1">
+              Modo automático activo
+            </p>
+            <p className="text-xs text-blue-600">
+              La importación avanza mientras esta página esté abierta. Podés cerrar la página y reanudar luego.
             </p>
           </div>
         )}
