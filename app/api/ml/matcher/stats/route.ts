@@ -37,12 +37,12 @@ export async function GET(request: NextRequest) {
       .not("product_id", "is", null)
       .in("matched_by", ["auto_sku", "auto_ean", "auto_isbn"])
 
-    // Progress
+    // Progress (puede no existir aún)
     const { data: progress } = await supabase
       .from("ml_matcher_progress")
       .select("*")
       .eq("account_id", accountId)
-      .single()
+      .maybeSingle()
 
     return NextResponse.json({
       total_publications: totalPubs || 0,
