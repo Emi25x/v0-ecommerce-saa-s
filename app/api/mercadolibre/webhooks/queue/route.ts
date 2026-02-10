@@ -1,8 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { createClient } from "@/lib/supabase/server"
 
 export async function GET(request: NextRequest) {
   try {
-    const { createClient } = await import("@/lib/supabase/server")
     const supabase = await createClient()
 
     const { count, error } = await supabase
