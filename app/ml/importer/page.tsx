@@ -4,19 +4,23 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { RefreshCw, Play, Pause, RotateCcw, Loader2 } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { RefreshCw, Play, Pause, RotateCcw, Loader2, ChevronDown, ChevronUp, AlertCircle } from "lucide-react"
 
 export default function MLImporterPage() {
   const [accounts, setAccounts] = useState<any[]>([])
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
   const [progress, setProgress] = useState<any>(null)
+  const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
   const [autoMode, setAutoMode] = useState(false)
   const [runResult, setRunResult] = useState<any>(null)
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [showDiagnostic, setShowDiagnostic] = useState(false)
   const [diagnosticData, setDiagnosticData] = useState<any>(null)
   const [loadingDiagnostic, setLoadingDiagnostic] = useState(false)
+  const [executionLog, setExecutionLog] = useState<any[]>([])
 
   // Cargar cuentas ML
   useEffect(() => {
@@ -36,20 +40,33 @@ export default function MLImporterPage() {
       })
   }, [])
 
-  // Cargar estado de importación
+  // Cargar estado de importación y estadísticas
   useEffect(() => {
     if (!selectedAccountId) return
     
-    fetch(`/api/ml/import-pro/status?account_id=${selectedAccountId}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.ok) {
-          setProgress(data.progress)
+    const loadData = async () => {
+      try {
+        const [statusRes, statsRes] = await Promise.all([
+          fetch(`/api/ml/import-pro/status?account_id=${selectedAccountId}`),
+          fetch(`/api/debug/import-queue-stats?account_id=${selectedAccountId}`)
+        ])
+        
+        const statusData = await statusRes.json()
+        const statsData = await statsRes.json()
+        
+        if (statusData.ok) {
+          setProgress(statusData.progress)
         }
-      })
-      .catch((err) => {
-        console.error("[IMPORTER] Error loading status:", err)
-      })
+        
+        if (statsData.ok) {
+          setStats(statsData)
+        }
+      } catch (err) {
+        console.error("[IMPORTER] Error loading data:", err)
+      }
+    }
+    
+    loadData()
   }, [selectedAccountId])
 
   // Auto-mode: ejecutar cada 3s si está en running
@@ -68,6 +85,8 @@ export default function MLImporterPage() {
     if (!selectedAccountId) return
     
     setRunning(true)
+    const startTime = Date.now()
+    
     try {
       const res = await fetch("/api/ml/import-pro/run", {
         method: "POST",
@@ -83,11 +102,33 @@ export default function MLImporterPage() {
       const data = await res.json()
       setRunResult(data)
 
-      // Recargar progress
-      const statusRes = await fetch(`/api/ml/import-pro/status?account_id=${selectedAccountId}`)
+      // Agregar a log de ejecución
+      const logEntry = {
+        ranAt: new Date().toISOString(),
+        action: data.ok ? (data.paused ? 'paused' : 'success') : 'error',
+        imported_delta: data.publications_processed || 0,
+        matched_delta: data.matched || 0,
+        retry_after: data.paused ? data.wait_seconds : null,
+        elapsed: ((Date.now() - startTime) / 1000).toFixed(1)
+      }
+      
+      setExecutionLog(prev => [logEntry, ...prev].slice(0, 10))
+
+      // Recargar progress y stats
+      const [statusRes, statsRes] = await Promise.all([
+        fetch(`/api/ml/import-pro/status?account_id=${selectedAccountId}`),
+        fetch(`/api/debug/import-queue-stats?account_id=${selectedAccountId}`)
+      ])
+      
       const statusData = await statusRes.json()
+      const statsData = await statsRes.json()
+      
       if (statusData.ok) {
         setProgress(statusData.progress)
+      }
+      
+      if (statsData.ok) {
+        setStats(statsData)
       }
 
       // Si está pausado o completo, detener auto-mode
@@ -98,6 +139,13 @@ export default function MLImporterPage() {
       console.error("[IMPORTER] Run error:", error)
       setRunResult({ error: error.message })
       setAutoMode(false)
+      
+      setExecutionLog(prev => [{
+        ranAt: new Date().toISOString(),
+        action: 'error',
+        error: error.message,
+        elapsed: ((Date.now() - startTime) / 1000).toFixed(1)
+      }, ...prev].slice(0, 10))
     } finally {
       setRunning(false)
     }
@@ -105,15 +153,8 @@ export default function MLImporterPage() {
 
   const handleStart = async () => {
     if (!selectedAccountId) return
-
-    // Actualizar a running
-    const supabase = await import("@/lib/supabase/server").then(m => m.createClient())
-    
     setAutoMode(true)
-    
-    // Actualizar status a running
-    await fetch(`/api/ml/import-pro/status?account_id=${selectedAccountId}`)
-      .then(() => handleRun())
+    await handleRun()
   }
 
   const handlePause = () => {
@@ -125,9 +166,6 @@ export default function MLImporterPage() {
     if (!confirm("¿Reiniciar importación desde cero? Esto no borra publicaciones ya importadas.")) return
 
     try {
-      // Reset offset to 0
-      const supabase = await import("@/lib/supabase/client").then(m => m.createClient())
-      // Note: This would need a server endpoint to properly reset
       alert("Reset function needs server endpoint implementation")
     } catch (error: any) {
       console.error("[IMPORTER] Reset error:", error)
@@ -181,18 +219,26 @@ export default function MLImporterPage() {
   }
 
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId)
+  const statusColors = {
+    idle: "bg-gray-100 text-gray-700",
+    running: "bg-blue-100 text-blue-700",
+    done: "bg-green-100 text-green-700",
+    paused: "bg-yellow-100 text-yellow-700",
+    error: "bg-red-100 text-red-700"
+  }
 
   return (
-    <div className="container mx-auto p-6 max-w-4xl">
+    <div className="container mx-auto p-6 max-w-5xl">
+      {/* Encabezado */}
       <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2">Importador ML Pro</h1>
+        <h1 className="text-3xl font-bold mb-2">Importación inicial Mercado Libre</h1>
         <p className="text-muted-foreground">
-          Importación inicial completa de todas tus publicaciones de MercadoLibre
+          Importa publicaciones y actividad para sincronizar tu catálogo
         </p>
       </div>
 
       {/* Selector de cuenta */}
-      <Card className="p-6 mb-6">
+      <Card className="p-4 mb-6">
         <label className="text-sm font-medium mb-2 block">Cuenta de MercadoLibre</label>
         <select
           value={selectedAccountId || ""}
@@ -208,168 +254,236 @@ export default function MLImporterPage() {
         </select>
       </Card>
 
-      {/* Información */}
-      <Card className="p-6 mb-6 bg-blue-50 border-blue-200">
-        <h3 className="font-semibold mb-2">¿Qué hace esta importación?</h3>
-        <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
-          <li>Importa TODAS tus publicaciones de MercadoLibre (activas, pausadas y finalizadas)</li>
-          <li>Extrae SKU, ISBN y GTIN de cada publicación</li>
-          <li>Vincula automáticamente con productos existentes por código</li>
-          <li>Proceso reanudable: podés pausar y continuar cuando quieras</li>
-          <li>Respeta límites de la API de ML (maneja rate limits automáticamente)</li>
-        </ul>
+      {/* Card Alcance */}
+      <Card className="p-5 mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold">Alcance</h3>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="h-8 text-xs"
+          >
+            {showAdvanced ? (
+              <>
+                <ChevronUp className="h-4 w-4 mr-1" />
+                Ocultar opciones
+              </>
+            ) : (
+              <>
+                <ChevronDown className="h-4 w-4 mr-1" />
+                Opciones avanzadas
+              </>
+            )}
+          </Button>
+        </div>
         
-        {progress && (
-          <div className="mt-4 pt-4 border-t border-blue-300">
-            <p className="text-xs font-medium text-blue-900 mb-1">Alcance configurado:</p>
-            <div className="flex gap-4 text-xs text-blue-700">
-              <div>
-                <span className="font-medium">Publicaciones:</span>{" "}
-                {progress.publications_scope === 'active_only' ? 'Solo activas' : 'Todas'}
-              </div>
-              <div>
-                <span className="font-medium">Actividad:</span> últimos {progress.activity_days || 30} días
-              </div>
-            </div>
+        <div className="flex gap-3">
+          <div>
+            <span className="text-xs text-muted-foreground block mb-1">Publicaciones</span>
+            <Badge variant="secondary" className="font-normal">
+              {progress?.publications_scope === 'active_only' ? 'Solo activas' : 'Todas'}
+            </Badge>
+          </div>
+          <div>
+            <span className="text-xs text-muted-foreground block mb-1">Actividad</span>
+            <Badge variant="secondary" className="font-normal">
+              Últimos {progress?.activity_days || 30} días
+            </Badge>
+          </div>
+        </div>
+
+        {showAdvanced && (
+          <div className="mt-4 pt-4 border-t">
+            <p className="text-sm text-muted-foreground">
+              Las opciones avanzadas de alcance se configurarán próximamente.
+            </p>
           </div>
         )}
       </Card>
 
-      {/* Estado actual */}
+      {/* Card Progreso */}
       {progress && (
-        <Card className="p-6 mb-6">
+        <Card className="p-5 mb-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold">Estado de Importación</h3>
-            <span
-              className={`px-3 py-1 rounded-full text-sm font-medium ${
-                progress.status === "running"
-                  ? "bg-blue-100 text-blue-700"
-                  : progress.status === "done"
-                  ? "bg-green-100 text-green-700"
-                  : progress.status === "paused"
-                  ? "bg-yellow-100 text-yellow-700"
-                  : progress.status === "error"
-                  ? "bg-red-100 text-red-700"
-                  : "bg-gray-100 text-gray-700"
-              }`}
-            >
-              {progress.status === "running"
-                ? "Ejecutando"
-                : progress.status === "done"
-                ? "Completado"
-                : progress.status === "paused"
-                ? "Pausado"
-                : progress.status === "error"
-                ? "Error"
-                : "Listo"}
-            </span>
+            <h3 className="font-semibold">Progreso</h3>
+            <Badge className={statusColors[progress.status] || statusColors.idle}>
+              {progress.status === "running" ? "Ejecutando" :
+               progress.status === "done" ? "Completado" :
+               progress.status === "paused" ? "Pausado" :
+               progress.status === "error" ? "Error" : "Listo"}
+            </Badge>
           </div>
 
-          {/* Progreso publicaciones */}
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium">Publicaciones</span>
-              <span className="text-sm text-muted-foreground">
-                {progress.publications_offset} / {progress.publications_total || "?"}
-              </span>
-            </div>
-            <Progress value={progress.publications_progress || 0} className="h-2" />
-            <p className="text-xs text-muted-foreground mt-1">
-              {progress.publications_progress || 0}% completado
-            </p>
-          </div>
-
-          {/* Última ejecución */}
-          {progress.last_run_at && (
-            <p className="text-xs text-muted-foreground">
-              Última ejecución: {new Date(progress.last_run_at).toLocaleString()}
-            </p>
-          )}
-
-          {/* Error */}
-          {progress.last_error && (
-            <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
-              <p className="text-sm text-red-700">{progress.last_error}</p>
-            </div>
-          )}
-
-          {/* Pausado por rate limit */}
-          {progress.status === "paused" && progress.paused_until && (
-            <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-              <p className="text-sm text-yellow-700">
-                Pausado por límite de API hasta{" "}
-                {new Date(progress.paused_until).toLocaleTimeString()}
+          <div className="space-y-3">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium">Publicaciones</span>
+                <span className="text-sm text-muted-foreground">
+                  {progress.publications_offset.toLocaleString()} / {progress.publications_total?.toLocaleString() || "?"}
+                </span>
+              </div>
+              <Progress value={progress.publications_progress || 0} className="h-2" />
+              <p className="text-xs text-muted-foreground mt-1">
+                {(progress.publications_progress || 0).toFixed(1)}% completado
               </p>
             </div>
-          )}
-        </Card>
-      )}
 
-      {/* Resultado última ejecución */}
-      {runResult && (
-        <Card className="p-4 mb-6 bg-green-50 border-green-200">
-          <p className="text-sm font-medium mb-1">Última ejecución:</p>
-          {runResult.ok ? (
-            <div className="text-sm text-muted-foreground space-y-1">
-              <p>✓ {runResult.publications_processed} publicaciones procesadas</p>
-              <p>✓ {runResult.details_processed} detalles importados</p>
-              <p>
-                ✓ {runResult.matched} vinculados | {runResult.unmatched} sin vincular
+            {progress.last_run_at && (
+              <p className="text-xs text-muted-foreground">
+                Última ejecución: {new Date(progress.last_run_at).toLocaleString()}
               </p>
-              <p>⏱ {runResult.elapsed_seconds}s</p>
-            </div>
-          ) : runResult.paused ? (
-            <p className="text-sm text-yellow-700">
-              Pausado por rate limit ({runResult.wait_seconds}s)
-            </p>
-          ) : (
-            <p className="text-sm text-red-700">{runResult.error || "Error desconocido"}</p>
-          )}
-        </Card>
-      )}
-
-      {/* Controles */}
-      <div className="flex gap-3">
-        {!autoMode && progress?.status !== "done" && (
-          <Button onClick={handleStart} disabled={running} size="lg" className="flex-1">
-            {running ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Ejecutando...
-              </>
-            ) : (
-              <>
-                <Play className="mr-2 h-4 w-4" />
-                {progress?.publications_offset > 0 ? "Reanudar" : "Iniciar"}
-              </>
             )}
-          </Button>
-        )}
 
-        {autoMode && (
-          <Button onClick={handlePause} size="lg" variant="outline" className="flex-1 bg-transparent">
-            <Pause className="mr-2 h-4 w-4" />
-            Pausar Auto-Mode
-          </Button>
-        )}
+            {progress.status === "paused" && progress.paused_until && (
+              <div className="flex items-start gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                <AlertCircle className="h-4 w-4 text-yellow-600 mt-0.5" />
+                <div>
+                  <p className="text-sm text-yellow-800 font-medium">Pausado por límite de API</p>
+                  <p className="text-xs text-yellow-700">
+                    Reinicio automático: {new Date(progress.paused_until).toLocaleTimeString()}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {progress.last_error && (
+              <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-md">
+                <AlertCircle className="h-4 w-4 text-red-600 mt-0.5" />
+                <div>
+                  <p className="text-sm text-red-800 font-medium">Error</p>
+                  <p className="text-xs text-red-700">{progress.last_error}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
+
+      {/* Card Acciones */}
+      <Card className="p-5 mb-6">
+        <h3 className="font-semibold mb-4">Acciones</h3>
+        <div className="flex flex-wrap gap-3">
+          {!autoMode && progress?.status !== "done" && (
+            <Button onClick={handleStart} disabled={running} size="lg" className="flex-1 min-w-[180px]">
+              {running ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Ejecutando...
+                </>
+              ) : (
+                <>
+                  <Play className="mr-2 h-4 w-4" />
+                  {progress?.publications_offset > 0 ? "Reanudar" : "Iniciar"}
+                </>
+              )}
+            </Button>
+          )}
+
+          {autoMode && (
+            <Button onClick={handlePause} size="lg" variant="outline" className="flex-1 min-w-[180px] bg-transparent">
+              <Pause className="mr-2 h-4 w-4" />
+              Pausar
+            </Button>
+          )}
+
+          {!autoMode && !running && progress?.status !== "done" && (
+            <Button onClick={handleRun} disabled={running} size="lg" variant="outline" className="bg-transparent">
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Paso (1 corrida)
+            </Button>
+          )}
+
+          {!autoMode && !running && progress && progress.publications_offset > 0 && (
+            <Button onClick={handleReset} size="lg" variant="destructive">
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Reset
+            </Button>
+          )}
+        </div>
 
         {progress?.status === "done" && (
-          <div className="flex-1 p-4 bg-green-50 border border-green-200 rounded-md text-center">
+          <div className="mt-3 p-4 bg-green-50 border border-green-200 rounded-md text-center">
             <p className="text-green-700 font-medium">✓ Importación completada</p>
           </div>
         )}
 
-        {!autoMode && !running && progress && progress.publications_offset > 0 && (
-          <Button onClick={handleReset} size="lg" variant="outline" className="bg-transparent">
-            <RotateCcw className="mr-2 h-4 w-4" />
-            Reiniciar
-          </Button>
+        {autoMode && (
+          <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
+            <p className="text-sm text-blue-700">
+              🔄 Modo automático activo - ejecutando cada 3 segundos
+            </p>
+          </div>
         )}
+      </Card>
 
+      {/* Card Métricas */}
+      {stats && (
+        <Card className="p-5 mb-6">
+          <h3 className="font-semibold mb-4">Métricas</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <p className="text-2xl font-bold">{stats.total_publications?.toLocaleString() || 0}</p>
+              <p className="text-xs text-muted-foreground">Importadas</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-green-600">{stats.matched_publications?.toLocaleString() || 0}</p>
+              <p className="text-xs text-muted-foreground">Vinculadas</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-yellow-600">{stats.unmatched_publications?.toLocaleString() || 0}</p>
+              <p className="text-xs text-muted-foreground">Sin producto</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-blue-600">{stats.updated_last_hour?.toLocaleString() || 0}</p>
+              <p className="text-xs text-muted-foreground">Recientes (1h)</p>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Card Log de ejecución */}
+      {executionLog.length > 0 && (
+        <Card className="p-5 mb-6">
+          <h3 className="font-semibold mb-4">Log de ejecución</h3>
+          <div className="space-y-2">
+            {executionLog.map((log, i) => (
+              <div key={i} className="flex items-center justify-between p-3 bg-gray-50 border rounded-md text-sm">
+                <div className="flex items-center gap-3">
+                  <Badge variant={log.action === 'success' ? 'default' : log.action === 'error' ? 'destructive' : 'secondary'} className="font-normal">
+                    {log.action}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(log.ranAt).toLocaleTimeString()}
+                  </span>
+                </div>
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  {log.action === 'success' && (
+                    <>
+                      <span>{log.imported_delta} importadas</span>
+                      <span>{log.matched_delta} vinculadas</span>
+                    </>
+                  )}
+                  {log.retry_after && (
+                    <span className="text-yellow-600">Retry en {log.retry_after}s</span>
+                  )}
+                  {log.error && (
+                    <span className="text-red-600">{log.error}</span>
+                  )}
+                  <span>{log.elapsed}s</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Botón diagnóstico */}
+      <div className="flex justify-end">
         <Button 
           onClick={handleDiagnostic} 
-          size="lg" 
           variant="outline"
+          size="sm"
           disabled={loadingDiagnostic}
           className="bg-transparent"
         >
@@ -378,7 +492,7 @@ export default function MLImporterPage() {
           ) : (
             <RefreshCw className="mr-2 h-4 w-4" />
           )}
-          Ver Diagnóstico
+          Ver Diagnóstico Técnico
         </Button>
       </div>
 
@@ -386,7 +500,7 @@ export default function MLImporterPage() {
       {showDiagnostic && (
         <Card className="mt-6 p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold">Diagnóstico del Importador</h3>
+            <h3 className="font-semibold">Diagnóstico Técnico</h3>
             <Button 
               onClick={() => setShowDiagnostic(false)} 
               size="sm" 
@@ -408,18 +522,16 @@ export default function MLImporterPage() {
                 </div>
               ) : (
                 <>
-                  {/* Progress data */}
                   <div>
                     <h4 className="text-sm font-medium mb-2">Estado de Progreso</h4>
-                    <pre className="p-4 bg-gray-50 border rounded-md text-xs overflow-auto">
+                    <pre className="p-4 bg-gray-50 border rounded-md text-xs overflow-auto max-h-60">
                       {JSON.stringify(diagnosticData.progress, null, 2)}
                     </pre>
                   </div>
 
-                  {/* Stats data */}
                   <div>
                     <h4 className="text-sm font-medium mb-2">Estadísticas de Cola</h4>
-                    <pre className="p-4 bg-gray-50 border rounded-md text-xs overflow-auto">
+                    <pre className="p-4 bg-gray-50 border rounded-md text-xs overflow-auto max-h-60">
                       {JSON.stringify(diagnosticData.stats, null, 2)}
                     </pre>
                   </div>
@@ -432,14 +544,6 @@ export default function MLImporterPage() {
             </div>
           ) : null}
         </Card>
-      )}
-
-      {autoMode && (
-        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-          <p className="text-sm text-blue-700">
-            🔄 Auto-mode activo: ejecutando automáticamente cada 3 segundos
-          </p>
-        </div>
       )}
     </div>
   )
