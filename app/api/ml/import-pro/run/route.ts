@@ -30,7 +30,8 @@ export async function POST(request: NextRequest) {
 
     console.log(`[IMPORT-PRO] Run starting for account ${accountId}, max_seconds: ${max_seconds}`)
 
-    const supabase = await createClient()
+    // Usar service role para bypassear RLS
+    const supabase = await createClient({ useServiceRole: true })
 
     // Obtener cuenta y progress
     const { data: account, error: accountError } = await supabase
@@ -40,6 +41,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (accountError || !account) {
+      console.error(`[IMPORT-PRO] Account not found:`, accountError)
       return NextResponse.json({ error: "Account not found" }, { status: 404 })
     }
 
