@@ -100,9 +100,9 @@ export default function MLImporterPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           account_id: selectedAccountId,
-          max_seconds: 20,
-          publications_page: 50,
-          detail_batch: 20,
+          max_seconds: 12,
+          publications_page: 30,
+          detail_batch: 10,
         }),
       })
 
@@ -111,7 +111,7 @@ export default function MLImporterPage() {
 
       // Si hay error detallado de ML API, mostrarlo
       if (!data.ok && data.where && data.body) {
-        const errorMsg = `Error en ${data.where}\nStatus: ${data.status}\nURL: ${data.url}\n\nRespuesta de ML:\n${data.body}`
+        const errorMsg = `Error de MercadoLibre en ${data.where}\nStatus: ${data.status}\nURL: ${data.url}\n\nRespuesta de ML:\n${data.body}`
         alert(errorMsg)
         console.error("[IMPORTER] ML API Error Details:", data)
       }
@@ -130,10 +130,8 @@ export default function MLImporterPage() {
       setExecutionLog(prev => [logEntry, ...prev].slice(0, 10))
 
       // Recargar progress y stats
-      const [statusRes, statsRes] = await Promise.all([
-        fetch(`/api/ml/import-pro/status?account_id=${selectedAccountId}`),
-        fetch(`/api/debug/import-queue-stats?account_id=${selectedAccountId}`)
-      ])
+      const statusRes = await fetch(`/api/ml/import-pro/status?account_id=${selectedAccountId}`)
+      const statsRes = await fetch(`/api/debug/import-queue-stats?account_id=${selectedAccountId}`)
       
       const statusData = await statusRes.json()
       const statsData = await statsRes.json()
@@ -151,16 +149,24 @@ export default function MLImporterPage() {
         setAutoMode(false)
       }
     } catch (error: any) {
-      console.error("[IMPORTER] Run error:", error)
-      setRunResult({ error: error.message })
-      setAutoMode(false)
+      console.error("[IMPORTER] Network/timeout error:", error)
       
-      setExecutionLog(prev => [{
+      // Error de red/timeout - no es error permanente, permitir reintento
+      const logEntry = {
         ranAt: new Date().toISOString(),
-        action: 'error',
-        error: error.message,
-        elapsed: ((Date.now() - startTime) / 1000).toFixed(1)
-      }, ...prev].slice(0, 10))
+        action: 'network_error',
+        imported_delta: 0,
+        matched_delta: 0,
+        retry_after: null,
+        elapsed: ((Date.now() - startTime) / 1000).toFixed(1),
+        error_details: `Network error: ${error.message}`
+      }
+      
+      setExecutionLog(prev => [logEntry, ...prev].slice(0, 10))
+      setRunResult({ ok: false, error: error.message, network_error: true })
+      
+      // Mostrar alerta diferenciada para errores de red
+      alert(`Error de red o timeout:\n${error.message}\n\nEsto suele ser temporal. El auto-mode reintentará automáticamente.`)
     } finally {
       setRunning(false)
     }
@@ -200,13 +206,12 @@ export default function MLImporterPage() {
       }
 
       // Recargar progreso
-      await fetch(`/api/ml/import-pro/status?account_id=${selectedAccountId}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.ok) {
-            setProgress(data.progress)
-          }
-        })
+      const statusRes = await fetch(`/api/ml/import-pro/status?account_id=${selectedAccountId}`)
+      const statusData = await statusRes.json()
+      
+      if (statusData.ok) {
+        setProgress(statusData.progress)
+      }
       alert("Importación reseteada exitosamente")
     } catch (error: any) {
       console.error("[IMPORTER] Reset error:", error)

@@ -7,7 +7,7 @@ export const maxDuration = 60
 /**
  * POST /api/ml/import-pro/run
  * Ejecuta un ciclo de importación por tiempo limitado
- * Body: { account_id, max_seconds: 20, publications_page: 50, detail_batch: 20 }
+ * Body: { account_id, max_seconds: 12, publications_page: 30, detail_batch: 10 }
  */
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
@@ -17,9 +17,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const {
       account_id,
-      max_seconds = 20,
-      publications_page = 50,
-      detail_batch = 20,
+      max_seconds = 12,
+      publications_page = 30,
+      detail_batch = 10,
     } = body
 
     accountId = account_id
