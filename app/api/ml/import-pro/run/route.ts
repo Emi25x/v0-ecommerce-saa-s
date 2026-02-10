@@ -30,20 +30,34 @@ export async function POST(request: NextRequest) {
 
     console.log(`[IMPORT-PRO] Run starting for account ${accountId}, max_seconds: ${max_seconds}`)
 
-    // Usar service role para bypassear RLS
+    // Step 1: Get authenticated user session
+    const supabaseAuth = await createClient()
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
+
+    if (authError || !user) {
+      console.error(`[IMPORT-PRO] Authentication failed:`, authError)
+      return NextResponse.json({ error: "Unauthorized - Please sign in" }, { status: 401 })
+    }
+
+    console.log(`[IMPORT-PRO] Authenticated user: ${user.id}`)
+
+    // Step 2: Use service role for data access (bypasses RLS)
     const supabase = await createClient({ useServiceRole: true })
 
-    // Obtener cuenta y progress
+    // Step 3: Verify account ownership - SECURITY CHECK
     const { data: account, error: accountError } = await supabase
       .from("ml_accounts")
       .select("*")
       .eq("id", accountId)
+      .eq("owner_id", user.id)
       .single()
 
     if (accountError || !account) {
-      console.error(`[IMPORT-PRO] Account not found:`, accountError)
-      return NextResponse.json({ error: "Account not found" }, { status: 404 })
+      console.error(`[IMPORT-PRO] Account not found or access denied for user ${user.id}:`, accountError)
+      return NextResponse.json({ error: "Account not found or you don't have permission to access it" }, { status: 403 })
     }
+
+    console.log(`[IMPORT-PRO] Access granted for account ${accountId} (owner: ${user.id})`)
 
     let { data: progress, error: progressError } = await supabase
       .from("ml_import_progress")

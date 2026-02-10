@@ -12,7 +12,28 @@ export async function POST(request: NextRequest) {
 
     console.log(`[IMPORT-PRO-RESET] Resetting progress for account: ${account_id}`)
 
-    const supabase = await createClient()
+    // Authentication check
+    const supabaseAuth = await createClient()
+    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    // Use service role for reset operation
+    const supabase = await createClient({ useServiceRole: true })
+
+    // Verify account ownership
+    const { data: account } = await supabase
+      .from("ml_accounts")
+      .select("id")
+      .eq("id", account_id)
+      .eq("owner_id", user.id)
+      .single()
+
+    if (!account) {
+      return NextResponse.json({ error: "Account not found or access denied" }, { status: 403 })
+    }
 
     // Reset progress
     const { error: updateError } = await supabase
