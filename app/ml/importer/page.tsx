@@ -14,6 +14,9 @@ export default function MLImporterPage() {
   const [running, setRunning] = useState(false)
   const [autoMode, setAutoMode] = useState(false)
   const [runResult, setRunResult] = useState<any>(null)
+  const [showDiagnostic, setShowDiagnostic] = useState(false)
+  const [diagnosticData, setDiagnosticData] = useState<any>(null)
+  const [loadingDiagnostic, setLoadingDiagnostic] = useState(false)
 
   // Cargar cuentas ML
   useEffect(() => {
@@ -128,6 +131,34 @@ export default function MLImporterPage() {
       alert("Reset function needs server endpoint implementation")
     } catch (error: any) {
       console.error("[IMPORTER] Reset error:", error)
+    }
+  }
+
+  const handleDiagnostic = async () => {
+    if (!selectedAccountId) return
+    
+    setLoadingDiagnostic(true)
+    setShowDiagnostic(true)
+    
+    try {
+      const [progressRes, statsRes] = await Promise.all([
+        fetch(`/api/debug/import-progress?account_id=${selectedAccountId}`),
+        fetch(`/api/debug/import-queue-stats?account_id=${selectedAccountId}`)
+      ])
+      
+      const progressData = await progressRes.json()
+      const statsData = await statsRes.json()
+      
+      setDiagnosticData({
+        progress: progressData,
+        stats: statsData,
+        timestamp: new Date().toISOString()
+      })
+    } catch (error: any) {
+      console.error("[IMPORTER] Diagnostic error:", error)
+      setDiagnosticData({ error: error.message })
+    } finally {
+      setLoadingDiagnostic(false)
     }
   }
 
@@ -329,12 +360,79 @@ export default function MLImporterPage() {
         )}
 
         {!autoMode && !running && progress && progress.publications_offset > 0 && (
-          <Button onClick={handleReset} size="lg" variant="outline">
+          <Button onClick={handleReset} size="lg" variant="outline" className="bg-transparent">
             <RotateCcw className="mr-2 h-4 w-4" />
             Reiniciar
           </Button>
         )}
+
+        <Button 
+          onClick={handleDiagnostic} 
+          size="lg" 
+          variant="outline"
+          disabled={loadingDiagnostic}
+          className="bg-transparent"
+        >
+          {loadingDiagnostic ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCw className="mr-2 h-4 w-4" />
+          )}
+          Ver Diagnóstico
+        </Button>
       </div>
+
+      {/* Panel de diagnóstico */}
+      {showDiagnostic && (
+        <Card className="mt-6 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold">Diagnóstico del Importador</h3>
+            <Button 
+              onClick={() => setShowDiagnostic(false)} 
+              size="sm" 
+              variant="ghost"
+            >
+              Cerrar
+            </Button>
+          </div>
+
+          {loadingDiagnostic ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : diagnosticData ? (
+            <div className="space-y-4">
+              {diagnosticData.error ? (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-md">
+                  <p className="text-sm text-red-700">{diagnosticData.error}</p>
+                </div>
+              ) : (
+                <>
+                  {/* Progress data */}
+                  <div>
+                    <h4 className="text-sm font-medium mb-2">Estado de Progreso</h4>
+                    <pre className="p-4 bg-gray-50 border rounded-md text-xs overflow-auto">
+                      {JSON.stringify(diagnosticData.progress, null, 2)}
+                    </pre>
+                  </div>
+
+                  {/* Stats data */}
+                  <div>
+                    <h4 className="text-sm font-medium mb-2">Estadísticas de Cola</h4>
+                    <pre className="p-4 bg-gray-50 border rounded-md text-xs overflow-auto">
+                      {JSON.stringify(diagnosticData.stats, null, 2)}
+                    </pre>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground">
+                    Generado: {new Date(diagnosticData.timestamp).toLocaleString()}
+                  </p>
+                </>
+              )}
+            </div>
+          ) : null}
+        </Card>
+      )}
 
       {autoMode && (
         <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
