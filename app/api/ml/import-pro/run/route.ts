@@ -151,6 +151,7 @@ export async function POST(request: NextRequest) {
       
       const searchRes = await fetch(searchUrl, {
         headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(10000), // 10s timeout
       })
 
       if (!searchRes.ok) {
@@ -224,6 +225,7 @@ export async function POST(request: NextRequest) {
         const detailsUrl = `https://api.mercadolibre.com/items?ids=${itemsParam}&attributes=id,title,price,available_quantity,sold_quantity,status,permalink,thumbnail,listing_type_id,attributes`
         const detailsRes = await fetch(detailsUrl, {
           headers: { Authorization: `Bearer ${accessToken}` },
+          signal: AbortSignal.timeout(10000), // 10s timeout
         })
 
         if (!detailsRes.ok) {
