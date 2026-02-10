@@ -34,12 +34,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Account not found" }, { status: 404 })
     }
 
-    // Reset progress
+    // Reset progress (including scroll_id for fresh scroll pagination)
     const { error: updateError } = await supabase
       .from("ml_import_progress")
       .update({
         publications_offset: 0,
         publications_total: null,
+        scroll_id: null,
         status: "idle",
         paused_until: null,
         last_error: null,

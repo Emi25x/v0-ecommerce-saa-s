@@ -116,6 +116,7 @@ export async function POST(request: NextRequest) {
 
       if (!currentProgress) break
 
+      const scrollId = currentProgress.scroll_id
       const offset = currentProgress.publications_offset
       const total = currentProgress.publications_total
 
@@ -124,20 +125,26 @@ export async function POST(request: NextRequest) {
         console.log(`[IMPORT-PRO] Publications complete: ${offset}/${total}`)
         await supabase
           .from("ml_import_progress")
-          .update({ status: "done" })
+          .update({ status: "done", scroll_id: null })
           .eq("account_id", accountId)
         break
       }
 
-      // Traer item_ids paginados
-      console.log(`[IMPORT-PRO] Fetching publications page at offset ${offset}`)
-      
-      // Construir URL según publications_scope
-      let searchUrl = `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?offset=${offset}&limit=${publications_page}`
-      if (publicationsScope === 'active_only') {
-        searchUrl += '&status=active'
+      // Construir URL con scroll pagination (NO usar offset)
+      let searchUrl: string
+      if (scrollId) {
+        // Usar scroll_id para continuar paginación
+        searchUrl = `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?scroll_id=${scrollId}`
+        console.log(`[IMPORT-PRO] Fetching publications with scroll_id (page ~${Math.floor(offset / publications_page) + 1})`)
+      } else {
+        // Primera llamada sin scroll_id
+        searchUrl = `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?limit=${publications_page}`
+        if (publicationsScope === 'active_only') {
+          searchUrl += '&status=active'
+        }
+        console.log(`[IMPORT-PRO] Fetching first publications page (limit=${publications_page})`)
       }
-      // Si scope === 'all', no agregar filtro (trae activas, pausadas y finalizadas)
+      
       const searchRes = await fetch(searchUrl, {
         headers: { Authorization: `Bearer ${accessToken}` },
       })
@@ -176,6 +183,16 @@ export async function POST(request: NextRequest) {
       const searchData = await searchRes.json()
       const itemIds = searchData.results || []
       const totalFromApi = searchData.paging?.total || 0
+      const newScrollId = searchData.scroll_id || null
+
+      // Guardar scroll_id para la siguiente llamada
+      if (newScrollId && newScrollId !== scrollId) {
+        console.log(`[IMPORT-PRO] Received new scroll_id, saving for next page`)
+        await supabase
+          .from("ml_import_progress")
+          .update({ scroll_id: newScrollId })
+          .eq("account_id", accountId)
+      }
 
       // Actualizar total si no lo tenemos
       if (!currentProgress.publications_total && totalFromApi > 0) {
@@ -186,10 +203,10 @@ export async function POST(request: NextRequest) {
       }
 
       if (itemIds.length === 0) {
-        console.log(`[IMPORT-PRO] No more items at offset ${offset}`)
+        console.log(`[IMPORT-PRO] No more items, scroll complete`)
         await supabase
           .from("ml_import_progress")
-          .update({ status: "done", publications_total: offset })
+          .update({ status: "done", publications_total: offset, scroll_id: null })
           .eq("account_id", accountId)
         break
       }
