@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     const { count: totalPubs, error: totalError } = await supabase
       .from("ml_publications")
       .select("*", { count: "exact", head: true })
-      .eq("ml_account_id", accountId)
+      .eq("account_id", accountId)
 
     if (totalError) {
       console.error(`[DEBUG-QUEUE-STATS] Error counting total:`, totalError)
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     const { count: matchedPubs, error: matchedError } = await supabase
       .from("ml_publications")
       .select("*", { count: "exact", head: true })
-      .eq("ml_account_id", accountId)
+      .eq("account_id", accountId)
       .not("product_id", "is", null)
 
     if (matchedError) {
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     const { count: unmatchedPubs, error: unmatchedError } = await supabase
       .from("ml_publications")
       .select("*", { count: "exact", head: true })
-      .eq("ml_account_id", accountId)
+      .eq("account_id", accountId)
       .is("product_id", null)
 
     if (unmatchedError) {
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
     const { count: updatedLastHour, error: updatedError } = await supabase
       .from("ml_publications")
       .select("*", { count: "exact", head: true })
-      .eq("ml_account_id", accountId)
+      .eq("account_id", accountId)
       .or(`updated_at.gte.${oneHourAgo},created_at.gte.${oneHourAgo}`)
 
     if (updatedError) {
