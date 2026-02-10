@@ -168,45 +168,59 @@ export default function MatcherPage() {
         </select>
       </Card>
 
+      {/* Explicación del matcher */}
+      <Card className="p-4 mb-6 bg-blue-50 border-blue-200">
+        <div className="flex items-start gap-3">
+          <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+          <div className="text-sm text-blue-900">
+            <p className="font-medium mb-1">¿Cómo funciona el matcher automático?</p>
+            <p>
+              El matcher solo vincula publicaciones cuando encuentra una <strong>coincidencia exacta</strong> de SKU, ISBN o EAN 
+              en el título de la publicación. Las publicaciones restantes pueden vincularse manualmente o con reglas avanzadas.
+            </p>
+          </div>
+        </div>
+      </Card>
+
       {/* Card Estadísticas */}
       <Card className="p-5 mb-6">
         <h3 className="font-semibold mb-4">Estadísticas</h3>
         
         {stats && (
           <>
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-muted-foreground">Progreso</span>
-                <span className="text-sm font-medium">{matchedPercent}%</span>
-              </div>
-              <Progress value={matchedPercent} className="h-2" />
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
               <div className="p-3 bg-gray-50 rounded-md border">
                 <div className="text-2xl font-bold">{stats.total_publications}</div>
-                <div className="text-xs text-muted-foreground">Total publicaciones</div>
-              </div>
-
-              <div className="p-3 bg-green-50 rounded-md border border-green-200">
-                <div className="text-2xl font-bold text-green-700">{stats.auto_matched}</div>
-                <div className="text-xs text-green-600">Vinculadas automáticamente</div>
+                <div className="text-xs text-muted-foreground">Publicaciones importadas desde ML</div>
               </div>
 
               <div className="p-3 bg-blue-50 rounded-md border border-blue-200">
                 <div className="text-2xl font-bold text-blue-700">{stats.manual_matched}</div>
-                <div className="text-xs text-blue-600">Vinculadas manualmente</div>
+                <div className="text-xs text-blue-600">Vinculadas previamente</div>
+              </div>
+
+              <div className="p-3 bg-green-50 rounded-md border border-green-200">
+                <div className="text-2xl font-bold text-green-700">{stats.auto_matched}</div>
+                <div className="text-xs text-green-600">Vinculadas por matcher automático</div>
               </div>
 
               <div className="p-3 bg-amber-50 rounded-md border border-amber-200">
                 <div className="text-2xl font-bold text-amber-700">{stats.unmatched}</div>
-                <div className="text-xs text-amber-600">Sin vincular</div>
+                <div className="text-xs text-amber-600">Pendientes de vinculación</div>
               </div>
+            </div>
+
+            <div className="mb-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-muted-foreground">Progreso de vinculación</span>
+                <span className="text-sm font-medium">{matchedPercent}% vinculadas</span>
+              </div>
+              <Progress value={matchedPercent} className="h-2" />
             </div>
 
             {stats.last_run_at && (
               <div className="mt-3 text-xs text-muted-foreground">
-                Última ejecución: {new Date(stats.last_run_at).toLocaleString()}
+                Última ejecución del matcher: {new Date(stats.last_run_at).toLocaleString()}
               </div>
             )}
           </>
