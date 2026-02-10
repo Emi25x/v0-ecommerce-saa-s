@@ -451,12 +451,23 @@ export default function MLImporterPage() {
               </div>
             )}
 
+            {/* Mostrar error solo si: status === 'error' o (status !== 'running' && last_error existe) */}
             {progress.last_error && (
+              progress.status === 'error' || 
+              (progress.status !== 'running' && progress.status !== 'done')
+            ) && (
               <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-md">
                 <AlertCircle className="h-4 w-4 text-red-600 mt-0.5" />
                 <div>
-                  <p className="text-sm text-red-800 font-medium">Error</p>
+                  <p className="text-sm text-red-800 font-medium">
+                    {progress.status === 'error' ? 'Error activo' : 'Error anterior'}
+                  </p>
                   <p className="text-xs text-red-700">{progress.last_error}</p>
+                  {progress.status !== 'error' && (
+                    <p className="text-xs text-red-600 mt-1 italic">
+                      Este error ocurrió previamente. Inicia la importación para reintentar.
+                    </p>
+                  )}
                 </div>
               </div>
             )}

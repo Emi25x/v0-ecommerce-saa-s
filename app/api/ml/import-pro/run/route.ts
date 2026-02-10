@@ -91,10 +91,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Marcar como running
+    // Marcar como running y limpiar errores antiguos
     await supabase
       .from("ml_import_progress")
-      .update({ status: "running", last_run_at: new Date().toISOString() })
+      .update({ 
+        status: "running", 
+        last_run_at: new Date().toISOString(),
+        last_error: null
+      })
       .eq("account_id", accountId)
 
     // Obtener access token
