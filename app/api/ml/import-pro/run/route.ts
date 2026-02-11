@@ -392,18 +392,27 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      publicationsProcessed += itemIds.length
+      // BUG FIX: Actualizar offset basado en items REALMENTE PROCESADOS, no solo fetched
+      // Antes: offset += itemIds.length (incorrecto - avanzaba aunque items fallaran)
+      // Ahora: offset += detailsProcessed en esta iteración
+      const itemsProcessedThisPage = detailsProcessed - publicationsProcessed
+      publicationsProcessed = detailsProcessed
 
-      // Actualizar offset
-      const newOffset = offset + itemIds.length
+      // Actualizar offset con items realmente guardados en BD
+      const newOffset = offset + itemsProcessedThisPage
       const t0_progress = Date.now()
-      await supabase
-        .from("ml_import_progress")
-        .update({ publications_offset: newOffset })
-        .eq("account_id", accountId)
+      try {
+        await supabase
+          .from("ml_import_progress")
+          .update({ publications_offset: newOffset })
+          .eq("account_id", accountId)
+      } catch (err: any) {
+        console.error(`[IMPORT-PRO] Error updating progress:`, err.message)
+        // Continuar - no es crítico
+      }
       t_update_progress += (Date.now() - t0_progress)
 
-      console.log(`[IMPORT-PRO] Progress: ${newOffset}/${totalFromApi || "?"}`)
+      console.log(`[IMPORT-PRO] Progress: ${newOffset}/${totalFromApi || "?"} (processed ${itemsProcessedThisPage} items this page)`)
 
       // Check time limit
       if (Date.now() - startTime >= max_seconds * 1000) {
