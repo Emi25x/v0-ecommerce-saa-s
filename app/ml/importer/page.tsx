@@ -139,6 +139,17 @@ export default function MLImporterPage() {
       const data = await res.json()
       setRunResult(data)
 
+      // Loggear timings detallados de rendimiento
+      if (data.timings) {
+        console.log("[v0] PERFORMANCE TIMINGS:")
+        console.log(`  - Fetch IDs: ${data.timings.t_fetch_ids_ms}ms`)
+        console.log(`  - Fetch Details: ${data.timings.t_fetch_details_ms}ms`)
+        console.log(`  - Upsert DB: ${data.timings.t_upsert_ml_publications_ms}ms`)
+        console.log(`  - Update Progress: ${data.timings.t_update_progress_ms}ms`)
+        console.log(`  - TOTAL: ${data.timings.total_ms}ms`)
+        console.log(`  - Items imported: ${data.imported_count || 0}`)
+      }
+
       // Si hay error detallado de ML API, mostrarlo
       if (!data.ok && data.where && data.body) {
         const errorMsg = `Error de MercadoLibre en ${data.where}\nStatus: ${data.status}\nURL: ${data.url}\n\nRespuesta de ML:\n${data.body}`
@@ -150,11 +161,12 @@ export default function MLImporterPage() {
       const logEntry = {
         ranAt: new Date().toISOString(),
         action: data.ok ? (data.paused ? 'paused' : 'success') : 'error',
-        imported_delta: data.publications_processed || 0,
+        imported_delta: data.imported_count || data.publications_processed || 0,
         matched_delta: data.matched || 0,
         retry_after: data.paused ? data.wait_seconds : null,
-        elapsed: ((Date.now() - startTime) / 1000).toFixed(1),
-        error_details: !data.ok && data.where ? `${data.where}: ${data.status}` : null
+        elapsed: data.timings ? (data.timings.total_ms / 1000).toFixed(1) : ((Date.now() - startTime) / 1000).toFixed(1),
+        error_details: !data.ok && data.where ? `${data.where}: ${data.status}` : null,
+        timings: data.timings || null
       }
       
       setExecutionLog(prev => [logEntry, ...prev].slice(0, 10))
