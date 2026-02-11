@@ -12,6 +12,7 @@ export const maxDuration = 60
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
   let accountId: string | null = null
+  let ean: string | null = null // Declare ean variable
   
   try {
     const body = await request.json()
@@ -304,28 +305,66 @@ export async function POST(request: NextRequest) {
 
           detailsProcessed++
 
-          // Intentar matchear con products por SKU/ISBN/GTIN
-          if (sku || isbn || gtin) {
-            const { data: product } = await supabase
+          // Intentar matchear con products existente por SKU/ISBN/EAN/GTIN
+          let productId = null
+          
+          if (sku || isbn || ean || gtin) {
+            const { data: existingProduct } = await supabase
               .from("products")
               .select("id")
-              .or(`sku.eq.${sku || ""},isbn.eq.${isbn || ""},gtin.eq.${gtin || ""}`)
+              .or(`sku.eq.${sku || ""},isbn.eq.${isbn || ""},ean.eq.${ean || ""},gtin.eq.${gtin || ""}`)
               .limit(1)
               .maybeSingle()
 
-            if (product) {
-              // Link encontrado
-              await supabase
-                .from("ml_publications")
-                .update({ product_id: product.id })
-                .eq("ml_item_id", body.id)
-                .eq("account_id", accountId)
+            if (existingProduct) {
+              // Producto existente encontrado
+              productId = existingProduct.id
               matched++
             } else {
-              unmatched++
+              // NO existe producto -> CREAR NUEVO automáticamente
+              console.log(`[IMPORT-PRO] Creating new product for ML item ${body.id}`)
+              
+              const { data: newProduct, error: createError } = await supabase
+                .from("products")
+                .insert({
+                  sku: sku || null,
+                  isbn: isbn || null,
+                  ean: ean || null,
+                  title: body.title,
+                  description: body.title, // Usar título como descripción inicial
+                  price: body.price || 0,
+                  stock: body.available_quantity || 0,
+                  ml_item_id: body.id,
+                  ml_status: body.status,
+                  ml_permalink: body.permalink,
+                  ml_account_id: accountId,
+                  ml_published_at: new Date().toISOString(),
+                  source: ['mercadolibre'],
+                  condition: body.condition || 'new',
+                })
+                .select("id")
+                .single()
+
+              if (!createError && newProduct) {
+                productId = newProduct.id
+                console.log(`[IMPORT-PRO] Created product ${productId} for ML item ${body.id}`)
+                matched++
+              } else {
+                console.error(`[IMPORT-PRO] Error creating product for ${body.id}:`, createError)
+                unmatched++
+              }
             }
           } else {
             unmatched++
+          }
+
+          // Vincular publicación con producto (existente o recién creado)
+          if (productId) {
+            await supabase
+              .from("ml_publications")
+              .update({ product_id: productId })
+              .eq("ml_item_id", body.id)
+              .eq("account_id", accountId)
           }
         }
 
