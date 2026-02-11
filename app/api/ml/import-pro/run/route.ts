@@ -276,7 +276,7 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // Upsert en ml_publications (solo columnas existentes en el esquema)
+          // Upsert en ml_publications con todos los identificadores
           const { error: upsertError } = await supabase
             .from("ml_publications")
             .upsert(
@@ -288,6 +288,10 @@ export async function POST(request: NextRequest) {
                 current_stock: body.available_quantity || 0,
                 status: body.status,
                 permalink: body.permalink,
+                sku: sku || null,
+                isbn: isbn || null,
+                gtin: gtin || null,
+                ean: gtin || null, // GTIN es equivalente a EAN en la mayoría de casos
                 updated_at: new Date().toISOString(),
               },
               { onConflict: "account_id,ml_item_id" }
