@@ -75,57 +75,69 @@ export async function POST(request: NextRequest) {
 
       processedIds.push(pub.id)
 
-      // Extraer SKU/EAN/ISBN del título (formato común: "SKU:xxx" o "EAN:xxx")
+      // REGLA ESTRICTA: Solo auto-match por identificadores numéricos exactos
+      // NO usamos título, descripción, autor ni ningún campo de texto
       const title = pub.title || ""
-      const skuMatch = title.match(/SKU[:\s]+([A-Z0-9-]+)/i)
-      const eanMatch = title.match(/EAN[:\s]+(\d{13})/i)
-      const isbnMatch = title.match(/ISBN[:\s]+(\d{10,13})/i)
+      
+      // Extraer SOLO identificadores numéricos del título ML (formato: "ISBN:xxx", "EAN:xxx")
+      // Normalizamos removiendo guiones, espacios, etc.
+      const isbnMatch = title.match(/ISBN[:\s-]*(\d{10}|\d{13})/i)
+      const eanMatch = title.match(/EAN[:\s-]*(\d{13})/i)
+      const gtinMatch = title.match(/GTIN[:\s-]*(\d{12,14})/i)
 
       let matchedProduct = null
       let matchedBy = null
 
-      // 1. Buscar por SKU exacto
-      if (skuMatch && skuMatch[1]) {
-        const sku = skuMatch[1].trim()
-        const { data: products } = await supabase
-          .from("products")
-          .select("id")
-          .eq("sku", sku)
-          .limit(2)
-
-        if (products && products.length === 1) {
-          matchedProduct = products[0]
-          matchedBy = "auto_sku"
-        }
-      }
-
-      // 2. Si no hay match por SKU, buscar por EAN exacto
-      if (!matchedProduct && eanMatch && eanMatch[1]) {
-        const ean = eanMatch[1].trim()
-        const { data: products } = await supabase
-          .from("products")
-          .select("id")
-          .eq("ean", ean)
-          .limit(2)
-
-        if (products && products.length === 1) {
-          matchedProduct = products[0]
-          matchedBy = "auto_ean"
-        }
-      }
-
-      // 3. Si no hay match, buscar por ISBN exacto
+      // 1. Buscar por ISBN exacto (normalizado)
       if (!matchedProduct && isbnMatch && isbnMatch[1]) {
-        const isbn = isbnMatch[1].trim()
+        const isbn = isbnMatch[1].replace(/[^0-9]/g, '').trim()
+        
+        // Buscar exactamente en products.isbn
         const { data: products } = await supabase
           .from("products")
-          .select("id")
-          .eq("isbn", isbn)
-          .limit(2)
+          .select("id, isbn")
+          .not("isbn", "is", null)
+          .limit(3) // Buscar hasta 3 para detectar duplicados
 
-        if (products && products.length === 1) {
-          matchedProduct = products[0]
+        // Filtrar manualmente por coincidencia normalizada
+        const matches = products?.filter(p => {
+          const productIsbn = (p.isbn || '').replace(/[^0-9]/g, '')
+          return productIsbn === isbn
+        }) || []
+
+        // REGLA DE SEGURIDAD: Solo vincular si hay EXACTAMENTE 1 coincidencia
+        if (matches.length === 1) {
+          matchedProduct = matches[0]
           matchedBy = "auto_isbn"
+          console.log(`[MATCHER-PRO] ISBN match: ${isbn} -> product ${matchedProduct.id}`)
+        } else if (matches.length > 1) {
+          console.log(`[MATCHER-PRO] ISBN ${isbn} has ${matches.length} matches - skipping (not unique)`)
+        }
+      }
+
+      // 2. Si no hay match por ISBN, buscar por EAN exacto
+      if (!matchedProduct && (eanMatch || gtinMatch)) {
+        const ean = (eanMatch?.[1] || gtinMatch?.[1] || '').replace(/[^0-9]/g, '').trim()
+        
+        if (ean.length >= 12) {
+          const { data: products } = await supabase
+            .from("products")
+            .select("id, ean")
+            .not("ean", "is", null)
+            .limit(3)
+
+          const matches = products?.filter(p => {
+            const productEan = (p.ean || '').replace(/[^0-9]/g, '')
+            return productEan === ean
+          }) || []
+
+          if (matches.length === 1) {
+            matchedProduct = matches[0]
+            matchedBy = "auto_ean"
+            console.log(`[MATCHER-PRO] EAN/GTIN match: ${ean} -> product ${matchedProduct.id}`)
+          } else if (matches.length > 1) {
+            console.log(`[MATCHER-PRO] EAN ${ean} has ${matches.length} matches - skipping (not unique)`)
+          }
         }
       }
 

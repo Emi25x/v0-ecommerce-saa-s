@@ -206,10 +206,16 @@ export default function MatcherPage() {
         <div className="flex items-start gap-3">
           <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
           <div className="text-sm text-blue-900">
-            <p className="font-medium mb-1">¿Cómo funciona el matcher automático?</p>
-            <p>
-              El matcher solo vincula publicaciones cuando encuentra una <strong>coincidencia exacta</strong> de SKU, ISBN o EAN 
-              en el título de la publicación. Las publicaciones restantes pueden vincularse manualmente o con reglas avanzadas.
+            <p className="font-medium mb-2">¿Cómo funciona el matcher automático?</p>
+            <p className="mb-2">
+              <strong>Vinculación automática SOLO por identificadores numéricos exactos:</strong> ISBN, EAN o GTIN.
+            </p>
+            <p className="mb-2 text-xs">
+              El sistema extrae estos identificadores del título de la publicación de MercadoLibre y los compara con tu catálogo de productos. 
+              Solo vincula cuando encuentra <strong>exactamente 1 producto</strong> con el mismo identificador.
+            </p>
+            <p className="text-xs font-semibold text-blue-800">
+              ✓ NO usamos títulos, descripciones, autor ni ningún campo de texto para evitar vinculaciones incorrectas.
             </p>
           </div>
         </div>
