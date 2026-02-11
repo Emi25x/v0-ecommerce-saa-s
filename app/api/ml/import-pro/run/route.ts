@@ -326,95 +326,9 @@ export async function POST(request: NextRequest) {
           }
 
           detailsProcessed++
-
-          // Intentar matchear con products existente por SKU/ISBN/EAN
-          // OPTIMIZACIÓN: Solo buscar por campos que realmente tienen valor
-          let productId = null
-          let existingProduct = null
           
-          // Buscar secuencialmente por prioridad: SKU > ISBN > EAN
-          if (sku) {
-            const { data } = await supabase
-              .from("products")
-              .select("id")
-              .eq("sku", sku)
-              .limit(1)
-              .maybeSingle()
-            existingProduct = data
-          }
-          
-          if (!existingProduct && isbn) {
-            const { data } = await supabase
-              .from("products")
-              .select("id")
-              .eq("isbn", isbn)
-              .limit(1)
-              .maybeSingle()
-            existingProduct = data
-          }
-          
-          if (!existingProduct && ean) {
-            const { data } = await supabase
-              .from("products")
-              .select("id")
-              .eq("ean", ean)
-              .limit(1)
-              .maybeSingle()
-            existingProduct = data
-          }
-          
-          if (sku || isbn || ean) {
-
-            if (existingProduct) {
-              // Producto existente encontrado
-              productId = existingProduct.id
-              matched++
-            } else {
-              // NO existe producto -> CREAR NUEVO automáticamente
-              console.log(`[IMPORT-PRO] Creating new product for ML item ${body.id}`)
-              
-              const { data: newProduct, error: createError } = await supabase
-                .from("products")
-                .insert({
-                  sku: sku || null,
-                  isbn: isbn || null,
-                  ean: ean || null,
-                  title: body.title,
-                  description: body.title, // Usar título como descripción inicial
-                  price: body.price || 0,
-                  stock: body.available_quantity || 0,
-                  ml_item_id: body.id,
-                  ml_status: body.status,
-                  ml_permalink: body.permalink,
-                  ml_account_id: accountId,
-                  ml_published_at: new Date().toISOString(),
-                  source: ['mercadolibre'],
-                  condition: body.condition || 'new',
-                })
-                .select("id")
-                .single()
-
-              if (!createError && newProduct) {
-                productId = newProduct.id
-                console.log(`[IMPORT-PRO] Created product ${productId} for ML item ${body.id}`)
-                matched++
-              } else {
-                console.error(`[IMPORT-PRO] Error creating product for ${body.id}:`, createError)
-                unmatched++
-              }
-            }
-          } else {
-            unmatched++
-          }
-
-          // Vincular publicación con producto (existente o recién creado)
-          if (productId) {
-            await supabase
-              .from("ml_publications")
-              .update({ product_id: productId })
-              .eq("ml_item_id", body.id)
-              .eq("account_id", accountId)
-          }
+          // NO vinculamos durante la importación para evitar rate limits
+          // La vinculación se hace después con el matcher PRO (/ml/matcher)
         }
 
         // Check time limit
