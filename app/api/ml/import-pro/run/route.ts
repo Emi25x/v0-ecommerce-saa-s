@@ -246,12 +246,20 @@ export async function POST(request: NextRequest) {
         break
       }
 
-      // Multiget detalles en batches
-      for (let i = 0; i < itemIds.length; i += detail_batch) {
-        const batch = itemIds.slice(i, i + detail_batch)
+      // Multiget detalles en batches - ML API limita a máximo 20 IDs por request
+      const ML_MULTIGET_MAX_IDS = 20
+      
+      for (let i = 0; i < itemIds.length; i += ML_MULTIGET_MAX_IDS) {
+        const batch = itemIds.slice(i, i + ML_MULTIGET_MAX_IDS)
         const itemsParam = batch.join(",")
         
-        console.log(`[IMPORT-PRO] Fetching ${batch.length} item details`)
+        // SEGURIDAD: Verificar que nunca se envíen más de 20 IDs
+        if (batch.length > ML_MULTIGET_MAX_IDS) {
+          console.error(`[IMPORT-PRO] CRITICAL: Trying to fetch ${batch.length} items, ML limit is ${ML_MULTIGET_MAX_IDS}`)
+          continue
+        }
+        
+        console.log(`[IMPORT-PRO] Fetching ${batch.length} item details (max ${ML_MULTIGET_MAX_IDS})`)
         const detailsUrl = `https://api.mercadolibre.com/items?ids=${itemsParam}&attributes=id,title,price,available_quantity,sold_quantity,status,permalink,thumbnail,listing_type_id,attributes`
         
         const t0_details = Date.now()
