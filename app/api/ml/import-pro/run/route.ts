@@ -78,14 +78,30 @@ export async function POST(request: NextRequest) {
 
     console.log(`[IMPORT-PRO] Access granted for account ${accountId}`)
 
-    let { data: progress, error: progressError } = await supabase
-      .from("ml_import_progress")
-      .select("*")
-      .eq("account_id", accountId)
-      .single()
+    let progress = null
+    
+    try {
+      const { data, error: progressError } = await supabase
+        .from("ml_import_progress")
+        .select("*")
+        .eq("account_id", accountId)
+        .single()
 
-    if (progressError || !progress) {
-      return NextResponse.json({ error: "Progress not found" }, { status: 404 })
+      if (progressError || !data) {
+        return NextResponse.json({ error: "Progress not found" }, { status: 404 })
+      }
+      
+      progress = data
+    } catch (err: any) {
+      console.error(`[IMPORT-PRO] Exception fetching progress:`, err.message)
+      if (err.message?.includes('Too Many') || err.message?.includes('not valid JSON')) {
+        return NextResponse.json({ 
+          ok: false, 
+          error: "Database rate limit. Please wait and try again.", 
+          rate_limited: true 
+        }, { status: 429 })
+      }
+      return NextResponse.json({ error: "Database error" }, { status: 503 })
     }
 
     // Leer configuración de alcance (defaults: 'all', 30)
@@ -105,23 +121,39 @@ export async function POST(request: NextRequest) {
         })
       } else {
         // Desbloquear
-        await supabase
-          .from("ml_import_progress")
-          .update({ status: "idle", paused_until: null })
-          .eq("account_id", accountId)
-        progress.status = "idle"
+        try {
+          await supabase
+            .from("ml_import_progress")
+            .update({ status: "idle", paused_until: null })
+            .eq("account_id", accountId)
+          progress.status = "idle"
+        } catch (err: any) {
+          console.error(`[IMPORT-PRO] DB error unlocking:`, err.message)
+          // Continuar anyway
+        }
       }
     }
 
     // Marcar como running y limpiar errores antiguos
-    await supabase
-      .from("ml_import_progress")
-      .update({ 
-        status: "running", 
-        last_run_at: new Date().toISOString(),
-        last_error: null
-      })
-      .eq("account_id", accountId)
+    try {
+      await supabase
+        .from("ml_import_progress")
+        .update({ 
+          status: "running", 
+          last_run_at: new Date().toISOString(),
+          last_error: null
+        })
+        .eq("account_id", accountId)
+    } catch (err: any) {
+      console.error(`[IMPORT-PRO] DB error marking as running:`, err.message)
+      if (err.message?.includes('Too Many') || err.message?.includes('not valid JSON')) {
+        return NextResponse.json({ 
+          ok: false, 
+          error: "Database rate limit. Pausing auto-mode temporarily.", 
+          rate_limited: true 
+        }, { status: 429 })
+      }
+    }
 
     // Obtener access token
     const accessToken = await getValidAccessToken(accountId)
