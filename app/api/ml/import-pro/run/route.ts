@@ -6,21 +6,20 @@ export const maxDuration = 60
 
 /**
  * POST /api/ml/import-pro/run
- * Ejecuta un ciclo de importación por tiempo limitado
- * Body: { account_id, max_seconds: 12, publications_page: 30, detail_batch: 10 }
+ * Ejecuta un ciclo de importación por tiempo limitado con auto-tuning
+ * Body: { account_id, max_seconds: 12, publications_page: 200, detail_batch: 30 }
  */
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
   let accountId: string | null = null
-  let ean: string | null = null // Declare ean variable
   
   try {
     const body = await request.json()
     const {
       account_id,
       max_seconds = 12,
-      publications_page = 30,
-      detail_batch = 10,
+      publications_page = 200, // Aumentado de 30 a 200 para recuperar throughput
+      detail_batch = 30, // Aumentado de 10 a 30 para procesar más items por batch
     } = body
 
     accountId = account_id
@@ -382,8 +381,23 @@ export async function POST(request: NextRequest) {
     const total_ms = Date.now() - startTime
     const elapsed = Math.round(total_ms / 1000)
 
+    // AUTO-TUNING: Sugerir ajustes de batch_size basado en rendimiento
+    let suggested_detail_batch = detail_batch
+    let tuning_message = ""
+    
+    if (total_ms < 6000 && detail_batch < 50) {
+      suggested_detail_batch = Math.min(detail_batch + 10, 50)
+      tuning_message = `Fast run (${total_ms}ms) - suggest increasing detail_batch to ${suggested_detail_batch}`
+    } else if (total_ms > 11000 && detail_batch > 20) {
+      suggested_detail_batch = Math.max(detail_batch - 10, 20)
+      tuning_message = `Slow run (${total_ms}ms) - suggest decreasing detail_batch to ${suggested_detail_batch}`
+    } else {
+      tuning_message = `Optimal timing (${total_ms}ms) - keep detail_batch at ${detail_batch}`
+    }
+
     console.log(`[IMPORT-PRO] Run completed: ${publicationsProcessed} pubs, ${detailsProcessed} details, ${elapsed}s`)
     console.log(`[IMPORT-PRO] Timings - fetch_ids: ${t_fetch_ids}ms, fetch_details: ${t_fetch_details}ms, upsert: ${t_upsert_ml_publications}ms, update_progress: ${t_update_progress}ms, total: ${total_ms}ms`)
+    console.log(`[IMPORT-PRO] AUTO-TUNING: ${tuning_message}`)
 
     return NextResponse.json({
       ok: true,
@@ -400,6 +414,9 @@ export async function POST(request: NextRequest) {
         total_ms,
       },
       imported_count: detailsProcessed,
+      current_batch_size: detail_batch,
+      suggested_batch_size: suggested_detail_batch,
+      tuning_message,
     })
   } catch (error: any) {
     console.error("[IMPORT-PRO] Run error:", error.message)

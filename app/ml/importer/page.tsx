@@ -129,8 +129,8 @@ export default function MLImporterPage() {
         body: JSON.stringify({
           account_id: selectedAccountId,
           max_seconds: 12,
-          publications_page: 30,
-          detail_batch: 10,
+          publications_page: 200, // Aumentado para recuperar throughput alto
+          detail_batch: 30, // Aumentado para procesar más items por batch
         }),
       })
       
@@ -139,15 +139,22 @@ export default function MLImporterPage() {
       const data = await res.json()
       setRunResult(data)
 
-      // Loggear timings detallados de rendimiento
+      // Loggear timings detallados de rendimiento y auto-tuning
       if (data.timings) {
         console.log("[v0] PERFORMANCE TIMINGS:")
         console.log(`  - Fetch IDs: ${data.timings.t_fetch_ids_ms}ms`)
         console.log(`  - Fetch Details: ${data.timings.t_fetch_details_ms}ms`)
         console.log(`  - Upsert DB: ${data.timings.t_upsert_ml_publications_ms}ms`)
         console.log(`  - Update Progress: ${data.timings.t_update_progress_ms}ms`)
-        console.log(`  - TOTAL: ${data.timings.total_ms}ms`)
+        console.log(`  - TOTAL: ${data.timings.total_ms}ms (${(data.timings.total_ms / 1000).toFixed(1)}s)`)
         console.log(`  - Items imported: ${data.imported_count || 0}`)
+        console.log(`  - Throughput: ${((data.imported_count || 0) / (data.timings.total_ms / 1000)).toFixed(1)} items/sec`)
+      }
+      
+      if (data.tuning_message) {
+        console.log(`[v0] AUTO-TUNING: ${data.tuning_message}`)
+        console.log(`  - Current batch size: ${data.current_batch_size}`)
+        console.log(`  - Suggested batch size: ${data.suggested_batch_size}`)
       }
 
       // Si hay error detallado de ML API, mostrarlo
