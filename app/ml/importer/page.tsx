@@ -105,10 +105,22 @@ export default function MLImporterPage() {
   }, [autoMode, selectedAccountId, running, progress])
 
   const handleRun = async () => {
-    if (!selectedAccountId) return
+    console.log("[v0] handleRun called - selectedAccountId:", selectedAccountId, "running:", running)
+    
+    if (!selectedAccountId) {
+      console.log("[v0] No selectedAccountId, aborting")
+      return
+    }
+    
+    if (running) {
+      console.log("[v0] Already running, skipping this tick")
+      return
+    }
     
     setRunning(true)
     const startTime = Date.now()
+    
+    console.log("[v0] Starting import request to /api/ml/import-pro/run")
     
     try {
       const res = await fetch("/api/ml/import-pro/run", {
@@ -121,6 +133,8 @@ export default function MLImporterPage() {
           detail_batch: 10,
         }),
       })
+      
+      console.log("[v0] Import request completed with status:", res.status)
 
       const data = await res.json()
       setRunResult(data)
