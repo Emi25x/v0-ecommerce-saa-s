@@ -276,7 +276,7 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // Upsert en ml_publications
+          // Upsert en ml_publications (solo columnas existentes en el esquema)
           const { error: upsertError } = await supabase
             .from("ml_publications")
             .upsert(
@@ -285,15 +285,9 @@ export async function POST(request: NextRequest) {
                 ml_item_id: body.id,
                 title: body.title,
                 price: body.price,
-                available_quantity: body.available_quantity,
-                sold_quantity: body.sold_quantity,
+                current_stock: body.available_quantity || 0,
                 status: body.status,
                 permalink: body.permalink,
-                thumbnail: body.thumbnail,
-                listing_type_id: body.listing_type_id,
-                sku,
-                isbn,
-                gtin,
                 updated_at: new Date().toISOString(),
               },
               { onConflict: "account_id,ml_item_id" }
