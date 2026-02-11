@@ -305,14 +305,14 @@ export async function POST(request: NextRequest) {
 
           detailsProcessed++
 
-          // Intentar matchear con products existente por SKU/ISBN/EAN/GTIN
+          // Intentar matchear con products existente por SKU/ISBN/EAN
           let productId = null
           
-          if (sku || isbn || ean || gtin) {
+          if (sku || isbn || ean) {
             const { data: existingProduct } = await supabase
               .from("products")
               .select("id")
-              .or(`sku.eq.${sku || ""},isbn.eq.${isbn || ""},ean.eq.${ean || ""},gtin.eq.${gtin || ""}`)
+              .or(`sku.eq.${sku || ""},isbn.eq.${isbn || ""},ean.eq.${ean || ""}`)
               .limit(1)
               .maybeSingle()
 
