@@ -44,20 +44,28 @@ export async function POST(request: NextRequest) {
     const supabase = await createClient({ useServiceRole: true })
 
     // Verify account exists (ownership check disabled until auth is implemented)
-    const { data: account, error: accountError } = await supabase
-      .from("ml_accounts")
-      .select("*")
-      .eq("id", accountId)
-      .maybeSingle()
+    let account = null
+    
+    try {
+      const { data, error: accountError } = await supabase
+        .from("ml_accounts")
+        .select("*")
+        .eq("id", accountId)
+        .maybeSingle()
 
-    if (accountError) {
-      console.error(`[IMPORT-PRO] Database error fetching account:`, accountError)
-      // Check if it's a rate limit or connection error
-      const errorMessage = accountError.message || String(accountError)
-      if (errorMessage.includes('Too Many') || errorMessage.includes('rate limit')) {
+      if (accountError) {
+        console.error(`[IMPORT-PRO] Database error fetching account:`, accountError)
+        return NextResponse.json({ error: "Database error", details: accountError.message }, { status: 503 })
+      }
+
+      account = data
+    } catch (err: any) {
+      // Capturar errores de parsing JSON (rate limits de Supabase)
+      console.error(`[IMPORT-PRO] Exception fetching account:`, err.message)
+      if (err.message?.includes('Too Many') || err.message?.includes('not valid JSON')) {
         return NextResponse.json({ 
           ok: false, 
-          error: "Database rate limit reached. Please wait a moment and try again.", 
+          error: "Database rate limit or connection issue. Please wait a moment and try again.", 
           rate_limited: true 
         }, { status: 429 })
       }
