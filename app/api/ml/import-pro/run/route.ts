@@ -306,15 +306,42 @@ export async function POST(request: NextRequest) {
           detailsProcessed++
 
           // Intentar matchear con products existente por SKU/ISBN/EAN
+          // OPTIMIZACIÓN: Solo buscar por campos que realmente tienen valor
           let productId = null
+          let existingProduct = null
           
-          if (sku || isbn || ean) {
-            const { data: existingProduct } = await supabase
+          // Buscar secuencialmente por prioridad: SKU > ISBN > EAN
+          if (sku) {
+            const { data } = await supabase
               .from("products")
               .select("id")
-              .or(`sku.eq.${sku || ""},isbn.eq.${isbn || ""},ean.eq.${ean || ""}`)
+              .eq("sku", sku)
               .limit(1)
               .maybeSingle()
+            existingProduct = data
+          }
+          
+          if (!existingProduct && isbn) {
+            const { data } = await supabase
+              .from("products")
+              .select("id")
+              .eq("isbn", isbn)
+              .limit(1)
+              .maybeSingle()
+            existingProduct = data
+          }
+          
+          if (!existingProduct && ean) {
+            const { data } = await supabase
+              .from("products")
+              .select("id")
+              .eq("ean", ean)
+              .limit(1)
+              .maybeSingle()
+            existingProduct = data
+          }
+          
+          if (sku || isbn || ean) {
 
             if (existingProduct) {
               // Producto existente encontrado
