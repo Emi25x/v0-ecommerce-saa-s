@@ -48,10 +48,24 @@ export async function POST(request: NextRequest) {
       .from("ml_accounts")
       .select("*")
       .eq("id", accountId)
-      .single()
+      .maybeSingle()
 
-    if (accountError || !account) {
-      console.error(`[IMPORT-PRO] Account not found:`, accountError)
+    if (accountError) {
+      console.error(`[IMPORT-PRO] Database error fetching account:`, accountError)
+      // Check if it's a rate limit or connection error
+      const errorMessage = accountError.message || String(accountError)
+      if (errorMessage.includes('Too Many') || errorMessage.includes('rate limit')) {
+        return NextResponse.json({ 
+          ok: false, 
+          error: "Database rate limit reached. Please wait a moment and try again.", 
+          rate_limited: true 
+        }, { status: 429 })
+      }
+      return NextResponse.json({ error: "Database connection error" }, { status: 503 })
+    }
+
+    if (!account) {
+      console.error(`[IMPORT-PRO] Account not found: ${accountId}`)
       return NextResponse.json({ error: "Account not found" }, { status: 404 })
     }
 
