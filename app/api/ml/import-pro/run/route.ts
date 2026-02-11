@@ -132,6 +132,12 @@ export async function POST(request: NextRequest) {
     let matched = 0
     let unmatched = 0
 
+    // Timings para diagnóstico
+    let t_fetch_ids = 0
+    let t_fetch_details = 0
+    let t_upsert_ml_publications = 0
+    let t_update_progress = 0
+
     // Loop por tiempo: importar publicaciones
     while (Date.now() - startTime < max_seconds * 1000) {
       // Recargar progress
@@ -172,10 +178,12 @@ export async function POST(request: NextRequest) {
         console.log(`[IMPORT-PRO] Fetching first publications page (limit=${publications_page})`)
       }
       
+      const t0_ids = Date.now()
       const searchRes = await fetch(searchUrl, {
         headers: { Authorization: `Bearer ${accessToken}` },
         signal: AbortSignal.timeout(10000), // 10s timeout
       })
+      t_fetch_ids += (Date.now() - t0_ids)
 
       if (!searchRes.ok) {
         if (searchRes.status === 429) {
@@ -246,10 +254,13 @@ export async function POST(request: NextRequest) {
         
         console.log(`[IMPORT-PRO] Fetching ${batch.length} item details`)
         const detailsUrl = `https://api.mercadolibre.com/items?ids=${itemsParam}&attributes=id,title,price,available_quantity,sold_quantity,status,permalink,thumbnail,listing_type_id,attributes`
+        
+        const t0_details = Date.now()
         const detailsRes = await fetch(detailsUrl, {
           headers: { Authorization: `Bearer ${accessToken}` },
           signal: AbortSignal.timeout(10000), // 10s timeout
         })
+        t_fetch_details += (Date.now() - t0_details)
 
         if (!detailsRes.ok) {
           if (detailsRes.status === 429) {
@@ -282,6 +293,9 @@ export async function POST(request: NextRequest) {
 
         const details = await detailsRes.json()
         
+        // BATCH UPSERT: preparar array completo antes de insertar
+        const publicationsToUpsert = []
+        
         for (const item of details) {
           const body = item.body
           if (!body) continue
@@ -299,36 +313,37 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // Upsert en ml_publications con todos los identificadores
+          publicationsToUpsert.push({
+            account_id: accountId,
+            ml_item_id: body.id,
+            title: body.title,
+            price: body.price,
+            current_stock: body.available_quantity || 0,
+            status: body.status,
+            permalink: body.permalink,
+            sku: sku || null,
+            isbn: isbn || null,
+            gtin: gtin || null,
+            ean: gtin || null,
+            updated_at: new Date().toISOString(),
+          })
+          
+          detailsProcessed++
+        }
+
+        // UPSERT EN BATCH (1 sola llamada a Supabase para todo el batch)
+        if (publicationsToUpsert.length > 0) {
+          const t0_upsert = Date.now()
           const { error: upsertError } = await supabase
             .from("ml_publications")
-            .upsert(
-              {
-                account_id: accountId,
-                ml_item_id: body.id,
-                title: body.title,
-                price: body.price,
-                current_stock: body.available_quantity || 0,
-                status: body.status,
-                permalink: body.permalink,
-                sku: sku || null,
-                isbn: isbn || null,
-                gtin: gtin || null,
-                ean: gtin || null, // GTIN es equivalente a EAN en la mayoría de casos
-                updated_at: new Date().toISOString(),
-              },
-              { onConflict: "account_id,ml_item_id" }
-            )
+            .upsert(publicationsToUpsert, { onConflict: "account_id,ml_item_id" })
+          t_upsert_ml_publications += (Date.now() - t0_upsert)
 
           if (upsertError) {
-            console.error(`[IMPORT-PRO] Upsert error for ${body.id}:`, upsertError)
-            continue
+            console.error(`[IMPORT-PRO] Batch upsert error:`, upsertError)
+          } else {
+            console.log(`[IMPORT-PRO] Batch upserted ${publicationsToUpsert.length} items`)
           }
-
-          detailsProcessed++
-          
-          // NO vinculamos durante la importación para evitar rate limits
-          // La vinculación se hace después con el matcher PRO (/ml/matcher)
         }
 
         // Check time limit
@@ -342,10 +357,12 @@ export async function POST(request: NextRequest) {
 
       // Actualizar offset
       const newOffset = offset + itemIds.length
+      const t0_progress = Date.now()
       await supabase
         .from("ml_import_progress")
         .update({ publications_offset: newOffset })
         .eq("account_id", accountId)
+      t_update_progress += (Date.now() - t0_progress)
 
       console.log(`[IMPORT-PRO] Progress: ${newOffset}/${totalFromApi || "?"}`)
 
@@ -362,9 +379,11 @@ export async function POST(request: NextRequest) {
       .update({ status: "idle" })
       .eq("account_id", accountId)
 
-    const elapsed = Math.round((Date.now() - startTime) / 1000)
+    const total_ms = Date.now() - startTime
+    const elapsed = Math.round(total_ms / 1000)
 
-    console.log(`[IMPORT-PRO] Run completed: ${publicationsProcessed} pubs, ${detailsProcessed} details, ${matched} matched, ${unmatched} unmatched, ${elapsed}s`)
+    console.log(`[IMPORT-PRO] Run completed: ${publicationsProcessed} pubs, ${detailsProcessed} details, ${elapsed}s`)
+    console.log(`[IMPORT-PRO] Timings - fetch_ids: ${t_fetch_ids}ms, fetch_details: ${t_fetch_details}ms, upsert: ${t_upsert_ml_publications}ms, update_progress: ${t_update_progress}ms, total: ${total_ms}ms`)
 
     return NextResponse.json({
       ok: true,
@@ -373,6 +392,14 @@ export async function POST(request: NextRequest) {
       matched,
       unmatched,
       elapsed_seconds: elapsed,
+      timings: {
+        t_fetch_ids_ms: t_fetch_ids,
+        t_fetch_details_ms: t_fetch_details,
+        t_upsert_ml_publications_ms: t_upsert_ml_publications,
+        t_update_progress_ms: t_update_progress,
+        total_ms,
+      },
+      imported_count: detailsProcessed,
     })
   } catch (error: any) {
     console.error("[IMPORT-PRO] Run error:", error.message)
