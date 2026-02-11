@@ -15,6 +15,7 @@ export default function MatcherPage() {
   const [running, setRunning] = useState(false)
   const [autoMode, setAutoMode] = useState(false)
   const [executionLog, setExecutionLog] = useState<any[]>([])
+  const [importStatus, setImportStatus] = useState<any>(null)
 
   useEffect(() => {
     fetchAccounts()
@@ -23,6 +24,7 @@ export default function MatcherPage() {
   useEffect(() => {
     if (selectedAccountId) {
       fetchStats()
+      fetchImportStatus()
     }
   }, [selectedAccountId])
 
@@ -61,13 +63,25 @@ export default function MatcherPage() {
 
   const fetchStats = async () => {
     if (!selectedAccountId) return
-    
+
     try {
       const res = await fetch(`/api/ml/matcher/stats?account_id=${selectedAccountId}`)
       const data = await res.json()
       setStats(data)
     } catch (error) {
-      console.error("Error loading stats:", error)
+      console.error("[MATCHER] Fetch stats error:", error)
+    }
+  }
+
+  const fetchImportStatus = async () => {
+    if (!selectedAccountId) return
+
+    try {
+      const res = await fetch(`/api/ml/import-status?account_id=${selectedAccountId}`)
+      const data = await res.json()
+      setImportStatus(data)
+    } catch (error) {
+      console.error("[MATCHER] Fetch import status error:", error)
     }
   }
 
@@ -118,55 +132,74 @@ export default function MatcherPage() {
     setAutoMode(false)
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
-
-  if (accounts.length === 0) {
-    return (
-      <div className="p-8">
-        <Card className="p-6">
-          <p className="text-muted-foreground">
-            No hay cuentas de MercadoLibre conectadas. Conecta una cuenta primero.
-          </p>
-        </Card>
-      </div>
-    )
-  }
-
   const matchedPercent = stats?.total_publications > 0 
     ? Math.round(((stats.total_publications - stats.unmatched) / stats.total_publications) * 100)
     : 0
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold">Matcher Automático</h1>
-        <p className="text-muted-foreground mt-1">
-          Vincula publicaciones ML con productos usando SKU, EAN o ISBN
-        </p>
-      </div>
+      {loading ? (
+        <div className="flex items-center justify-center min-h-screen">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : accounts.length === 0 ? (
+        <div className="p-8">
+          <Card className="p-6">
+            <p className="text-muted-foreground">
+              No hay cuentas de MercadoLibre conectadas. Conecta una cuenta primero.
+            </p>
+          </Card>
+        </div>
+      ) : (
+        <>
+          <div className="mb-6">
+            <h1 className="text-3xl font-bold">Matcher Automático</h1>
+            <p className="text-muted-foreground mt-1">
+              Vincula publicaciones ML con productos usando SKU, EAN o ISBN
+            </p>
+          </div>
 
-      {/* Selector de cuenta */}
-      <Card className="p-4 mb-6">
-        <label className="text-sm font-medium mb-2 block">Cuenta de MercadoLibre</label>
-        <select
-          value={selectedAccountId || ""}
-          onChange={(e) => setSelectedAccountId(e.target.value)}
-          className="w-full p-2 border rounded-md"
-          disabled={autoMode || running}
-        >
-          {accounts.map((acc) => (
-            <option key={acc.id} value={acc.id}>
-              {acc.nickname}
-            </option>
-          ))}
-        </select>
-      </Card>
+          {/* Selector de cuenta */}
+          <Card className="p-4 mb-6">
+            <label className="text-sm font-medium mb-2 block">Cuenta de MercadoLibre</label>
+            <select
+              value={selectedAccountId || ""}
+              onChange={(e) => setSelectedAccountId(e.target.value)}
+              className="w-full p-2 border rounded-md"
+              disabled={autoMode || running}
+            >
+              {accounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.nickname}
+                </option>
+              ))}
+            </select>
+          </Card>
+
+      {/* Alerta de importación incompleta */}
+      {importStatus && !importStatus.is_complete && importStatus.total && (
+        <Card className="p-4 mb-6 bg-amber-50 border-amber-300">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+            <div className="text-sm text-amber-900">
+              <p className="font-semibold mb-1">Importación inicial incompleta</p>
+              <p className="mb-2">
+                Solo se importaron <strong>{importStatus.offset?.toLocaleString()}</strong> de <strong>{importStatus.total?.toLocaleString()}</strong> publicaciones 
+                desde MercadoLibre. Faltan aproximadamente <strong>{importStatus.pending?.toLocaleString()}</strong> publicaciones por importar.
+              </p>
+              <p className="mb-3 text-xs">
+                El matcher solo puede trabajar con las publicaciones ya importadas. Para obtener resultados completos, 
+                primero completá la importación inicial.
+              </p>
+              <a href="/ml/importer">
+                <Button size="sm" variant="outline" className="bg-white border-amber-600 text-amber-800 hover:bg-amber-100">
+                  Ir a Importación inicial
+                </Button>
+              </a>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Explicación del matcher */}
       <Card className="p-4 mb-6 bg-blue-50 border-blue-200">
@@ -182,136 +215,138 @@ export default function MatcherPage() {
         </div>
       </Card>
 
-      {/* Card Estadísticas */}
-      <Card className="p-5 mb-6">
-        <h3 className="font-semibold mb-4">Estadísticas</h3>
-        
-        {stats && (
-          <>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-              <div className="p-3 bg-gray-50 rounded-md border">
-                <div className="text-2xl font-bold">{stats.total_publications}</div>
-                <div className="text-xs text-muted-foreground">Publicaciones importadas desde ML</div>
-              </div>
+          {/* Card Estadísticas */}
+          <Card className="p-5 mb-6">
+            <h3 className="font-semibold mb-4">Estadísticas</h3>
+            
+            {stats && (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                  <div className="p-3 bg-gray-50 rounded-md border">
+                    <div className="text-2xl font-bold">{stats.total_publications}</div>
+                    <div className="text-xs text-muted-foreground">Publicaciones importadas desde ML</div>
+                  </div>
 
-              <div className="p-3 bg-blue-50 rounded-md border border-blue-200">
-                <div className="text-2xl font-bold text-blue-700">{stats.manual_matched}</div>
-                <div className="text-xs text-blue-600">Vinculadas previamente</div>
-              </div>
+                  <div className="p-3 bg-blue-50 rounded-md border border-blue-200">
+                    <div className="text-2xl font-bold text-blue-700">{stats.manual_matched}</div>
+                    <div className="text-xs text-blue-600">Vinculadas previamente</div>
+                  </div>
 
-              <div className="p-3 bg-green-50 rounded-md border border-green-200">
-                <div className="text-2xl font-bold text-green-700">{stats.auto_matched}</div>
-                <div className="text-xs text-green-600">Vinculadas por matcher automático</div>
-              </div>
+                  <div className="p-3 bg-green-50 rounded-md border border-green-200">
+                    <div className="text-2xl font-bold text-green-700">{stats.auto_matched}</div>
+                    <div className="text-xs text-green-600">Vinculadas por matcher automático</div>
+                  </div>
 
-              <div className="p-3 bg-amber-50 rounded-md border border-amber-200">
-                <div className="text-2xl font-bold text-amber-700">{stats.unmatched}</div>
-                <div className="text-xs text-amber-600">Pendientes de vinculación</div>
-              </div>
-            </div>
+                  <div className="p-3 bg-amber-50 rounded-md border border-amber-200">
+                    <div className="text-2xl font-bold text-amber-700">{stats.unmatched}</div>
+                    <div className="text-xs text-amber-600">Pendientes de vinculación</div>
+                  </div>
+                </div>
 
-            <div className="mb-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-muted-foreground">Progreso de vinculación</span>
-                <span className="text-sm font-medium">{matchedPercent}% vinculadas</span>
-              </div>
-              <Progress value={matchedPercent} className="h-2" />
-            </div>
+                <div className="mb-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-muted-foreground">Progreso de vinculación</span>
+                    <span className="text-sm font-medium">{matchedPercent}% vinculadas</span>
+                  </div>
+                  <Progress value={matchedPercent} className="h-2" />
+                </div>
 
-            {stats.last_run_at && (
-              <div className="mt-3 text-xs text-muted-foreground">
-                Última ejecución del matcher: {new Date(stats.last_run_at).toLocaleString()}
-              </div>
-            )}
-          </>
-        )}
-      </Card>
-
-      {/* Card Acciones */}
-      <Card className="p-5 mb-6">
-        <h3 className="font-semibold mb-4">Acciones</h3>
-        
-        {stats && stats.unmatched > 0 ? (
-          <div className="flex flex-wrap gap-3">
-            {!autoMode && (
-              <Button onClick={handleStart} disabled={running} size="lg" className="flex-1 min-w-[180px]">
-                {running ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Ejecutando...
-                  </>
-                ) : (
-                  <>
-                    <Play className="mr-2 h-4 w-4" />
-                    Iniciar matching
-                  </>
+                {stats.last_run_at && (
+                  <div className="mt-3 text-xs text-muted-foreground">
+                    Última ejecución del matcher: {new Date(stats.last_run_at).toLocaleString()}
+                  </div>
                 )}
-              </Button>
+              </>
             )}
+          </Card>
 
-            {autoMode && (
-              <Button onClick={handlePause} size="lg" variant="outline" className="flex-1 min-w-[180px] bg-transparent">
-                <Pause className="mr-2 h-4 w-4" />
-                Pausar
-              </Button>
-            )}
+          {/* Card Acciones */}
+          <Card className="p-5 mb-6">
+            <h3 className="font-semibold mb-4">Acciones</h3>
+            
+            {stats && stats.unmatched > 0 ? (
+              <div className="flex flex-wrap gap-3">
+                {!autoMode && (
+                  <Button onClick={handleStart} disabled={running} size="lg" className="flex-1 min-w-[180px]">
+                    {running ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Ejecutando...
+                      </>
+                    ) : (
+                      <>
+                        <Play className="mr-2 h-4 w-4" />
+                        Iniciar matching
+                      </>
+                    )}
+                  </Button>
+                )}
 
-            {!autoMode && !running && (
-              <Button onClick={handleRun} disabled={running} size="lg" variant="outline" className="bg-transparent">
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Paso (1 corrida)
-              </Button>
-            )}
-          </div>
-        ) : (
-          <div className="p-4 bg-green-50 border border-green-200 rounded-md">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-green-600" />
-              <div>
-                <p className="text-green-800 font-semibold">Matching completo</p>
-                <p className="text-sm text-green-700">Todas las publicaciones vinculables fueron procesadas</p>
+                {autoMode && (
+                  <Button onClick={handlePause} size="lg" variant="outline" className="flex-1 min-w-[180px] bg-transparent">
+                    <Pause className="mr-2 h-4 w-4" />
+                    Pausar
+                  </Button>
+                )}
+
+                {!autoMode && !running && (
+                  <Button onClick={handleRun} disabled={running} size="lg" variant="outline" className="bg-transparent">
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Paso (1 corrida)
+                  </Button>
+                )}
               </div>
-            </div>
-          </div>
-        )}
-
-        {autoMode && stats && stats.unmatched > 0 && (
-          <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
-            <p className="text-sm text-blue-700 font-medium mb-1">
-              Modo automático activo
-            </p>
-            <p className="text-xs text-blue-600">
-              El matcher ejecuta cada 3 segundos hasta vincular todas las publicaciones posibles
-            </p>
-          </div>
-        )}
-      </Card>
-
-      {/* Log de ejecución */}
-      {executionLog.length > 0 && (
-        <Card className="p-5">
-          <h3 className="font-semibold mb-3">Log de ejecución</h3>
-          <div className="space-y-2 max-h-60 overflow-auto">
-            {executionLog.map((entry, idx) => (
-              <div key={idx} className="flex items-center justify-between text-xs p-2 bg-gray-50 rounded border">
+            ) : (
+              <div className="p-4 bg-green-50 border border-green-200 rounded-md">
                 <div className="flex items-center gap-2">
-                  <Badge variant={entry.action === 'success' ? 'default' : 'destructive'} className="text-xs">
-                    {entry.action}
-                  </Badge>
-                  <span className="text-muted-foreground">
-                    {new Date(entry.ranAt).toLocaleTimeString()}
-                  </span>
-                </div>
-                <div className="flex items-center gap-3 text-muted-foreground">
-                  <span>Procesadas: {entry.processed}</span>
-                  <span className="text-green-600">Vinculadas: +{entry.matched}</span>
-                  <span className="text-amber-600">Pendientes: {entry.remaining}</span>
-                  <span>{entry.elapsed}s</span>
+                  <CheckCircle2 className="h-5 w-5 text-green-600" />
+                  <div>
+                    <p className="text-green-800 font-semibold">Matching completo</p>
+                    <p className="text-sm text-green-700">Todas las publicaciones vinculables fueron procesadas</p>
+                  </div>
                 </div>
               </div>
-            ))}
-          </div>
-        </Card>
+            )}
+
+            {autoMode && stats && stats.unmatched > 0 && (
+              <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                <p className="text-sm text-blue-700 font-medium mb-1">
+                  Modo automático activo
+                </p>
+                <p className="text-xs text-blue-600">
+                  El matcher ejecuta cada 3 segundos hasta vincular todas las publicaciones posibles
+                </p>
+              </div>
+            )}
+          </Card>
+
+          {/* Log de ejecución */}
+          {executionLog.length > 0 && (
+            <Card className="p-5">
+              <h3 className="font-semibold mb-3">Log de ejecución</h3>
+              <div className="space-y-2 max-h-60 overflow-auto">
+                {executionLog.map((entry, idx) => (
+                  <div key={idx} className="flex items-center justify-between text-xs p-2 bg-gray-50 rounded border">
+                    <div className="flex items-center gap-2">
+                      <Badge variant={entry.action === 'success' ? 'default' : 'destructive'} className="text-xs">
+                        {entry.action}
+                      </Badge>
+                      <span className="text-muted-foreground">
+                        {new Date(entry.ranAt).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-muted-foreground">
+                      <span>Procesadas: {entry.processed}</span>
+                      <span className="text-green-600">Vinculadas: +{entry.matched}</span>
+                      <span className="text-amber-600">Pendientes: {entry.remaining}</span>
+                      <span>{entry.elapsed}s</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+        </>
       )}
     </div>
   )
