@@ -91,12 +91,12 @@ export default function MLImporterPage() {
       return
     }
 
-    console.log("[v0] Auto-mode active - setting up 3s interval")
+    console.log("[v0] Auto-mode active - setting up 15s interval (safe for 12-14s runs)")
     
     const interval = setInterval(() => {
       console.log("[v0] Auto-mode tick - calling handleRun()")
       handleRun()
-    }, 3000)
+    }, 15000) // 15 segundos para evitar overlapping con corridas de 12-14s
 
     return () => {
       console.log("[v0] Auto-mode cleanup - clearing interval")
@@ -138,6 +138,18 @@ export default function MLImporterPage() {
 
       const data = await res.json()
       setRunResult(data)
+
+      // Si hay rate limit de DB, pausar auto-mode temporalmente
+      if (data.rate_limited) {
+        console.log("[v0] Database rate limit detected - pausing auto-mode for 10 seconds")
+        setAutoMode(false)
+        setTimeout(() => {
+          console.log("[v0] Resuming auto-mode after rate limit cooldown")
+          setAutoMode(true)
+        }, 10000)
+        setRunning(false)
+        return
+      }
 
       // Loggear timings detallados de rendimiento y auto-tuning
       if (data.timings) {
