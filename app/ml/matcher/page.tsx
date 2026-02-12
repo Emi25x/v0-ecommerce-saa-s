@@ -109,6 +109,17 @@ export default function MatcherPage() {
 
     try {
       const res = await fetch(`/api/ml/matcher/progress?account_id=${selectedAccountId}`)
+      
+      if (!res.ok) {
+        // No hay runs previos - estado inicial limpio
+        console.log("[MATCHER] No previous runs found")
+        setCurrentRun(null)
+        setProgress(null)
+        setResults([])
+        setResultsSummary([])
+        return
+      }
+      
       const data = await res.json()
       
       if (data.run) {
@@ -119,9 +130,18 @@ export default function MatcherPage() {
         if (data.run.id) {
           fetchResults(data.run.id)
         }
+      } else {
+        // No hay runs - limpiar estado
+        setCurrentRun(null)
+        setProgress(null)
+        setResults([])
+        setResultsSummary([])
       }
     } catch (error) {
       console.error("[MATCHER] Fetch latest run error:", error)
+      // En caso de error, limpiar estado
+      setCurrentRun(null)
+      setProgress(null)
     }
   }
 
@@ -301,6 +321,23 @@ export default function MatcherPage() {
                 </option>
               ))}
             </select>
+          </Card>
+        )}
+
+        {/* Mensaje inicial cuando no hay runs */}
+        {!currentRun && !running && (
+          <Card className="p-8">
+            <div className="text-center py-8">
+              <TrendingUp className="mx-auto h-16 w-16 text-muted-foreground/50 mb-4" />
+              <h3 className="text-xl font-semibold mb-3">No hay matching ejecutado aún</h3>
+              <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                Inicia el proceso de matching para vincular automáticamente publicaciones de MercadoLibre con productos del catálogo usando SKU, ISBN o EAN
+              </p>
+              <Button onClick={handleRun} size="lg">
+                <Play className="mr-2 h-5 w-5" />
+                Iniciar Primer Matching
+              </Button>
+            </div>
           </Card>
         )}
 
