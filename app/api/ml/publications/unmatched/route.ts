@@ -64,7 +64,7 @@ export async function GET(request: Request) {
     // Fetch account nicknames separately
     const accountIds = [...new Set((items || []).map(item => item.account_id))]
     const { data: accountsData } = await supabase
-      .from("mercadolibre_accounts")
+      .from("ml_accounts")
       .select("id, nickname")
       .in("id", accountIds)
 
