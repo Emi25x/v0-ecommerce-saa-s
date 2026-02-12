@@ -3,8 +3,8 @@ import { NextResponse } from "next/server"
 
 /**
  * GET /api/ml/publications/unmatched
- * Retorna publicaciones ML sin match con productos internos
- * Query params: page, pageSize, account_id?, q?, has_sku?, has_gtin?
+ * Retorna publicaciones ML sin match con productos internos (product_id IS NULL)
+ * Query params: page, pageSize, account_id?, q?
  */
 export async function GET(request: Request) {
   try {
@@ -13,58 +13,51 @@ export async function GET(request: Request) {
     const pageSize = parseInt(searchParams.get("pageSize") || "50")
     const accountId = searchParams.get("account_id")
     const q = searchParams.get("q")
-    const hasSku = searchParams.get("has_sku")
-    const hasGtin = searchParams.get("has_gtin")
 
-    const supabase = await createClient()
+    const supabase = await createClient({ useServiceRole: true })
     const offset = (page - 1) * pageSize
 
-    // Construir query con NOT EXISTS para publicaciones sin match en ml_publication_matches
-    // Necesitamos usar SQL directo porque Supabase no soporta NOT EXISTS nativamente
-    const filters = []
-    const params: any = { 
-      limit_val: pageSize, 
-      offset_val: offset 
-    }
-    
+    // Query base: publicaciones sin product_id (sin vincular)
+    let query = supabase
+      .from("ml_publications")
+      .select(`
+        id,
+        account_id,
+        ml_item_id,
+        title,
+        status,
+        price,
+        current_stock,
+        created_at,
+        updated_at,
+        accounts:mercadolibre_accounts(nickname)
+      `, { count: 'exact' })
+      .is("product_id", null)
+      .order("updated_at", { ascending: false })
+      .range(offset, offset + pageSize - 1)
+
+    // Filtro por cuenta
     if (accountId) {
-      filters.push("p.account_id = @account_id")
-      params.account_id = accountId
+      query = query.eq("account_id", accountId)
     }
-    
+
+    // Búsqueda por título o ID
     if (q) {
-      filters.push("(p.title ILIKE @search OR p.ml_item_id ILIKE @search)")
-      params.search = `%${q}%`
+      query = query.or(`title.ilike.%${q}%,ml_item_id.ilike.%${q}%`)
     }
-    
-    const whereClause = filters.length > 0 ? `AND ${filters.join(" AND ")}` : ""
-    
-    // Query usando RPC para obtener publicaciones sin match
-    const { data: items, error } = await supabase.rpc('get_unmatched_publications', {
-      p_account_id: accountId || null,
-      p_search: q || null,
-      p_limit: pageSize,
-      p_offset: offset
-    })
-    
-    // Count total (necesitamos una query separada)
-    const { count, error: countError } = await supabase.rpc('count_unmatched_publications', {
-      p_account_id: accountId || null,
-      p_search: q || null
-    })
+
+    const { data: items, error, count } = await query
 
     if (error) {
       console.error("[v0] Error fetching unmatched publications:", error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    if (countError) {
-      console.error("[v0] Error counting unmatched publications:", countError)
-      return NextResponse.json({ error: countError.message }, { status: 500 })
-    }
-
-    // Los items ya vienen formateados de la función RPC
-    const formattedItems = items || []
+    // Formatear items con nickname de la cuenta
+    const formattedItems = (items || []).map(item => ({
+      ...item,
+      account_nickname: (item.accounts as any)?.nickname || "Unknown"
+    }))
 
     return NextResponse.json({
       items: formattedItems,
@@ -77,6 +70,15 @@ export async function GET(request: Request) {
     })
   } catch (error: any) {
     console.error("[v0] Unmatched publications error:", error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ 
+      error: error.message,
+      items: [],
+      pagination: {
+        page: 1,
+        pageSize: 50,
+        total: 0,
+        totalPages: 0
+      }
+    }, { status: 500 })
   }
 }
