@@ -5,17 +5,35 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { Play, Pause, RefreshCw, Loader2, CheckCircle2, AlertCircle } from "lucide-react"
+import { Play, Pause, RefreshCw, Loader2, CheckCircle2, AlertCircle, TrendingUp, XCircle, HelpCircle } from "lucide-react"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+
+type MatcherOutcome = 'matched' | 'ambiguous' | 'not_found' | 'invalid' | 'skipped' | 'error'
 
 export default function MatcherPage() {
   const [accounts, setAccounts] = useState<any[]>([])
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
-  const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
   const [autoMode, setAutoMode] = useState(false)
-  const [executionLog, setExecutionLog] = useState<any[]>([])
-  const [importStatus, setImportStatus] = useState<any>(null)
+  
+  // Progreso en tiempo real
+  const [currentRun, setCurrentRun] = useState<any>(null)
+  const [progress, setProgress] = useState<any>(null)
+  
+  // Resultados
+  const [results, setResults] = useState<any[]>([])
+  const [resultsSummary, setResultsSummary] = useState<any[]>([])
+  const [selectedOutcome, setSelectedOutcome] = useState<MatcherOutcome | 'all'>('all')
+  const [resultsPage, setResultsPage] = useState(0)
+  const [resultsTotal, setResultsTotal] = useState(0)
 
   useEffect(() => {
     fetchAccounts()
@@ -23,28 +41,53 @@ export default function MatcherPage() {
 
   useEffect(() => {
     if (selectedAccountId) {
-      fetchStats()
-      fetchImportStatus()
+      fetchLatestRun()
     }
   }, [selectedAccountId])
 
-  // Auto-mode: ejecutar cada 3s cuando está activo
+  // Auto-mode: ejecutar y polling de progreso
   useEffect(() => {
-    if (!autoMode || !selectedAccountId || running) return
+    if (!autoMode || !selectedAccountId) return
 
-    // Si ya no hay pendientes, apagar auto-mode
-    if (stats && stats.unmatched === 0) {
-      console.log("[v0] No unmatched publications - disabling auto-mode")
-      setAutoMode(false)
-      return
+    let interval: NodeJS.Timeout
+
+    const runAndPoll = async () => {
+      // Si no hay run activo, iniciar uno nuevo
+      if (!currentRun || currentRun.status !== 'running') {
+        await handleRun()
+      }
+      
+      // Poll progreso cada 2s
+      interval = setInterval(async () => {
+        if (currentRun?.id) {
+          await fetchProgress(currentRun.id)
+        }
+      }, 2000)
     }
 
-    const interval = setInterval(() => {
-      handleRun()
-    }, 3000)
+    runAndPoll()
 
-    return () => clearInterval(interval)
-  }, [autoMode, selectedAccountId, running, stats])
+    return () => {
+      if (interval) clearInterval(interval)
+    }
+  }, [autoMode, selectedAccountId, currentRun])
+
+  // Detener auto-mode cuando el run termina
+  useEffect(() => {
+    if (autoMode && currentRun && currentRun.status !== 'running') {
+      console.log(`[MATCHER] Run finished with status: ${currentRun.status}`)
+      
+      // Si quedaron pendientes, continuar
+      const remaining = progress?.scanned ? (resultTotal - progress.scanned) : 0
+      if (remaining > 0) {
+        console.log(`[MATCHER] ${remaining} remaining - continuing`)
+        setTimeout(() => handleRun(), 1000)
+      } else {
+        console.log(`[MATCHER] No more remaining - stopping auto-mode`)
+        setAutoMode(false)
+      }
+    }
+  }, [currentRun, autoMode, progress])
 
   const fetchAccounts = async () => {
     try {
@@ -61,27 +104,62 @@ export default function MatcherPage() {
     }
   }
 
-  const fetchStats = async () => {
+  const fetchLatestRun = async () => {
     if (!selectedAccountId) return
 
     try {
-      const res = await fetch(`/api/ml/matcher/stats?account_id=${selectedAccountId}`)
+      const res = await fetch(`/api/ml/matcher/progress?account_id=${selectedAccountId}`)
       const data = await res.json()
-      setStats(data)
+      
+      if (data.run) {
+        setCurrentRun(data.run)
+        setProgress(data.progress)
+        
+        // Cargar resultados si hay run
+        if (data.run.id) {
+          fetchResults(data.run.id)
+        }
+      }
     } catch (error) {
-      console.error("[MATCHER] Fetch stats error:", error)
+      console.error("[MATCHER] Fetch latest run error:", error)
     }
   }
 
-  const fetchImportStatus = async () => {
-    if (!selectedAccountId) return
-
+  const fetchProgress = async (runId: string) => {
     try {
-      const res = await fetch(`/api/ml/import-status?account_id=${selectedAccountId}`)
+      const res = await fetch(`/api/ml/matcher/progress?run_id=${runId}`)
       const data = await res.json()
-      setImportStatus(data)
+      
+      if (data.run) {
+        setCurrentRun(data.run)
+        setProgress(data.progress)
+      }
     } catch (error) {
-      console.error("[MATCHER] Fetch import status error:", error)
+      console.error("[MATCHER] Fetch progress error:", error)
+    }
+  }
+
+  const fetchResults = async (runId: string, outcome: MatcherOutcome | 'all' = 'all', page = 0) => {
+    try {
+      const params = new URLSearchParams({
+        run_id: runId,
+        limit: '50',
+        offset: String(page * 50)
+      })
+      
+      if (outcome !== 'all') {
+        params.append('outcome', outcome)
+      }
+
+      const res = await fetch(`/api/ml/matcher/results?${params}`)
+      const data = await res.json()
+      
+      setResults(data.results || [])
+      setResultsSummary(data.summary || [])
+      setResultsTotal(data.pagination?.total || 0)
+      setResultsPage(page)
+    } catch (error) {
+      console.error("[MATCHER] Fetch results error:", error)
     }
   }
 
@@ -89,7 +167,6 @@ export default function MatcherPage() {
     if (!selectedAccountId || running) return
 
     setRunning(true)
-    const startTime = Date.now()
 
     try {
       const res = await fetch("/api/ml/matcher/run", {
@@ -103,257 +180,342 @@ export default function MatcherPage() {
       })
 
       const data = await res.json()
-
-      const logEntry = {
-        ranAt: new Date().toISOString(),
-        action: data.ok ? 'success' : 'error',
-        processed: data.processed || 0,
-        matched: data.matched || 0,
-        remaining: data.remaining || 0,
-        elapsed: ((Date.now() - startTime) / 1000).toFixed(1)
-      }
       
-      setExecutionLog(prev => [logEntry, ...prev].slice(0, 10))
-
-      await fetchStats()
-    } catch (error: any) {
+      if (data.ok && data.run_id) {
+        console.log(`[MATCHER] Run ${data.run_id} started`)
+        await fetchProgress(data.run_id)
+        await fetchResults(data.run_id)
+      }
+    } catch (error) {
       console.error("[MATCHER] Run error:", error)
     } finally {
       setRunning(false)
     }
   }
 
-  const handleStart = async () => {
-    setAutoMode(true)
-    await handleRun()
+  const handleOutcomeFilter = (outcome: MatcherOutcome | 'all') => {
+    setSelectedOutcome(outcome)
+    if (currentRun?.id) {
+      fetchResults(currentRun.id, outcome, 0)
+    }
   }
 
-  const handlePause = () => {
-    setAutoMode(false)
+  const getOutcomeIcon = (outcome: string) => {
+    switch (outcome) {
+      case 'matched': return <CheckCircle2 className="h-4 w-4 text-green-600" />
+      case 'ambiguous': return <HelpCircle className="h-4 w-4 text-yellow-600" />
+      case 'not_found': return <XCircle className="h-4 w-4 text-red-600" />
+      case 'invalid': return <AlertCircle className="h-4 w-4 text-orange-600" />
+      case 'skipped': return <RefreshCw className="h-4 w-4 text-gray-400" />
+      case 'error': return <AlertCircle className="h-4 w-4 text-red-600" />
+      default: return null
+    }
   }
 
-  const matchedPercent = stats?.total_publications > 0 
-    ? Math.round(((stats.total_publications - stats.unmatched) / stats.total_publications) * 100)
+  const getOutcomeBadgeColor = (outcome: string) => {
+    switch (outcome) {
+      case 'matched': return 'bg-green-100 text-green-800'
+      case 'ambiguous': return 'bg-yellow-100 text-yellow-800'
+      case 'not_found': return 'bg-red-100 text-red-800'
+      case 'invalid': return 'bg-orange-100 text-orange-800'
+      case 'skipped': return 'bg-gray-100 text-gray-600'
+      case 'error': return 'bg-red-100 text-red-800'
+      default: return 'bg-gray-100 text-gray-600'
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  const progressPercent = progress?.scanned && resultsTotal 
+    ? Math.min(100, Math.round((progress.scanned / resultsTotal) * 100))
     : 0
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      {loading ? (
-        <div className="flex items-center justify-center min-h-screen">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      ) : accounts.length === 0 ? (
-        <div className="p-8">
-          <Card className="p-6">
+    <div className="min-h-screen bg-background p-6">
+      <div className="mx-auto max-w-7xl space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Matcher PRO</h1>
             <p className="text-muted-foreground">
-              No hay cuentas de MercadoLibre conectadas. Conecta una cuenta primero.
-            </p>
-          </Card>
-        </div>
-      ) : (
-        <>
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold">Matcher Automático</h1>
-            <p className="text-muted-foreground mt-1">
-              Vincula publicaciones ML con productos usando SKU, EAN o ISBN
+              Vinculación automática de publicaciones ML con productos
             </p>
           </div>
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={handleRun}
+              disabled={running || autoMode}
+              size="lg"
+            >
+              {running ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Ejecutando...
+                </>
+              ) : (
+                <>
+                  <Play className="mr-2 h-4 w-4" />
+                  Ejecutar Matching
+                </>
+              )}
+            </Button>
+            <Button
+              onClick={() => setAutoMode(!autoMode)}
+              variant={autoMode ? "destructive" : "outline"}
+              size="lg"
+            >
+              {autoMode ? (
+                <>
+                  <Pause className="mr-2 h-4 w-4" />
+                  Detener Auto-mode
+                </>
+              ) : (
+                <>
+                  <Play className="mr-2 h-4 w-4" />
+                  Auto-mode
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
 
-          {/* Selector de cuenta */}
-          <Card className="p-4 mb-6">
-            <label className="text-sm font-medium mb-2 block">Cuenta de MercadoLibre</label>
+        {/* Selector de cuenta */}
+        {accounts.length > 1 && (
+          <Card className="p-4">
+            <label className="text-sm font-medium">Cuenta ML:</label>
             <select
-              value={selectedAccountId || ""}
+              value={selectedAccountId || ''}
               onChange={(e) => setSelectedAccountId(e.target.value)}
-              className="w-full p-2 border rounded-md"
-              disabled={autoMode || running}
+              className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2"
+              disabled={running || autoMode}
             >
               {accounts.map((acc) => (
                 <option key={acc.id} value={acc.id}>
-                  {acc.nickname}
+                  {acc.nickname || acc.ml_user_id}
                 </option>
               ))}
             </select>
           </Card>
+        )}
 
-      {/* Alerta de importación incompleta */}
-      {importStatus && !importStatus.is_complete && importStatus.total && (
-        <Card className="p-4 mb-6 bg-amber-50 border-amber-300">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
-            <div className="text-sm text-amber-900">
-              <p className="font-semibold mb-1">Importación inicial incompleta</p>
-              <p className="mb-2">
-                Solo se importaron <strong>{importStatus.offset?.toLocaleString()}</strong> de <strong>{importStatus.total?.toLocaleString()}</strong> publicaciones 
-                desde MercadoLibre. Faltan aproximadamente <strong>{importStatus.pending?.toLocaleString()}</strong> publicaciones por importar.
-              </p>
-              <p className="mb-3 text-xs">
-                El matcher solo puede trabajar con las publicaciones ya importadas. Para obtener resultados completos, 
-                primero completá la importación inicial.
-              </p>
-              <a href="/ml/importer">
-                <Button size="sm" variant="outline" className="bg-white border-amber-600 text-amber-800 hover:bg-amber-100">
-                  Ir a Importación inicial
-                </Button>
-              </a>
+        {/* Estado del run actual */}
+        {currentRun && (
+          <Card className="p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-xl font-semibold">Run Actual</h2>
+              <Badge variant={currentRun.status === 'running' ? 'default' : currentRun.status === 'completed' ? 'secondary' : 'destructive'}>
+                {currentRun.status}
+              </Badge>
             </div>
-          </div>
-        </Card>
-      )}
 
-      {/* Explicación del matcher */}
-      <Card className="p-4 mb-6 bg-blue-50 border-blue-200">
-        <div className="flex items-start gap-3">
-          <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
-          <div className="text-sm text-blue-900">
-            <p className="font-medium mb-2">¿Cómo funciona el matcher automático?</p>
-            <p className="mb-2">
-              <strong>Vinculación automática SOLO por identificadores numéricos exactos:</strong> ISBN, EAN o GTIN.
-            </p>
-            <p className="mb-2 text-xs">
-              El sistema extrae estos identificadores del título de la publicación de MercadoLibre y los compara con tu catálogo de productos. 
-              Solo vincula cuando encuentra <strong>exactamente 1 producto</strong> con el mismo identificador.
-            </p>
-            <p className="text-xs font-semibold text-blue-800">
-              ✓ NO usamos títulos, descripciones, autor ni ningún campo de texto para evitar vinculaciones incorrectas.
-            </p>
-          </div>
-        </div>
-      </Card>
-
-          {/* Card Estadísticas */}
-          <Card className="p-5 mb-6">
-            <h3 className="font-semibold mb-4">Estadísticas</h3>
-            
-            {stats && (
-              <>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                  <div className="p-3 bg-gray-50 rounded-md border">
-                    <div className="text-2xl font-bold">{stats.total_publications}</div>
-                    <div className="text-xs text-muted-foreground">Publicaciones importadas desde ML</div>
-                  </div>
-
-                  <div className="p-3 bg-blue-50 rounded-md border border-blue-200">
-                    <div className="text-2xl font-bold text-blue-700">{stats.manual_matched}</div>
-                    <div className="text-xs text-blue-600">Vinculadas previamente</div>
-                  </div>
-
-                  <div className="p-3 bg-green-50 rounded-md border border-green-200">
-                    <div className="text-2xl font-bold text-green-700">{stats.auto_matched}</div>
-                    <div className="text-xs text-green-600">Vinculadas por matcher automático</div>
-                  </div>
-
-                  <div className="p-3 bg-amber-50 rounded-md border border-amber-200">
-                    <div className="text-2xl font-bold text-amber-700">{stats.unmatched}</div>
-                    <div className="text-xs text-amber-600">Pendientes de vinculación</div>
-                  </div>
-                </div>
-
-                <div className="mb-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-muted-foreground">Progreso de vinculación</span>
-                    <span className="text-sm font-medium">{matchedPercent}% vinculadas</span>
-                  </div>
-                  <Progress value={matchedPercent} className="h-2" />
-                </div>
-
-                {stats.last_run_at && (
-                  <div className="mt-3 text-xs text-muted-foreground">
-                    Última ejecución del matcher: {new Date(stats.last_run_at).toLocaleString()}
-                  </div>
-                )}
-              </>
-            )}
-          </Card>
-
-          {/* Card Acciones */}
-          <Card className="p-5 mb-6">
-            <h3 className="font-semibold mb-4">Acciones</h3>
-            
-            {stats && stats.unmatched > 0 ? (
-              <div className="flex flex-wrap gap-3">
-                {!autoMode && (
-                  <Button onClick={handleStart} disabled={running} size="lg" className="flex-1 min-w-[180px]">
-                    {running ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Ejecutando...
-                      </>
-                    ) : (
-                      <>
-                        <Play className="mr-2 h-4 w-4" />
-                        Iniciar matching
-                      </>
-                    )}
-                  </Button>
-                )}
-
-                {autoMode && (
-                  <Button onClick={handlePause} size="lg" variant="outline" className="flex-1 min-w-[180px] bg-transparent">
-                    <Pause className="mr-2 h-4 w-4" />
-                    Pausar
-                  </Button>
-                )}
-
-                {!autoMode && !running && (
-                  <Button onClick={handleRun} disabled={running} size="lg" variant="outline" className="bg-transparent">
-                    <RefreshCw className="mr-2 h-4 w-4" />
-                    Paso (1 corrida)
-                  </Button>
-                )}
+            {/* Barra de progreso */}
+            <div className="mb-6 space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span>Progreso</span>
+                <span className="font-medium">{progressPercent}%</span>
               </div>
-            ) : (
-              <div className="p-4 bg-green-50 border border-green-200 rounded-md">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-5 w-5 text-green-600" />
-                  <div>
-                    <p className="text-green-800 font-semibold">Matching completo</p>
-                    <p className="text-sm text-green-700">Todas las publicaciones vinculables fueron procesadas</p>
+              <Progress value={progressPercent} className="h-2" />
+              {progress && (
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{progress.scanned} / {resultsTotal} publicaciones</span>
+                  {progress.items_per_second && (
+                    <span>{progress.items_per_second} items/s</span>
+                  )}
+                  {progress.estimated_seconds_remaining && (
+                    <span>~{progress.estimated_seconds_remaining}s restantes</span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Métricas */}
+            {progress && (
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                <div className="rounded-lg border border-border bg-card p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Vinculadas</span>
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
                   </div>
+                  <p className="mt-2 text-2xl font-bold">{progress.matched}</p>
+                </div>
+
+                <div className="rounded-lg border border-border bg-card p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Ambiguas</span>
+                    <HelpCircle className="h-4 w-4 text-yellow-600" />
+                  </div>
+                  <p className="mt-2 text-2xl font-bold">{progress.ambiguous}</p>
+                </div>
+
+                <div className="rounded-lg border border-border bg-card p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">No encontradas</span>
+                    <XCircle className="h-4 w-4 text-red-600" />
+                  </div>
+                  <p className="mt-2 text-2xl font-bold">{progress.not_found}</p>
+                </div>
+
+                <div className="rounded-lg border border-border bg-card p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Inválidas</span>
+                    <AlertCircle className="h-4 w-4 text-orange-600" />
+                  </div>
+                  <p className="mt-2 text-2xl font-bold">{progress.invalid_id}</p>
                 </div>
               </div>
             )}
 
-            {autoMode && stats && stats.unmatched > 0 && (
-              <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
-                <p className="text-sm text-blue-700 font-medium mb-1">
-                  Modo automático activo
-                </p>
-                <p className="text-xs text-blue-600">
-                  El matcher ejecuta cada 3 segundos hasta vincular todas las publicaciones posibles
-                </p>
+            {currentRun.last_error && (
+              <div className="mt-4 rounded-lg bg-destructive/10 p-4 text-sm text-destructive">
+                <strong>Error:</strong> {currentRun.last_error}
               </div>
             )}
           </Card>
+        )}
 
-          {/* Log de ejecución */}
-          {executionLog.length > 0 && (
-            <Card className="p-5">
-              <h3 className="font-semibold mb-3">Log de ejecución</h3>
-              <div className="space-y-2 max-h-60 overflow-auto">
-                {executionLog.map((entry, idx) => (
-                  <div key={idx} className="flex items-center justify-between text-xs p-2 bg-gray-50 rounded border">
-                    <div className="flex items-center gap-2">
-                      <Badge variant={entry.action === 'success' ? 'default' : 'destructive'} className="text-xs">
-                        {entry.action}
-                      </Badge>
-                      <span className="text-muted-foreground">
-                        {new Date(entry.ranAt).toLocaleTimeString()}
-                      </span>
+        {/* Resumen por motivo */}
+        {resultsSummary.length > 0 && (
+          <Card className="p-6">
+            <h2 className="mb-4 text-xl font-semibold">Top Razones</h2>
+            <div className="space-y-2">
+              {resultsSummary
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 10)
+                .map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between rounded-lg border border-border p-3">
+                    <div className="flex items-center gap-3">
+                      {getOutcomeIcon(item.outcome)}
+                      <div>
+                        <p className="font-medium">{item.reason_code}</p>
+                        <p className="text-sm text-muted-foreground capitalize">{item.outcome}</p>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3 text-muted-foreground">
-                      <span>Procesadas: {entry.processed}</span>
-                      <span className="text-green-600">Vinculadas: +{entry.matched}</span>
-                      <span className="text-amber-600">Pendientes: {entry.remaining}</span>
-                      <span>{entry.elapsed}s</span>
-                    </div>
+                    <Badge variant="secondary">{item.count}</Badge>
                   </div>
                 ))}
+            </div>
+          </Card>
+        )}
+
+        {/* Resultados detallados */}
+        {currentRun && (
+          <Card className="p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-xl font-semibold">Resultados Detallados</h2>
+              <div className="flex gap-2">
+                <Button
+                  variant={selectedOutcome === 'all' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => handleOutcomeFilter('all')}
+                >
+                  Todos
+                </Button>
+                <Button
+                  variant={selectedOutcome === 'matched' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => handleOutcomeFilter('matched')}
+                >
+                  Vinculadas
+                </Button>
+                <Button
+                  variant={selectedOutcome === 'ambiguous' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => handleOutcomeFilter('ambiguous')}
+                >
+                  Ambiguas
+                </Button>
+                <Button
+                  variant={selectedOutcome === 'not_found' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => handleOutcomeFilter('not_found')}
+                >
+                  No encontradas
+                </Button>
               </div>
-            </Card>
-          )}
-        </>
-      )}
+            </div>
+
+            <div className="rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ML Item</TableHead>
+                    <TableHead>Título</TableHead>
+                    <TableHead>Identificador</TableHead>
+                    <TableHead>Resultado</TableHead>
+                    <TableHead>Motivo</TableHead>
+                    <TableHead>Matches</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {results.map((result) => (
+                    <TableRow key={result.id}>
+                      <TableCell className="font-mono text-xs">{result.ml_item_id}</TableCell>
+                      <TableCell className="max-w-md truncate">
+                        {result.ml_publications?.title || '-'}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {result.identifier_type && result.identifier_value_normalized ? (
+                          <div>
+                            <span className="text-muted-foreground">{result.identifier_type}:</span>{' '}
+                            {result.identifier_value_normalized}
+                          </div>
+                        ) : '-'}
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={getOutcomeBadgeColor(result.outcome)}>
+                          {result.outcome}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs">{result.reason_code}</TableCell>
+                      <TableCell>{result.match_count ?? '-'}</TableCell>
+                    </TableRow>
+                  ))}
+                  {results.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-muted-foreground">
+                        No hay resultados para mostrar
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+
+            {/* Paginación */}
+            {resultsTotal > 50 && (
+              <div className="mt-4 flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Mostrando {resultsPage * 50 + 1} - {Math.min((resultsPage + 1) * 50, resultsTotal)} de {resultsTotal}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={resultsPage === 0}
+                    onClick={() => fetchResults(currentRun.id, selectedOutcome, resultsPage - 1)}
+                  >
+                    Anterior
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={(resultsPage + 1) * 50 >= resultsTotal}
+                    onClick={() => fetchResults(currentRun.id, selectedOutcome, resultsPage + 1)}
+                  >
+                    Siguiente
+                  </Button>
+                </div>
+              </div>
+            )}
+          </Card>
+        )}
+      </div>
     </div>
   )
 }
