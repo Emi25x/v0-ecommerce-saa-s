@@ -120,12 +120,24 @@ export default function UnmatchedPublicationsPage() {
       }
 
       const response = await fetch(`/api/ml/publications/unmatched?${params}`)
+      
+      if (!response.ok) {
+        console.error(`[v0] Fetch publications failed with status ${response.status}`)
+        setPublications([])
+        return
+      }
+
       const data = await response.json()
 
       setPublications(data.items || [])
-      setPagination(data.pagination)
+      
+      // Safe update: solo actualizar si pagination existe y tiene las propiedades esperadas
+      if (data.pagination && typeof data.pagination.page === 'number') {
+        setPagination(data.pagination)
+      }
     } catch (error) {
-      console.error("Error fetching publications:", error)
+      console.error("[v0] Error fetching publications:", error)
+      setPublications([])
     } finally {
       setLoading(false)
     }

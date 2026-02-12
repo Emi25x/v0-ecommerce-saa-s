@@ -29,8 +29,7 @@ export async function GET(request: Request) {
         price,
         current_stock,
         created_at,
-        updated_at,
-        accounts:mercadolibre_accounts(nickname)
+        updated_at
       `, { count: 'exact' })
       .is("product_id", null)
       .order("updated_at", { ascending: false })
@@ -50,13 +49,31 @@ export async function GET(request: Request) {
 
     if (error) {
       console.error("[v0] Error fetching unmatched publications:", error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ 
+        error: error.message,
+        items: [],
+        pagination: {
+          page: 1,
+          pageSize: 50,
+          total: 0,
+          totalPages: 0
+        }
+      }, { status: 500 })
     }
+
+    // Fetch account nicknames separately
+    const accountIds = [...new Set((items || []).map(item => item.account_id))]
+    const { data: accountsData } = await supabase
+      .from("mercadolibre_accounts")
+      .select("id, nickname")
+      .in("id", accountIds)
+
+    const accountsMap = new Map((accountsData || []).map(acc => [acc.id, acc.nickname]))
 
     // Formatear items con nickname de la cuenta
     const formattedItems = (items || []).map(item => ({
       ...item,
-      account_nickname: (item.accounts as any)?.nickname || "Unknown"
+      account_nickname: accountsMap.get(item.account_id) || "Unknown"
     }))
 
     return NextResponse.json({
