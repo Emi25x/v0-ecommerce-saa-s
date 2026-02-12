@@ -2,112 +2,78 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
 /**
- * GET /api/ml/matcher/progress?run_id=...&account_id=...
- * Obtiene progreso detallado de un run específico o el último de la cuenta
+ * GET /api/ml/matcher/progress?account_id=xxx
+ * Retorna progreso unificado desde ml_matcher_progress
  */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const runId = searchParams.get("run_id")
     const accountId = searchParams.get("account_id")
 
-    if (!runId && !accountId) {
-      return NextResponse.json(
-        { error: "run_id or account_id required" },
-        { status: 400 }
-      )
+    if (!accountId) {
+      return NextResponse.json({ error: "account_id required" }, { status: 400 })
     }
 
     const supabase = await createClient({ useServiceRole: true })
 
-    let run = null
+    const { data: progress, error } = await supabase
+      .from("ml_matcher_progress")
+      .select("*")
+      .eq("account_id", accountId)
+      .single()
 
-    if (runId) {
-      // Buscar run específico
-      const { data, error } = await supabase
-        .from("matcher_runs")
-        .select("*")
-        .eq("id", runId)
-        .single()
-
-      if (error || !data) {
-        return NextResponse.json({ error: "Run not found" }, { status: 404 })
-      }
-      run = data
-    } else if (accountId) {
-      // Buscar último run de la cuenta
-      const { data, error } = await supabase
-        .from("matcher_runs")
-        .select("*")
-        .eq("account_id", accountId)
-        .order("started_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
-
-      if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 })
-      }
-      
-      if (!data) {
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // No existe registro todavía - retornar estado inicial
         return NextResponse.json({
-          exists: false,
-          message: "No runs found for this account"
+          status: "idle",
+          scanned_count: 0,
+          candidate_count: 0,
+          matched_count: 0,
+          ambiguous_count: 0,
+          not_found_count: 0,
+          invalid_identifier_count: 0,
+          error_count: 0,
+          total_matched: 0,
+          total_unmatched: 0,
+          items_per_second: 0,
+          eta_seconds: null
         })
       }
-      run = data
+      
+      return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    // Obtener progreso incremental
-    const { data: progress } = await supabase
-      .from("matcher_run_progress")
-      .select("*")
-      .eq("run_id", run.id)
-      .maybeSingle()
+    // Calcular velocidad y ETA si está running
+    let itemsPerSecond = 0
+    let etaSeconds = null
 
-    // Calcular ETA si está corriendo
-    let eta = null
-    if (run.status === "running" && progress) {
-      const elapsed = (new Date().getTime() - new Date(run.started_at).getTime()) / 1000
-      const itemsPerSec = progress.scanned_count / elapsed
-      
-      // Estimar remaining basado en publicaciones sin vincular
+    if (progress.status === "running" && progress.started_at) {
+      const elapsedSeconds = (Date.now() - new Date(progress.started_at).getTime()) / 1000
+      if (elapsedSeconds > 0) {
+        itemsPerSecond = progress.scanned_count / elapsedSeconds
+      }
+
+      // Estimar ETA basado en publicaciones sin vincular
       const { count } = await supabase
         .from("ml_publications")
-        .select("*", { count: "exact", head: true })
-        .eq("account_id", run.account_id)
+        .select("*", { count: 'exact', head: true })
+        .eq("account_id", accountId)
         .is("product_id", null)
 
-      const remaining = count || 0
-      eta = itemsPerSec > 0 ? Math.ceil(remaining / itemsPerSec) : null
+      if (count && itemsPerSecond > 0) {
+        etaSeconds = Math.ceil(count / itemsPerSecond)
+      }
     }
 
     return NextResponse.json({
-      run: {
-        id: run.id,
-        account_id: run.account_id,
-        status: run.status,
-        started_at: run.started_at,
-        finished_at: run.finished_at,
-        totals: run.totals,
-        last_error: run.last_error,
-        time_budget_seconds: run.time_budget_seconds
-      },
-      progress: progress ? {
-        scanned: progress.scanned_count,
-        candidates: progress.candidate_count,
-        matched: progress.matched_count,
-        ambiguous: progress.ambiguous_count,
-        not_found: progress.not_found_count,
-        invalid_id: progress.invalid_id_count,
-        skipped: progress.skipped_count,
-        errors: progress.error_count,
-        items_per_second: progress.items_per_second,
-        estimated_seconds_remaining: eta,
-        updated_at: progress.updated_at
-      } : null
+      ...progress,
+      items_per_second: Math.round(itemsPerSecond * 100) / 100,
+      eta_seconds: etaSeconds
     })
+
   } catch (error: any) {
-    console.error("[MATCHER-PROGRESS] Error:", error.message)
+    console.error(`[MATCHER-PROGRESS] Error:`, error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
