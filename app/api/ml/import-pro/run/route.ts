@@ -194,19 +194,19 @@ export async function POST(request: NextRequest) {
         break
       }
 
-      // Construir URL con scroll pagination (NO usar offset)
+      // Construir URL con scroll pagination usando search_type=scan
       let searchUrl: string
       if (scrollId) {
-        // Usar scroll_id para continuar paginación
-        searchUrl = `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?scroll_id=${scrollId}`
+        // Usar scroll_id para continuar paginación con search_type=scan
+        searchUrl = `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?search_type=scan&scroll_id=${scrollId}`
         console.log(`[IMPORT-PRO] Fetching publications with scroll_id (page ~${Math.floor(offset / publications_page) + 1})`)
       } else {
-        // Primera llamada sin scroll_id
-        searchUrl = `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?limit=${publications_page}`
+        // Primera llamada con search_type=scan
+        searchUrl = `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?search_type=scan&limit=${publications_page}`
         if (publicationsScope === 'active_only') {
           searchUrl += '&status=active'
         }
-        console.log(`[IMPORT-PRO] Fetching first publications page (limit=${publications_page})`)
+        console.log(`[IMPORT-PRO] Fetching first publications page with search_type=scan (limit=${publications_page})`)
       }
       
       const t0_ids = Date.now()
@@ -252,6 +252,18 @@ export async function POST(request: NextRequest) {
       const totalFromApi = searchData.paging?.total || 0
       const newScrollId = searchData.scroll_id || null
 
+      // CRITICAL: Con search_type=scan, terminar cuando results.length == 0 (no confiar en paging.total)
+      if (itemIds.length === 0) {
+        console.log(`[IMPORT-PRO] No more results (scan complete), finishing import`)
+        await supabase
+          .from("ml_import_progress")
+          .update({ status: "done", scroll_id: null })
+          .eq("account_id", accountId)
+        break
+      }
+
+      console.log(`[IMPORT-PRO] Received ${itemIds.length} item IDs from ML API`)
+
       // Guardar scroll_id para la siguiente llamada
       if (newScrollId && newScrollId !== scrollId) {
         console.log(`[IMPORT-PRO] Received new scroll_id, saving for next page`)
@@ -261,21 +273,12 @@ export async function POST(request: NextRequest) {
           .eq("account_id", accountId)
       }
 
-      // Actualizar total si no lo tenemos
+      // Actualizar total si no lo tenemos (con scan puede ser 0, no confiar en él)
       if (!currentProgress.publications_total && totalFromApi > 0) {
         await supabase
           .from("ml_import_progress")
           .update({ publications_total: totalFromApi })
           .eq("account_id", accountId)
-      }
-
-      if (itemIds.length === 0) {
-        console.log(`[IMPORT-PRO] No more items, scroll complete`)
-        await supabase
-          .from("ml_import_progress")
-          .update({ status: "done", publications_total: offset, scroll_id: null })
-          .eq("account_id", accountId)
-        break
       }
 
       // Multiget detalles en batches - ML API limita a máximo 20 IDs por request
@@ -387,12 +390,39 @@ export async function POST(request: NextRequest) {
               console.error(`[IMPORT-PRO] Error code:`, upsertError.code)
               console.error(`[IMPORT-PRO] Error message:`, upsertError.message)
               console.error(`[IMPORT-PRO] Error details:`, upsertError.details)
+              
+              // Guardar error en ml_import_progress
+              const errorMsg = `Upsert error: ${upsertError.message} (code: ${upsertError.code})`
+              await supabase
+                .from("ml_import_progress")
+                .update({ last_error: errorMsg })
+                .eq("account_id", accountId)
+              
+              // Retornar error inmediatamente
+              return NextResponse.json({
+                ok: false,
+                error: "Database upsert error",
+                details: errorMsg,
+                upsert_error: upsertError
+              }, { status: 500 })
             } else {
               console.log(`[IMPORT-PRO] SUCCESS: Batch upserted ${publicationsToUpsert.length} items successfully`)
             }
           } catch (err: any) {
             console.error(`[IMPORT-PRO] EXCEPTION during upsert:`, err.message)
             console.error(`[IMPORT-PRO] Full error:`, err)
+            
+            // Guardar excepción en progress
+            await supabase
+              .from("ml_import_progress")
+              .update({ last_error: `Exception: ${err.message}` })
+              .eq("account_id", accountId)
+            
+            return NextResponse.json({
+              ok: false,
+              error: "Exception during upsert",
+              details: err.message
+            }, { status: 500 })
           }
         } else {
           console.log(`[IMPORT-PRO] WARNING: No publications to upsert in this batch`)
