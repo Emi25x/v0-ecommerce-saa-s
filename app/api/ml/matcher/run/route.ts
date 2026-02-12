@@ -62,27 +62,48 @@ export async function POST(request: NextRequest) {
 
     const PROGRESS_UPDATE_INTERVAL = 200
 
-    // Obtener publicaciones sin vincular
-    const { data: unmatchedPubs, error: fetchError } = await supabase
-      .from("ml_publications")
-      .select("id, ml_item_id, title, sku, isbn, ean, gtin, product_id")
-      .eq("account_id", accountId)
-      .is("product_id", null)
-      .limit(batch_size)
+    // Obtener publicaciones sin vincular con manejo de rate limiting
+    console.log(`[MATCHER] Fetching unmatched publications...`)
+    let unmatchedPubs = null
+    let fetchError = null
+    
+    try {
+      const response = await supabase
+        .from("ml_publications")
+        .select("id, ml_item_id, title, sku, isbn, ean, gtin")
+        .eq("account_id", accountId)
+        .is("product_id", null)
+        .limit(batch_size)
+      
+      unmatchedPubs = response.data
+      fetchError = response.error
+    } catch (error: any) {
+      // Capturar errores de parsing JSON (rate limiting)
+      console.error(`[MATCHER] Error fetching publications:`, error)
+      fetchError = { message: error.message || "Database error" }
+    }
 
     if (fetchError) {
-      console.error(`[MATCHER] Error fetching publications:`, fetchError)
+      console.error(`[MATCHER] Fetch error:`, fetchError)
+      
+      const errorMessage = fetchError.message?.includes("Too Many") 
+        ? "Database rate limit exceeded. Please wait and try again."
+        : fetchError.message
+      
       await supabase
         .from("ml_matcher_progress")
         .update({ 
           status: "failed", 
-          last_error: fetchError.message, 
+          last_error: errorMessage, 
           finished_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
         .eq("account_id", accountId)
       
-      return NextResponse.json({ error: fetchError.message }, { status: 500 })
+      return NextResponse.json({ 
+        error: errorMessage,
+        rate_limited: fetchError.message?.includes("Too Many")
+      }, { status: fetchError.message?.includes("Too Many") ? 429 : 500 })
     }
 
     if (!unmatchedPubs || unmatchedPubs.length === 0) {
@@ -105,6 +126,65 @@ export async function POST(request: NextRequest) {
 
     console.log(`[MATCHER] Processing ${unmatchedPubs.length} publications`)
 
+    // OPTIMIZATION: Cargar todos los productos UNA SOLA VEZ para evitar rate limiting
+    console.log(`[MATCHER] Loading all products with identifiers...`)
+    const { data: allProducts, error: productsError } = await supabase
+      .from("products")
+      .select("id, isbn, ean, gtin, sku")
+      .or("isbn.not.is.null,ean.not.is.null,gtin.not.is.null,sku.not.is.null")
+    
+    if (productsError) {
+      console.error(`[MATCHER] Error loading products:`, productsError)
+      
+      await supabase
+        .from("ml_matcher_progress")
+        .update({ 
+          status: "failed", 
+          last_error: `Failed to load products: ${productsError.message}`, 
+          finished_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq("account_id", accountId)
+      
+      throw new Error(`Failed to load products: ${productsError.message}`)
+    }
+
+    console.log(`[MATCHER] Loaded ${allProducts?.length || 0} products`)
+
+    // Crear índices en memoria para búsqueda rápida
+    const isbnIndex = new Map<string, string[]>() // isbn -> [productId, ...]
+    const eanIndex = new Map<string, string[]>()
+    const gtinIndex = new Map<string, string[]>()
+    const skuIndex = new Map<string, string[]>()
+
+    for (const product of allProducts || []) {
+      if (product.isbn) {
+        const key = normalizeIdentifier(product.isbn)
+        if (!isbnIndex.has(key)) isbnIndex.set(key, [])
+        isbnIndex.get(key)!.push(product.id)
+      }
+      if (product.ean) {
+        const key = normalizeIdentifier(product.ean)
+        if (!eanIndex.has(key)) eanIndex.set(key, [])
+        eanIndex.get(key)!.push(product.id)
+      }
+      if (product.gtin) {
+        const key = normalizeIdentifier(product.gtin)
+        if (!gtinIndex.has(key)) gtinIndex.set(key, [])
+        gtinIndex.get(key)!.push(product.id)
+      }
+      if (product.sku) {
+        const key = normalizeIdentifier(product.sku)
+        if (!skuIndex.has(key)) skuIndex.set(key, [])
+        skuIndex.get(key)!.push(product.id)
+      }
+    }
+
+    console.log(`[MATCHER] Built indices: ${isbnIndex.size} ISBNs, ${eanIndex.size} EANs, ${gtinIndex.size} GTINs, ${skuIndex.size} SKUs`)
+
+    // Batch de updates para vincular publicaciones con productos
+    const publicationsToUpdate: Array<{ id: string; product_id: string; matched_by: string }> = []
+
     // Procesar cada publicación
     for (const pub of unmatchedPubs) {
       scanned++
@@ -123,71 +203,44 @@ export async function POST(request: NextRequest) {
       
       if (!hasAnyIdentifier) {
         invalidId++
-        
-        // Guardar resultado
-        await supabase.from("matcher_results").insert({
-          account_id: accountId,
-          ml_publication_id: pub.id,
-          ml_item_id: pub.ml_item_id,
-          identifier_type: null,
-          identifier_value_normalized: null,
-          outcome: "invalid",
-          matched_product_id: null,
-          match_count: 0,
-          reason_code: "NO_IDENTIFIER"
-        })
-        
         continue
       }
 
       candidates++
 
-      // Intentar match por cada tipo de identificador
+      // Intentar match por cada tipo de identificador usando índices en memoria
       let matched_product_id: string | null = null
       let matchType: string | null = null
-      let matchedValue: string | null = null
       let totalMatches = 0
 
       // Prioridad: ISBN > EAN > GTIN > SKU
       for (const isbn of identifiers.isbn) {
-        const { data: products } = await supabase
-          .from("products")
-          .select("id")
-          .eq("isbn", isbn)
-          .limit(2)
+        const productIds = isbnIndex.get(isbn) || []
         
-        if (products && products.length === 1) {
-          matched_product_id = products[0].id
+        if (productIds.length === 1) {
+          matched_product_id = productIds[0]
           matchType = "isbn"
-          matchedValue = isbn
           totalMatches = 1
           break
-        } else if (products && products.length > 1) {
-          totalMatches = products.length
+        } else if (productIds.length > 1) {
+          totalMatches = productIds.length
           matchType = "isbn"
-          matchedValue = isbn
           break
         }
       }
 
       if (!matched_product_id && totalMatches === 0) {
         for (const ean of identifiers.ean) {
-          const { data: products } = await supabase
-            .from("products")
-            .select("id")
-            .eq("ean", ean)
-            .limit(2)
+          const productIds = eanIndex.get(ean) || []
           
-          if (products && products.length === 1) {
-            matched_product_id = products[0].id
+          if (productIds.length === 1) {
+            matched_product_id = productIds[0]
             matchType = "ean"
-            matchedValue = ean
             totalMatches = 1
             break
-          } else if (products && products.length > 1) {
-            totalMatches = products.length
+          } else if (productIds.length > 1) {
+            totalMatches = productIds.length
             matchType = "ean"
-            matchedValue = ean
             break
           }
         }
@@ -195,22 +248,16 @@ export async function POST(request: NextRequest) {
 
       if (!matched_product_id && totalMatches === 0) {
         for (const gtin of identifiers.gtin) {
-          const { data: products } = await supabase
-            .from("products")
-            .select("id")
-            .eq("ean", gtin)
-            .limit(2)
+          const productIds = gtinIndex.get(gtin) || []
           
-          if (products && products.length === 1) {
-            matched_product_id = products[0].id
+          if (productIds.length === 1) {
+            matched_product_id = productIds[0]
             matchType = "gtin"
-            matchedValue = gtin
             totalMatches = 1
             break
-          } else if (products && products.length > 1) {
-            totalMatches = products.length
+          } else if (productIds.length > 1) {
+            totalMatches = productIds.length
             matchType = "gtin"
-            matchedValue = gtin
             break
           }
         }
@@ -218,78 +265,36 @@ export async function POST(request: NextRequest) {
 
       if (!matched_product_id && totalMatches === 0) {
         for (const sku of identifiers.sku) {
-          const { data: products } = await supabase
-            .from("products")
-            .select("id")
-            .eq("sku", sku)
-            .limit(2)
+          const productIds = skuIndex.get(sku) || []
           
-          if (products && products.length === 1) {
-            matched_product_id = products[0].id
+          if (productIds.length === 1) {
+            matched_product_id = productIds[0]
             matchType = "sku"
-            matchedValue = sku
             totalMatches = 1
             break
-          } else if (products && products.length > 1) {
-            totalMatches = products.length
+          } else if (productIds.length > 1) {
+            totalMatches = productIds.length
             matchType = "sku"
-            matchedValue = sku
             break
           }
         }
       }
 
-      // Determinar outcome y actualizar
+      // Determinar outcome
       if (matched_product_id) {
         // Match exacto encontrado
         matched++
-        
-        await supabase
-          .from("ml_publications")
-          .update({ product_id: matched_product_id, matched_by: matchType })
-          .eq("id", pub.id)
-        
-        await supabase.from("matcher_results").insert({
-          account_id: accountId,
-          ml_publication_id: pub.id,
-          ml_item_id: pub.ml_item_id,
-          identifier_type: matchType,
-          identifier_value_normalized: matchedValue,
-          outcome: "matched",
-          matched_product_id,
-          match_count: 1,
-          reason_code: "EXACT_MATCH"
+        publicationsToUpdate.push({
+          id: pub.id,
+          product_id: matched_product_id,
+          matched_by: matchType!
         })
       } else if (totalMatches > 1) {
         // Múltiples matches (ambiguo)
         ambiguous++
-        
-        await supabase.from("matcher_results").insert({
-          account_id: accountId,
-          ml_publication_id: pub.id,
-          ml_item_id: pub.ml_item_id,
-          identifier_type: matchType,
-          identifier_value_normalized: matchedValue,
-          outcome: "ambiguous",
-          matched_product_id: null,
-          match_count: totalMatches,
-          reason_code: "MULTIPLE_MATCHES"
-        })
       } else {
         // No encontrado
         notFound++
-        
-        await supabase.from("matcher_results").insert({
-          account_id: accountId,
-          ml_publication_id: pub.id,
-          ml_item_id: pub.ml_item_id,
-          identifier_type: matchType || identifiers.isbn[0] ? 'isbn' : identifiers.ean[0] ? 'ean' : 'other',
-          identifier_value_normalized: matchedValue || identifiers.isbn[0] || identifiers.ean[0] || null,
-          outcome: "not_found",
-          matched_product_id: null,
-          match_count: 0,
-          reason_code: "NO_MATCH"
-        })
       }
 
       // Actualizar progreso cada N items
@@ -308,13 +313,28 @@ export async function POST(request: NextRequest) {
           })
           .eq("account_id", accountId)
         
-        console.log(`[MATCHER] Progress: ${scanned}/${unmatchedPubs.length} (${matched} matched)`)
+        console.log(`[MATCHER] Progress: ${scanned}/${unmatchedPubs.length} (${matched} matched, ${ambiguous} ambiguous, ${notFound} not_found, ${invalidId} invalid)`)
       }
 
       // Check time budget
       if (Date.now() - startTime > max_seconds * 1000) {
         console.log(`[MATCHER] Time budget exceeded, stopping`)
         break
+      }
+    }
+
+    // Batch update de todas las publicaciones vinculadas
+    if (publicationsToUpdate.length > 0) {
+      console.log(`[MATCHER] Batch updating ${publicationsToUpdate.length} matched publications`)
+      
+      for (const update of publicationsToUpdate) {
+        await supabase
+          .from("ml_publications")
+          .update({ 
+            product_id: update.product_id,
+            matched_by: update.matched_by
+          })
+          .eq("id", update.id)
       }
     }
 
