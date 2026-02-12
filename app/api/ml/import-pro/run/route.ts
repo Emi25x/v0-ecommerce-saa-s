@@ -372,17 +372,30 @@ export async function POST(request: NextRequest) {
 
         // UPSERT EN BATCH (1 sola llamada a Supabase para todo el batch)
         if (publicationsToUpsert.length > 0) {
+          console.log(`[IMPORT-PRO] BEFORE UPSERT: Prepared ${publicationsToUpsert.length} publications to upsert`)
+          console.log(`[IMPORT-PRO] Sample item:`, JSON.stringify(publicationsToUpsert[0]))
+          
           const t0_upsert = Date.now()
-          const { error: upsertError } = await supabase
-            .from("ml_publications")
-            .upsert(publicationsToUpsert, { onConflict: "account_id,ml_item_id" })
-          t_upsert_ml_publications += (Date.now() - t0_upsert)
+          try {
+            const { data, error: upsertError } = await supabase
+              .from("ml_publications")
+              .upsert(publicationsToUpsert, { onConflict: "account_id,ml_item_id" })
+            t_upsert_ml_publications += (Date.now() - t0_upsert)
 
-          if (upsertError) {
-            console.error(`[IMPORT-PRO] Batch upsert error:`, upsertError)
-          } else {
-            console.log(`[IMPORT-PRO] Batch upserted ${publicationsToUpsert.length} items`)
+            if (upsertError) {
+              console.error(`[IMPORT-PRO] CRITICAL UPSERT ERROR:`, JSON.stringify(upsertError))
+              console.error(`[IMPORT-PRO] Error code:`, upsertError.code)
+              console.error(`[IMPORT-PRO] Error message:`, upsertError.message)
+              console.error(`[IMPORT-PRO] Error details:`, upsertError.details)
+            } else {
+              console.log(`[IMPORT-PRO] SUCCESS: Batch upserted ${publicationsToUpsert.length} items successfully`)
+            }
+          } catch (err: any) {
+            console.error(`[IMPORT-PRO] EXCEPTION during upsert:`, err.message)
+            console.error(`[IMPORT-PRO] Full error:`, err)
           }
+        } else {
+          console.log(`[IMPORT-PRO] WARNING: No publications to upsert in this batch`)
         }
 
         // Check time limit
