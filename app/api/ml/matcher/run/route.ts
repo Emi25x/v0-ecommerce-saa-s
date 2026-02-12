@@ -130,8 +130,8 @@ export async function POST(request: NextRequest) {
     console.log(`[MATCHER] Loading all products with identifiers...`)
     const { data: allProducts, error: productsError } = await supabase
       .from("products")
-      .select("id, isbn, ean, gtin, sku")
-      .or("isbn.not.is.null,ean.not.is.null,gtin.not.is.null,sku.not.is.null")
+      .select("id, isbn, ean, sku")
+      .or("isbn.not.is.null,ean.not.is.null,sku.not.is.null")
     
     if (productsError) {
       console.error(`[MATCHER] Error loading products:`, productsError)
@@ -151,10 +151,9 @@ export async function POST(request: NextRequest) {
 
     console.log(`[MATCHER] Loaded ${allProducts?.length || 0} products`)
 
-    // Crear índices en memoria para búsqueda rápida
+    // Crear índices en memoria para búsqueda rápida (sin gtin - solo existe en ml_publications)
     const isbnIndex = new Map<string, string[]>() // isbn -> [productId, ...]
     const eanIndex = new Map<string, string[]>()
-    const gtinIndex = new Map<string, string[]>()
     const skuIndex = new Map<string, string[]>()
 
     for (const product of allProducts || []) {
@@ -168,11 +167,6 @@ export async function POST(request: NextRequest) {
         if (!eanIndex.has(key)) eanIndex.set(key, [])
         eanIndex.get(key)!.push(product.id)
       }
-      if (product.gtin) {
-        const key = normalizeIdentifier(product.gtin)
-        if (!gtinIndex.has(key)) gtinIndex.set(key, [])
-        gtinIndex.get(key)!.push(product.id)
-      }
       if (product.sku) {
         const key = normalizeIdentifier(product.sku)
         if (!skuIndex.has(key)) skuIndex.set(key, [])
@@ -180,7 +174,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log(`[MATCHER] Built indices: ${isbnIndex.size} ISBNs, ${eanIndex.size} EANs, ${gtinIndex.size} GTINs, ${skuIndex.size} SKUs`)
+    console.log(`[MATCHER] Built indices: ${isbnIndex.size} ISBNs, ${eanIndex.size} EANs, ${skuIndex.size} SKUs`)
 
     // Batch de updates para vincular publicaciones con productos
     const publicationsToUpdate: Array<{ id: string; product_id: string; matched_by: string }> = []
@@ -246,22 +240,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      if (!matched_product_id && totalMatches === 0) {
-        for (const gtin of identifiers.gtin) {
-          const productIds = gtinIndex.get(gtin) || []
-          
-          if (productIds.length === 1) {
-            matched_product_id = productIds[0]
-            matchType = "gtin"
-            totalMatches = 1
-            break
-          } else if (productIds.length > 1) {
-            totalMatches = productIds.length
-            matchType = "gtin"
-            break
-          }
-        }
-      }
+      // Skip GTIN matching - products table doesn't have gtin column (only ml_publications has it)
 
       if (!matched_product_id && totalMatches === 0) {
         for (const sku of identifiers.sku) {
