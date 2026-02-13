@@ -191,6 +191,12 @@ export async function POST(request: Request) {
       console.log(`[MATCHER] Batch updating ${batchUpdates.length} matched publications`)
       
       for (const update of batchUpdates) {
+        // Validación crítica: solo actualizar si product_id es válido
+        if (!update.product_id) {
+          console.error(`[MATCHER] ERROR: Attempted to update publication ${update.id} with NULL product_id`)
+          continue
+        }
+        
         await supabase.from("ml_publications").update({
           product_id: update.product_id,
           matched_by: update.matched_by
