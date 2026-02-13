@@ -129,6 +129,7 @@ export async function POST(request: Request) {
       .limit(batch_size)
 
     let matched = 0, ambiguous = 0, notFound = 0, invalid = 0
+    const batchUpdates: Array<{ id: string; product_id: string; matched_by: string }> = []
 
     for (const pub of pubs || []) {
       if (Date.now() - t0 > max_seconds * 1000) break
@@ -170,17 +171,30 @@ export async function POST(request: Request) {
         }
       }
 
-      // Actualizar según outcome
+      // Acumular updates en memoria
       if (productId) {
         matched++
-        await supabase.from("ml_publications").update({
+        batchUpdates.push({
+          id: pub.id,
           product_id: productId,
-          matched_by: matchType
-        }).eq("id", pub.id)
+          matched_by: matchType!
+        })
       } else if (totalMatches > 1) {
         ambiguous++
       } else {
         notFound++
+      }
+    }
+
+    // Batch update al final (mucho más rápido)
+    if (batchUpdates.length > 0) {
+      console.log(`[MATCHER] Batch updating ${batchUpdates.length} matched publications`)
+      
+      for (const update of batchUpdates) {
+        await supabase.from("ml_publications").update({
+          product_id: update.product_id,
+          matched_by: update.matched_by
+        }).eq("id", update.id)
       }
     }
 
