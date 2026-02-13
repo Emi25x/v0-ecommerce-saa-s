@@ -13,13 +13,50 @@ export async function POST(request: Request) {
   const body = await request.json()
   const { account_id: accountId, max_seconds = 12, batch_size = 200 } = body
 
+  // LOG OBLIGATORIO: account_id recibido
+  console.log(`[v0] [MATCHER] Received account_id: ${accountId}`)
+
+  // Validación estricta de account_id
   if (!accountId) {
-    return NextResponse.json({ error: "account_id required" }, { status: 400 })
+    console.log(`[v0] [MATCHER] ERROR: Missing account_id`)
+    return NextResponse.json({ error: "missing_account_id" }, { status: 400 })
   }
 
   const supabase = await createClient({ useServiceRole: true })
 
   try {
+    // LOG OBLIGATORIO: Calcular candidates_count ANTES de inicializar progreso
+    const { data: candidates, count: candidatesCount } = await supabase
+      .from("ml_publications")
+      .select("id, isbn, ean, gtin, sku", { count: 'exact', head: false })
+      .eq("account_id", accountId)
+      .is("product_id", null)
+      .limit(10) // Solo para ver ejemplos
+
+    console.log(`[v0] [MATCHER] Total candidates without product_id: ${candidatesCount}`)
+    console.log(`[v0] [MATCHER] Sample candidates (first 10):`, candidates?.map(c => ({
+      id: c.id,
+      has_isbn: !!c.isbn,
+      has_ean: !!c.ean,
+      has_gtin: !!c.gtin,
+      has_sku: !!c.sku
+    })))
+
+    // Si candidates_count == 0, devolver no_candidates inmediatamente
+    if (candidatesCount === 0) {
+      console.log(`[v0] [MATCHER] No candidates found - returning no_work`)
+      return NextResponse.json({
+        ok: true,
+        status: 'no_work',
+        reason: 'no_candidates',
+        processed: 0,
+        matched: 0,
+        elapsed_seconds: ((Date.now() - t0) / 1000).toFixed(2),
+        total_processed: 0,
+        total_target: 0
+      })
+    }
+
     // 1) Obtener progreso actual
     let { data: progress } = await supabase
       .from("ml_matcher_progress")
