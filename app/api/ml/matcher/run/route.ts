@@ -120,13 +120,16 @@ export async function POST(request: Request) {
     }
 
     // 6) Procesar batch (con offset para no repetir publicaciones ya procesadas)
-    const { data: pubs } = await supabase
+    console.log(`[v0] [MATCHER] Fetching batch: offset=${progress.processed_count}, limit=${batch_size}`)
+    const { data: pubs, error: pubsError } = await supabase
       .from("ml_publications")
       .select("id, ml_item_id, title, isbn, ean, sku")
       .eq("account_id", accountId)
       .is("product_id", null)
       .order("updated_at", { ascending: true })
       .range(progress.processed_count, progress.processed_count + batch_size - 1)
+
+    console.log(`[v0] [MATCHER] Fetched ${pubs?.length || 0} publications`, pubsError ? `Error: ${pubsError.message}` : '')
 
     let matched = 0, ambiguous = 0, notFound = 0, invalid = 0
     const batchUpdates: Array<{ id: string; product_id: string; matched_by: string }> = []
