@@ -26,6 +26,16 @@ export default function MLMatcherPage() {
   const [accountDebug, setAccountDebug] = useState<any>(null)
   const [loadingAccountDebug, setLoadingAccountDebug] = useState(false)
 
+  // Helper seguro para formatear fechas
+  const formatDate = (dateValue?: string | null) => {
+    if (!dateValue) return "—"
+    try {
+      return new Date(dateValue).toLocaleString()
+    } catch {
+      return "—"
+    }
+  }
+
   // Cargar cuentas ML
   useEffect(() => {
     fetch("/api/mercadolibre/accounts")
@@ -481,7 +491,7 @@ export default function MLMatcherPage() {
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium">Publicaciones</span>
                 <span className="text-sm text-muted-foreground">
-                  {progress.publications_offset.toLocaleString()} / {progress.publications_total?.toLocaleString() || "?"}
+                  {progress.publications_offset?.toLocaleString() || 0} / {progress.publications_total?.toLocaleString() || "?"}
                 </span>
               </div>
               <Progress value={progress.publications_progress || 0} className="h-2" />
@@ -492,7 +502,7 @@ export default function MLMatcherPage() {
 
             {progress.last_run_at && (
               <p className="text-xs text-muted-foreground">
-                Última ejecución: {new Date(progress.last_run_at).toLocaleString()}
+                Última ejecución: {formatDate(progress.last_run_at)}
               </p>
             )}
 
@@ -502,7 +512,7 @@ export default function MLMatcherPage() {
                 <div>
                   <p className="text-sm text-yellow-800 font-medium">Pausado por límite de API</p>
                   <p className="text-xs text-yellow-700">
-                    Reinicio automático: {new Date(progress.paused_until).toLocaleTimeString()}
+                    Reinicio automático: {formatDate(progress.paused_until)}
                   </p>
                 </div>
               </div>
