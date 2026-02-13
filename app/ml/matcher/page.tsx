@@ -362,9 +362,9 @@ export default function MLMatcherPage() {
     <div className="container mx-auto p-6 max-w-5xl">
       {/* Encabezado */}
       <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2">Importación inicial Mercado Libre</h1>
+        <h1 className="text-3xl font-bold mb-2">Vinculación Automática MercadoLibre</h1>
         <p className="text-muted-foreground">
-          Importa publicaciones y actividad para sincronizar tu catálogo
+          Vincula publicaciones de MercadoLibre con productos del catálogo usando ISBN, EAN y SKU
         </p>
       </div>
 
@@ -449,25 +449,23 @@ export default function MLMatcherPage() {
           </Button>
         </div>
         
-        <div className="flex gap-3">
+        <div className="space-y-2">
           <div>
-            <span className="text-xs text-muted-foreground block mb-1">Publicaciones</span>
+            <span className="text-xs text-muted-foreground block mb-1">Publicaciones a vincular</span>
             <Badge variant="secondary" className="font-normal">
-              {progress?.publications_scope === 'active_only' ? 'Solo activas' : 'Todas'}
+              Solo sin vincular
             </Badge>
           </div>
-          <div>
-            <span className="text-xs text-muted-foreground block mb-1">Actividad</span>
-            <Badge variant="secondary" className="font-normal">
-              Últimos {progress?.activity_days || 30} días
-            </Badge>
-          </div>
+          <p className="text-xs text-muted-foreground">
+            El matcher procesa únicamente publicaciones sin <code className="bg-muted px-1 rounded">product_id</code> para vincularlas con productos del catálogo usando identificadores como ISBN, EAN y SKU.
+          </p>
         </div>
 
         {showAdvanced && (
-          <div className="mt-4 pt-4 border-t">
-            <p className="text-sm text-muted-foreground">
-              Las opciones avanzadas de alcance se configurarán próximamente.
+          <div className="mt-4 pt-4 border-t space-y-2">
+            <p className="text-xs font-medium">Estrategia de matching</p>
+            <p className="text-xs text-muted-foreground">
+              Prioridad: ISBN → EAN → SKU. Solo vincula si hay exactamente 1 coincidencia (evita ambigüedades).
             </p>
           </div>
         )}
@@ -532,7 +530,7 @@ export default function MLMatcherPage() {
                   <p className="text-xs text-red-700">{progress.last_error}</p>
                   {progress.status !== 'error' && (
                     <p className="text-xs text-red-600 mt-1 italic">
-                      Este error ocurrió previamente. Inicia la importación para reintentar.
+                      Este error ocurrió previamente. Inicia el matching para reintentar.
                     </p>
                   )}
                 </div>
@@ -558,7 +556,7 @@ export default function MLMatcherPage() {
                 ) : (
                   <>
                     <Play className="mr-2 h-4 w-4" />
-                    {progress?.publications_offset > 0 ? "Reanudar" : "Iniciar"}
+                    {progress?.processed_count > 0 ? "Reanudar Matching" : "Iniciar Matching"}
                   </>
                 )}
               </Button>
@@ -567,18 +565,18 @@ export default function MLMatcherPage() {
             {autoMode && (
               <Button onClick={handlePause} size="lg" variant="outline" className="flex-1 min-w-[180px] bg-transparent">
                 <Pause className="mr-2 h-4 w-4" />
-                Pausar
+                Pausar Auto-mode
               </Button>
             )}
 
             {!autoMode && !running && (
               <Button onClick={handleRun} disabled={running} size="lg" variant="outline" className="bg-transparent">
                 <RefreshCw className="mr-2 h-4 w-4" />
-                Paso (1 corrida)
+                Ejecutar Batch
               </Button>
             )}
 
-            {!autoMode && !running && progress && progress.publications_offset > 0 && (
+            {!autoMode && !running && progress && progress.processed_count > 0 && (
               <Button onClick={handleReset} size="lg" variant="outline" className="bg-transparent border-red-600 text-red-700 hover:bg-red-50">
                 <RotateCcw className="mr-2 h-4 w-4" />
                 Reiniciar desde cero
@@ -622,38 +620,38 @@ export default function MLMatcherPage() {
           </div>
         )}
 
-        {autoMode && progress?.status !== "done" && (
+        {autoMode && progress?.status !== "completed" && (
           <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
             <p className="text-sm text-blue-700 font-medium mb-1">
               Modo automático activo
             </p>
             <p className="text-xs text-blue-600">
-              La importación avanza mientras esta página esté abierta. Podés cerrar la página y reanudar luego.
+              El matching avanza automáticamente mientras esta página esté abierta. Podés cerrar y reanudar luego.
             </p>
           </div>
         )}
       </Card>
 
-      {/* Card Métricas */}
-      {stats && (
+      {/* Card Métricas de Matching */}
+      {progress && (
         <Card className="p-5 mb-6">
-          <h3 className="font-semibold mb-4">Métricas</h3>
+          <h3 className="font-semibold mb-4">Resultados</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
-              <p className="text-2xl font-bold">{stats.total_publications?.toLocaleString() || 0}</p>
-              <p className="text-xs text-muted-foreground">Importadas</p>
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-green-600">{stats.matched_publications?.toLocaleString() || 0}</p>
+              <p className="text-2xl font-bold text-green-600">{progress.matched_count?.toLocaleString() || 0}</p>
               <p className="text-xs text-muted-foreground">Vinculadas</p>
             </div>
             <div>
-              <p className="text-2xl font-bold text-yellow-600">{stats.unmatched_publications?.toLocaleString() || 0}</p>
-              <p className="text-xs text-muted-foreground">Sin producto</p>
+              <p className="text-2xl font-bold text-yellow-600">{progress.ambiguous_count?.toLocaleString() || 0}</p>
+              <p className="text-xs text-muted-foreground">Ambiguas</p>
             </div>
             <div>
-              <p className="text-2xl font-bold text-blue-600">{stats.updated_last_hour?.toLocaleString() || 0}</p>
-              <p className="text-xs text-muted-foreground">Recientes (1h)</p>
+              <p className="text-2xl font-bold text-gray-600">{progress.not_found_count?.toLocaleString() || 0}</p>
+              <p className="text-xs text-muted-foreground">Sin match</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-red-600">{progress.invalid_identifier_count?.toLocaleString() || 0}</p>
+              <p className="text-xs text-muted-foreground">Sin identificador</p>
             </div>
           </div>
         </Card>
@@ -677,8 +675,8 @@ export default function MLMatcherPage() {
                 <div className="flex items-center gap-4 text-xs text-muted-foreground">
                   {log.action === 'success' && (
                     <>
-                      <span>{log.imported_delta} importadas</span>
-                      <span>{log.matched_delta} vinculadas</span>
+                      <span>{log.processed || 0} procesadas</span>
+                      <span>{log.matched || 0} vinculadas</span>
                     </>
                   )}
                   {log.retry_after && (
