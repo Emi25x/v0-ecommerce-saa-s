@@ -131,17 +131,41 @@ export async function POST(request: Request) {
 
     console.log(`[v0] [MATCHER] Fetched ${pubs?.length || 0} publications`, pubsError ? `Error: ${pubsError.message}` : '')
 
+    // Si no hay publicaciones, devolver no_work
+    if (!pubs || pubs.length === 0) {
+      await supabase.from("ml_matcher_progress").update({
+        status: 'completed',
+        finished_at: new Date().toISOString(),
+        last_heartbeat_at: new Date().toISOString()
+      }).eq("account_id", accountId)
+
+      return NextResponse.json({
+        ok: true,
+        status: 'no_work',
+        reason: progress!.processed_count >= (progress!.total_target || 0) ? 'all_processed' : 'no_candidates',
+        processed: 0,
+        matched: 0,
+        elapsed_seconds: ((Date.now() - t0) / 1000).toFixed(2),
+        total_processed: progress!.processed_count,
+        total_target: progress!.total_target
+      })
+    }
+
     let matched = 0, ambiguous = 0, notFound = 0, invalid = 0
     const batchUpdates: Array<{ id: string; product_id: string; matched_by: string }> = []
+    let actuallyProcessed = 0
 
     for (const pub of pubs || []) {
       if (Date.now() - t0 > max_seconds * 1000) break
+      
+      actuallyProcessed++ // Contar TODAS las publicaciones procesadas
 
       const ids = extractIds(pub.title)
       if (pub.isbn) ids.isbn.push(normalize(pub.isbn))
       if (pub.ean) ids.ean.push(normalize(pub.ean))
       if (pub.sku) ids.sku.push(normalize(pub.sku))
 
+      // Si no tiene identificadores, marcar como invalid y continuar
       if (ids.isbn.length + ids.ean.length + ids.sku.length === 0) {
         invalid++
         continue
@@ -188,6 +212,8 @@ export async function POST(request: Request) {
         notFound++
       }
     }
+    
+    console.log(`[v0] [MATCHER] Processed: ${actuallyProcessed}, Matched: ${matched}, Ambiguous: ${ambiguous}, Not found: ${notFound}, Invalid: ${invalid}`)
 
     // Batch update al final (mucho más rápido)
     if (batchUpdates.length > 0) {
@@ -208,7 +234,7 @@ export async function POST(request: Request) {
     }
 
     // 7) Actualizar progreso INCREMENTALMENTE
-    const processed = matched + ambiguous + notFound + invalid
+    const processed = actuallyProcessed // Usar el contador real, no el calculado
     const newProcessed = (progress!.processed_count || 0) + processed
     const newMatched = (progress!.matched_count || 0) + matched
     const newAmbiguous = (progress!.ambiguous_count || 0) + ambiguous
