@@ -177,7 +177,7 @@ export async function POST(request: NextRequest) {
     console.log(`[MATCHER] Built indices: ${isbnIndex.size} ISBNs, ${eanIndex.size} EANs, ${skuIndex.size} SKUs`)
 
     // Batch de updates para vincular publicaciones con productos
-    const publicationsToUpdate: Array<{ id: string; product_id: string; matched_by: string }> = []
+    const publicationsToUpdate: Array<{ id: string; product_id: string; matched_by: string; matched_at: string }> = []
 
     // Procesar cada publicación
     for (const pub of unmatchedPubs) {
@@ -192,11 +192,25 @@ export async function POST(request: NextRequest) {
       if (pub.gtin) identifiers.gtin.push(normalizeIdentifier(pub.gtin))
       if (pub.sku) identifiers.sku.push(normalizeIdentifier(pub.sku))
 
-      // Si no tiene identificadores, marcar como invalid
+      // Si no tiene identificadores, marcar como invalid - NO tocar matched_by ni product_id
       const hasAnyIdentifier = identifiers.isbn.length + identifiers.ean.length + identifiers.gtin.length + identifiers.sku.length > 0
       
       if (!hasAnyIdentifier) {
         invalidId++
+        
+        // Guardar resultado en matcher_results
+        await supabase.from("matcher_results").insert({
+          account_id: accountId,
+          ml_publication_id: pub.id,
+          ml_item_id: pub.ml_item_id,
+          identifier_type: null,
+          identifier_value_normalized: null,
+          outcome: "invalid",
+          matched_product_id: null,
+          match_count: 0,
+          reason_code: "NO_IDENTIFIER"
+        })
+        
         continue
       }
 
@@ -259,21 +273,61 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Determinar outcome
+      // Determinar outcome y registrar resultado
       if (matched_product_id) {
-        // Match exacto encontrado
+        // Match exacto encontrado - SOLO AQUÍ se setea matched_by (con product_id)
         matched++
         publicationsToUpdate.push({
           id: pub.id,
           product_id: matched_product_id,
-          matched_by: matchType!
+          matched_by: matchType!,
+          matched_at: new Date().toISOString()
+        })
+        
+        // Guardar resultado en matcher_results
+        await supabase.from("matcher_results").insert({
+          account_id: accountId,
+          ml_publication_id: pub.id,
+          ml_item_id: pub.ml_item_id,
+          identifier_type: matchType,
+          identifier_value_normalized: matchType === 'isbn' ? identifiers.isbn[0] : matchType === 'ean' ? identifiers.ean[0] : identifiers.sku[0],
+          outcome: "matched",
+          matched_product_id,
+          match_count: 1,
+          reason_code: "EXACT_MATCH"
         })
       } else if (totalMatches > 1) {
-        // Múltiples matches (ambiguo)
+        // Múltiples matches (ambiguo) - NO setear matched_by ni product_id
         ambiguous++
+        
+        // Guardar resultado en matcher_results
+        await supabase.from("matcher_results").insert({
+          account_id: accountId,
+          ml_publication_id: pub.id,
+          ml_item_id: pub.ml_item_id,
+          identifier_type: matchType,
+          identifier_value_normalized: matchType === 'isbn' ? identifiers.isbn[0] : matchType === 'ean' ? identifiers.ean[0] : identifiers.sku[0],
+          outcome: "ambiguous",
+          matched_product_id: null,
+          match_count: totalMatches,
+          reason_code: "MULTIPLE_MATCHES"
+        })
       } else {
-        // No encontrado
+        // No encontrado - NO setear matched_by ni product_id
         notFound++
+        
+        // Guardar resultado en matcher_results
+        await supabase.from("matcher_results").insert({
+          account_id: accountId,
+          ml_publication_id: pub.id,
+          ml_item_id: pub.ml_item_id,
+          identifier_type: null,
+          identifier_value_normalized: null,
+          outcome: "not_found",
+          matched_product_id: null,
+          match_count: 0,
+          reason_code: "NO_MATCH"
+        })
       }
 
       // Actualizar progreso cada N items
@@ -302,17 +356,24 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Batch update de todas las publicaciones vinculadas
+    // Batch update de todas las publicaciones vinculadas (SOLO las matched)
     if (publicationsToUpdate.length > 0) {
       console.log(`[MATCHER] Batch updating ${publicationsToUpdate.length} matched publications`)
       
       for (const update of publicationsToUpdate) {
+        const updatePayload: any = { 
+          product_id: update.product_id,
+          matched_by: update.matched_by
+        }
+        
+        // Solo agregar matched_at si la columna existe
+        if (update.matched_at) {
+          updatePayload.matched_at = update.matched_at
+        }
+        
         await supabase
           .from("ml_publications")
-          .update({ 
-            product_id: update.product_id,
-            matched_by: update.matched_by
-          })
+          .update(updatePayload)
           .eq("id", update.id)
       }
     }
