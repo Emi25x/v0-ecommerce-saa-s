@@ -181,11 +181,11 @@ export default function MLMatcherPage() {
       const logEntry = {
         ranAt: new Date().toISOString(),
         action: data.ok ? (data.paused ? 'paused' : 'success') : 'error',
-        imported_delta: data.imported_count || data.publications_processed || 0,
-        matched_delta: data.matched || 0,
+        processed: data.processed || 0,  // Matcher usa 'processed', no 'imported_count'
+        matched: data.matched || 0,
         retry_after: data.paused ? data.wait_seconds : null,
-        elapsed: data.timings ? (data.timings.total_ms / 1000).toFixed(1) : ((Date.now() - startTime) / 1000).toFixed(1),
-        error_details: !data.ok && data.where ? `${data.where}: ${data.status}` : null,
+        elapsed: data.elapsed_seconds || ((Date.now() - startTime) / 1000).toFixed(1),
+        error_details: !data.ok && data.error ? data.error : null,
         timings: data.timings || null
       }
       
