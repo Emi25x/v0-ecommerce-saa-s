@@ -486,9 +486,9 @@ export default function MLMatcherPage() {
                   {progress.processed_count?.toLocaleString() || 0} / {progress.total_target?.toLocaleString() || "?"}
                 </span>
               </div>
-              <Progress value={progress.progress_percentage || 0} className="h-2" />
+              <Progress value={((progress.processed_count || 0) / Math.max(progress.total_target || 1, 1)) * 100} className="h-2" />
               <p className="text-xs text-muted-foreground mt-1">
-                {(progress.progress_percentage || 0).toFixed(1)}% completado
+                {(((progress.processed_count || 0) / Math.max(progress.total_target || 1, 1)) * 100).toFixed(1)}% completado
               </p>
             </div>
 
