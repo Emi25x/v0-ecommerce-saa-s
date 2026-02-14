@@ -14,12 +14,18 @@ export async function POST(request: Request) {
   const { account_id: accountId, max_seconds = 12, batch_size = 200 } = body
 
   // LOG OBLIGATORIO: account_id recibido
-  console.log(`[v0] [MATCHER] Received account_id: ${accountId}`)
+  console.log(`[v0] [MATCHER] POST /api/ml/matcher/run - Received account_id: ${accountId}`)
 
-  // Validación estricta de account_id
+  // Validación estricta de account_id (existencia y formato UUID)
   if (!accountId) {
     console.log(`[v0] [MATCHER] ERROR: Missing account_id`)
     return NextResponse.json({ error: "missing_account_id" }, { status: 400 })
+  }
+  
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  if (!uuidRegex.test(accountId)) {
+    console.log(`[v0] [MATCHER] ERROR: Invalid UUID format for account_id: ${accountId}`)
+    return NextResponse.json({ error: "invalid_account_id_format" }, { status: 400 })
   }
 
   const supabase = await createClient({ useServiceRole: true })
@@ -168,7 +174,26 @@ export async function POST(request: Request) {
 
     console.log(`[v0] [MATCHER] Fetched ${pubs?.length || 0} publications`, pubsError ? `Error: ${pubsError.message}` : '')
 
-    // Si no hay publicaciones, devolver no_work
+    // DETECCIÓN DE MISMATCH: Si candidates_count > 0 pero batch retorna 0, es un problema
+    if ((!pubs || pubs.length === 0) && candidatesCount! > 0 && progress!.processed_count < candidatesCount!) {
+      console.error(`[v0] [MATCHER] CANDIDATE_QUERY_MISMATCH: candidates_count=${candidatesCount} but batch returned 0 items`)
+      console.error(`[v0] [MATCHER] Query used: .from("ml_publications").eq("account_id", "${accountId}").is("product_id", null).order("updated_at", { ascending: true }).range(${progress.processed_count}, ${progress.processed_count + batch_size - 1})`)
+      
+      return NextResponse.json({
+        ok: false,
+        error: "candidate_query_mismatch",
+        details: {
+          candidates_count: candidatesCount,
+          batch_returned: 0,
+          processed_count: progress!.processed_count,
+          query_offset: progress!.processed_count,
+          query_limit: batch_size,
+          query_filter: `account_id='${accountId}' AND product_id IS NULL ORDER BY updated_at ASC`
+        }
+      }, { status: 500 })
+    }
+
+    // Si no hay publicaciones y ya procesamos todo, devolver no_work normal
     if (!pubs || pubs.length === 0) {
       await supabase.from("ml_matcher_progress").update({
         status: 'completed',
@@ -184,7 +209,8 @@ export async function POST(request: Request) {
         matched: 0,
         elapsed_seconds: ((Date.now() - t0) / 1000).toFixed(2),
         total_processed: progress!.processed_count,
-        total_target: progress!.total_target
+        total_target: progress!.total_target,
+        candidates_count: candidatesCount
       })
     }
 
