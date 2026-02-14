@@ -191,19 +191,13 @@ export default function MLMatcherPage() {
       
       setExecutionLog(prev => [logEntry, ...prev].slice(0, 10))
 
-      // Recargar progress y stats
-      const statusRes = await fetch(`/api/ml/import-pro/status?account_id=${selectedAccountId}`)
-      const statsRes = await fetch(`/api/debug/import-queue-stats?account_id=${selectedAccountId}`)
+      // Recargar progress del matcher (NO usar endpoints del importador)
+      const statusRes = await fetch(`/api/ml/matcher/status?account_id=${selectedAccountId}`)
       
       const statusData = await statusRes.json()
-      const statsData = await statsRes.json()
       
       if (statusData.ok) {
         setProgress(statusData.progress)
-      }
-      
-      if (statsData.ok) {
-        setStats(statsData)
       }
 
       // Si está pausado o completo, detener auto-mode
@@ -487,14 +481,14 @@ export default function MLMatcherPage() {
           <div className="space-y-3">
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium">Publicaciones</span>
+                <span className="text-sm font-medium">Progreso de Vinculación</span>
                 <span className="text-sm text-muted-foreground">
-                  {progress.publications_offset?.toLocaleString() || 0} / {progress.publications_total?.toLocaleString() || "?"}
+                  {progress.processed_count?.toLocaleString() || 0} / {progress.total_target?.toLocaleString() || "?"}
                 </span>
               </div>
-              <Progress value={progress.publications_progress || 0} className="h-2" />
+              <Progress value={progress.progress_percentage || 0} className="h-2" />
               <p className="text-xs text-muted-foreground mt-1">
-                {(progress.publications_progress || 0).toFixed(1)}% completado
+                {(progress.progress_percentage || 0).toFixed(1)}% completado
               </p>
             </div>
 
