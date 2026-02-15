@@ -33,11 +33,17 @@ export default function Page() {
         email,
         password,
       })
-      if (error) throw error
+      if (error) {
+        // Mensajes más amigables
+        if (error.message.includes('Invalid login credentials')) {
+          throw new Error('Email o contraseña incorrectos')
+        }
+        throw error
+      }
       router.push('/')
       router.refresh()
     } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : 'An error occurred')
+      setError(error instanceof Error ? error.message : 'Error al iniciar sesión')
     } finally {
       setIsLoading(false)
     }

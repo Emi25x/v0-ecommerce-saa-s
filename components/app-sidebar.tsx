@@ -6,6 +6,7 @@ import { useState, useEffect } from "react"
 import { usePathname } from "next/navigation"
 import { FileText as FeatherFileText, Upload as FeatherUpload } from "react-feather" // Importing FileText and Upload components from react-feather
 import { LogoutButton } from "@/components/logout-button"
+import { UserDisplay } from "@/components/user-display"
 
 // Inline SVG components
 const Package = (props: React.SVGProps<SVGSVGElement>) => (
@@ -464,9 +465,12 @@ export function AppSidebar() {
         </div>
       </nav>
       
-      {/* Logout button al final del sidebar */}
-      <div className="mt-auto border-t border-sidebar-border p-4">
-        <LogoutButton />
+      {/* Usuario y logout al final del sidebar */}
+      <div className="mt-auto border-t border-sidebar-border">
+        <UserDisplay />
+        <div className="p-4 pt-2">
+          <LogoutButton />
+        </div>
       </div>
     </aside>
   )
