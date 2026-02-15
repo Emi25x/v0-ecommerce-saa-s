@@ -10,10 +10,14 @@ export function UserDisplay() {
   const supabase = createClient()
 
   useEffect(() => {
-    // Obtener usuario actual
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user)
-    })
+    // Obtener usuario actual con manejo de errores
+    supabase.auth.getUser()
+      .then(({ data: { user } }) => {
+        setUser(user)
+      })
+      .catch((error) => {
+        console.error('[v0] UserDisplay: Error getting user', error)
+      })
 
     // Escuchar cambios de autenticación
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {

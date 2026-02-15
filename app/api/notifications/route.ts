@@ -5,6 +5,12 @@ import type { Request } from "next/dist/server/web/types"
 export async function GET(request: Request) {
   try {
     const supabase = await createClient()
+    
+    // Verificar autenticación - si no hay usuario, retornar 0s silenciosamente
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ orders: 0, products: 0, shipments: 0 })
+    }
 
     // Get last visit times from localStorage (will be passed as query params)
     const url = new URL(request.url)
