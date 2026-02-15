@@ -26,18 +26,48 @@ export async function GET(request: NextRequest) {
       `[v0] Query params: page=${page}, limit=${limit}, offset=${offset}, sortBy=${safeSortBy}, sortOrder=${sortOrder}, search="${search}"`,
     )
 
+    // Si la búsqueda es muy corta, rechazar búsqueda fuzzy
+    if (search && search.trim().length < 3 && search.trim().length > 0) {
+      return NextResponse.json(
+        {
+          products: [],
+          page: 1,
+          limit,
+          total: 0,
+          totalPages: 1,
+          message: "La búsqueda requiere al menos 3 caracteres"
+        },
+        { status: 200 }
+      )
+    }
+
     console.log("[v0] Building query...")
-    let query = supabase.from("products").select("*", { count: "exact" })
+    
+    // NO usar select("*") - seleccionar solo columnas necesarias para el listado
+    const selectColumns = "id, sku, title, price, stock, source, created_at, updated_at, image_url"
+    
+    // Usar count: "estimated" para listados sin búsqueda (más rápido)
+    // count: "exact" solo cuando hay búsqueda activa
+    const countType = search ? "exact" : "estimated"
+    let query = supabase.from("products").select(selectColumns, { count: countType })
 
     if (search) {
-      const looksLikeSku = /^[a-zA-Z0-9]+$/.test(search)
-
-      if (looksLikeSku) {
-        query = query.eq("sku", search)
-        console.log(`[v0] Exact SKU search: "${search}"`)
+      const trimmedSearch = search.trim()
+      
+      // Detectar si es un código numérico largo (ISBN/EAN/GTIN: >= 10 dígitos)
+      const isNumericCode = /^\d{10,}$/.test(trimmedSearch)
+      
+      if (isNumericCode) {
+        // Búsqueda exacta en códigos de barras
+        console.log(`[v0] Numeric code search (ISBN/EAN/GTIN): "${trimmedSearch}"`)
+        query = query.or(`ean.eq.${trimmedSearch},isbn.eq.${trimmedSearch},gtin.eq.${trimmedSearch},sku.eq.${trimmedSearch}`)
       } else {
-        query = query.or(`sku.ilike.%${search}%,title.ilike.%${search}%`)
-        console.log(`[v0] SKU/title search: "${search}"`)
+        // Búsqueda de SKU: primero intentar exacto (case-insensitive)
+        const upperSearch = trimmedSearch.toUpperCase()
+        console.log(`[v0] SKU/title search: "${trimmedSearch}"`)
+        
+        // Primero intentar match exacto en SKU, luego fuzzy en SKU y title
+        query = query.or(`sku.ilike.${trimmedSearch},sku.ilike.%${trimmedSearch}%,title.ilike.%${trimmedSearch}%`)
       }
     }
 
@@ -55,8 +85,9 @@ export async function GET(request: NextRequest) {
       if (error.message.includes("timeout") || error.message.includes("canceling statement")) {
         return NextResponse.json(
           {
-            error: "The search took too long. Try a more specific term or wait for database indexes to complete.",
+            error: "La búsqueda tardó demasiado. Intenta buscar por SKU/ISBN/EAN exacto o un término más específico.",
             timeout: true,
+            hint: "Usa códigos exactos para búsquedas más rápidas"
           },
           { status: 504 },
         )
@@ -105,12 +136,16 @@ export async function GET(request: NextRequest) {
       }
     })
 
+    // Asegurar que totalPages nunca sea 0 para evitar "Página 1 de 0"
+    const totalCount = count || 0
+    const calculatedPages = totalCount > 0 ? Math.ceil(totalCount / limit) : 1
+    
     const response = {
       products: normalizedProducts || [],
       page,
       limit,
-      total: count || 0,
-      totalPages: count ? Math.ceil(count / limit) : 0,
+      total: totalCount,
+      totalPages: calculatedPages,
     }
 
     console.log("[v0] ✅ Returning products successfully")

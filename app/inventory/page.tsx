@@ -109,8 +109,11 @@ export default function InventoryPage() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedSearch(searchQuery)
-      setCurrentPage(1)
+      // Solo aplicar búsqueda si tiene 3+ caracteres o está vacía
+      if (searchQuery.length === 0 || searchQuery.length >= 3) {
+        setDebouncedSearch(searchQuery)
+        setCurrentPage(1)
+      }
     }, 500)
 
     return () => clearTimeout(timer)
@@ -158,7 +161,8 @@ export default function InventoryPage() {
 
         setProducts(data.products || [])
         setTotalProducts(data.total || 0)
-        setTotalPages(data.totalPages || 0)
+        // Asegurar que totalPages nunca sea 0
+        setTotalPages(data.totalPages || 1)
 
         if (data.products?.length === 0 && currentPage > 1) {
           setCurrentPage(1)
@@ -167,7 +171,9 @@ export default function InventoryPage() {
         const errorData = await response.json()
         console.error("[v0] Error al cargar productos:", errorData)
         if (errorData.timeout) {
-          setErrorMessage("La búsqueda tardó demasiado tiempo. Intenta con un término más específico.")
+          setErrorMessage("La búsqueda tardó demasiado tiempo. Intenta buscar por SKU/ISBN/EAN exacto o un término más específico.")
+        } else if (errorData.message) {
+          setErrorMessage(errorData.message)
         } else {
           setErrorMessage(`Error al cargar productos: ${errorData.error || response.statusText}`)
         }
