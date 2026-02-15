@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
+import { protectAPI } from "@/lib/auth/protect-api"
 
 export const maxDuration = 60
 
@@ -9,6 +10,10 @@ export const maxDuration = 60
  * NO recalcula total_target, actualiza progreso incrementalmente
  */
 export async function POST(request: Request) {
+  // Verificar autenticación
+  const authCheck = await protectAPI()
+  if (authCheck.error) return authCheck.response
+
   const t0 = Date.now()
   const body = await request.json()
   const { account_id: accountId, max_seconds = 12, batch_size = 200 } = body

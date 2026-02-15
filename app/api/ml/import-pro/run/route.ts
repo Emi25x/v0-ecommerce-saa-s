@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { getValidAccessToken } from "@/lib/mercadolibre"
 import { NextRequest, NextResponse } from "next/server"
+import { protectAPI } from "@/lib/auth/protect-api"
 
 export const maxDuration = 60
 
@@ -10,6 +11,10 @@ export const maxDuration = 60
  * Body: { account_id, max_seconds: 12, publications_page: 200, detail_batch: 30 }
  */
 export async function POST(request: NextRequest) {
+  // Verificar autenticación
+  const authCheck = await protectAPI()
+  if (authCheck.error) return authCheck.response
+
   const startTime = Date.now()
   let accountId: string | null = null
   

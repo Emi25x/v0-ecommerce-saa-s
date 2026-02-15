@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { protectAPI } from "@/lib/auth/protect-api"
 
 /**
  * POST /api/ml/products/build
@@ -7,6 +8,10 @@ import { createClient } from "@/lib/supabase/server"
  * Body: { account_id, max_seconds: 10, batch_size: 100 }
  */
 export async function POST(request: NextRequest) {
+  // Verificar autenticación
+  const authCheck = await protectAPI()
+  if (authCheck.error) return authCheck.response
+
   const startTime = Date.now()
   
   try {
