@@ -40,12 +40,17 @@ export default function Page() {
         if (error.message.includes('Invalid login credentials')) {
           throw new Error('Email o contraseña incorrectos')
         }
+        if (error.message.includes('Database error querying schema')) {
+          throw new Error('Error de configuración: Verificar que NEXT_PUBLIC_SUPABASE_URL no incluya /rest/v1 ni /auth/v1. Debe ser solo la URL base (ej: https://proyecto.supabase.co)')
+        }
         throw error
       }
       router.push('/')
       router.refresh()
     } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : 'Error al iniciar sesión')
+      const errorMessage = error instanceof Error ? error.message : 'Error al iniciar sesión'
+      console.error('[v0] Login error:', errorMessage)
+      setError(errorMessage)
     } finally {
       setIsLoading(false)
     }

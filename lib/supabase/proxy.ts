@@ -6,10 +6,19 @@ export async function updateSession(request: NextRequest) {
     request,
   })
 
+  // Limpiar URL si incluye rutas REST o Auth
+  let supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  if (supabaseUrl.includes('/rest/v1')) {
+    supabaseUrl = supabaseUrl.split('/rest/v1')[0]
+  }
+  if (supabaseUrl.includes('/auth/v1')) {
+    supabaseUrl = supabaseUrl.split('/auth/v1')[0]
+  }
+
   // With Fluid compute, don't put this client in a global environment
   // variable. Always create a new one on each request.
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    supabaseUrl,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
