@@ -278,6 +278,24 @@ export async function POST(request: Request) {
     
     console.log(`[v0] [MATCHER] Processed: ${actuallyProcessed}, Matched: ${matched}, Ambiguous: ${ambiguous}, Not found: ${notFound}, Invalid: ${invalid}`)
 
+    // VALIDACIÓN DE CONSISTENCIA: verificar que los contadores sumen correctamente
+    const outcomesSum = matched + ambiguous + notFound + invalid
+    if (outcomesSum > actuallyProcessed) {
+      console.error(`[v0] [MATCHER] CONSISTENCY ERROR: outcomes sum (${outcomesSum}) > actuallyProcessed (${actuallyProcessed})`)
+      return NextResponse.json({
+        ok: false,
+        error: "consistency_error",
+        details: {
+          actuallyProcessed,
+          matched,
+          ambiguous,
+          notFound,
+          invalid,
+          outcomesSum
+        }
+      }, { status: 500 })
+    }
+
     // Batch update al final (mucho más rápido)
     if (batchUpdates.length > 0) {
       console.log(`[MATCHER] Batch updating ${batchUpdates.length} matched publications`)
@@ -289,6 +307,7 @@ export async function POST(request: Request) {
           continue
         }
         
+        // RESPETAR CONSTRAINT: solo setear matched_by cuando hay product_id válido
         await supabase.from("ml_publications").update({
           product_id: update.product_id,
           matched_by: update.matched_by
@@ -318,17 +337,34 @@ export async function POST(request: Request) {
       updated_at: new Date().toISOString()
     }).eq("account_id", accountId)
 
+    // 8) Devolver respuesta con TODOS los campos garantizados
+    const elapsedSeconds = parseFloat(((Date.now() - t0) / 1000).toFixed(2))
+    const percent = progress!.total_target > 0 
+      ? Math.min(100, (newProcessed / progress!.total_target) * 100)
+      : 0
+
     return NextResponse.json({
       ok: true,
+      status: 'success',
+      
+      // Procesamiento de este batch
       processed,
       matched,
       ambiguous,
       not_found: notFound,
       invalid,
-      elapsed_seconds: ((Date.now() - t0) / 1000).toFixed(2),
+      
+      // Progreso total
       total_processed: newProcessed,
       total_target: progress!.total_target,
-      is_complete: isComplete
+      percent,
+      
+      // Estado
+      is_complete: newProcessed >= (progress!.total_target || 0),
+      elapsed_seconds: elapsedSeconds,
+      
+      // Timestamps
+      last_run_at: new Date().toISOString()
     })
 
   } catch (error: any) {

@@ -26,7 +26,7 @@ export default function MLMatcherPage() {
   const [accountDebug, setAccountDebug] = useState<any>(null)
   const [loadingAccountDebug, setLoadingAccountDebug] = useState(false)
 
-  // Helper seguro para formatear fechas
+  // Helpers seguros (NUNCA crashear)
   const formatDate = (dateValue?: string | null) => {
     if (!dateValue) return "—"
     try {
@@ -34,6 +34,55 @@ export default function MLMatcherPage() {
     } catch {
       return "—"
     }
+  }
+
+  const formatNumber = (num?: number | null) => {
+    if (num === null || num === undefined) return "0"
+    try {
+      return num.toLocaleString()
+    } catch {
+      return "0"
+    }
+  }
+
+  const formatPercent = (num?: number | null) => {
+    if (num === null || num === undefined) return "0.0"
+    try {
+      return num.toFixed(1)
+    } catch {
+      return "0.0"
+    }
+  }
+
+  const formatSpeed = (speedPerSec?: number | null) => {
+    if (!speedPerSec || speedPerSec <= 0) return "—"
+    return `${speedPerSec.toFixed(1)} items/s`
+  }
+
+  const formatETA = (etaSeconds?: number | null) => {
+    if (!etaSeconds || etaSeconds <= 0) return "—"
+    const minutes = Math.floor(etaSeconds / 60)
+    const seconds = Math.floor(etaSeconds % 60)
+    return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`
+  }
+
+  // Defaults locales para evitar crashes
+  const safeProgress = {
+    status: progress?.status || "idle",
+    total_target: progress?.total_target || 0,
+    processed_count: progress?.processed_count || 0,
+    matched_count: progress?.matched_count || 0,
+    ambiguous_count: progress?.ambiguous_count || 0,
+    not_found_count: progress?.not_found_count || 0,
+    invalid_identifier_count: progress?.invalid_identifier_count || 0,
+    error_count: progress?.error_count || 0,
+    percent: progress?.percent || 0,
+    speed_per_sec: progress?.speed_per_sec || 0,
+    eta_seconds: progress?.eta_seconds || null,
+    last_error: progress?.last_error || null,
+    last_run_at: progress?.last_run_at || null,
+    started_at: progress?.started_at || null,
+    finished_at: progress?.finished_at || null
   }
 
   // Cargar cuentas ML
@@ -79,16 +128,16 @@ export default function MLMatcherPage() {
   useEffect(() => {
     if (!autoMode || !selectedAccountId || running) return
 
-    // Si ya completó, apagar auto-mode
-    if (progress && progress.total_target && progress.processed_count >= progress.total_target) {
+    // Si ya completó, apagar auto-mode (usar safeProgress para evitar crashes)
+    if (safeProgress.processed_count >= safeProgress.total_target && safeProgress.total_target > 0) {
       console.log("[v0] Matching complete - disabling auto-mode")
       setAutoMode(false)
       return
     }
 
     // Si status es 'completed', apagar auto-mode
-    if (progress?.status === 'completed') {
-      console.log("[v0] Status is completed - disabling auto-mode")
+    if (safeProgress.status === 'completed' || safeProgress.status === 'failed') {
+      console.log(`[v0] Status is ${safeProgress.status} - disabling auto-mode`)
       setAutoMode(false)
       return
     }
@@ -483,18 +532,24 @@ export default function MLMatcherPage() {
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium">Progreso de Vinculación</span>
                 <span className="text-sm text-muted-foreground">
-                  {progress.processed_count?.toLocaleString() || 0} / {progress.total_target?.toLocaleString() || "?"}
+                  {formatNumber(safeProgress.processed_count)} / {formatNumber(safeProgress.total_target)}
                 </span>
               </div>
-              <Progress value={((progress.processed_count || 0) / Math.max(progress.total_target || 1, 1)) * 100} className="h-2" />
+              <Progress value={safeProgress.percent} className="h-2" />
               <p className="text-xs text-muted-foreground mt-1">
-                {(((progress.processed_count || 0) / Math.max(progress.total_target || 1, 1)) * 100).toFixed(1)}% completado
+                {formatPercent(safeProgress.percent)}% completado
               </p>
             </div>
 
-            {progress.last_run_at && (
+            {safeProgress.last_run_at && (
               <p className="text-xs text-muted-foreground">
-                Última ejecución: {formatDate(progress.last_run_at)}
+                Última ejecución: {formatDate(safeProgress.last_run_at)}
+              </p>
+            )}
+
+            {safeProgress.speed_per_sec > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Velocidad: {formatSpeed(safeProgress.speed_per_sec)} • ETA: {formatETA(safeProgress.eta_seconds)}
               </p>
             )}
 
@@ -550,7 +605,7 @@ export default function MLMatcherPage() {
                 ) : (
                   <>
                     <Play className="mr-2 h-4 w-4" />
-                    {progress?.processed_count > 0 ? "Reanudar Matching" : "Iniciar Matching"}
+                    {safeProgress.processed_count > 0 ? "Reanudar Matching" : "Iniciar Matching"}
                   </>
                 )}
               </Button>
@@ -570,7 +625,7 @@ export default function MLMatcherPage() {
               </Button>
             )}
 
-            {!autoMode && !running && progress && progress.processed_count > 0 && (
+            {!autoMode && !running && safeProgress.processed_count > 0 && (
               <Button onClick={handleReset} size="lg" variant="outline" className="bg-transparent border-red-600 text-red-700 hover:bg-red-50">
                 <RotateCcw className="mr-2 h-4 w-4" />
                 Reiniciar desde cero
@@ -627,29 +682,34 @@ export default function MLMatcherPage() {
       </Card>
 
       {/* Card Métricas de Matching */}
-      {progress && (
-        <Card className="p-5 mb-6">
-          <h3 className="font-semibold mb-4">Resultados</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <p className="text-2xl font-bold text-green-600">{progress.matched_count?.toLocaleString() || 0}</p>
-              <p className="text-xs text-muted-foreground">Vinculadas</p>
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-yellow-600">{progress.ambiguous_count?.toLocaleString() || 0}</p>
-              <p className="text-xs text-muted-foreground">Ambiguas</p>
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-600">{progress.not_found_count?.toLocaleString() || 0}</p>
-              <p className="text-xs text-muted-foreground">Sin match</p>
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-red-600">{progress.invalid_identifier_count?.toLocaleString() || 0}</p>
-              <p className="text-xs text-muted-foreground">Sin identificador</p>
-            </div>
+      <Card className="p-5 mb-6">
+        <h3 className="font-semibold mb-4">Resultados</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div>
+            <p className="text-2xl font-bold text-green-600">{formatNumber(safeProgress.matched_count)}</p>
+            <p className="text-xs text-muted-foreground">Vinculadas</p>
           </div>
-        </Card>
-      )}
+          <div>
+            <p className="text-2xl font-bold text-yellow-600">{formatNumber(safeProgress.ambiguous_count)}</p>
+            <p className="text-xs text-muted-foreground">Ambiguas</p>
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-gray-600">{formatNumber(safeProgress.not_found_count)}</p>
+            <p className="text-xs text-muted-foreground">Sin match</p>
+          </div>
+          <div>
+            <p className="text-2xl font-bold text-red-600">{formatNumber(safeProgress.invalid_identifier_count)}</p>
+            <p className="text-xs text-muted-foreground">Sin identificador</p>
+          </div>
+        </div>
+        
+        {safeProgress.last_error && safeProgress.status === 'failed' && (
+          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
+            <p className="text-sm font-medium text-red-800">Error:</p>
+            <p className="text-xs text-red-600 mt-1">{safeProgress.last_error}</p>
+          </div>
+        )}
+      </Card>
 
       {/* Card Log de ejecución */}
       {executionLog.length > 0 && (
