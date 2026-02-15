@@ -36,13 +36,19 @@ export default function Page() {
         password,
       })
       if (error) {
+        // Log del error completo para debugging
+        console.error('[v0] Supabase auth error:', {
+          message: error.message,
+          name: error.name,
+          status: error.status,
+          details: error
+        })
+        
         // Mensajes más amigables
         if (error.message.includes('Invalid login credentials')) {
           throw new Error('Email o contraseña incorrectos')
         }
-        if (error.message.includes('Database error querying schema')) {
-          throw new Error('Error de configuración: Verificar que NEXT_PUBLIC_SUPABASE_URL no incluya /rest/v1 ni /auth/v1. Debe ser solo la URL base (ej: https://proyecto.supabase.co)')
-        }
+        // Para cualquier otro error, mostrar el mensaje original
         throw error
       }
       router.push('/')
