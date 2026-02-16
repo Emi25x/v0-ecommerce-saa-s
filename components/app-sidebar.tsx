@@ -5,6 +5,8 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { usePathname } from "next/navigation"
 import { FileText as FeatherFileText, Upload as FeatherUpload } from "react-feather" // Importing FileText and Upload components from react-feather
+import { LogoutButton } from "@/components/logout-button"
+import { UserDisplay } from "@/components/user-display"
 
 // Inline SVG components
 const Package = (props: React.SVGProps<SVGSVGElement>) => (
@@ -343,6 +345,47 @@ export function AppSidebar() {
                 <Target className="h-4 w-4" />
                 <span>Competencia</span>
               </a>
+              <div className="my-2 border-t border-sidebar-border" />
+              <a
+                href="/ml/importer"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  isActive("/ml/importer")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <Database className="h-4 w-4" />
+                <span>Importación inicial</span>
+              </a>
+              <a
+                href="/ml/products/build"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  isActive("/ml/products/build")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M12 8v8m-4-4h8" />
+                </svg>
+                <span>Crear productos</span>
+              </a>
+              <a
+                href="/ml/matcher"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  isActive("/ml/matcher")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z" />
+                  <rect width="4" height="12" x="2" y="9" />
+                  <circle cx="4" cy="4" r="2" />
+                </svg>
+                <span>Vinculación</span>
+              </a>
             </div>
           )}
         </div>
@@ -421,6 +464,14 @@ export function AppSidebar() {
           )}
         </div>
       </nav>
+      
+      {/* Usuario y logout al final del sidebar */}
+      <div className="mt-auto border-t border-sidebar-border">
+        <UserDisplay />
+        <div className="p-4 pt-2">
+          <LogoutButton />
+        </div>
+      </div>
     </aside>
   )
 }

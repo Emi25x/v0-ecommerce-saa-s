@@ -39,6 +39,8 @@ export function SyncStatusCard() {
   const [batchImporting, setBatchImporting] = useState<string | null>(null)
   const [batchImportProgress, setBatchImportProgress] = useState<Record<string, any>>({})
   const [batchImportJobIds, setBatchImportJobIds] = useState<Record<string, string>>({})
+  const [advancingImport, setAdvancingImport] = useState(false)
+  const [advanceResult, setAdvanceResult] = useState<string | null>(null)
 
   useEffect(() => {
     fetchAccounts()
@@ -146,6 +148,48 @@ export function SyncStatusCard() {
     }
   }
 
+  const handleAdvanceImport = async () => {
+    setAdvancingImport(true)
+    setAdvanceResult(null)
+    try {
+      const response = await fetch(`/api/ml/import/run?secret=${process.env.NEXT_PUBLIC_CRON_SECRET || ''}`, {
+        method: "POST"
+      })
+      
+      const data = await response.json()
+      
+      if (!response.ok || !data.ok) {
+        setAdvanceResult(`Error: ${data.error || 'Failed'}`)
+        setTimeout(() => setAdvanceResult(null), 5000)
+        return
+      }
+      
+      setAdvanceResult(`✓ Ejecutados ${data.ticksRun} ticks | Offset: ${data.offset_before} → ${data.offset_after}`)
+      setTimeout(() => setAdvanceResult(null), 5000)
+      
+      // Actualizar progreso si hay un job activo siendo monitoreado
+      Object.keys(batchImportJobIds).forEach(accountId => {
+        const jobId = batchImportJobIds[accountId]
+        fetch(`/api/ml/import/status?job_id=${jobId}`)
+          .then(r => r.json())
+          .then(statusData => {
+            setBatchImportProgress(prev => ({
+              ...prev,
+              [accountId]: statusData
+            }))
+          })
+          .catch(console.error)
+      })
+      
+    } catch (error: any) {
+      console.error("[v0] Error advancing import:", error)
+      setAdvanceResult(`Error: ${error.message}`)
+      setTimeout(() => setAdvanceResult(null), 5000)
+    } finally {
+      setAdvancingImport(false)
+    }
+  }
+
   const handleBatchImport = async (accountId: string) => {
     setBatchImporting(accountId)
     try {
@@ -159,7 +203,8 @@ export function SyncStatusCard() {
       const startData = await startResponse.json()
       
       if (!startResponse.ok || !startData.success) {
-        alert(startData.message || startData.error || "Error iniciando importación")
+        const errorMsg = startData.message || startData.error || "Error iniciando importación"
+        alert(errorMsg)
         setBatchImporting(null)
         return
       }
@@ -395,10 +440,32 @@ export function SyncStatusCard() {
                       "Importación Completa"
                     )}
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleAdvanceImport}
+                    disabled={advancingImport}
+                    className="border-blue-600 text-blue-600 hover:bg-blue-50 bg-transparent"
+                  >
+                    {advancingImport ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        Avanzando...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="h-3 w-3 mr-1" />
+                        Avanzar Importación
+                      </>
+                    )}
+                  </Button>
                 </div>
               </div>
               {syncResult && (
                 <div className="text-sm text-primary bg-primary/10 p-2 rounded">{syncResult}</div>
+              )}
+              {advanceResult && (
+                <div className="text-sm text-blue-600 bg-blue-50 p-2 rounded">{advanceResult}</div>
               )}
 
               <div className="grid grid-cols-2 gap-3">
