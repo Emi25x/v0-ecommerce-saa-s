@@ -23,7 +23,7 @@ export default function NewSourcePage() {
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [urlTemplate, setUrlTemplate] = useState("")
-  const [authType, setAuthType] = useState("query_params")
+  const [authType, setAuthType] = useState("none")
   const [feedType, setFeedType] = useState("catalog")
   const [isActive, setIsActive] = useState(true)
   
@@ -31,7 +31,11 @@ export default function NewSourcePage() {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [bearerToken, setBearerToken] = useState("")
-  const [queryParams, setQueryParams] = useState("")
+  const [queryParamsList, setQueryParamsList] = useState<Array<{ key: string; value: string }>>([
+    { key: "user", value: "" },
+    { key: "password", value: "" }
+  ])
+  const [showUrlWarning, setShowUrlWarning] = useState(false)
   
   // Column mapping wizard
   const [detectedHeaders, setDetectedHeaders] = useState<string[]>([])
@@ -108,24 +112,26 @@ export default function NewSourcePage() {
       )
       
       // Construir credentials según tipo de auth
-      let credentials: any = {}
+      let credentials: any = null
       
       if (authType === "basic_auth") {
         credentials = { username, password }
       } else if (authType === "bearer_token") {
         credentials = { token: bearerToken }
       } else if (authType === "query_params") {
-        try {
-          credentials = queryParams ? JSON.parse(queryParams) : {}
-        } catch {
-          toast({
-            title: "Error",
-            description: "Query params debe ser un JSON válido",
-            variant: "destructive"
-          })
-          setLoading(false)
-          return
+        // Convertir la lista de parámetros a objeto
+        const params: Record<string, string> = {}
+        queryParamsList.forEach(param => {
+          if (param.key && param.value) {
+            params[param.key] = param.value
+          }
+        })
+        credentials = {
+          type: "query_params",
+          params
         }
+      } else if (authType === "none") {
+        credentials = null
       }
       
       // Validar column mapping
@@ -235,13 +241,30 @@ export default function NewSourcePage() {
                 <Input
                   id="urlTemplate"
                   value={urlTemplate}
-                  onChange={(e) => setUrlTemplate(e.target.value)}
+                  onChange={(e) => {
+                    const newUrl = e.target.value
+                    setUrlTemplate(newUrl)
+                    // Detectar si la URL tiene query params
+                    if (newUrl.includes('?')) {
+                      setShowUrlWarning(true)
+                    } else {
+                      setShowUrlWarning(false)
+                    }
+                  }}
                   placeholder="https://ejemplo.com/products.csv"
                   required
                 />
                 <p className="text-sm text-muted-foreground">
                   URL completa del CSV o endpoint API
                 </p>
+                {showUrlWarning && (
+                  <div className="flex items-start gap-2 p-3 rounded-md bg-yellow-50 border border-yellow-200 text-sm text-yellow-800">
+                    <span>⚠️</span>
+                    <p>
+                      Tu URL parece incluir parámetros (?...). Revisá si corresponde usar "Query Parameters" como tipo de autenticación.
+                    </p>
+                  </div>
+                )}
               </div>
               
               <div className="space-y-2">
@@ -270,11 +293,17 @@ export default function NewSourcePage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">Sin autenticación</SelectItem>
                     <SelectItem value="query_params">Query Parameters</SelectItem>
-                    <SelectItem value="basic_auth">Basic Auth</SelectItem>
+                    <SelectItem value="basic_auth">Usuario/Contraseña (Header Authorization)</SelectItem>
                     <SelectItem value="bearer_token">Bearer Token</SelectItem>
                   </SelectContent>
                 </Select>
+                <div className="text-xs text-muted-foreground space-y-1 mt-2">
+                  <p>• <strong>Sin autenticación:</strong> Para URLs públicas</p>
+                  <p>• <strong>Query Parameters:</strong> Si tu URL ya trae ?user=... o similar</p>
+                  <p>• <strong>Usuario/Contraseña:</strong> Para Basic Auth en header Authorization</p>
+                </div>
               </div>
               
               {authType === "basic_auth" && (
@@ -314,17 +343,59 @@ export default function NewSourcePage() {
               )}
               
               {authType === "query_params" && (
-                <div className="space-y-2">
-                  <Label htmlFor="queryParams">Query Parameters (JSON)</Label>
-                  <Textarea
-                    id="queryParams"
-                    value={queryParams}
-                    onChange={(e) => setQueryParams(e.target.value)}
-                    placeholder='{"api_key": "tu-api-key", "token": "valor"}'
-                    rows={3}
-                  />
-                  <p className="text-sm text-muted-foreground">
-                    Formato JSON con los parámetros de query string
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label>Parámetros de Query String</Label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setQueryParamsList([...queryParamsList, { key: "", value: "" }])
+                      }}
+                    >
+                      Agregar parámetro
+                    </Button>
+                  </div>
+                  <div className="space-y-2">
+                    {queryParamsList.map((param, index) => (
+                      <div key={index} className="flex gap-2 items-center">
+                        <Input
+                          placeholder="Clave (ej: user)"
+                          value={param.key}
+                          onChange={(e) => {
+                            const newList = [...queryParamsList]
+                            newList[index].key = e.target.value
+                            setQueryParamsList(newList)
+                          }}
+                          className="flex-1"
+                        />
+                        <span className="text-muted-foreground">=</span>
+                        <Input
+                          placeholder="Valor"
+                          value={param.value}
+                          onChange={(e) => {
+                            const newList = [...queryParamsList]
+                            newList[index].value = e.target.value
+                            setQueryParamsList(newList)
+                          }}
+                          className="flex-1"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setQueryParamsList(queryParamsList.filter((_, i) => i !== index))
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Estos parámetros se agregarán a la URL como ?clave=valor&...
                   </p>
                 </div>
               )}

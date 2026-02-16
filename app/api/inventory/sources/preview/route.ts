@@ -64,18 +64,20 @@ export async function GET(request: NextRequest) {
       'User-Agent': 'Ecommerce-Manager/1.0'
     }
 
-    if (authType === "basic_auth" && credentials.username && credentials.password) {
+    if (authType === "basic_auth" && credentials?.username && credentials?.password) {
       const auth = Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')
       headers['Authorization'] = `Basic ${auth}`
-    } else if (authType === "bearer_token" && credentials.token) {
+    } else if (authType === "bearer_token" && credentials?.token) {
       headers['Authorization'] = `Bearer ${credentials.token}`
-    } else if (authType === "query_params" && credentials) {
-      // Agregar query params a la URL
+    } else if (authType === "query_params" && credentials?.type === "query_params" && credentials?.params) {
+      // Agregar query params a la URL desde el nuevo formato
       const url = new URL(urlToFetch)
-      Object.keys(credentials).forEach(key => {
-        url.searchParams.set(key, credentials[key])
+      Object.keys(credentials.params).forEach(key => {
+        url.searchParams.set(key, credentials.params[key])
       })
       urlToFetch = url.toString()
+    } else if (authType === "none" || !authType) {
+      // No hacer nada, usar URL directamente sin autenticación
     }
 
     console.log(`[v0] Fetching CSV preview from: ${urlToFetch}`)
