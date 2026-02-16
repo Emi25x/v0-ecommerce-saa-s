@@ -62,11 +62,10 @@ export async function GET(request: NextRequest) {
         console.log(`[v0] Numeric code search (ISBN/EAN/GTIN): "${trimmedSearch}"`)
         query = query.or(`ean.eq.${trimmedSearch},isbn.eq.${trimmedSearch},gtin.eq.${trimmedSearch},sku.eq.${trimmedSearch}`)
       } else {
-        // Búsqueda de SKU: primero intentar exacto (case-insensitive)
-        const upperSearch = trimmedSearch.toUpperCase()
         console.log(`[v0] SKU/title search: "${trimmedSearch}"`)
         
-        // Primero intentar match exacto en SKU, luego fuzzy en SKU y title
+        // Búsqueda fuzzy en SKU y title (ilike hace búsqueda case-insensitive)
+        // Nota: PostgreSQL ILIKE no ignora tildes por defecto, pero es lo mejor disponible sin índices especiales
         query = query.or(`sku.ilike.${trimmedSearch},sku.ilike.%${trimmedSearch}%,title.ilike.%${trimmedSearch}%`)
       }
     }
