@@ -54,6 +54,8 @@ function parseNumericValue(value: string): number | null {
 
 const STANDARD_FIELDS = [
   "sku",
+  "isbn", // ← AGREGADO para libros
+  "ean", // ← AGREGADO para libros
   "title",
   "description",
   "price",
@@ -197,6 +199,17 @@ export async function POST(request: Request) {
         ) {
           failed++
           continue
+        }
+
+        // Normalizar ISBN y EAN usando la librería
+        if (standardFields.isbn) {
+          const { normalizeToISBN13 } = await import("@/lib/isbn-utils")
+          standardFields.isbn = normalizeToISBN13(standardFields.isbn)
+        }
+
+        if (standardFields.ean) {
+          const { normalize } = await import("@/lib/isbn-utils")
+          standardFields.ean = normalize(standardFields.ean)
         }
 
         const { data: existing } = await supabase
