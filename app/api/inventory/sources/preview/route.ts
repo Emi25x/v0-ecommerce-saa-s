@@ -82,24 +82,66 @@ export async function GET(request: NextRequest) {
 
     console.log(`[v0] Fetching CSV preview from: ${urlToFetch}`)
 
-    // Fetch solo primeras 100KB usando Range header
-    const response = await fetch(urlToFetch, {
+    // Intentar primero con Range header para limitar descarga
+    let response = await fetch(urlToFetch, {
       method: 'GET',
       headers: {
         ...headers,
+        'Accept': 'text/csv, text/plain, application/csv, */*',
+        'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+        'Cache-Control': 'no-cache',
         'Range': 'bytes=0-102400' // Primeros 100KB
       },
       signal: AbortSignal.timeout(15000) // Timeout 15s
     })
 
+    // Si falla con Range (403/416), reintentar sin Range header
+    if (!response.ok && (response.status === 403 || response.status === 416)) {
+      console.log(`[v0] Range request failed (${response.status}), retrying without Range header`)
+      response = await fetch(urlToFetch, {
+        method: 'GET',
+        headers: {
+          ...headers,
+          'Accept': 'text/csv, text/plain, application/csv, */*',
+          'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+          'Cache-Control': 'no-cache'
+        },
+        signal: AbortSignal.timeout(20000) // Timeout más largo sin Range
+      })
+    }
+
     if (!response.ok) {
+      console.error(`[v0] Fetch failed with status ${response.status}`)
       return NextResponse.json({
         ok: false,
-        error: `Error al descargar CSV: ${response.statusText}`
+        error: `Error al descargar CSV: ${response.statusText} (${response.status})`
       }, { status: response.status })
     }
 
-    const csvText = await response.text()
+    // Leer el contenido pero limitar a los primeros 200KB para evitar timeouts
+    let csvText = ''
+    const reader = response.body?.getReader()
+    const decoder = new TextDecoder()
+    let bytesRead = 0
+    const maxBytes = 200 * 1024 // 200KB máximo
+
+    if (reader) {
+      while (bytesRead < maxBytes) {
+        const { done, value } = await reader.read()
+        if (done) break
+        
+        csvText += decoder.decode(value, { stream: true })
+        bytesRead += value.length
+        
+        // Si ya tenemos suficientes líneas, podemos parar
+        const lineCount = (csvText.match(/\n/g) || []).length
+        if (lineCount >= 100) break
+      }
+      reader.cancel() // Cancelar el stream
+    } else {
+      csvText = await response.text()
+    }
+
     const lines = csvText.split('\n').filter(l => l.trim()).slice(0, 50) // Primeras 50 líneas
 
     if (lines.length === 0) {
