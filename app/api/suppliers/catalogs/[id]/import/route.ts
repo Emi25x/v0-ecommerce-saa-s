@@ -12,6 +12,9 @@ export async function POST(
 ) {
   try {
     const catalogId = params.id
+    const body = await request.json()
+    const warehouseId = body.warehouse_id || null
+    
     const supabase = await createClient({ useServiceRole: true })
 
     // Get catalog info
@@ -24,6 +27,8 @@ export async function POST(
     if (catalogError || !catalog) {
       return NextResponse.json({ error: "Catalog not found" }, { status: 404 })
     }
+    
+    console.log(`[CATALOG-IMPORT] Importing catalog ${catalogId} to warehouse ${warehouseId || 'default'}`)
 
     // Update status to processing
     await supabase
@@ -150,6 +155,7 @@ export async function POST(
         catalog_id: catalogId,
         supplier_id: catalog.supplier_id,
         product_id: productId,
+        warehouse_id: warehouseId,
         supplier_sku: sku || null,
         supplier_isbn: isbn || null,
         supplier_ean: ean || null,
