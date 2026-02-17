@@ -67,7 +67,9 @@ export async function POST(
 
     // Process rows and match with products
     const itemsToInsert: any[] = []
+    const productsToCreate: any[] = []
     let matchedCount = 0
+    let createdCount = 0
 
     for (const row of rows) {
       const isbn = row.ISBN || row.isbn || row.Isbn || ""
@@ -79,34 +81,68 @@ export async function POST(
       const price = parseFloat(row.Precio || row.precio || row.Price || row.price || "0")
       const stock = parseInt(row.Stock || row.stock || "0")
 
-      // Attempt matching
+      // Normalize identifiers
+      const isbnNormalized = isbn ? isbn.replace(/[^0-9]/g, "") : ""
+      const eanNormalized = ean ? ean.replace(/[^0-9]/g, "") : ""
+      const skuNormalized = sku ? sku.trim().toLowerCase() : ""
+
+      // Attempt matching - Priority: EAN → ISBN → SKU
       let productId: string | null = null
       let matchedBy: string | null = null
 
-      if (isbn) {
-        const normalized = isbn.replace(/[^0-9]/g, "")
-        if (isbnIndex.has(normalized)) {
-          productId = isbnIndex.get(normalized)!
-          matchedBy = "isbn"
-          matchedCount++
-        }
+      // Try EAN first
+      if (eanNormalized && eanIndex.has(eanNormalized)) {
+        productId = eanIndex.get(eanNormalized)!
+        matchedBy = "ean"
+        matchedCount++
       }
 
-      if (!productId && ean) {
-        const normalized = ean.replace(/[^0-9]/g, "")
-        if (eanIndex.has(normalized)) {
-          productId = eanIndex.get(normalized)!
-          matchedBy = "ean"
-          matchedCount++
-        }
+      // Try ISBN second
+      if (!productId && isbnNormalized && isbnIndex.has(isbnNormalized)) {
+        productId = isbnIndex.get(isbnNormalized)!
+        matchedBy = "isbn"
+        matchedCount++
       }
 
-      if (!productId && sku) {
-        const normalized = sku.trim().toLowerCase()
-        if (skuIndex.has(normalized)) {
-          productId = skuIndex.get(normalized)!
-          matchedBy = "sku"
-          matchedCount++
+      // Try SKU last
+      if (!productId && skuNormalized && skuIndex.has(skuNormalized)) {
+        productId = skuIndex.get(skuNormalized)!
+        matchedBy = "sku"
+        matchedCount++
+      }
+
+      // If no match found and we have EAN or ISBN, create a new product
+      if (!productId && (eanNormalized || isbnNormalized)) {
+        // Check if we already queued this product for creation in this batch
+        const alreadyQueued = productsToCreate.some(p => 
+          (p.ean && p.ean === eanNormalized) || 
+          (p.isbn && p.isbn === isbnNormalized)
+        )
+
+        if (!alreadyQueued) {
+          // Generate a unique SKU if not provided
+          const generatedSku = sku || 
+            (eanNormalized ? `EAN-${eanNormalized}` : `ISBN-${isbnNormalized}`)
+
+          const newProduct = {
+            sku: generatedSku,
+            title: title || "Sin título",
+            isbn: isbnNormalized || null,
+            ean: eanNormalized || null,
+            author: author || null,
+            publisher: publisher || null,
+            price: price || 0,
+            stock: 0, // Don't set stock from supplier
+            source: ["supplier_catalog"],
+            description: `Importado desde catálogo ${catalog.name}`,
+            custom_fields: {
+              supplier_name: catalog.supplier?.name || "Unknown",
+              catalog_id: catalogId
+            }
+          }
+
+          productsToCreate.push(newProduct)
+          console.log(`[CATALOG-IMPORT] Queuing new product: ${title} (${eanNormalized || isbnNormalized})`)
         }
       }
 
@@ -128,6 +164,54 @@ export async function POST(
         match_confidence: matchedBy ? 1.0 : null,
         raw_data: row
       })
+    }
+
+    // Create new products if any
+    const createdProductIds = new Map<string, string>() // key: ean or isbn, value: product_id
+    
+    if (productsToCreate.length > 0) {
+      console.log(`[CATALOG-IMPORT] Creating ${productsToCreate.length} new products`)
+      
+      const { data: newProducts, error: createError } = await supabase
+        .from("products")
+        .insert(productsToCreate)
+        .select("id, isbn, ean")
+
+      if (createError) {
+        console.error(`[CATALOG-IMPORT] Error creating products:`, createError)
+        // Continue with import even if product creation fails
+      } else if (newProducts) {
+        createdCount = newProducts.length
+        console.log(`[CATALOG-IMPORT] Created ${createdCount} new products`)
+        
+        // Build index of created products
+        for (const product of newProducts) {
+          const key = product.ean || product.isbn
+          if (key) {
+            createdProductIds.set(key, product.id)
+          }
+        }
+
+        // Update itemsToInsert with newly created product IDs
+        for (const item of itemsToInsert) {
+          if (!item.product_id) {
+            const eanNormalized = item.supplier_ean ? item.supplier_ean.replace(/[^0-9]/g, "") : ""
+            const isbnNormalized = item.supplier_isbn ? item.supplier_isbn.replace(/[^0-9]/g, "") : ""
+            
+            // Try to find the newly created product
+            const newProductId = createdProductIds.get(eanNormalized) || 
+                                createdProductIds.get(isbnNormalized)
+            
+            if (newProductId) {
+              item.product_id = newProductId
+              item.matched_by = eanNormalized ? "ean" : "isbn"
+              item.matched_at = new Date().toISOString()
+              item.match_confidence = 1.0
+              matchedCount++
+            }
+          }
+        }
+      }
     }
 
     // Batch insert items
@@ -152,6 +236,7 @@ export async function POST(
       success: true,
       total_items: rows.length,
       matched_items: matchedCount,
+      created_products: createdCount,
       match_rate: ((matchedCount / rows.length) * 100).toFixed(1)
     })
   } catch (error: any) {
