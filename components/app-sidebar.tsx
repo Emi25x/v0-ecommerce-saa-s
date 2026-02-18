@@ -182,6 +182,7 @@ const Database = (props: React.SVGProps<SVGSVGElement>) => (
 export function AppSidebar() {
   const pathname = usePathname()
   const [mlExpanded, setMlExpanded] = useState(true)
+  const [inventoryExpanded, setInventoryExpanded] = useState(true) // Estado para Base de Productos
   const [integrationsExpanded, setIntegrationsExpanded] = useState(true) // Declaring integrationsExpanded state
 
   const [lastVisits, setLastVisits] = useState({
@@ -390,17 +391,95 @@ export function AppSidebar() {
           )}
         </div>
 
-        <a
-          href="/inventory"
-          className={`mt-2 flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${
-            isActive("/inventory")
-              ? "bg-sidebar-accent text-sidebar-accent-foreground"
-              : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          }`}
-        >
-          <Database className="h-5 w-5" />
-          <span className="font-medium">Base de Productos</span>
-        </a>
+        <div className="mt-2">
+          <button
+            onClick={() => setInventoryExpanded(!inventoryExpanded)}
+            className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <div className="flex items-center gap-3">
+              <Database className="h-5 w-5" />
+              <span className="font-medium">Base de Productos</span>
+            </div>
+            <ChevronDown className={`h-4 w-4 transition-transform ${inventoryExpanded ? "rotate-180" : ""}`} />
+          </button>
+
+          {inventoryExpanded && (
+            <div className="ml-8 mt-1 flex flex-col gap-1">
+              <a
+                href="/inventory"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  isActive("/inventory")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <Package className="h-4 w-4" />
+                <span>Productos</span>
+              </a>
+              <a
+                href="/inventory/sources"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  isActive("/inventory/sources")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <Database className="h-4 w-4" />
+                <span>Fuentes</span>
+              </a>
+              <a
+                href="/inventory/sources/new"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  isActive("/inventory/sources/new")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M12 8v8m-4-4h8" />
+                </svg>
+                <span>Nueva fuente</span>
+              </a>
+              <a
+                href="/inventory/sources/batch-import"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/inventory/sources/batch-import")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <FeatherUpload className="h-4 w-4" />
+                <span>Importación inicial</span>
+              </a>
+              <a
+                href="/suppliers"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  isActive("/suppliers")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <Truck className="h-4 w-4" />
+                <span>Proveedores</span>
+              </a>
+              <a
+                href="/warehouses"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  isActive("/warehouses")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                  <polyline points="9 22 9 12 15 12 15 22" />
+                </svg>
+                <span>Almacenes</span>
+              </a>
+            </div>
+          )}
+        </div>
 
         <div className="mt-2">
           <button

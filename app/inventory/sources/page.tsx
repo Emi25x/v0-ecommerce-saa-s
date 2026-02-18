@@ -881,46 +881,26 @@ const App = () => {
 
     setShowImportConfirmDialog(false)
 
-    // Ejecutar importación usando el endpoint correcto con UUID
+    // Navegar a la página de progreso existente (igual que Arnoia)
     if (sourceToImport.url_template) {
-      const mode = sourceToImport.feed_type === "stock_price" ? "update" : importMode
+      // Determinar mode automáticamente según el feed_type y nombre
+      let mode = "update" // default
       
-      console.log(`[v0] Ejecutando importación para source: ${sourceToImport.id} (${sourceToImport.name})`)
-      
-      try {
-        const response = await fetch("/api/inventory/sources/run", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            source_id: sourceToImport.id,
-            mode: mode
-          })
-        })
-
-        const result = await response.json()
-
-        if (!response.ok) {
-          throw new Error(result.message || "Error al iniciar importación")
-        }
-
-        toast({
-          title: "Importación iniciada",
-          description: `${sourceToImport.name} - La importación se está ejecutando en segundo plano.`
-        })
-
-        // Refrescar la lista de fuentes después de un momento
-        setTimeout(() => {
-          fetchSources()
-        }, 2000)
-
-      } catch (error: any) {
-        console.error(`[v0] Error iniciando importación:`, error)
-        toast({
-          title: "Error",
-          description: error.message || "No se pudo iniciar la importación",
-          variant: "destructive"
-        })
+      if (sourceToImport.feed_type === "catalog") {
+        mode = "create" // Solo crear nuevos productos
+      } else if (sourceToImport.feed_type === "stock_price") {
+        mode = "update"
+      } else if (sourceToImport.name.toLowerCase().includes("parcial")) {
+        mode = "update"
+      } else if (sourceToImport.name.toLowerCase().includes("stock")) {
+        mode = "update"
       }
+      
+      console.log(`[v0] Navegando a batch-import: ${sourceToImport.id} (${sourceToImport.name}), mode=${mode}`)
+      
+      // Navegar a la página de progreso con los parámetros correctos
+      const encodedName = encodeURIComponent(sourceToImport.name)
+      window.location.href = `/inventory/sources/batch-import?sourceId=${sourceToImport.id}&name=${encodedName}&mode=${mode}`
       return
     }
 
