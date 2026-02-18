@@ -27,11 +27,12 @@ export default function BatchImportPage() {
     setLogs((prev) => [...prev.slice(-50), `${new Date().toLocaleTimeString()} - ${message}`])
   }
 
-  // Leer parámetros de URL al cargar
+  // Leer parámetros de URL al cargar y auto-iniciar si viene desde sources
   useEffect(() => {
     const urlSourceId = searchParams.get("sourceId")
     const urlMode = searchParams.get("mode")
     const urlName = searchParams.get("name")
+    const autoStart = searchParams.get("autoStart") // Si viene este parámetro, inicia automáticamente
     
     if (urlSourceId) {
       setSourceId(urlSourceId)
@@ -43,6 +44,15 @@ export default function BatchImportPage() {
     
     if (urlMode && ["update", "create", "upsert"].includes(urlMode)) {
       setImportMode(urlMode)
+    }
+
+    // Auto-iniciar importación si viene el parámetro autoStart=true
+    if (autoStart === "true" && urlSourceId && !isRunning) {
+      console.log("[v0] Auto-iniciando importación desde URL")
+      // Usar setTimeout para asegurar que los estados se actualicen primero
+      setTimeout(() => {
+        startBatchImport()
+      }, 500)
     }
   }, [searchParams])
 

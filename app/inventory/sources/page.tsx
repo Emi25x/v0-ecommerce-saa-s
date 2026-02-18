@@ -900,7 +900,7 @@ const App = () => {
       
       // Navegar a la página de progreso con los parámetros correctos
       const encodedName = encodeURIComponent(sourceToImport.name)
-      window.location.href = `/inventory/sources/batch-import?sourceId=${sourceToImport.id}&name=${encodedName}&mode=${mode}`
+      window.location.href = `/inventory/sources/batch-import?sourceId=${sourceToImport.id}&name=${encodedName}&mode=${mode}&autoStart=true`
       return
     }
 

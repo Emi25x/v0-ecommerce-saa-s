@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import Papa from "papaparse"
+import { fetchWithAuth } from "@/lib/import/fetch-with-auth"
 
 const BATCH_SIZE = 1000 // Procesar 1000 productos por request (reducido para evitar timeouts)
 
@@ -56,20 +57,33 @@ export async function POST(request: NextRequest) {
     } else {
       console.log(`[v0] Batch import: Descargando archivo desde ${fileUrl}`)
 
-      // Descargar el archivo CSV
-      const fileResponse = await fetch(fileUrl)
+      // Descargar el archivo CSV con autenticación
+      const fileResponse = await fetchWithAuth({
+        url_template: source.url_template,
+        auth_type: source.auth_type,
+        credentials: source.credentials
+      })
+      
       if (!fileResponse.ok) {
+        console.error(`[v0] Batch import: Error descargando: ${fileResponse.status} ${fileResponse.statusText}`)
         return NextResponse.json({ error: `Error descargando: ${fileResponse.status}` }, { status: 500 })
       }
 
       const csvText = await fileResponse.text()
       console.log(`[v0] Batch import: Archivo descargado, ${csvText.length} caracteres`)
 
+      // Determinar el delimitador correcto desde column_mapping
+      let delimiter = "|" // Default
+      if (source.column_mapping?.delimiter) {
+        delimiter = source.column_mapping.delimiter
+      }
+      console.log(`[v0] Batch import: Usando delimiter "${delimiter}"`)
+
       // Parsear CSV
       const parseResult = Papa.parse(csvText, {
         header: true,
         skipEmptyLines: true,
-        delimiter: "|",
+        delimiter: delimiter,
       })
 
       data = parseResult.data as Record<string, string>[]
@@ -101,7 +115,9 @@ export async function POST(request: NextRequest) {
 
     // Obtener el lote actual
     const batch = data.slice(offset, offset + BATCH_SIZE)
-    const mapping = source.column_mapping || {}
+    
+    // Normalizar column_mapping para soportar formato viejo y nuevo
+    const mapping = source.column_mapping?.mappings || source.column_mapping || {}
 
     let updatedCount = 0
     let createdCount = 0
