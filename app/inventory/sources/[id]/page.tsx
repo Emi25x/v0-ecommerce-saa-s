@@ -38,6 +38,14 @@ export default function SourceDetailPage() {
   }, [sourceId])
 
   const fetchSourceDetails = async () => {
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!uuidRegex.test(sourceId)) {
+      console.log("[v0] Invalid UUID format, skipping fetch:", sourceId)
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     try {
       const supabase = createClient()
