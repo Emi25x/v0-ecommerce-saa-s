@@ -881,12 +881,46 @@ const App = () => {
 
     setShowImportConfirmDialog(false)
 
-    // Redirigir a la página de batch-import con el sourceId y nombre
-    // Esta página maneja el progreso correctamente
+    // Ejecutar importación usando el endpoint correcto con UUID
     if (sourceToImport.url_template) {
       const mode = sourceToImport.feed_type === "stock_price" ? "update" : importMode
-      const encodedName = encodeURIComponent(sourceToImport.name)
-      window.location.href = `/inventory/sources/batch-import?sourceId=${sourceToImport.id}&mode=${mode}&name=${encodedName}`
+      
+      console.log(`[v0] Ejecutando importación para source: ${sourceToImport.id} (${sourceToImport.name})`)
+      
+      try {
+        const response = await fetch("/api/inventory/sources/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            source_id: sourceToImport.id,
+            mode: mode
+          })
+        })
+
+        const result = await response.json()
+
+        if (!response.ok) {
+          throw new Error(result.message || "Error al iniciar importación")
+        }
+
+        toast({
+          title: "Importación iniciada",
+          description: `${sourceToImport.name} - La importación se está ejecutando en segundo plano.`
+        })
+
+        // Refrescar la lista de fuentes después de un momento
+        setTimeout(() => {
+          fetchSources()
+        }, 2000)
+
+      } catch (error: any) {
+        console.error(`[v0] Error iniciando importación:`, error)
+        toast({
+          title: "Error",
+          description: error.message || "No se pudo iniciar la importación",
+          variant: "destructive"
+        })
+      }
       return
     }
 
