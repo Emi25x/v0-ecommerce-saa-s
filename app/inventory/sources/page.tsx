@@ -172,8 +172,6 @@ const App = () => {
   const [showScheduleDialog, setShowScheduleDialog] = useState(false)
   const [schedulesTableExists, setSchedulesTableExists] = useState(false)
   const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set())
-  const [showImportConfirmDialog, setShowImportConfirmDialog] = useState(false)
-  const [sourceToImport, setSourceToImport] = useState<SourceWithSchedule | null>(null)
   const [showProgressDialog, setShowProgressDialog] = useState(false)
   const [backgroundImports, setBackgroundImports] = useState<Map<string, ImportProgressState>>(new Map())
   const [importProgress, setImportProgress] = useState<ImportProgressState>({
@@ -314,17 +312,19 @@ const App = () => {
       return
     }
 
-    setSourceToImport(source)
-    // Para catálogos base (Arnoia), usar modo "skip" por defecto (solo importar nuevos)
-    // Para actualizaciones de stock/precio, usar modo "update"
-    if (source.feed_type === "catalog" && source.name.toLowerCase().includes("arnoia") && !source.name.toLowerCase().includes("act")) {
-      setImportMode("skip")
-    } else if (source.feed_type === "stock_price") {
-      setImportMode("update")
-    } else {
-      setImportMode("update")
+    // Determinar el modo por defecto según el tipo de feed
+    let defaultMode = "create"
+    if (source.feed_type === "catalog") {
+      defaultMode = "create" // Solo crear nuevos productos
+    } else if (source.feed_type === "stock_price" || source.name.toLowerCase().includes("stock")) {
+      defaultMode = "update" // Actualizar stock/precio
+    } else if (source.feed_type === "update") {
+      defaultMode = "update" // Actualizar productos existentes
     }
-    setShowImportConfirmDialog(true)
+
+    // Navegar directamente a batch-import sin autoStart para que el usuario configure opciones
+    const encodedName = encodeURIComponent(source.name)
+    window.location.href = `/inventory/sources/batch-import?sourceId=${source.id}&name=${encodedName}&mode=${defaultMode}`
   }
 
   const executeImport = useCallback(
@@ -876,56 +876,7 @@ const App = () => {
     })
   }
 
-  async function confirmImport() {
-    if (!sourceToImport) return
 
-    setShowImportConfirmDialog(false)
-
-    // Navegar a la página de progreso existente (igual que Arnoia)
-    if (sourceToImport.url_template) {
-      // Determinar mode automáticamente según el feed_type y nombre
-      let mode = "update" // default
-      
-      if (sourceToImport.feed_type === "catalog") {
-        mode = "create" // Solo crear nuevos productos
-      } else if (sourceToImport.feed_type === "stock_price") {
-        mode = "update"
-      } else if (sourceToImport.name.toLowerCase().includes("parcial")) {
-        mode = "update"
-      } else if (sourceToImport.name.toLowerCase().includes("stock")) {
-        mode = "update"
-      }
-      
-      console.log(`[v0] Navegando a batch-import: ${sourceToImport.id} (${sourceToImport.name}), mode=${mode}`)
-      
-      // Navegar a la página de progreso con los parámetros correctos
-      const encodedName = encodeURIComponent(sourceToImport.name)
-      window.location.href = `/inventory/sources/batch-import?sourceId=${sourceToImport.id}&name=${encodedName}&mode=${mode}&autoStart=true`
-      return
-    }
-
-    // Importación sin URL (subida de archivo manual)
-    setShowProgressDialog(true)
-    isExecutingRef.current = true
-
-    const newProgress: ImportProgressState = {
-      total: 0,
-      processed: 0,
-      imported: 0,
-      updated: 0,
-      failed: 0,
-      skipped: 0,
-      status: "running",
-      startTime: new Date(),
-      lastUpdate: new Date(),
-      speed: 0,
-      errors: [],
-      csvInfo: null,
-    }
-
-    setBackgroundImports((prev) => new Map(prev).set(sourceToImport.id, newProgress))
-    await executeImport(sourceToImport)
-  }
 
   function cancelImport() {
     console.log("[v0] Cancelando importación...")
@@ -1537,71 +1488,7 @@ const App = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showImportConfirmDialog} onOpenChange={setShowImportConfirmDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirmar Importación</DialogTitle>
-            <DialogDescription>
-              Estás a punto de importar desde &quot;{sourceToImport?.name}&quot;
-              {sourceToImport?.feed_type === "stock_price" && " (solo stock y precios)"}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            {/* Solo mostrar selector de modo si NO es tipo stock */}
-            {sourceToImport?.feed_type !== "stock_price" && (
-              <div className="space-y-2">
-                <Label htmlFor="import-mode">Modo de Importación</Label>
-                <Select value={importMode} onValueChange={(value: any) => setImportMode(value)}>
-                  <SelectTrigger id="import-mode">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="update">
-                      <div className="flex flex-col">
-                        <span className="font-medium">Actualizar existentes</span>
-                        <span className="text-xs text-muted-foreground">
-                          Actualiza productos existentes por EAN
-                        </span>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="overwrite">
-                      <div className="flex flex-col">
-                        <span className="font-medium">Sobrescribir todo</span>
-                        <span className="text-xs text-muted-foreground">
-                          Reemplaza completamente los productos existentes
-                        </span>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="skip">
-                      <div className="flex flex-col">
-                        <span className="font-medium">Solo nuevos</span>
-                        <span className="text-xs text-muted-foreground">Ignora productos que ya existen</span>
-                      </div>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            
-            {/* Mensaje informativo para tipo stock */}
-            {sourceToImport?.feed_type === "stock_price" && (
-              <div className="rounded-lg border p-3 bg-muted/50">
-                <p className="text-sm text-muted-foreground">
-                  Se actualizará el stock y precio de los productos existentes que coincidan por EAN.
-                </p>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowImportConfirmDialog(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={confirmImport}>
-              Iniciar Importación
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+
 
       <Dialog open={showProgressDialog} onOpenChange={(open) => !open && closeProgressDialog()}>
         <DialogContent className="max-w-2xl">
