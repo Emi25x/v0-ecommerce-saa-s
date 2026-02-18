@@ -9,20 +9,39 @@ import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Upload, Package, FileText, CheckCircle, XCircle, Clock, TrendingUp } from "lucide-react"
+import { Upload, Package, FileText, CheckCircle, XCircle, Clock, TrendingUp, Settings } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
 export default function SuppliersPage() {
   const [suppliers, setSuppliers] = useState<any[]>([])
   const [catalogs, setCatalogs] = useState<any[]>([])
+  const [warehouses, setWarehouses] = useState<any[]>([])
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null)
+  const [selectedWarehouse, setSelectedWarehouse] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false)
   const { toast } = useToast()
 
   useEffect(() => {
     fetchSuppliers()
+    fetchWarehouses()
   }, [])
+  
+  const fetchWarehouses = async () => {
+    try {
+      const res = await fetch("/api/warehouses")
+      const data = await res.json()
+      setWarehouses(data.warehouses || [])
+      
+      // Set default warehouse if exists
+      const defaultWarehouse = data.warehouses?.find((w: any) => w.is_default)
+      if (defaultWarehouse) {
+        setSelectedWarehouse(defaultWarehouse.id)
+      }
+    } catch (error) {
+      console.error("Error fetching warehouses:", error)
+    }
+  }
 
   useEffect(() => {
     if (selectedSupplier) {
@@ -93,11 +112,22 @@ export default function SuppliersPage() {
   }
 
   const handleImport = async (catalogId: string) => {
+    if (!selectedWarehouse && warehouses.length > 0) {
+      toast({
+        title: "Selecciona un almacén",
+        description: "Debes seleccionar un almacén antes de importar",
+        variant: "destructive"
+      })
+      return
+    }
+
     setLoading(true)
 
     try {
       const res = await fetch(`/api/suppliers/catalogs/${catalogId}/import`, {
-        method: "POST"
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ warehouse_id: selectedWarehouse })
       })
 
       const data = await res.json()
@@ -106,7 +136,7 @@ export default function SuppliersPage() {
 
       toast({
         title: "Importación completada",
-        description: `${data.total_items} items procesados, ${data.matched_items} vinculados (${data.match_rate}%)`
+        description: `${data.total_items} items procesados, ${data.matched_items} vinculados (${data.match_rate}%)${data.created_products ? `, ${data.created_products} productos creados` : ''}`
       })
 
       fetchCatalogs()
@@ -135,26 +165,52 @@ export default function SuppliersPage() {
 
       {/* Supplier Selection */}
       <Card className="p-4 mb-6">
-        <div className="flex items-center gap-4">
-          <Label className="text-sm font-medium">Proveedor:</Label>
-          <div className="flex gap-2">
-            {suppliers.map((supplier) => (
-              <Button
-                key={supplier.id}
-                variant={selectedSupplier === supplier.id ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSelectedSupplier(supplier.id)}
-              >
-                <Package className="mr-2 h-4 w-4" />
-                {supplier.name}
-                {supplier.code && (
-                  <Badge variant="secondary" className="ml-2">
-                    {supplier.code}
-                  </Badge>
-                )}
-              </Button>
-            ))}
+        <div className="space-y-4">
+          <div className="flex items-center gap-4">
+            <Label className="text-sm font-medium">Proveedor:</Label>
+            <div className="flex gap-2">
+              {suppliers.map((supplier) => (
+                <Button
+                  key={supplier.id}
+                  variant={selectedSupplier === supplier.id ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSelectedSupplier(supplier.id)}
+                >
+                  <Package className="mr-2 h-4 w-4" />
+                  {supplier.name}
+                  {supplier.code && (
+                    <Badge variant="secondary" className="ml-2">
+                      {supplier.code}
+                    </Badge>
+                  )}
+                </Button>
+              ))}
+            </div>
           </div>
+          
+          {warehouses.length > 0 && (
+            <div className="flex items-center gap-4">
+              <Label className="text-sm font-medium">Almacén:</Label>
+              <div className="flex gap-2 flex-wrap">
+                {warehouses.map((warehouse) => (
+                  <Button
+                    key={warehouse.id}
+                    variant={selectedWarehouse === warehouse.id ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setSelectedWarehouse(warehouse.id)}
+                  >
+                    {warehouse.name}
+                    <Badge variant="secondary" className="ml-2">
+                      {warehouse.code}
+                    </Badge>
+                    {warehouse.is_default && (
+                      <span className="ml-1 text-xs">(defecto)</span>
+                    )}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </Card>
 
@@ -326,25 +382,35 @@ export default function SuppliersPage() {
                       : "-"}
                   </TableCell>
                   <TableCell>
-                    {catalog.import_status === "pending" && (
+                    <div className="flex items-center gap-2">
+                      {catalog.import_status === "pending" && (
+                        <Button
+                          size="sm"
+                          onClick={() => handleImport(catalog.id)}
+                          disabled={loading}
+                        >
+                          Importar
+                        </Button>
+                      )}
+                      {catalog.import_status === "failed" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleImport(catalog.id)}
+                          disabled={loading}
+                        >
+                          Reintentar
+                        </Button>
+                      )}
                       <Button
                         size="sm"
-                        onClick={() => handleImport(catalog.id)}
-                        disabled={loading}
+                        variant="ghost"
+                        onClick={() => window.location.href = `/suppliers/catalogs/${catalog.id}/settings`}
+                        title="Configuración"
                       >
-                        Importar
+                        <Settings className="h-4 w-4" />
                       </Button>
-                    )}
-                    {catalog.import_status === "failed" && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleImport(catalog.id)}
-                        disabled={loading}
-                      >
-                        Reintentar
-                      </Button>
-                    )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))

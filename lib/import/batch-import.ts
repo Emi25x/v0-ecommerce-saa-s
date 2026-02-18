@@ -86,7 +86,31 @@ export async function executeBatchImport(
   } else {
     console.log(`[v0] Batch import: Descargando archivo desde ${fileUrl}`)
 
-    const fileResponse = await fetch(fileUrl)
+    // Construir headers y URL según tipo de autenticación
+    let fetchUrl = fileUrl
+    const fetchHeaders: HeadersInit = {
+      'User-Agent': 'Ecommerce-Manager/1.0'
+    }
+
+    const authType = source.auth_type
+    const credentials = source.credentials
+
+    if (authType === "basic_auth" && credentials?.username && credentials?.password) {
+      const auth = Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')
+      fetchHeaders['Authorization'] = `Basic ${auth}`
+    } else if (authType === "bearer_token" && credentials?.token) {
+      fetchHeaders['Authorization'] = `Bearer ${credentials.token}`
+    } else if (authType === "query_params" && credentials?.type === "query_params" && credentials?.params) {
+      // Agregar query params a la URL
+      const url = new URL(fetchUrl)
+      Object.keys(credentials.params).forEach(key => {
+        url.searchParams.set(key, credentials.params[key])
+      })
+      fetchUrl = url.toString()
+    }
+    // Si authType === "none" o null, no se agrega autenticación
+
+    const fileResponse = await fetch(fetchUrl, { headers: fetchHeaders })
     if (!fileResponse.ok) {
       return {
         success: false,

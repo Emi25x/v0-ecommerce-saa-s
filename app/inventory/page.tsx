@@ -763,7 +763,7 @@ export default function InventoryPage() {
                         </TableCell>
                         <TableCell className="border-r-2 border-border">{product.stock ?? "N/A"}</TableCell>
                         <TableCell className="border-r-2 border-border">
-                          {product.source && Array.isArray(product.source) && product.source.length > 0 ? (
+                          {Array.isArray(product.source) && product.source.length > 0 ? (
                             <div className="flex flex-wrap gap-1">
                               {product.source.slice(0, 2).map((src: string, idx: number) => (
                                 <Badge key={idx} variant="secondary" className="text-xs">

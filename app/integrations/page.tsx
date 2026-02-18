@@ -557,6 +557,11 @@ export default function IntegrationsPage() {
                 <Button onClick={testShopifyConnection} disabled={testingShopify} className="flex-1">
                   {testingShopify ? "Probando..." : shopifyConnected ? "Reconectar" : "Probar Conexión"}
                 </Button>
+                <Button variant="outline" asChild>
+                  <a href="/integrations/shopify-stores">
+                    Gestionar Tiendas
+                  </a>
+                </Button>
                 <Button variant="outline" size="icon" asChild>
                   <a href="https://shopify.dev" target="_blank" rel="noopener noreferrer">
                     <ExternalLink className="h-4 w-4" />

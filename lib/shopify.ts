@@ -1,5 +1,10 @@
 // Shopify API client and utilities
 
+export interface ShopifyStoreCredentials {
+  shop_domain: string
+  access_token: string
+}
+
 export interface ShopifyProduct {
   id: string
   title: string
@@ -42,8 +47,8 @@ export function isShopifyConfigured(): boolean {
 /**
  * Get Shopify API URL
  */
-function getShopifyApiUrl(): string {
-  const storeDomain = process.env.SHOPIFY_STORE_DOMAIN
+function getShopifyApiUrl(credentials?: ShopifyStoreCredentials): string {
+  const storeDomain = credentials?.shop_domain || process.env.SHOPIFY_STORE_DOMAIN
   if (!storeDomain) {
     throw new Error("SHOPIFY_STORE_DOMAIN not configured")
   }
@@ -53,8 +58,8 @@ function getShopifyApiUrl(): string {
 /**
  * Get Shopify access token
  */
-function getShopifyAccessToken(): string {
-  const accessToken = process.env.SHOPIFY_ACCESS_TOKEN
+function getShopifyAccessToken(credentials?: ShopifyStoreCredentials): string {
+  const accessToken = credentials?.access_token || process.env.SHOPIFY_ACCESS_TOKEN
   if (!accessToken) {
     throw new Error("SHOPIFY_ACCESS_TOKEN not configured")
   }
@@ -64,12 +69,12 @@ function getShopifyAccessToken(): string {
 /**
  * Make a GraphQL request to Shopify
  */
-async function shopifyGraphQL(query: string, variables?: Record<string, any>) {
-  const response = await fetch(getShopifyApiUrl(), {
+async function shopifyGraphQL(query: string, variables?: Record<string, any>, credentials?: ShopifyStoreCredentials) {
+  const response = await fetch(getShopifyApiUrl(credentials), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-Shopify-Access-Token": getShopifyAccessToken(),
+      "X-Shopify-Access-Token": getShopifyAccessToken(credentials),
     },
     body: JSON.stringify({
       query,
@@ -93,8 +98,8 @@ async function shopifyGraphQL(query: string, variables?: Record<string, any>) {
 /**
  * Get all products from Shopify
  */
-export async function getShopifyProducts(): Promise<ShopifyProduct[]> {
-  if (!isShopifyConfigured()) {
+export async function getShopifyProducts(credentials?: ShopifyStoreCredentials): Promise<ShopifyProduct[]> {
+  if (!credentials && !isShopifyConfigured()) {
     return []
   }
 
@@ -139,7 +144,7 @@ export async function getShopifyProducts(): Promise<ShopifyProduct[]> {
     }
   `
 
-  const data = await shopifyGraphQL(query, { first: 250 })
+  const data = await shopifyGraphQL(query, { first: 250 }, credentials)
 
   return data.products.edges.map((edge: any) => ({
     id: edge.node.id,
@@ -182,7 +187,7 @@ export async function createShopifyProduct(product: {
     sku?: string
     inventory_quantity?: number
   }>
-}) {
+}, credentials?: ShopifyStoreCredentials) {
   const mutation = `
     mutation CreateProduct($input: ProductInput!) {
       productCreate(input: $input) {
@@ -211,7 +216,7 @@ export async function createShopifyProduct(product: {
     })),
   }
 
-  const data = await shopifyGraphQL(mutation, { input })
+  const data = await shopifyGraphQL(mutation, { input }, credentials)
 
   if (data.productCreate.userErrors.length > 0) {
     throw new Error(`Failed to create product: ${JSON.stringify(data.productCreate.userErrors)}`)
@@ -231,6 +236,7 @@ export async function updateShopifyProduct(
     vendor?: string
     product_type?: string
   },
+  credentials?: ShopifyStoreCredentials
 ) {
   const mutation = `
     mutation UpdateProduct($input: ProductInput!) {
@@ -255,7 +261,7 @@ export async function updateShopifyProduct(
     ...(updates.product_type && { productType: updates.product_type }),
   }
 
-  const data = await shopifyGraphQL(mutation, { input })
+  const data = await shopifyGraphQL(mutation, { input }, credentials)
 
   if (data.productUpdate.userErrors.length > 0) {
     throw new Error(`Failed to update product: ${JSON.stringify(data.productUpdate.userErrors)}`)
@@ -267,7 +273,7 @@ export async function updateShopifyProduct(
 /**
  * Update variant inventory
  */
-export async function updateShopifyVariantInventory(variantId: string, quantity: number) {
+export async function updateShopifyVariantInventory(variantId: string, quantity: number, credentials?: ShopifyStoreCredentials) {
   const mutation = `
     mutation UpdateInventory($input: InventoryAdjustQuantityInput!) {
       inventoryAdjustQuantity(input: $input) {
@@ -294,7 +300,7 @@ export async function updateShopifyVariantInventory(variantId: string, quantity:
     }
   `
 
-  const variantData = await shopifyGraphQL(variantQuery, { id: variantId })
+  const variantData = await shopifyGraphQL(variantQuery, { id: variantId }, credentials)
   const inventoryItemId = variantData.productVariant.inventoryItem.id
 
   const input = {
@@ -302,7 +308,7 @@ export async function updateShopifyVariantInventory(variantId: string, quantity:
     availableDelta: quantity,
   }
 
-  const data = await shopifyGraphQL(mutation, { input })
+  const data = await shopifyGraphQL(mutation, { input }, credentials)
 
   if (data.inventoryAdjustQuantity.userErrors.length > 0) {
     throw new Error(`Failed to update inventory: ${JSON.stringify(data.inventoryAdjustQuantity.userErrors)}`)
@@ -314,7 +320,7 @@ export async function updateShopifyVariantInventory(variantId: string, quantity:
 /**
  * Update variant price
  */
-export async function updateShopifyVariantPrice(variantId: string, price: string) {
+export async function updateShopifyVariantPrice(variantId: string, price: string, credentials?: ShopifyStoreCredentials) {
   const mutation = `
     mutation UpdateVariant($input: ProductVariantInput!) {
       productVariantUpdate(input: $input) {
@@ -335,11 +341,43 @@ export async function updateShopifyVariantPrice(variantId: string, price: string
     price,
   }
 
-  const data = await shopifyGraphQL(mutation, { input })
+  const data = await shopifyGraphQL(mutation, { input }, credentials)
 
   if (data.productVariantUpdate.userErrors.length > 0) {
     throw new Error(`Failed to update variant price: ${JSON.stringify(data.productVariantUpdate.userErrors)}`)
   }
 
   return data.productVariantUpdate.productVariant
+}
+
+/**
+ * Get Shopify locations
+ */
+export async function getShopifyLocations(credentials?: ShopifyStoreCredentials) {
+  const query = `
+    query GetLocations($first: Int!) {
+      locations(first: $first) {
+        edges {
+          node {
+            id
+            name
+            address {
+              address1
+              city
+              province
+              country
+            }
+          }
+        }
+      }
+    }
+  `
+
+  const data = await shopifyGraphQL(query, { first: 10 }, credentials)
+
+  return data.locations.edges.map((edge: any) => ({
+    id: edge.node.id,
+    name: edge.node.name,
+    address: edge.node.address,
+  }))
 }
