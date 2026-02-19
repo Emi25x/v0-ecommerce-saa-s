@@ -1650,63 +1650,6 @@ const App = () => {
                   </div>
                 </div>
               </div>
-            )}
-          </Card>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-export default App
-                    {analysisResult.sqlEditorUrl && (
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="mt-2 bg-transparent"
-                        onClick={() => window.open(analysisResult.sqlEditorUrl, '_blank')}
-                      >
-                        <ExternalLink className="mr-2 h-4 w-4" />
-                        Abrir SQL Editor de Supabase
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {analysisResult && !isAnalyzing && !analysisResult.needsSQLSetup && (
-              <>
-                <div className="grid grid-cols-2 gap-4">
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm font-medium text-muted-foreground">
-                        Total Productos
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-3xl font-bold">{analysisResult.totalProducts.toLocaleString()}</div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm font-medium text-muted-foreground">
-                        SKUs Duplicados
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className={`text-3xl font-bold ${analysisResult.totalDuplicateSKUs > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        {analysisResult.totalDuplicateSKUs}
-                      </div>
-                      {analysisResult.totalDuplicateProducts !== undefined && analysisResult.totalDuplicateProducts > 0 && (
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {analysisResult.totalDuplicateProducts.toLocaleString()} productos en total
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
 
                 {analysisResult.method && (
                   <div className="text-xs text-muted-foreground text-center">
