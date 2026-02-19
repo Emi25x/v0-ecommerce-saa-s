@@ -1650,9 +1650,12 @@ const App = () => {
                   </div>
                 </div>
               </div>
+            )}
 
+            {analysisResult && !analysisResult.needsSQLSetup && (
+              <>
                 {analysisResult.method && (
-                  <div className="text-xs text-muted-foreground text-center">
+                  <div className="text-xs text-muted-foreground text-center mb-4">
                     Método: {analysisResult.method === 'sql_direct' ? 'SQL Directo (completo)' : 'Análisis de muestra'}
                     {analysisResult.note && ` • ${analysisResult.note}`}
                   </div>
