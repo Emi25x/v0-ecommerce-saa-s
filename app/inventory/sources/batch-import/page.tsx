@@ -91,13 +91,28 @@ export default function BatchImportPage() {
         })
 
         if (!response.ok) {
-          const error = await response.json()
-          addLog(`Error: ${error.error}`)
-          setStatus(`Error: ${error.error}`)
+          let errorMessage = `Error ${response.status}: ${response.statusText}`
+          try {
+            const error = await response.json()
+            errorMessage = error.error || errorMessage
+          } catch {
+            const errorText = await response.text()
+            errorMessage = errorText.substring(0, 200) || errorMessage
+          }
+          addLog(`Error: ${errorMessage}`)
+          setStatus(`Error: ${errorMessage}`)
           break
         }
 
-        const result = await response.json()
+        let result
+        try {
+          result = await response.json()
+        } catch (e) {
+          const responseText = await response.text()
+          addLog(`Error: Respuesta inválida del servidor: ${responseText.substring(0, 200)}`)
+          setStatus(`Error: Respuesta inválida del servidor`)
+          break
+        }
 
         setTotal(result.total)
         setProcessed(result.processed)
