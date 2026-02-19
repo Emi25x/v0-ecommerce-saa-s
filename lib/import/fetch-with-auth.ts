@@ -58,8 +58,16 @@ export async function fetchWithAuth(source: SourceAuth): Promise<Response> {
   const url = buildAuthenticatedUrl(source)
   const headers = buildAuthHeaders(source)
 
-  console.log(`[FETCH-AUTH] Fetching from: ${url.substring(0, 100)}...`)
-  console.log(`[FETCH-AUTH] Auth type: ${source.auth_type || "none"}`)
+  console.log(`[v0][FETCH-AUTH] Base URL: ${source.url_template}`)
+  console.log(`[v0][FETCH-AUTH] Auth type: ${source.auth_type || "none"}`)
+  console.log(`[v0][FETCH-AUTH] Credentials:`, JSON.stringify(source.credentials))
+  console.log(`[v0][FETCH-AUTH] Final URL: ${url}`)
+  console.log(`[v0][FETCH-AUTH] Headers:`, JSON.stringify(headers))
 
-  return fetch(url, { headers })
+  const response = await fetch(url, { headers })
+  
+  console.log(`[v0][FETCH-AUTH] Response status: ${response.status} ${response.statusText}`)
+  console.log(`[v0][FETCH-AUTH] Response headers:`, JSON.stringify(Object.fromEntries(response.headers.entries())))
+  
+  return response
 }
