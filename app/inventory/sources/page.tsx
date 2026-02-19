@@ -1647,6 +1647,18 @@ const App = () => {
                         <li>Vuelve aquí y analiza nuevamente</li>
                       </ol>
                     </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </Card>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default App
                     {analysisResult.sqlEditorUrl && (
                       <Button 
                         variant="outline" 
