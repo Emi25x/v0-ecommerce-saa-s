@@ -279,11 +279,12 @@ export async function POST(request: NextRequest) {
       const chunk = productsToInsert.slice(i, i + CHUNK_SIZE)
       
       if (mode === "create" || mode === "upsert") {
-        // Filtrar productos sin EAN para el upsert por EAN
+        // Separar productos con EAN y sin EAN
         const chunkWithEan = chunk.filter(p => p.ean)
+        const chunkWithoutEan = chunk.filter(p => !p.ean && p.sku)
         
+        // Procesar productos CON EAN (upsert por EAN)
         if (chunkWithEan.length > 0) {
-          // En modo "create", contar cuántos EANs ya existen para calcular los realmente nuevos
           let existingCount = 0
           if (mode === "create") {
             const eans = chunkWithEan.map(p => p.ean)
@@ -299,20 +300,48 @@ export async function POST(request: NextRequest) {
             .upsert(chunkWithEan, { onConflict: "ean", ignoreDuplicates: mode === "create" })
           
           if (error) {
-            console.error("[v0] Error insertando chunk:", error.message)
+            console.error("[v0] Error insertando chunk con EAN:", error.message)
             failedCount += chunkWithEan.length
           } else {
             if (mode === "create") {
-              // Solo contar los que realmente se crearon (no existían antes)
               createdCount += chunkWithEan.length - existingCount
             } else {
               createdCount += chunkWithEan.length
             }
           }
         }
+        
+        // Procesar productos SIN EAN (upsert por SKU)
+        if (chunkWithoutEan.length > 0) {
+          let existingCount = 0
+          if (mode === "create") {
+            const skus = chunkWithoutEan.map(p => p.sku)
+            const { count } = await supabase
+              .from("products")
+              .select("sku", { count: "exact", head: true })
+              .in("sku", skus)
+            existingCount = count || 0
+          }
+          
+          const { error } = await supabase
+            .from("products")
+            .upsert(chunkWithoutEan, { onConflict: "sku", ignoreDuplicates: mode === "create" })
+          
+          if (error) {
+            console.error("[v0] Error insertando chunk sin EAN (por SKU):", error.message)
+            failedCount += chunkWithoutEan.length
+          } else {
+            if (mode === "create") {
+              createdCount += chunkWithoutEan.length - existingCount
+            } else {
+              createdCount += chunkWithoutEan.length
+            }
+          }
+        }
       } else if (mode === "update") {
-        // Para update, usamos upsert que actualiza si existe (por EAN)
+        // Para update, separar por EAN y SKU
         const chunkWithEan = chunk.filter(p => p.ean)
+        const chunkWithoutEan = chunk.filter(p => !p.ean && p.sku)
         
         if (chunkWithEan.length > 0) {
           const { error } = await supabase
@@ -320,10 +349,23 @@ export async function POST(request: NextRequest) {
             .upsert(chunkWithEan, { onConflict: "ean", ignoreDuplicates: false })
           
           if (error) {
-            console.error("[v0] Error actualizando chunk:", error.message)
+            console.error("[v0] Error actualizando chunk con EAN:", error.message)
             failedCount += chunkWithEan.length
           } else {
             updatedCount += chunkWithEan.length
+          }
+        }
+        
+        if (chunkWithoutEan.length > 0) {
+          const { error } = await supabase
+            .from("products")
+            .upsert(chunkWithoutEan, { onConflict: "sku", ignoreDuplicates: false })
+          
+          if (error) {
+            console.error("[v0] Error actualizando chunk sin EAN (por SKU):", error.message)
+            failedCount += chunkWithoutEan.length
+          } else {
+            updatedCount += chunkWithoutEan.length
           }
         }
       }
