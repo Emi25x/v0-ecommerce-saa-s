@@ -91,14 +91,16 @@ export default function BatchImportPage() {
           body: JSON.stringify({ sourceId: urlSourceId, offset, mode: importMode, forceReload: isFirstBatch }),
         })
 
+        // Leer el body UNA SOLA VEZ
+        const responseText = await response.text()
+        
         if (!response.ok) {
           let errorMessage = `Error ${response.status}: ${response.statusText}`
           try {
-            const error = await response.json()
+            const error = JSON.parse(responseText)
             errorMessage = error.error || errorMessage
           } catch {
-            const errorText = await response.text()
-            errorMessage = errorText.substring(0, 200) || errorMessage
+            errorMessage = responseText.substring(0, 200) || errorMessage
           }
           addLog(`Error: ${errorMessage}`)
           setStatus(`Error: ${errorMessage}`)
@@ -107,9 +109,8 @@ export default function BatchImportPage() {
 
         let result
         try {
-          result = await response.json()
+          result = JSON.parse(responseText)
         } catch (e) {
-          const responseText = await response.text()
           addLog(`Error: Respuesta inválida del servidor: ${responseText.substring(0, 200)}`)
           setStatus(`Error: Respuesta inválida del servidor`)
           break
