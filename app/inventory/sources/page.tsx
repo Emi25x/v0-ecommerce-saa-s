@@ -285,14 +285,24 @@ const App = () => {
         console.log("[v0] No se pudo cargar el historial:", historyError.message)
       }
 
+      // Eliminar duplicados por ID (prevenir duplicados si existen en DB)
+      const uniqueSourcesMap = new Map()
+      ;(sourcesData || []).forEach((source) => {
+        if (!uniqueSourcesMap.has(source.id)) {
+          uniqueSourcesMap.set(source.id, source)
+        }
+      })
+      
+      const uniqueSources = Array.from(uniqueSourcesMap.values())
+
       // Combinar datos
-      const sourcesWithSchedules: SourceWithSchedule[] = (sourcesData || []).map((source) => ({
+      const sourcesWithSchedules: SourceWithSchedule[] = uniqueSources.map((source) => ({
         ...source,
         schedules: schedulesData.filter((s) => s.source_id === source.id),
         last_import: historyData?.find((h) => h.source_id === source.id),
       }))
 
-      console.log("[v0] Fuentes cargadas:", sourcesWithSchedules.length)
+      console.log("[v0] Fuentes cargadas:", sourcesWithSchedules.length, "únicas de", sourcesData?.length || 0, "totales")
       setSources(sourcesWithSchedules)
       return sourcesWithSchedules
     } catch (error) {
@@ -860,6 +870,17 @@ const App = () => {
       })
 
       setRunningImports(newRunningImports)
+
+      // Limpiar backgroundImports de fuentes que ya no tienen imports activos
+      setBackgroundImports((prev) => {
+        const cleaned = new Map(prev)
+        for (const sourceId of cleaned.keys()) {
+          if (!newRunningImports.has(sourceId)) {
+            cleaned.delete(sourceId)
+          }
+        }
+        return cleaned
+      })
     } catch (error) {
       console.error("[v0] Error checking running imports:", error)
     }
