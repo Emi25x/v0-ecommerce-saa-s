@@ -1626,42 +1626,42 @@ const App = () => {
               )}
             </Button>
 
-            {analysisResult?.needsSQLSetup && (
-              <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 space-y-3">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
-                  <div className="space-y-2 flex-1">
-                    <div className="font-semibold text-yellow-900 dark:text-yellow-100">
-                      Configuración SQL requerida
-                    </div>
-                    <div className="text-sm text-yellow-800 dark:text-yellow-200">
-                      {analysisResult.instructions}
-                    </div>
-                    <div className="text-xs text-yellow-700 dark:text-yellow-300 space-y-1">
-                      <div className="font-medium">Pasos para configurar:</div>
-                      <ol className="list-decimal list-inside space-y-1 ml-2">
-                        <li>Abre el script SQL en la carpeta <code className="bg-yellow-100 dark:bg-yellow-900 px-1 rounded">scripts/</code></li>
-                        <li>Copia el contenido del archivo <code className="bg-yellow-100 dark:bg-yellow-900 px-1 rounded">EJECUTAR_PRIMERO_crear_funciones.sql</code></li>
-                        <li>Abre el SQL Editor de Supabase</li>
-                        <li>Pega y ejecuta el script</li>
-                        <li>Vuelve aquí y analiza nuevamente</li>
-                      </ol>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {analysisResult && !analysisResult.needsSQLSetup && (
+            {analysisResult && (
               <>
-                {analysisResult.method && (
-                  <div className="text-xs text-muted-foreground text-center mb-4">
-                    Método: {analysisResult.method === 'sql_direct' ? 'SQL Directo (completo)' : 'Análisis de muestra'}
-                    {analysisResult.note && ` • ${analysisResult.note}`}
+                {analysisResult.needsSQLSetup ? (
+                  <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 space-y-3">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+                      <div className="space-y-2 flex-1">
+                        <div className="font-semibold text-yellow-900 dark:text-yellow-100">
+                          Configuración SQL requerida
+                        </div>
+                        <div className="text-sm text-yellow-800 dark:text-yellow-200">
+                          {analysisResult.instructions}
+                        </div>
+                        <div className="text-xs text-yellow-700 dark:text-yellow-300 space-y-1">
+                          <div className="font-medium">Pasos para configurar:</div>
+                          <ol className="list-decimal list-inside space-y-1 ml-2">
+                            <li>Abre el script SQL en la carpeta <code className="bg-yellow-100 dark:bg-yellow-900 px-1 rounded">scripts/</code></li>
+                            <li>Copia el contenido del archivo <code className="bg-yellow-100 dark:bg-yellow-900 px-1 rounded">EJECUTAR_PRIMERO_crear_funciones.sql</code></li>
+                            <li>Abre el SQL Editor de Supabase</li>
+                            <li>Pega y ejecuta el script</li>
+                            <li>Vuelve aquí y analiza nuevamente</li>
+                          </ol>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                )}
+                ) : (
+                  <>
+                    {analysisResult.method && (
+                      <div className="text-xs text-muted-foreground text-center mb-4">
+                        Método: {analysisResult.method === 'sql_direct' ? 'SQL Directo (completo)' : 'Análisis de muestra'}
+                        {analysisResult.note && ` • ${analysisResult.note}`}
+                      </div>
+                    )}
 
-                {analysisResult.totalDuplicateSKUs > 0 ? (
+                    {analysisResult.totalDuplicateSKUs > 0 ? (
                   <div className="space-y-4">
                     <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
                       <div className="flex items-center gap-2 mb-2">
@@ -1717,6 +1717,8 @@ const App = () => {
                       No se detectaron problemas
                     </div>
                   </div>
+                )}
+                  </>
                 )}
               </>
             )}
