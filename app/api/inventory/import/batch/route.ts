@@ -214,11 +214,33 @@ export async function POST(request: NextRequest) {
 
     // LÓGICA NORMAL PARA CATÁLOGO COMPLETO
     const productsToInsert: Array<Record<string, any>> = []
+    
+    // Contadores de debug
+    let skippedMissingKey = 0
+    let skippedNoEan = 0
+    let processedValidRows = 0
+    
+    // Debug detallado en el primer lote
+    const isFirstBatch = offset === 0
+    if (isFirstBatch && batch.length > 0) {
+      console.log(`[v0][DEBUG] === DEBUG PRIMERA FILA ===`)
+      console.log(`[v0][DEBUG] Column mapping:`, JSON.stringify(mapping))
+      console.log(`[v0][DEBUG] Primera fila RAW:`, JSON.stringify(batch[0]).substring(0, 500))
+      console.log(`[v0][DEBUG] Headers disponibles:`, Object.keys(batch[0]).join(", "))
+    }
 
     for (const row of batch) {
       const sku = row[mapping.sku || "SKU"]?.trim()
       let ean = row[mapping.ean || "EAN"]?.trim()
       const isbn = row[mapping.isbn || "ISBN"]?.trim()
+      
+      // Debug de primera fila
+      if (isFirstBatch && processedValidRows === 0 && skippedMissingKey === 0 && skippedNoEan === 0) {
+        console.log(`[v0][DEBUG] Extrayendo valores de primera fila:`)
+        console.log(`[v0][DEBUG]   - SKU column: "${mapping.sku || "SKU"}" -> valor: "${sku}"`)
+        console.log(`[v0][DEBUG]   - EAN column: "${mapping.ean || "EAN"}" -> valor: "${ean}"`)
+        console.log(`[v0][DEBUG]   - ISBN column: "${mapping.isbn || "ISBN"}" -> valor: "${isbn}"`)
+      }
       
       // Si no hay EAN, usar ISBN como EAN
       if (!ean && isbn) {
@@ -226,7 +248,23 @@ export async function POST(request: NextRequest) {
       }
       
       // Solo procesar productos con EAN (o ISBN usado como EAN)
-      if (!sku || !ean) continue
+      if (!sku) {
+        skippedMissingKey++
+        if (isFirstBatch && skippedMissingKey === 1) {
+          console.log(`[v0][DEBUG] DESCARTADO: Falta SKU`)
+        }
+        continue
+      }
+      
+      if (!ean) {
+        skippedNoEan++
+        if (isFirstBatch && skippedNoEan === 1) {
+          console.log(`[v0][DEBUG] DESCARTADO: Falta EAN/ISBN (sku="${sku}")`)
+        }
+        continue
+      }
+      
+      processedValidRows++
       
       const title = row[mapping.title || "TITULO"]?.trim()
       const price = parseFloat(row[mapping.price || "PRECIO"]?.replace(",", ".") || "0")
@@ -333,6 +371,7 @@ export async function POST(request: NextRequest) {
     const progress = Math.round((newOffset / totalRows) * 100)
 
     console.log(`[v0] Batch import: Lote procesado. Creados: ${createdCount}, Actualizados: ${updatedCount}, Fallidos: ${failedCount}, Progreso: ${progress}%`)
+    console.log(`[v0] Batch import: Debug counters - Valid: ${processedValidRows}, Missing SKU: ${skippedMissingKey}, No EAN/ISBN: ${skippedNoEan}`)
 
     return NextResponse.json({
       success: true,
@@ -344,6 +383,12 @@ export async function POST(request: NextRequest) {
       failed: failedCount,
       nextOffset: done ? null : newOffset,
       progress,
+      debug: {
+        skipped_missing_key: skippedMissingKey,
+        skipped_no_ean: skippedNoEan,
+        processed_valid_rows: processedValidRows,
+        products_to_insert: productsToInsert.length
+      }
     })
   } catch (error) {
     console.error("[v0] Error en batch import:", error)

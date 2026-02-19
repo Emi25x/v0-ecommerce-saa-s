@@ -21,6 +21,7 @@ export default function BatchImportPage() {
   const [created, setCreated] = useState(0)
   const [status, setStatus] = useState<string>("")
   const [logs, setLogs] = useState<string[]>([])
+  const [debugCounters, setDebugCounters] = useState({ skipped_missing_key: 0, skipped_no_ean: 0, processed_valid_rows: 0 })
   const abortRef = useRef(false)
 
   const addLog = (message: string) => {
@@ -121,8 +122,18 @@ export default function BatchImportPage() {
         totalCreated += result.created || 0
         setUpdated(totalUpdated)
         setCreated(totalCreated)
+        
+        // Actualizar contadores de debug si vienen
+        if (result.debug) {
+          setDebugCounters(result.debug)
+        }
 
         addLog(`Lote completado: ${result.created || 0} creados, ${result.updated || 0} actualizados, progreso ${result.progress}%`)
+        
+        // Log de debug si hay filas descartadas
+        if (result.debug && (result.debug.skipped_missing_key > 0 || result.debug.skipped_no_ean > 0)) {
+          addLog(`[DEBUG] Descartados: ${result.debug.skipped_no_ean} sin EAN/ISBN, ${result.debug.skipped_missing_key} sin SKU`)
+        }
 
         if (result.done) {
           done = true
@@ -207,7 +218,7 @@ export default function BatchImportPage() {
                 </span>
               </div>
               <Progress value={progress} />
-              <div className="grid grid-cols-3 gap-4 text-sm">
+              <div className="grid grid-cols-3 gap-4 text-sm mb-4">
                 <div className="p-3 bg-muted rounded">
                   <div className="font-medium">Creados</div>
                   <div className="text-2xl font-bold text-blue-600">{created.toLocaleString()}</div>
@@ -221,6 +232,27 @@ export default function BatchImportPage() {
                   <div className="text-sm">{status}</div>
                 </div>
               </div>
+              
+              {/* Debug counters */}
+              {debugCounters.processed_valid_rows > 0 && (
+                <div className="border border-yellow-200 bg-yellow-50 dark:bg-yellow-950/20 rounded p-3 text-xs">
+                  <div className="font-medium mb-2">Debug - Último lote:</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <span className="text-muted-foreground">Procesados:</span>{" "}
+                      <span className="font-mono font-bold">{debugCounters.processed_valid_rows}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Sin EAN/ISBN:</span>{" "}
+                      <span className="font-mono font-bold text-orange-600">{debugCounters.skipped_no_ean}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Sin SKU:</span>{" "}
+                      <span className="font-mono font-bold text-red-600">{debugCounters.skipped_missing_key}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
