@@ -56,6 +56,8 @@ export async function POST(request: NextRequest) {
       data = cached.data
     } else {
       console.log(`[v0] Batch import: Descargando archivo desde ${fileUrl}`)
+      console.log(`[v0] Batch import: Auth type: ${source.auth_type}`)
+      console.log(`[v0] Batch import: Credentials:`, JSON.stringify(source.credentials).substring(0, 100))
 
       // Descargar el archivo CSV con autenticación
       const fileResponse = await fetchWithAuth({
@@ -64,13 +66,18 @@ export async function POST(request: NextRequest) {
         credentials: source.credentials
       })
       
+      console.log(`[v0] Batch import: Response status: ${fileResponse.status} ${fileResponse.statusText}`)
+      
       if (!fileResponse.ok) {
+        const errorBody = await fileResponse.text()
         console.error(`[v0] Batch import: Error descargando: ${fileResponse.status} ${fileResponse.statusText}`)
-        return NextResponse.json({ error: `Error descargando: ${fileResponse.status}` }, { status: 500 })
+        console.error(`[v0] Batch import: Error response body (first 300 chars):`, errorBody.substring(0, 300))
+        return NextResponse.json({ error: `Error descargando: ${fileResponse.status} - ${fileResponse.statusText}` }, { status: 500 })
       }
 
       const csvText = await fileResponse.text()
       console.log(`[v0] Batch import: Archivo descargado, ${csvText.length} caracteres`)
+      console.log(`[v0] Batch import: Primeros 300 caracteres:`, csvText.substring(0, 300))
 
       // Determinar el delimitador correcto desde column_mapping
       let delimiter = "|" // Default
