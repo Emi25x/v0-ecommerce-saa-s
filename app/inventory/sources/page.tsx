@@ -172,6 +172,7 @@ const App = () => {
   const [showScheduleDialog, setShowScheduleDialog] = useState(false)
   const [schedulesTableExists, setSchedulesTableExists] = useState(false)
   const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set())
+  const [sourceToImport, setSourceToImport] = useState<SourceWithSchedule | null>(null)
   const [showProgressDialog, setShowProgressDialog] = useState(false)
   const [backgroundImports, setBackgroundImports] = useState<Map<string, ImportProgressState>>(new Map())
   const [importProgress, setImportProgress] = useState<ImportProgressState>({
