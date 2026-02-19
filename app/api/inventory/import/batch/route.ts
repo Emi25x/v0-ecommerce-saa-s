@@ -68,14 +68,15 @@ export async function POST(request: NextRequest) {
       
       console.log(`[v0] Batch import: Response status: ${fileResponse.status} ${fileResponse.statusText}`)
       
+      // Leer el body UNA SOLA VEZ
+      const csvText = await fileResponse.text()
+      
       if (!fileResponse.ok) {
-        const errorBody = await fileResponse.text()
         console.error(`[v0] Batch import: Error descargando: ${fileResponse.status} ${fileResponse.statusText}`)
-        console.error(`[v0] Batch import: Error response body (first 300 chars):`, errorBody.substring(0, 300))
+        console.error(`[v0] Batch import: Error response body (first 300 chars):`, csvText.substring(0, 300))
         return NextResponse.json({ error: `Error descargando: ${fileResponse.status} - ${fileResponse.statusText}` }, { status: 500 })
       }
 
-      const csvText = await fileResponse.text()
       console.log(`[v0] Batch import: Archivo descargado, ${csvText.length} caracteres`)
       console.log(`[v0] Batch import: Primeros 300 caracteres:`, csvText.substring(0, 300))
 
