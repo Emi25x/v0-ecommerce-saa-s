@@ -1368,18 +1368,6 @@ export default function MLTemplatesPage() {
               </div>
 
               <div className="space-y-2">
-                <Label>Formula de precio</Label>
-                <Input
-                  value={templateForm.price_formula}
-                  onChange={(e) => setTemplateForm({ ...templateForm, price_formula: e.target.value })}
-                  placeholder="price * 1.5 o cost_price * 2.0"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Variables: price (precio del catalogo), cost_price (costo)
-                </p>
-              </div>
-
-              <div className="space-y-2">
                 <Label>Perfil de Precio</Label>
                 <Select
                   value={templateForm.price_profile_id}
@@ -1405,7 +1393,11 @@ export default function MLTemplatesPage() {
                 </Select>
                 <p className="text-sm text-muted-foreground mt-1">
                   {templateForm.price_profile_id ? (
-                    <>El perfil seleccionado actualizará la fórmula automáticamente. Cambios en "Calculadora de precios" se reflejan aquí.</>
+                    <>
+                      Fórmula aplicada: <code className="bg-muted px-1.5 py-0.5 rounded text-xs">{templateForm.price_formula}</code>
+                      <br />
+                      Los cambios en "Calculadora de precios" se reflejan automáticamente.
+                    </>
                   ) : (
                     <>Selecciona un perfil o ve a "Calculadora de precios" para crear uno.</>
                   )}

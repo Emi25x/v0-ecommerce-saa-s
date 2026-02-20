@@ -636,65 +636,21 @@ Libro nuevo. Envíos a todo el país.`
         condition: template.condition || "new",
         listing_type_id: template.listing_type_id || "gold_special",
         // Días de disponibilidad (handling_time)
-        shipping: {
-          mode: template.shipping_mode || "me2",
-          local_pick_up: template.local_pick_up || false,
-          free_shipping: template.free_shipping || false,
-          ...(template.handling_days && { dimensions: null, handling_time: { unit: "days", value: template.handling_days } })
-        },
-        // NOTA: seller_sku NO es válido para listings tradicionales en ML API
-        // NOTA: La descripción se agrega en POST separado después de crear el item
-        // Imagenes
-        pictures: pictures,
-        // Garantia via sale_terms (WARRANTY_TYPE + WARRANTY_TIME)
-        sale_terms: [
-          {
-            id: "WARRANTY_TYPE",
-            value_name: template.warranty_type || "Garantía del vendedor"
-          },
-          {
-            id: "WARRANTY_TIME", 
-            value_name: template.warranty_time || "30 días"
+        ...(template.handling_days && template.handling_days > 0 ? {
+          shipping: {
+            mode: template.shipping_mode || "me2",
+            local_pick_up: template.local_pick_up || false,
+            free_shipping: template.free_shipping || false,
+            dimensions: null,
+            handling_time: { unit: "days", value: template.handling_days }
           }
-        ],
-        // Configuracion de envio (usar valores del template si existen)
-        shipping: {
-          mode: template.shipping_mode || "me2", // Mercado Envios
-          local_pick_up: template.local_pick_up !== false, // true por defecto
-          free_shipping: template.free_shipping || false,
-        },
-        // Atributos del libro
-        attributes: attributes,
-      }
-    }
-    
-    // Helper para construir publicacion de catalogo
-    const buildCatalogItem = () => {
-      // Usar el ID de imagen subido a ML (NO usamos fallback a URL porque ML la rechazará si es pequeña)
-      const pictures: Array<{ id?: string; source?: string }> = []
-      if (mlPictureId) {
-        pictures.push({ id: mlPictureId })
-      }
-      // Si no hay mlPictureId, se publica sin imagen (mejor que fallar)
-      
-      return {
-        site_id: "MLA",
-        catalog_product_id: catalogProductId,
-        catalog_listing: true,
-        price: finalPrice,
-        currency_id: template.currency_id || "ARS",
-        available_quantity: Math.min(product.stock || 1, 50),
-        buying_mode: "buy_it_now",
-        condition: template.condition || "new",
-        listing_type_id: template.listing_type_id || "gold_special",
-        // Días de disponibilidad (handling_time)
-        shipping: {
-          mode: template.shipping_mode || "me2",
-          local_pick_up: template.local_pick_up || false,
-          free_shipping: template.free_shipping || false,
-          dimensions: null,
-          handling_time: template.handling_days ? { unit: "days", value: template.handling_days } : undefined
-        },
+        } : {
+          shipping: {
+            mode: template.shipping_mode || "me2",
+            local_pick_up: template.local_pick_up || false,
+            free_shipping: template.free_shipping || false
+          }
+        }),
         // NOTA: seller_sku NO es válido para listings de catálogo en ML API
         // NOTA: La descripción se agrega en POST separado después de crear el item
         // Imagenes
