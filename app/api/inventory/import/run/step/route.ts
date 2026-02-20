@@ -86,10 +86,22 @@ export async function POST(request: NextRequest) {
 
     const csvText = await csvBlob.text()
 
-    // 3. Parsear CSV completo (en memoria, pero solo procesamos un chunk)
-    const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true })
+    // 3. Obtener delimiter detectado del metadata del run (desde sanity check)
+    const runMetadata = run.metadata as any
+    const detectedDelimiter = runMetadata?.detected_delimiter || ","
     
-    // 4. Normalizar TODOS los headers
+    if (run.processed_rows === 0) {
+      console.log(`[v0][RUN/STEP] Usando delimiter detectado en sanity check: "${detectedDelimiter}"`)
+    }
+
+    // 4. Parsear CSV completo usando el delimiter correcto
+    const parsed = Papa.parse(csvText, { 
+      header: true, 
+      skipEmptyLines: true,
+      delimiter: detectedDelimiter 
+    })
+    
+    // 5. Normalizar TODOS los headers
     const headersOriginal = parsed.meta.fields || []
     const headersNormalized = headersOriginal.map(normalizeHeader)
     
@@ -120,7 +132,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`[v0][RUN/STEP] CSV parseado: ${allRows.length} filas totales (headers normalizados)`)
 
-    // 5. Tomar chunk actual
+    // 6. Tomar chunk actual
     const offset = run.processed_rows
     const chunk = allRows.slice(offset, offset + CHUNK_SIZE)
 
@@ -150,7 +162,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`[v0][RUN/STEP] Procesando ${chunk.length} filas`)
 
-    // 5. Obtener source para mapping
+    // 7. Obtener source para mapping
     const { data: source } = await supabase
       .from("import_sources")
       .select("*")
@@ -163,10 +175,10 @@ export async function POST(request: NextRequest) {
 
     const mapping = source.column_mapping || {}
 
-    // 6. Ya no necesitamos auto-detectar porque los headers están normalizados
+    // 8. Ya no necesitamos auto-detectar porque los headers están normalizados
     // Accedemos directamente usando headers normalizados: "ean", "isbn", "titulo", etc.
     
-    // 7. Procesar chunk
+    // 9. Procesar chunk
     const productsToInsert: Array<Record<string, any>> = []
     let skipped_missing = 0
     let skipped_invalid = 0
@@ -231,7 +243,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`[v0][RUN/STEP] Productos a insertar: ${productsToInsert.length}, skipped: ${skipped_missing + skipped_invalid}`)
 
-    // 8. Insertar en DB (upsert por EAN)
+    // 10. Insertar en DB (upsert por EAN)
     let createdCount = 0
     let updatedCount = 0
 
@@ -249,7 +261,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 9. Actualizar run
+    // 11. Actualizar run
     const newProcessedRows = run.processed_rows + chunk.length
     const done = newProcessedRows >= (run.total_rows || allRows.length)
 
