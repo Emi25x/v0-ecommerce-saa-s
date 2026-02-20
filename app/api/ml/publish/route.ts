@@ -652,11 +652,14 @@ Libro nuevo. Envíos a todo el país.`
             value_name: template.warranty_time || "30 días"
           }
         ],
-        // Configuracion de envio
+        // Configuracion de envio (con handling_time si está configurado)
         shipping: {
           mode: template.shipping_mode || "me2",
           local_pick_up: template.local_pick_up || false,
-          free_shipping: template.free_shipping || false
+          free_shipping: template.free_shipping || false,
+          ...(template.handling_days && template.handling_days > 0 ? {
+            handling_time: template.handling_days
+          } : {})
         },
       }
     }
@@ -692,7 +695,10 @@ Libro nuevo. Envíos a todo el país.`
         shipping: {
           mode: template.shipping_mode || "me2",
           local_pick_up: template.local_pick_up || false,
-          free_shipping: template.free_shipping || false
+          free_shipping: template.free_shipping || false,
+          ...(template.handling_days && template.handling_days > 0 ? {
+            handling_time: template.handling_days
+          } : {})
         },
       }
     }
@@ -930,10 +936,6 @@ Libro nuevo. Envíos a todo el país.`
       console.log("[v0] No description to add (empty or null)")
       descriptionError = "Descripción vacía o no disponible"
     }
-
-    // NOTA: handling_time NO puede configurarse manualmente en ML
-    // ML lo calcula automáticamente según la configuración logística del vendedor
-    // Referencia: https://developers.mercadolibre.com.ar/en_us/calculate-shipping-costs-handling-time
 
     // Guardar publicacion tradicional en nuestra base de datos
     const { error: insertError } = await supabase
