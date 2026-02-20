@@ -1777,14 +1777,38 @@ const App = () => {
             <Button variant="outline" onClick={() => setShowResetDialog(false)}>
               Cancelar
             </Button>
-            <Button
-              variant="destructive"
-              onClick={handleResetDatabase}
-              disabled={resetLoading || resetConfirmText !== "ELIMINAR TODO"}
-            >
-              {resetLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
-              Eliminar Todo
-            </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => handleRunImport(source)}
+                      disabled={importing === source.id || runningImports.has(source.id)}
+                      variant="outline"
+                    >
+                      {importing === source.id || runningImports.has(source.id) ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Ejecutando...
+                        </>
+                      ) : (
+                        <>
+                          <Play className="h-4 w-4 mr-2" />
+                          Ejecutar
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        const encodedName = encodeURIComponent(source.name)
+                        const defaultMode = source.feed_type === "catalog" ? "upsert" : "update"
+                        router.push(`/inventory/sources/import-pro?sourceId=${source.id}&name=${encodedName}&mode=${defaultMode}`)
+                      }}
+                      disabled={importing === source.id || runningImports.has(source.id)}
+                    >
+                      <Database className="h-4 w-4 mr-2" />
+                      PRO
+                    </Button>
+                  </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
