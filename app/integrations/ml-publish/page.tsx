@@ -268,7 +268,14 @@ export default function MLPublishPage() {
       return
     }
     
-    // Obtener total disponible antes de abrir el modal
+    // Si hay productos seleccionados, usar esa cantidad
+    if (selectedProducts.size > 0) {
+      setTotalAvailable(selectedProducts.size)
+      setShowPublishModal(true)
+      return
+    }
+    
+    // Si no hay seleccionados, obtener total disponible con filtros
     const fetchTotalAvailable = async () => {
       try {
         const res = await fetch(buildFilterUrl(true))
@@ -291,19 +298,30 @@ export default function MLPublishPage() {
     setElapsedTime(0)
     setPublishResults([]) // Limpiar resultados anteriores
     
-    // Obtener todos los IDs con los filtros actuales
-    const res = await fetch(buildFilterUrl(true))
-    const data = await res.json()
-    
-    if (!data.ids || data.ids.length === 0) {
-      toast({ title: "Sin productos", description: "No hay productos para publicar", variant: "destructive" })
-      setPublishingInProgress(false)
-      return
+    // Si hay productos seleccionados, usar SOLO esos
+    let productIds: string[]
+    if (selectedProducts.size > 0) {
+      productIds = Array.from(selectedProducts)
+      // Aplicar límite si está configurado
+      if (testLimit > 0) {
+        productIds = productIds.slice(0, testLimit)
+      }
+    } else {
+      // Si no hay seleccionados, obtener todos con los filtros actuales
+      const res = await fetch(buildFilterUrl(true))
+      const data = await res.json()
+      
+      if (!data.ids || data.ids.length === 0) {
+        toast({ title: "Sin productos", description: "No hay productos para publicar", variant: "destructive" })
+        setPublishingInProgress(false)
+        return
+      }
+      
+      // Aplicar límite de prueba si está configurado
+      const allIds = data.ids
+      productIds = testLimit > 0 ? allIds.slice(0, testLimit) : allIds
     }
     
-    // Aplicar límite de prueba si está configurado
-    const allIds = data.ids
-    const productIds = testLimit > 0 ? allIds.slice(0, testLimit) : allIds
     setPublishProgress({ current: 0, total: productIds.length, success: 0, errors: 0, skipped: 0 })
     
     let successCount = 0
@@ -994,7 +1012,10 @@ export default function MLPublishPage() {
                     disabled={!selectedTemplate || !selectedAccount}
                   >
                     <Upload className="h-4 w-4 mr-2" />
-                    Publicar masivo
+                    {selectedProducts.size > 0 
+                      ? `Publicar ${selectedProducts.size} seleccionados` 
+                      : "Publicar masivo (con filtros)"
+                    }
                   </Button>
                 </div>
               </div>
