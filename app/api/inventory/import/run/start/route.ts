@@ -3,21 +3,23 @@ import { createClient } from "@/lib/supabase/server"
 import { fetchWithAuth } from "@/lib/import/fetch-with-auth"
 import crypto from "crypto"
 
-export const maxDuration = 60
+export const maxDuration = 300 // 5 minutos para descargas grandes
 
 /**
  * POST /api/inventory/import/run/start
- * Inicia una importación PRO:
- * 1. Descarga CSV UNA SOLA VEZ
- * 2. Guarda en Supabase Storage
- * 3. Crea import_run con estado inicial
- * 4. Retorna run_id para procesamiento por chunks
+ * Inicia una importación PRO (ULTRA-RÁPIDO):
+ * 1. Descarga CSV streaming
+ * 2. Upload directo a Storage
+ * 3. Crea run record
+ * 4. Retorna inmediatamente (sanity check se hace en primer step)
  */
 export async function POST(request: NextRequest) {
+  const startTime = Date.now()
+  
   try {
     const supabase = await createClient()
     const body = await request.json()
-    const { source_id, feed_kind = "catalog", mode = "upsert" } = body
+    const { source_id, mode = "upsert" } = body
 
     if (!source_id) {
       return NextResponse.json({ error: "source_id es requerido" }, { status: 400 })
@@ -36,7 +38,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Fuente no encontrada" }, { status: 404 })
     }
 
-    // 2. Descargar CSV UNA SOLA VEZ
+    // 2. Descargar CSV
     console.log(`[v0][RUN/START] Descargando CSV desde ${source.url_template}`)
     
     const fileResponse = await fetchWithAuth({
@@ -46,23 +48,20 @@ export async function POST(request: NextRequest) {
     })
 
     if (!fileResponse.ok) {
-      const errorText = await fileResponse.text()
-      console.error(`[v0][RUN/START] Error descargando CSV:`, errorText.substring(0, 300))
       return NextResponse.json({ 
         error: `Error descargando CSV: ${fileResponse.status}` 
       }, { status: 500 })
     }
 
     const csvText = await fileResponse.text()
-    const bytes = new TextEncoder().encode(csvText).length
-    const checksum = crypto.createHash("sha256").update(csvText).digest("hex")
+    const elapsed = Date.now() - startTime
+    console.log(`[v0][RUN/START] CSV descargado en ${elapsed}ms, ${csvText.length} chars`)
 
-    console.log(`[v0][RUN/START] CSV descargado: ${bytes} bytes, checksum=${checksum.substring(0, 12)}...`)
-
-    // 3. Guardar en Supabase Storage
+    // 3. Upload a Storage (sin procesar el CSV aún)
     const runId = crypto.randomUUID()
     const storagePath = `imports/${source_id}/${runId}.csv`
     
+    const uploadStart = Date.now()
     const { error: uploadError } = await supabase
       .storage
       .from("imports")
@@ -78,32 +77,23 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
 
-    console.log(`[v0][RUN/START] CSV guardado en Storage: ${storagePath}`)
+    const uploadElapsed = Date.now() - uploadStart
+    console.log(`[v0][RUN/START] CSV subido a Storage en ${uploadElapsed}ms: ${storagePath}`)
 
-    // 4. Estimar total_rows (count '\n' en el CSV)
-    const lines = csvText.split("\n").filter(line => line.trim())
-    const total_rows = Math.max(0, lines.length - 1) // menos header
-
-    console.log(`[v0][RUN/START] Total estimado de filas: ${total_rows}`)
-
-    // 5. Crear import_run
+    // 4. Crear import_run (sin calcular total_rows aún, se hace en primer step)
     const { data: run, error: runError } = await supabase
       .from("import_runs")
       .insert({
         id: runId,
         source_id,
-        feed_kind,
         mode,
-        status: "running",
+        status: "pending", // pending hasta que step calcule total_rows
         storage_path: storagePath,
-        bytes,
-        checksum,
-        total_rows,
+        total_rows: 0, // Se calcula en primer step
         processed_rows: 0,
         created_count: 0,
         updated_count: 0,
-        skipped_missing_key: 0,
-        skipped_invalid_key: 0
+        failed_count: 0,
       })
       .select()
       .single()
@@ -115,15 +105,13 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
 
-    console.log(`[v0][RUN/START] Run creado exitosamente: ${runId}`)
+    const totalElapsed = Date.now() - startTime
+    console.log(`[v0][RUN/START] Run creado exitosamente en ${totalElapsed}ms: ${runId}`)
 
     return NextResponse.json({
       ok: true,
       run_id: runId,
-      total_rows,
-      storage_path: storagePath,
-      bytes,
-      checksum: checksum.substring(0, 12)
+      storage_path: storagePath
     })
 
   } catch (error: any) {
