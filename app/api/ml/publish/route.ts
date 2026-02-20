@@ -570,9 +570,6 @@ Libro nuevo. Envíos a todo el país.`
       // BOOK_TITLE - Titulo (required)
       attributes.push({ id: "BOOK_TITLE", value_name: product.title?.substring(0, 255) || "Libro" })
       
-      // BOOK_SUBTITLE - Subtítulo (opcional, pero mejor indicar "No aplica" si no existe)
-      attributes.push({ id: "BOOK_SUBTITLE", value_name: "No aplica" })
-      
       // AUTHOR - Autor (required)
       attributes.push({ id: "AUTHOR", value_name: product.author || "Desconocido" })
       
@@ -598,7 +595,7 @@ Libro nuevo. Envíos a todo el país.`
         attributes.push({ id: "PUBLICATION_YEAR", value_name: product.year_edition.toString() })
       }
       
-      // BOOK_COVER - Tapa del libro (Blanda/Dura)
+      // BOOK_COVER - Tapa del libro (Blanda/Dura) - solo enviar si tenemos valor válido
       if (product.binding) {
         const bindingLower = product.binding.toLowerCase()
         const coverMap: Record<string, string> = {
@@ -614,10 +611,9 @@ Libro nuevo. Envíos a todo el país.`
           "dura": "Dura",
         }
         const coverValue = coverMap[bindingLower]
-        attributes.push({ id: "BOOK_COVER", value_name: coverValue || "No aplica" })
-      } else {
-        // Si no tenemos binding, indicar "No aplica" explícitamente
-        attributes.push({ id: "BOOK_COVER", value_name: "No aplica" })
+        if (coverValue) {
+          attributes.push({ id: "BOOK_COVER", value_name: coverValue })
+        }
       }
       
       // PAGES_NUMBER - Cantidad de paginas
