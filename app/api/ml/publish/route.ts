@@ -692,7 +692,8 @@ Libro nuevo. Envíos a todo el país.`
           mode: template.shipping_mode || "me2",
           local_pick_up: template.local_pick_up || false,
           free_shipping: template.free_shipping || false,
-          ...(template.handling_days && { dimensions: null, handling_time: { unit: "days", value: template.handling_days } })
+          dimensions: null,
+          handling_time: template.handling_days ? { unit: "days", value: template.handling_days } : undefined
         },
         // NOTA: seller_sku NO es válido para listings de catálogo en ML API
         // NOTA: La descripción se agrega en POST separado después de crear el item

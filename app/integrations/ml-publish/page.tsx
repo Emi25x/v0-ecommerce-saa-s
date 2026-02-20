@@ -65,11 +65,6 @@ export default function MLPublishPage() {
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set())
   const [selectedTemplate, setSelectedTemplate] = useState<string>("")
   const [selectedAccount, setSelectedAccount] = useState<string>("")
-  const [searchTerm, setSearchTerm] = useState("")
-  const [minStock, setMinStock] = useState<number>(5)
-  const [minPrice, setMinPrice] = useState<number>(9)
-  const [maxPrice, setMaxPrice] = useState<number>(1000)
-  const [languageFilter, setLanguageFilter] = useState<string>("SPA")
   const [publishMode, setPublishMode] = useState<"linked" | "catalog" | "traditional">("linked")
   const [previews, setPreviews] = useState<PublishPreview[]>([])
   const [publishing, setPublishing] = useState(false)
@@ -784,27 +779,7 @@ export default function MLPublishPage() {
                   <p className="text-xs text-muted-foreground">0 para todos</p>
                 </div>
 
-                {/* Perfil de precios */}
-                <div className="space-y-2">
-                  <Label>Perfil de precios</Label>
-                  <Select value={selectedPriceProfile} onValueChange={setSelectedPriceProfile}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar perfil" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {priceProfiles.map(profile => (
-                        <SelectItem key={profile.id} value={profile.id}>
-                          {profile.name} ({profile.margin_percent}%)
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    <a href="/integrations/ml-templates" className="text-primary hover:underline">
-                      Gestionar perfiles en Calculadora
-                    </a>
-                  </p>
-                </div>
+                {/* El perfil de precios se toma de la plantilla seleccionada */}
               </div>
 
               <div className="flex items-center justify-between pt-4 border-t">
@@ -1159,8 +1134,15 @@ export default function MLPublishPage() {
                     <p className="text-sm font-medium">Configuración seleccionada:</p>
                     <ul className="text-sm space-y-1">
                       <li><strong>Acción:</strong> {bulkAction === "publish" ? "Publicar nuevos" : "Actualizar precios"}</li>
-                      <li><strong>Productos:</strong> {testLimit === 0 ? `Todos (${totalAvailable.toLocaleString()})` : `${testLimit} de ${totalAvailable.toLocaleString()}`}</li>
-                      <li><strong>Perfil:</strong> {priceProfiles.find(p => p.id === selectedPriceProfile)?.name || "No seleccionado"} ({priceProfiles.find(p => p.id === selectedPriceProfile)?.margin_percent || 0}%)</li>
+                      <li><strong>Productos:</strong> {testLimit === 0 ? (selectedProducts.size > 0 ? `${selectedProducts.size} seleccionados` : `Todos (${totalAvailable.toLocaleString()})`) : `${testLimit} de ${totalAvailable.toLocaleString()}`}</li>
+                      <li><strong>Perfil:</strong> {(() => {
+                        const selectedTemplateData = templates.find(t => t.id === selectedTemplate)
+                        if (selectedTemplateData?.price_profile_id) {
+                          const linkedProfile = priceProfiles.find(p => p.id === selectedTemplateData.price_profile_id)
+                          return linkedProfile ? `${linkedProfile.name} (${linkedProfile.margin_percent}%) - desde plantilla` : "Perfil no encontrado"
+                        }
+                        return "Usando margen de la plantilla"
+                      })()}</li>
                     </ul>
                     <p className="text-xs text-muted-foreground mt-2">
                       El precio se calcula automáticamente incluyendo tipo de cambio, comisión ML y cargos fijos.

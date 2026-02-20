@@ -394,9 +394,18 @@ export default function MLTemplatesPage() {
   }
 
   const loadProfile = (profile: PriceProfile) => {
+    // Actualizar calculadora
     setSelectedProfileId(profile.id)
     setMarginPercent(Number(profile.margin_percent))
-    toast({ title: "Perfil cargado", description: `Usando "${profile.name}" (${profile.margin_percent}%)` })
+    
+    // Actualizar plantilla: vincular perfil y actualizar fórmula
+    setTemplateForm({
+      ...templateForm,
+      price_profile_id: profile.id,
+      price_formula: `margin:${profile.margin_percent}%`
+    })
+    
+    toast({ title: "Perfil cargado", description: `Vinculado "${profile.name}" (${profile.margin_percent}%) a la plantilla` })
   }
 
   const calculatePrice = async () => {
@@ -729,6 +738,14 @@ export default function MLTemplatesPage() {
                       <div className="text-sm">
                         <span className="text-muted-foreground">Formula de precio:</span>{" "}
                         <code className="rounded bg-muted px-1">{template.price_formula}</code>
+                        {template.price_profile_id && (() => {
+                          const linkedProfile = priceProfiles.find(p => p.id === template.price_profile_id)
+                          return linkedProfile ? (
+                            <span className="ml-2 text-xs text-blue-600 dark:text-blue-400">
+                              (vinculado a "{linkedProfile.name}" {linkedProfile.margin_percent}%)
+                            </span>
+                          ) : null
+                        })()}
                       </div>
                       {template.description_template && (
                         <div className="text-sm">
@@ -1366,18 +1383,34 @@ export default function MLTemplatesPage() {
                 <Label>Perfil de Precio</Label>
                 <Select
                   value={templateForm.price_profile_id}
-                  onValueChange={(value) => setTemplateForm({ ...templateForm, price_profile_id: value })}
+                  onValueChange={(value) => {
+                    const selectedProfile = priceProfiles.find(p => p.id === value)
+                    setTemplateForm({ 
+                      ...templateForm, 
+                      price_profile_id: value,
+                      price_formula: selectedProfile ? `margin:${selectedProfile.margin_percent}%` : templateForm.price_formula
+                    })
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecciona un perfil" />
                   </SelectTrigger>
                   <SelectContent>
-                      {priceProfiles.map(profile => (
-                        <div key={profile.id} className="flex items-center justify-between p-3 rounded-lg border">
-                          <div className="flex-1">
-                            <p className="font-medium">{profile.name} {profile.is_default && <Badge className="ml-2">Por defecto</Badge>}</p>
-                            <p className="text-sm text-muted-foreground">Margen: {profile.margin_percent}%</p>
-                          </div>
+                    {priceProfiles.map(profile => (
+                      <SelectItem key={profile.id} value={profile.id}>
+                        {profile.name} ({profile.margin_percent}%) {profile.is_default && "★"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {templateForm.price_profile_id ? (
+                    <>El perfil seleccionado actualizará la fórmula automáticamente. Cambios en "Calculadora de precios" se reflejan aquí.</>
+                  ) : (
+                    <>Selecciona un perfil o ve a "Calculadora de precios" para crear uno.</>
+                  )}
+                </p>
+              </div>
                           <div className="flex gap-2">
                             <Button size="sm" variant="outline" onClick={() => loadProfile(profile)}>
                               Cargar
