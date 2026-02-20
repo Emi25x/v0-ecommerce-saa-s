@@ -658,7 +658,7 @@ Libro nuevo. Envíos a todo el país.`
           local_pick_up: template.local_pick_up || false,
           free_shipping: template.free_shipping || false,
           ...(template.handling_days && template.handling_days > 0 ? {
-            handling_time: { unit: "days", value: template.handling_days }
+            handling_time: template.handling_days
           } : {})
         },
       }
@@ -697,7 +697,7 @@ Libro nuevo. Envíos a todo el país.`
           local_pick_up: template.local_pick_up || false,
           free_shipping: template.free_shipping || false,
           ...(template.handling_days && template.handling_days > 0 ? {
-            handling_time: { unit: "days", value: template.handling_days }
+            handling_time: template.handling_days
           } : {})
         },
       }
