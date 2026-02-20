@@ -1411,45 +1411,6 @@ export default function MLTemplatesPage() {
                   )}
                 </p>
               </div>
-                          <div className="flex gap-2">
-                            <Button size="sm" variant="outline" onClick={() => loadProfile(profile)}>
-                              Cargar
-                            </Button>
-                            {!profile.is_default && (
-                              <Button 
-                                size="sm" 
-                                variant="outline"
-                                onClick={async () => {
-                                  try {
-                                    const response = await fetch("/api/price-profiles", {
-                                      method: "PUT",
-                                      headers: { "Content-Type": "application/json" },
-                                      body: JSON.stringify({ id: profile.id, is_default: true })
-                                    })
-                                    if (response.ok) {
-                                      toast({ title: "Perfil establecido como por defecto" })
-                                      fetchPriceProfiles()
-                                    }
-                                  } catch (error) {
-                                    toast({ title: "Error", variant: "destructive" })
-                                  }
-                                }}
-                              >
-                                ★ Por defecto
-                              </Button>
-                            )}
-                            <Button size="sm" variant="destructive" onClick={() => deleteProfile(profile.id)}>
-                              Eliminar
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Este perfil determina el margen de ganancia. Ve a "Calculadora de precios" para gestionar perfiles.
-                </p>
-              </div>
 
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="space-y-2">
