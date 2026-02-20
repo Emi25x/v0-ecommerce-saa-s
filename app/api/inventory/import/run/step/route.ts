@@ -105,12 +105,18 @@ export async function POST(request: NextRequest) {
     const headersOriginal = parsed.meta.fields || []
     const headersNormalized = headersOriginal.map(normalizeHeader)
     
-    // Debug headers (solo en primer chunk)
+    // Debug headers (SIEMPRE en primer chunk)
     if (run.processed_rows === 0) {
-      console.log(`[v0][DEBUG] === HEADERS ORIGINALES ===`)
-      console.log(headersOriginal.join(", "))
-      console.log(`[v0][DEBUG] === HEADERS NORMALIZADOS ===`)
-      console.log(headersNormalized.join(", "))
+      console.log(`[v0][DEBUG] ========================================`)
+      console.log(`[v0][DEBUG] === INICIO DEBUG PRIMER CHUNK ===`)
+      console.log(`[v0][DEBUG] ========================================`)
+      console.log(`[v0][DEBUG] Total headers detectados: ${headersOriginal.length}`)
+      console.log(`[v0][DEBUG] === HEADERS ORIGINALES (primeros 30) ===`)
+      console.log(headersOriginal.slice(0, 30).join(" | "))
+      console.log(`[v0][DEBUG] === HEADERS NORMALIZADOS (primeros 30) ===`)
+      console.log(headersNormalized.slice(0, 30).join(" | "))
+      console.log(`[v0][DEBUG] Delimiter usado: "${detectedDelimiter}"`)
+      console.log(`[v0][DEBUG] ========================================`)
     }
     
     // Crear mapeo: header original → normalizado
@@ -198,10 +204,23 @@ export async function POST(request: NextRequest) {
       // Debug primera fila del primer chunk
       if (run.processed_rows === 0 && productsToInsert.length === 0 && skipped_missing === 0) {
         console.log(`[v0][DEBUG] === PRIMERA FILA - EXTRACCIÓN ===`)
-        console.log(`[v0][DEBUG] Claves disponibles:`, Object.keys(row).join(", "))
-        console.log(`[v0][DEBUG] row["ean"] = "${row["ean"] || '(no existe)'}"`)
-        console.log(`[v0][DEBUG] row["isbn"] = "${row["isbn"] || '(no existe)'}"`)
-        console.log(`[v0][DEBUG] eanRaw = "${eanRaw || '(vacío)'}"`)
+        console.log(`[v0][DEBUG] Total claves en row: ${Object.keys(row).length}`)
+        console.log(`[v0][DEBUG] TODAS las claves (primeras 30):`, Object.keys(row).slice(0, 30).join(" | "))
+        console.log(`[v0][DEBUG] Buscando: row["ean"] = "${row["ean"] || '(NO EXISTE)'}"`)
+        console.log(`[v0][DEBUG] Buscando: row["ean13"] = "${row["ean13"] || '(NO EXISTE)'}"`)
+        console.log(`[v0][DEBUG] Buscando: row["gtin"] = "${row["gtin"] || '(NO EXISTE)'}"`)
+        console.log(`[v0][DEBUG] Buscando: row["isbn"] = "${row["isbn"] || '(NO EXISTE)'}"`)
+        console.log(`[v0][DEBUG] Buscando: row["isbn13"] = "${row["isbn13"] || '(NO EXISTE)'}"`)
+        console.log(`[v0][DEBUG] eanRaw resultante = "${eanRaw || '(VACÍO)'}"`)
+        console.log(`[v0][DEBUG] isbnRaw resultante = "${isbnRaw || '(VACÍO)'}"`)
+        
+        // Mostrar primeros 10 valores de la fila como ejemplo
+        const firstKeys = Object.keys(row).slice(0, 10)
+        console.log(`[v0][DEBUG] === VALORES DE EJEMPLO (primeros 10 campos) ===`)
+        firstKeys.forEach(key => {
+          const val = row[key]
+          console.log(`[v0][DEBUG]   "${key}" => "${val ? val.substring(0, 60) : '(vacío)'}"`)
+        })
       }
       
       let ean = normalizeEan(eanRaw)
