@@ -864,6 +864,33 @@ Libro nuevo. Envíos a todo el país.`
       }, { status: 400 })
     }
 
+    // Agregar seller_sku via PUT (ML no lo acepta en POST inicial)
+    let sellerSkuAdded = false
+    const sellerSkuValue = product.ean || product.sku || null
+    if (sellerSkuValue) {
+      try {
+        console.log("[v0] Adding seller_sku to item", mlData.id, "value:", sellerSkuValue)
+        const skuResponse = await fetch(`https://api.mercadolibre.com/items/${mlData.id}`, {
+          method: "PUT",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ seller_custom_field: sellerSkuValue })
+        })
+        
+        if (!skuResponse.ok) {
+          const skuError = await skuResponse.json()
+          console.log("[v0] Error adding seller_sku:", JSON.stringify(skuError))
+        } else {
+          console.log("[v0] seller_sku added successfully")
+          sellerSkuAdded = true
+        }
+      } catch (skuErr) {
+        console.log("[v0] Exception adding seller_sku:", skuErr)
+      }
+    }
+    
     // Agregar descripción en un POST separado (ML lo requiere así)
     let descriptionAdded = false
     let descriptionError: string | null = null
@@ -1020,20 +1047,21 @@ Libro nuevo. Envíos a todo el país.`
       ml_picture_id: mlPictureId || null,
       image_warning: imageWarning,
       pictures_in_response: mlData.pictures || [],
+      seller_sku_added: sellerSkuAdded,
+      seller_sku_value: sellerSkuValue,
       description_added: descriptionAdded,
       description_error: descriptionError,
       catalog_listing: catalogListing ? {
-        id: catalogListing.id,
-        permalink: catalogListing.permalink,
-        item_relations: catalogListing.item_relations
+        status: catalogListing.status,
+        catalog_product_id: catalogListing.catalog_product_id
       } : null
     })
-
-  } catch (error) {
-    console.error("[v0] Error en POST /api/ml/publish:", error)
-    return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Error interno" },
-      { status: 500 }
-    )
+  } catch (error: any) {
+    console.error("[v0] Error in publish route:", error)
+    return NextResponse.json({ 
+      success: false, 
+      error: error.message || "Error interno del servidor" 
+    }, { status: 500 })
   }
+}
 }
