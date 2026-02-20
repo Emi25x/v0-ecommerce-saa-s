@@ -7,6 +7,24 @@ export const maxDuration = 30 // Anti-timeout: máximo 30s por chunk
 const CHUNK_SIZE = 2000 // Procesar 2000 filas por vez
 
 /**
+ * Normaliza un header del CSV:
+ * - Quita BOM invisible (\uFEFF)
+ * - Trim de espacios
+ * - toLowerCase
+ * - Remueve tildes/acentos
+ * - Reemplaza espacios por underscore
+ */
+function normalizeHeader(header: string): string {
+  return header
+    .replace(/^\uFEFF/, "") // Quitar BOM
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // Quitar acentos
+    .replace(/\s+/g, "_") // Espacios → underscore
+}
+
+/**
  * POST /api/inventory/import/run/step
  * Procesa UN chunk de filas desde Storage (resumible, anti-timeout)
  */
@@ -70,11 +88,39 @@ export async function POST(request: NextRequest) {
 
     // 3. Parsear CSV completo (en memoria, pero solo procesamos un chunk)
     const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true })
-    const allRows = parsed.data as Array<Record<string, any>>
+    
+    // 4. Normalizar TODOS los headers
+    const headersOriginal = parsed.meta.fields || []
+    const headersNormalized = headersOriginal.map(normalizeHeader)
+    
+    // Debug headers (solo en primer chunk)
+    if (run.processed_rows === 0) {
+      console.log(`[v0][DEBUG] === HEADERS ORIGINALES ===`)
+      console.log(headersOriginal.join(", "))
+      console.log(`[v0][DEBUG] === HEADERS NORMALIZADOS ===`)
+      console.log(headersNormalized.join(", "))
+    }
+    
+    // Crear mapeo: header original → normalizado
+    const headerMap = new Map<string, string>()
+    headersOriginal.forEach((orig, idx) => {
+      headerMap.set(orig, headersNormalized[idx])
+    })
+    
+    // Convertir TODAS las filas a usar headers normalizados
+    const allRowsRaw = parsed.data as Array<Record<string, any>>
+    const allRows = allRowsRaw.map((row) => {
+      const normalized: Record<string, string> = {}
+      Object.entries(row).forEach(([key, value]) => {
+        const normalizedKey = headerMap.get(key) || normalizeHeader(key)
+        normalized[normalizedKey] = value
+      })
+      return normalized
+    })
 
-    console.log(`[v0][RUN/STEP] CSV parseado: ${allRows.length} filas totales`)
+    console.log(`[v0][RUN/STEP] CSV parseado: ${allRows.length} filas totales (headers normalizados)`)
 
-    // 4. Tomar chunk actual
+    // 5. Tomar chunk actual
     const offset = run.processed_rows
     const chunk = allRows.slice(offset, offset + CHUNK_SIZE)
 
@@ -117,33 +163,9 @@ export async function POST(request: NextRequest) {
 
     const mapping = source.column_mapping || {}
 
-    // 6. Auto-detectar columnas (igual que en batch)
-    let detectedColumns = {
-      ean: mapping.ean || null,
-      isbn: mapping.isbn || null,
-      title: mapping.title || null,
-      author: mapping.author || null,
-      price: mapping.price || null,
-      image: mapping.image_url || null
-    }
-
-    if (!detectedColumns.ean && chunk.length > 0) {
-      const headers = Object.keys(chunk[0])
-      const normalize = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-      
-      // Auto-detectar EAN
-      for (const h of headers) {
-        const nh = normalize(h)
-        if (nh === "ean" || nh === "ean13") { detectedColumns.ean = h; break }
-      }
-      if (!detectedColumns.ean) {
-        for (const h of headers) {
-          const nh = normalize(h)
-          if (nh === "isbn" || nh === "isbn13") { detectedColumns.isbn = h; break }
-        }
-      }
-    }
-
+    // 6. Ya no necesitamos auto-detectar porque los headers están normalizados
+    // Accedemos directamente usando headers normalizados: "ean", "isbn", "titulo", etc.
+    
     // 7. Procesar chunk
     const productsToInsert: Array<Record<string, any>> = []
     let skipped_missing = 0
@@ -156,8 +178,19 @@ export async function POST(request: NextRequest) {
     }
 
     for (const row of chunk) {
-      const eanRaw = row[detectedColumns.ean || ""]?.trim()
-      const isbnRaw = row[detectedColumns.isbn || ""]?.trim()
+      // Acceder directamente con headers normalizados
+      // "Ean" → "ean", "EAN" → "ean", " Ean " → "ean", "﻿Ean" → "ean"
+      let eanRaw = row["ean"]?.trim() || row["ean13"]?.trim() || row["gtin"]?.trim()
+      const isbnRaw = row["isbn"]?.trim() || row["isbn13"]?.trim()
+      
+      // Debug primera fila del primer chunk
+      if (run.processed_rows === 0 && productsToInsert.length === 0 && skipped_missing === 0) {
+        console.log(`[v0][DEBUG] === PRIMERA FILA - EXTRACCIÓN ===`)
+        console.log(`[v0][DEBUG] Claves disponibles:`, Object.keys(row).join(", "))
+        console.log(`[v0][DEBUG] row["ean"] = "${row["ean"] || '(no existe)'}"`)
+        console.log(`[v0][DEBUG] row["isbn"] = "${row["isbn"] || '(no existe)'}"`)
+        console.log(`[v0][DEBUG] eanRaw = "${eanRaw || '(vacío)'}"`)
+      }
       
       let ean = normalizeEan(eanRaw)
       if (!ean && isbnRaw) {
@@ -166,18 +199,24 @@ export async function POST(request: NextRequest) {
 
       if (!ean) {
         skipped_missing++
+        if (run.processed_rows === 0 && skipped_missing === 1) {
+          console.log(`[v0][DEBUG] DESCARTADO: EAN/ISBN faltante`)
+        }
         continue
       }
 
       if (ean.length !== 13) {
         skipped_invalid++
+        if (run.processed_rows === 0 && skipped_invalid === 1) {
+          console.log(`[v0][DEBUG] DESCARTADO: EAN inválido (longitud=${ean.length}, esperado=13)`)
+        }
         continue
       }
 
-      const title = row[detectedColumns.title || ""]?.trim() || ean
-      const author = row[detectedColumns.author || ""]?.trim() || null
-      const price = parseFloat(row[detectedColumns.price || ""]?.replace(",", ".") || "0")
-      const imageUrl = row[detectedColumns.image || ""]?.trim() || null
+      const title = row["titulo"]?.trim() || row["title"]?.trim() || ean
+      const author = row["autor"]?.trim() || row["author"]?.trim() || null
+      const price = parseFloat(row["pvp"]?.replace(",", ".") || row["precio"]?.replace(",", ".") || row["price"]?.replace(",", ".") || "0")
+      const imageUrl = row["portada"]?.trim() || row["imagen"]?.trim() || row["image"]?.trim() || null
 
       productsToInsert.push({
         sku: ean,
