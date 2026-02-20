@@ -1790,7 +1790,7 @@ const App = () => {
             <Button variant="outline" onClick={() => setShowResetDialog(false)}>
               Cancelar
             </Button>
-            <Button onClick={confirmResetSchedules}>
+            <Button onClick={handleResetDatabase} disabled={resetConfirmText !== "ELIMINAR TODO"}>
               Restablecer todo
             </Button>
           </DialogFooter>
