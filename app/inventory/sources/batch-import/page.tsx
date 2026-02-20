@@ -80,15 +80,13 @@ export default function BatchImportPage() {
 
     while (!done && !abortRef.current) {
       try {
-        setStatus(`Procesando lote desde posicion ${offset}...`)
+        setStatus(`Procesando lote desde offset ${offset}...`)
         addLog(`Procesando lote desde offset ${offset}`)
 
-        // forceReload solo en la primera llamada para limpiar cache
-        const isFirstBatch = offset === 0
         const response = await fetch("/api/inventory/import/batch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sourceId: urlSourceId, offset, mode: importMode, forceReload: isFirstBatch }),
+          body: JSON.stringify({ sourceId: urlSourceId, offset, mode: importMode }),
         })
 
         // Leer el body UNA SOLA VEZ
@@ -116,35 +114,51 @@ export default function BatchImportPage() {
           break
         }
 
-        setTotal(result.total)
-        setProcessed(result.processed)
-        setProgress(result.progress || 0)
+        // Mostrar debug del primer batch
+        if (result.debug) {
+          addLog(`[DEBUG] Delimiter: "${result.debug.delimiter}"`)
+          addLog(`[DEBUG] Headers (10 primeros): ${result.debug.headers_normalized?.slice(0, 10).join(", ")}`)
+          addLog(`[DEBUG] Sample EAN: ${result.debug.sample_ean}`)
+        }
+        
         totalUpdated += result.updated || 0
         totalCreated += result.created || 0
         setUpdated(totalUpdated)
         setCreated(totalCreated)
         
-        // Actualizar contadores de debug si vienen
-        if (result.debug) {
-          setDebugCounters(result.debug)
-        }
-
-        addLog(`Lote completado: ${result.created || 0} creados, ${result.updated || 0} actualizados, progreso ${result.progress}%`)
+        // Actualizar processed (suma acumulada de rows_processed)
+        const newProcessed = processed + (result.rows_processed || 0)
+        setProcessed(newProcessed)
         
-        // Log de debug si hay filas descartadas
-        if (result.debug && (result.debug.skipped_missing_ean > 0 || result.debug.skipped_invalid_ean > 0)) {
-          addLog(`[DEBUG] Descartados: ${result.debug.skipped_missing_ean || 0} sin EAN, ${result.debug.skipped_invalid_ean || 0} EAN inválido`)
+        // Total es 0 (no lo calculamos)
+        setTotal(0)
+        setProgress(0)
+
+        const skipped = (result.missing_ean || 0) + (result.invalid_ean || 0)
+        addLog(`Lote: ${result.rows_seen} vistas, ${result.rows_processed} válidas, ${result.updated} actualizadas, ${skipped} descartadas`)
+
+        // Mostrar razón si hay problema
+        if (result.last_reason && result.last_reason !== "success") {
+          addLog(`[DEBUG] Razón: ${result.last_reason}`)
+        }
+        if (result.last_error) {
+          addLog(`[ERROR] ${result.last_error}`)
         }
 
+        // Actualizar contadores de debug
+        setDebugCounters({
+          skipped_missing_ean: result.missing_ean || 0,
+          skipped_invalid_ean: result.invalid_ean || 0,
+          processed_valid_rows: result.rows_processed || 0
+        })
+
+        // Detener cuando done=true
         if (result.done) {
           done = true
           setStatus("Importacion completada")
-          if (result.zeroStock && result.zeroStock > 0) {
-            addLog(`${result.zeroStock} productos sin stock en archivo puestos a stock=0`)
-          }
-          addLog(`Importacion completada. Creados: ${totalCreated}, Actualizados: ${totalUpdated}`)
+          addLog(`✓ Finalizado. Procesadas: ${newProcessed}, Actualizadas: ${totalUpdated}, Creadas: ${totalCreated}`)
         } else {
-          offset = result.nextOffset
+          offset = result.next_offset || (offset + result.rows_seen)
           // Pequeña pausa entre lotes
           await new Promise((resolve) => setTimeout(resolve, 500))
         }
@@ -181,22 +195,11 @@ export default function BatchImportPage() {
         <CardContent className="space-y-6">
           {/* Selector de modo de importación */}
           <div className="space-y-2">
-            <Label htmlFor="import-mode">Modo de importacion</Label>
-            <Select value={importMode} onValueChange={setImportMode} disabled={isRunning}>
-              <SelectTrigger id="import-mode" className="w-full max-w-xs">
-                <SelectValue placeholder="Seleccionar modo" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="upsert">Crear y actualizar</SelectItem>
-                <SelectItem value="update">Solo actualizar existentes</SelectItem>
-                <SelectItem value="create">Solo crear nuevos</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              {importMode === "update" && "Solo actualiza productos que ya existen en tu base de datos (por EAN)"}
-              {importMode === "create" && "Solo crea productos nuevos (por EAN), no modifica los existentes"}
-              {importMode === "upsert" && "Crea productos nuevos y actualiza los existentes (por EAN)"}
-            </p>
+            <div className="flex justify-between text-sm">
+              <span>Procesadas: {processed}</span>
+              <span>{updated + created} actualizadas/creadas</span>
+            </div>
+            <Progress value={isRunning ? undefined : 100} className="h-2" />
           </div>
 
           <div className="flex gap-4">

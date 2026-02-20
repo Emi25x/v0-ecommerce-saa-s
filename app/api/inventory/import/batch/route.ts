@@ -2,7 +2,6 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import Papa from "papaparse"
 import { fetchWithAuth } from "@/lib/import/fetch-with-auth"
-import { Readable } from "node:stream"
 
 const BATCH_SIZE = 1000 // Procesar 1000 filas por batch
 export const maxDuration = 60 // Máximo 60s por request
@@ -35,7 +34,8 @@ function detectDelimiter(firstLine: string): string {
 
 /**
  * POST /api/inventory/import/batch
- * Procesa UN batch de filas usando STREAM parsing (no carga CSV completo)
+ * Procesa UN batch de filas (NO calcula total_rows, retorna null)
+ * Devuelve: { ok, offset, batch_size, rows_seen, rows_processed, created, updated, missing_ean, invalid_ean, done, next_offset, last_reason }
  */
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
@@ -46,8 +46,6 @@ export async function POST(request: NextRequest) {
     if (!sourceId) {
       return NextResponse.json({ error: "sourceId es requerido" }, { status: 400 })
     }
-
-    console.log(`[v0][BATCH] START: sourceId=${sourceId}, mode=${mode}, offset=${offset}`)
 
     const supabase = await createClient()
 
@@ -62,8 +60,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Fuente no encontrada" }, { status: 404 })
     }
 
-    // 2. Descargar CSV con auth
-    console.log(`[v0][BATCH] Fetching: ${source.url_template}`)
+    // 2. Descargar CSV completo (en memoria)
     const fileResponse = await fetchWithAuth({
       url_template: source.url_template,
       auth_type: source.auth_type,
@@ -71,139 +68,88 @@ export async function POST(request: NextRequest) {
     })
 
     if (!fileResponse.ok) {
-      const errorText = await fileResponse.text()
-      console.error(`[v0][BATCH] Fetch error: ${fileResponse.status}`, errorText.substring(0, 200))
       return NextResponse.json({ 
         error: `Error ${fileResponse.status}: ${fileResponse.statusText}` 
       }, { status: fileResponse.status })
     }
 
-    // 3. Convertir web stream → node stream
-    if (!fileResponse.body) {
-      return NextResponse.json({ error: "Response body is null" }, { status: 500 })
+    const csvText = await fileResponse.text()
+    const fetchElapsed = Date.now() - startTime
+    console.log(`[v0][BATCH] CSV downloaded in ${fetchElapsed}ms, ${csvText.length} chars`)
+
+    // 3. Auto-detect delimiter si no está configurado
+    let delimiter = source.delimiter || ","
+    if (!source.delimiter) {
+      const firstLine = csvText.split("\n")[0] || ""
+      delimiter = detectDelimiter(firstLine)
+      if (offset === 0) {
+        console.log(`[v0][BATCH] Auto-detected delimiter: "${delimiter}"`)
+      }
     }
 
-    const nodeStream = Readable.fromWeb(fileResponse.body as any)
-
-    // 4. Stream parse con Papa
-    let rowIndex = 0 // Índice de la fila de datos (0 = primera data row)
-    let batchRows: Record<string, any>[] = []
-    let totalRowsEstimate = 0
-    let headers: string[] = []
-    let headersNormalized: string[] = []
-    let delimiter = source.delimiter || ","
-    let parserAborted = false
-
-    // Para auto-detect: guardar primera línea
-    let firstLineSeen = false
-    let firstLineBuffer = ""
-
-    const parsePromise = new Promise<void>((resolve, reject) => {
-      const parser = Papa.parse(nodeStream, {
-        delimiter, // Inicial, se ajustará después del auto-detect
-        header: true,
-        skipEmptyLines: true,
-        
-        step: (results: any, parserInstance: any) => {
-          if (parserAborted) return
-
-          // Auto-detect delimiter en primera fila
-          if (!firstLineSeen && results.meta?.fields) {
-            firstLineSeen = true
-            headers = results.meta.fields
-            
-            // Auto-detect si no hay delimiter definido
-            if (!source.delimiter) {
-              const firstLine = headers.join(delimiter)
-              const detectedDelimiter = detectDelimiter(firstLine)
-              if (detectedDelimiter !== delimiter) {
-                console.log(`[v0][BATCH] Auto-detected delimiter: "${detectedDelimiter}" (was "${delimiter}")`)
-                delimiter = detectedDelimiter
-                // Reiniciar parser con nuevo delimiter (cancelar y volver a empezar)
-                parserInstance.abort()
-                parserAborted = true
-                reject(new Error("REPARSE_WITH_NEW_DELIMITER"))
-                return
-              }
-            }
-
-            // Normalizar headers
-            headersNormalized = headers.map(normalizeHeader)
-            
-            if (offset === 0) {
-              console.log(`[v0][BATCH] Headers (first 20):`, headersNormalized.slice(0, 20).join(", "))
-              console.log(`[v0][BATCH] Delimiter: "${delimiter}"`)
-            }
-          }
-
-          totalRowsEstimate++
-
-          // Saltar hasta offset
-          if (rowIndex < offset) {
-            rowIndex++
-            return
-          }
-
-          // Recolectar hasta BATCH_SIZE
-          if (batchRows.length < BATCH_SIZE) {
-            // Normalizar keys del row
-            const normalizedRow: Record<string, any> = {}
-            Object.entries(results.data).forEach(([key, value]) => {
-              const idx = headers.indexOf(key)
-              const normalizedKey = idx >= 0 ? headersNormalized[idx] : normalizeHeader(key)
-              normalizedRow[normalizedKey] = value
-            })
-            batchRows.push(normalizedRow)
-            rowIndex++
-          }
-
-          // Si ya completamos el batch, abort
-          if (batchRows.length >= BATCH_SIZE) {
-            parserInstance.abort()
-            parserAborted = true
-            resolve()
-          }
-        },
-        
-        complete: () => {
-          if (!parserAborted) {
-            console.log(`[v0][BATCH] Parse complete. Total rows estimate: ${totalRowsEstimate}`)
-            resolve()
-          }
-        },
-        
-        error: (error: any) => {
-          console.error(`[v0][BATCH] Parse error:`, error)
-          reject(error)
-        }
-      })
+    // 4. Parse CSV completo
+    const parsed = Papa.parse(csvText, {
+      delimiter,
+      header: true,
+      skipEmptyLines: true
     })
 
-    try {
-      await parsePromise
-    } catch (error: any) {
-      if (error.message === "REPARSE_WITH_NEW_DELIMITER") {
-        // Necesitamos rehacer el request con el nuevo delimiter detectado
-        // Por ahora, retornamos error y pedimos retry con delimiter correcto
-        return NextResponse.json({
-          error: `Delimiter auto-detectado: "${delimiter}". Reintenta con este delimiter.`,
-          detected_delimiter: delimiter
-        }, { status: 400 })
-      }
-      throw error
+    const headers = parsed.meta.fields || []
+    const headersNormalized = headers.map(normalizeHeader)
+
+    // Debug solo en offset=0
+    if (offset === 0) {
+      console.log(`[v0][BATCH][DEBUG] ======================================`)
+      console.log(`[v0][BATCH][DEBUG] Delimiter: "${delimiter}"`)
+      console.log(`[v0][BATCH][DEBUG] Headers (first 20):`, headersNormalized.slice(0, 20).join(", "))
     }
 
-    const fetchElapsed = Date.now() - startTime
-    console.log(`[v0][BATCH] Fetched & parsed in ${fetchElapsed}ms. Batch size: ${batchRows.length}`)
+    // 5. Normalizar todas las filas
+    const headerMap = new Map<string, string>()
+    headers.forEach((orig, idx) => {
+      headerMap.set(orig, headersNormalized[idx])
+    })
 
-    // 5. Procesar batch
-    const mapping = (source.column_mapping as Record<string, any>) || {}
+    const allRowsRaw = parsed.data as Array<Record<string, any>>
+    const allRows = allRowsRaw.map((row) => {
+      const normalized: Record<string, string> = {}
+      Object.entries(row).forEach(([key, value]) => {
+        const normalizedKey = headerMap.get(key) || normalizeHeader(key)
+        normalized[normalizedKey] = value as string
+      })
+      return normalized
+    })
+
+    const totalRows = allRows.length
+
+    // 6. Tomar batch actual (desde offset hasta offset + BATCH_SIZE)
+    const batchRows = allRows.slice(offset, offset + BATCH_SIZE)
+    const rows_seen = batchRows.length
+    const done = rows_seen === 0 || (offset + rows_seen >= totalRows)
+
+    // Debug solo en offset=0
+    if (offset === 0 && batchRows.length > 0) {
+      const sampleRow = batchRows[0]
+      const sampleKeys = Object.keys(sampleRow).slice(0, 20)
+      const sampleEan = sampleRow["ean"] || sampleRow["ean13"] || sampleRow["gtin"]
+      const sampleIsbn = sampleRow["isbn"] || sampleRow["isbn13"]
+      console.log(`[v0][BATCH][DEBUG] Sample row keys (first 20):`, sampleKeys.join(", "))
+      console.log(`[v0][BATCH][DEBUG] Sample EAN raw: "${sampleEan}"`)
+      console.log(`[v0][BATCH][DEBUG] Sample ISBN raw: "${sampleIsbn}"`)
+      if (sampleEan) {
+        const digitsOnly = sampleEan.replace(/\D/g, "")
+        console.log(`[v0][BATCH][DEBUG] Sample EAN digits only: "${digitsOnly}" (length=${digitsOnly.length})`)
+      }
+      console.log(`[v0][BATCH][DEBUG] ======================================`)
+    }
+
+    // 7. Procesar batch
     const productsToInsert: Record<string, any>[] = []
-    let skippedMissingEan = 0
-    let skippedInvalidEan = 0
+    let missing_ean = 0
+    let invalid_ean = 0
 
     for (const row of batchRows) {
-      // Buscar EAN en headers normalizados
+      // Buscar EAN/ISBN
       const eanRaw = row["ean"] || row["ean13"] || row["gtin"] || row["codigo_de_barras"]
       const isbnRaw = row["isbn"] || row["isbn13"]
       
@@ -212,21 +158,14 @@ export async function POST(request: NextRequest) {
         ean = isbnRaw.toString().replace(/\D/g, "")
       }
 
-      // Debug primera fila
-      if (offset === 0 && productsToInsert.length === 0 && skippedMissingEan === 0) {
-        console.log(`[v0][BATCH] First row keys:`, Object.keys(row).slice(0, 20).join(", "))
-        console.log(`[v0][BATCH] First row ean="${row["ean"]}", isbn="${row["isbn"]}"`)
-        console.log(`[v0][BATCH] Extracted EAN: "${ean}"`)
-      }
-
       if (!ean) {
-        skippedMissingEan++
+        missing_ean++
         continue
       }
 
       // Validar longitud EAN (8/12/13/14 dígitos)
       if (![8, 12, 13, 14].includes(ean.length)) {
-        skippedInvalidEan++
+        invalid_ean++
         continue
       }
 
@@ -242,7 +181,7 @@ export async function POST(request: NextRequest) {
         isbn: isbnRaw || null,
         title,
         author,
-        price,
+        cost_price: price, // Asumir que price del CSV es cost_price
         image_url: imageUrl,
         stock,
         brand: row["marca"] || row["brand"] || null,
@@ -251,30 +190,51 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // 6. Insertar en DB
-    let createdCount = 0
-    let updatedCount = 0
-    let failedCount = 0
+    const rows_processed = productsToInsert.length
+
+    // 8. Upsert en DB
+    let created = 0
+    let updated = 0
+    let upsert_attempted = 0
+    let last_reason: string | null = null
+    let last_error: string | null = null
 
     if (productsToInsert.length > 0) {
+      upsert_attempted = productsToInsert.length
+      
       const { error } = await supabase
         .from("products")
         .upsert(productsToInsert, { onConflict: "ean" })
 
       if (error) {
-        console.error(`[v0][BATCH] DB error:`, error)
-        failedCount = productsToInsert.length
+        console.error(`[v0][BATCH] Upsert error:`, error)
+        last_error = error.message
+        last_reason = "upsert_failed"
       } else {
-        // Simplificado: contar todos como updates (o podríamos hacer SELECT antes)
-        updatedCount = productsToInsert.length
+        // Simplificado: contar todos como updated (o podríamos SELECT antes para distinguir)
+        updated = productsToInsert.length
+        last_reason = "success"
+      }
+    } else {
+      // No se insertó nada
+      if (missing_ean === rows_seen) {
+        last_reason = "all_missing_ean"
+      } else if (invalid_ean === rows_seen) {
+        last_reason = "all_invalid_ean"
+      } else if (rows_seen === 0) {
+        last_reason = "no_rows_in_batch"
+      } else {
+        last_reason = "upsert_never_called"
       }
     }
 
-    // 7. Actualizar import_history si existe
-    const newOffset = offset + batchRows.length
-    const done = batchRows.length < BATCH_SIZE
-    const progress = totalRowsEstimate > 0 ? Math.round((newOffset / totalRowsEstimate) * 100) : 0
+    // 9. Calcular next_offset
+    const next_offset = done ? null : offset + rows_seen
 
+    // Log del batch (sin spam)
+    console.log(`[v0][BATCH] offset=${offset}, seen=${rows_seen}, processed=${rows_processed}, missing_ean=${missing_ean}, invalid_ean=${invalid_ean}, upsert_attempted=${upsert_attempted}, created=${created}, updated=${updated}, done=${done}, last_reason=${last_reason}`)
+
+    // 10. Actualizar import_history si existe
     if (historyId) {
       const { data: history } = await supabase
         .from("import_history")
@@ -283,18 +243,23 @@ export async function POST(request: NextRequest) {
         .single()
 
       if (history) {
+        const totalProcessed = (history.processed_rows || 0) + rows_processed
+        const totalCreated = (history.created_count || 0) + created
+        const totalUpdated = (history.updated_count || 0) + updated
+        const totalSkipped = (history.skipped_count || 0) + missing_ean + invalid_ean
+
         await supabase
           .from("import_history")
           .update({
             status: done ? "completed" : "running",
-            processed_rows: newOffset,
-            created_count: (history.created_count || 0) + createdCount,
-            updated_count: (history.updated_count || 0) + updatedCount,
-            skipped_count: (history.skipped_count || 0) + skippedMissingEan + skippedInvalidEan,
-            error_count: (history.error_count || 0) + failedCount,
-            current_offset: newOffset,
-            total_rows: totalRowsEstimate,
-            last_message: done ? "Importación completada" : `Procesando lote ${Math.floor(newOffset / BATCH_SIZE) + 1}`,
+            processed_rows: totalProcessed,
+            created_count: totalCreated,
+            updated_count: totalUpdated,
+            skipped_count: totalSkipped,
+            error_count: last_error ? (history.error_count || 0) + 1 : history.error_count,
+            current_offset: next_offset,
+            total_rows: null, // NO inventamos total, dejamos null
+            last_message: done ? `Completado: ${totalProcessed} procesadas` : `Procesando lote offset ${offset}`,
             completed_at: done ? new Date().toISOString() : null
           })
           .eq("id", historyId)
@@ -302,25 +267,29 @@ export async function POST(request: NextRequest) {
     }
 
     const totalElapsed = Date.now() - startTime
-    console.log(`[v0][BATCH] DONE in ${totalElapsed}ms. Created: ${createdCount}, Updated: ${updatedCount}, Skipped: ${skippedMissingEan + skippedInvalidEan}`)
 
+    // 11. Respuesta
     return NextResponse.json({
-      success: true,
+      ok: true,
+      offset,
+      batch_size: BATCH_SIZE,
+      rows_seen,
+      rows_processed,
+      created,
+      updated,
+      missing_ean,
+      invalid_ean,
       done,
-      processed: newOffset,
-      total: totalRowsEstimate,
-      created: createdCount,
-      updated: updatedCount,
-      skipped: skippedMissingEan + skippedInvalidEan,
-      failed: failedCount,
-      nextOffset: done ? null : newOffset,
-      progress,
+      next_offset,
+      last_reason,
+      last_error,
+      elapsed_ms: totalElapsed,
+      // Debug solo en primer batch
       debug: offset === 0 ? {
-        headers: headersNormalized.slice(0, 20),
         delimiter,
-        first_row_sample: batchRows[0] ? Object.fromEntries(
-          Object.entries(batchRows[0]).slice(0, 5).map(([k, v]: [string, any]) => [k, v?.toString().substring(0, 50)])
-        ) : null
+        headers_normalized: headersNormalized.slice(0, 20),
+        sample_row_keys: batchRows[0] ? Object.keys(batchRows[0]).slice(0, 20) : [],
+        sample_ean: batchRows[0]?.["ean"] || batchRows[0]?.["ean13"] || "(no encontrado)"
       } : undefined
     })
 
