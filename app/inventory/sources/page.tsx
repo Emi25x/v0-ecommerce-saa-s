@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState, useRef } from "react" // Importar useRef
+import { useRouter } from "next/navigation"
 import { createBrowserClient } from "@supabase/ssr"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -21,10 +22,10 @@ import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
 import Link from "next/link"
 import Papa from "papaparse" // Importar PapaParse
-import { useRouter } from 'next/navigation' // Importar useRouter
 
 // Mover los hooks de estado al nivel superior del componente
 const App = () => {
+  const router = useRouter()
   // Envolver la lógica del componente en una función principal
   const [showDiagnosticDialog, setShowDiagnosticDialog] = useState(false)
   const [diagnosticData, setDiagnosticData] = useState<any>(null)
@@ -335,7 +336,7 @@ const App = () => {
 
     // Navegar directamente a batch-import sin autoStart para que el usuario configure opciones
     const encodedName = encodeURIComponent(source.name)
-    window.location.href = `/inventory/sources/batch-import?sourceId=${source.id}&name=${encodedName}&mode=${defaultMode}`
+    router.push(`/inventory/sources/batch-import?sourceId=${source.id}&name=${encodedName}&mode=${defaultMode}`)
   }
 
   const executeImport = useCallback(

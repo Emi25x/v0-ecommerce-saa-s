@@ -230,16 +230,16 @@ export async function POST(request: NextRequest) {
     }
 
     for (const row of batch) {
-      const sku = row[mapping.sku || "SKU"]?.trim()
+      const sku = row[mapping.sku || "SKU"]?.trim() || null
       let ean = row[mapping.ean || "EAN"]?.trim()
       const isbn = row[mapping.isbn || "ISBN"]?.trim()
       
       // Debug de primera fila
-      if (isFirstBatch && processedValidRows === 0 && skippedMissingKey === 0 && skippedNoEan === 0) {
+      if (isFirstBatch && processedValidRows === 0 && skippedNoEan === 0) {
         console.log(`[v0][DEBUG] Extrayendo valores de primera fila:`)
-        console.log(`[v0][DEBUG]   - SKU column: "${mapping.sku || "SKU"}" -> valor: "${sku}"`)
-        console.log(`[v0][DEBUG]   - EAN column: "${mapping.ean || "EAN"}" -> valor: "${ean}"`)
-        console.log(`[v0][DEBUG]   - ISBN column: "${mapping.isbn || "ISBN"}" -> valor: "${isbn}"`)
+        console.log(`[v0][DEBUG]   - EAN column: "${mapping.ean || "EAN"}" -> valor: "${ean || '(vacío)'}"`)
+        console.log(`[v0][DEBUG]   - ISBN column: "${mapping.isbn || "ISBN"}" -> valor: "${isbn || '(vacío)'}"`)
+        console.log(`[v0][DEBUG]   - SKU column: "${mapping.sku || "SKU"}" -> valor: "${sku || '(vacío/opcional)'}"`)
       }
       
       // Si no hay EAN, usar ISBN como EAN
@@ -247,19 +247,11 @@ export async function POST(request: NextRequest) {
         ean = isbn
       }
       
-      // Solo procesar productos con EAN (o ISBN usado como EAN)
-      if (!sku) {
-        skippedMissingKey++
-        if (isFirstBatch && skippedMissingKey === 1) {
-          console.log(`[v0][DEBUG] DESCARTADO: Falta SKU`)
-        }
-        continue
-      }
-      
+      // SOLO EAN/ISBN es obligatorio (SKU es opcional)
       if (!ean) {
         skippedNoEan++
         if (isFirstBatch && skippedNoEan === 1) {
-          console.log(`[v0][DEBUG] DESCARTADO: Falta EAN/ISBN (sku="${sku}")`)
+          console.log(`[v0][DEBUG] DESCARTADO: Falta EAN/ISBN (sin identificador válido)`)
         }
         continue
       }
@@ -290,9 +282,10 @@ export async function POST(request: NextRequest) {
       const ibicSubjects = row[mapping.ibic_subjects]?.trim() || null
 
       productsToInsert.push({
-        sku,
-        ean: ean || null,
-        title: title || sku,
+        sku: sku || ean, // Si no hay SKU, usar EAN como SKU
+        ean: ean,
+        isbn: isbn || null,
+        title: title || ean,
         price: price || 0,
         description,
         brand,
@@ -371,7 +364,7 @@ export async function POST(request: NextRequest) {
     const progress = Math.round((newOffset / totalRows) * 100)
 
     console.log(`[v0] Batch import: Lote procesado. Creados: ${createdCount}, Actualizados: ${updatedCount}, Fallidos: ${failedCount}, Progreso: ${progress}%`)
-    console.log(`[v0] Batch import: Debug counters - Valid: ${processedValidRows}, Missing SKU: ${skippedMissingKey}, No EAN/ISBN: ${skippedNoEan}`)
+    console.log(`[v0] Batch import: Debug counters - Valid: ${processedValidRows}, Sin EAN/ISBN: ${skippedNoEan}`)
 
     return NextResponse.json({
       success: true,
@@ -384,7 +377,6 @@ export async function POST(request: NextRequest) {
       nextOffset: done ? null : newOffset,
       progress,
       debug: {
-        skipped_missing_key: skippedMissingKey,
         skipped_no_ean: skippedNoEan,
         processed_valid_rows: processedValidRows,
         products_to_insert: productsToInsert.length
