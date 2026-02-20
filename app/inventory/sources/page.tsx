@@ -161,9 +161,6 @@ const App = () => {
     }
   }
 
-  // Asegurarse de que useRouter se llame dentro del componente
-  const router = useRouter()
-
   const [sources, setSources] = useState<SourceWithSchedule[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedSource, setSelectedSource] = useState<SourceWithSchedule | null>(null)
