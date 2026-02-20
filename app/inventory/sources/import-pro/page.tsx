@@ -147,6 +147,25 @@ export default function ImportProPage() {
           setProgress(0)
         }
 
+        // Mostrar debug del primer chunk si existe
+        if (result.debug_first_chunk) {
+          const d = result.debug_first_chunk
+          addLog(`[DEBUG] === HEADERS DETECTADOS ===`)
+          addLog(`[DEBUG] Delimiter: "${d.delimiter}"`)
+          addLog(`[DEBUG] Headers originales (primeros 10): ${d.headers_original?.slice(0, 10).join(', ')}`)
+          addLog(`[DEBUG] Headers normalizados (primeros 10): ${d.headers_normalized?.slice(0, 10).join(', ')}`)
+          addLog(`[DEBUG] === PRIMERA FILA ===`)
+          addLog(`[DEBUG] Claves disponibles (primeras 10): ${d.first_row_keys?.slice(0, 10).join(', ')}`)
+          addLog(`[DEBUG] row["ean"] = "${d.first_row_ean}"`)
+          addLog(`[DEBUG] row["isbn"] = "${d.first_row_isbn}"`)
+          if (d.first_row_sample) {
+            addLog(`[DEBUG] Muestra de valores:`)
+            Object.entries(d.first_row_sample).forEach(([k, v]) => {
+              addLog(`[DEBUG]   "${k}" = "${v}"`)
+            })
+          }
+        }
+
         // Si terminó o no debe continuar, detener loop
         if (!result.continue || result.status !== "running") {
           if (intervalRef.current) {

@@ -300,6 +300,19 @@ export async function POST(request: NextRequest) {
 
     console.log(`[v0][RUN/STEP] Chunk completado. Progreso: ${newProcessedRows}/${run.total_rows}`)
 
+    // Preparar info de debug para retornar (solo en primer chunk)
+    const debugInfo = run.processed_rows === 0 ? {
+      headers_original: headersOriginal.slice(0, 30),
+      headers_normalized: headersNormalized.slice(0, 30),
+      delimiter: detectedDelimiter,
+      first_row_keys: chunk.length > 0 ? Object.keys(chunk[0]).slice(0, 20) : [],
+      first_row_ean: chunk.length > 0 ? (chunk[0]["ean"] || '(NO EXISTE)') : null,
+      first_row_isbn: chunk.length > 0 ? (chunk[0]["isbn"] || '(NO EXISTE)') : null,
+      first_row_sample: chunk.length > 0 ? Object.fromEntries(
+        Object.entries(chunk[0]).slice(0, 5).map(([k, v]: [string, any]) => [k, v?.substring?.(0, 50) || v])
+      ) : null
+    } : undefined
+
     return NextResponse.json({
       ok: true,
       status: done ? "completed" : "running",
@@ -309,7 +322,8 @@ export async function POST(request: NextRequest) {
       updated_count: run.updated_count + updatedCount,
       skipped_missing_key: run.skipped_missing_key + skipped_missing,
       skipped_invalid_key: run.skipped_invalid_key + skipped_invalid,
-      continue: !done
+      continue: !done,
+      debug_first_chunk: debugInfo // Solo en primer chunk
     })
 
   } catch (error: any) {
