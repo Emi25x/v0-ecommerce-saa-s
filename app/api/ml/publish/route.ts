@@ -641,7 +641,7 @@ Libro nuevo. Envíos a todo el país.`
         // NOTA: La descripción se agrega en POST separado después de crear el item
         // Imagenes
         pictures: pictures,
-        // Garantia via sale_terms (WARRANTY_TYPE + WARRANTY_TIME)
+        // Garantia y tiempo de disponibilidad via sale_terms
         sale_terms: [
           {
             id: "WARRANTY_TYPE",
@@ -650,16 +650,17 @@ Libro nuevo. Envíos a todo el país.`
           {
             id: "WARRANTY_TIME", 
             value_name: template.warranty_time || "30 días"
-          }
+          },
+          ...(template.handling_days && template.handling_days > 0 ? [{
+            id: "MANUFACTURING_TIME",
+            value_name: `${template.handling_days} días`
+          }] : [])
         ],
-        // Configuracion de envio (con handling_time si está configurado)
+        // Configuracion de envio
         shipping: {
           mode: template.shipping_mode || "me2",
           local_pick_up: template.local_pick_up || false,
-          free_shipping: template.free_shipping || false,
-          ...(template.handling_days && template.handling_days > 0 ? {
-            handling_time: template.handling_days
-          } : {})
+          free_shipping: template.free_shipping || false
         },
       }
     }
@@ -690,15 +691,16 @@ Libro nuevo. Envíos a todo el país.`
           {
             id: "WARRANTY_TIME", 
             value_name: template.warranty_time || "30 días"
-          }
+          },
+          ...(template.handling_days && template.handling_days > 0 ? [{
+            id: "MANUFACTURING_TIME",
+            value_name: `${template.handling_days} días`
+          }] : [])
         ],
         shipping: {
           mode: template.shipping_mode || "me2",
           local_pick_up: template.local_pick_up || false,
-          free_shipping: template.free_shipping || false,
-          ...(template.handling_days && template.handling_days > 0 ? {
-            handling_time: template.handling_days
-          } : {})
+          free_shipping: template.free_shipping || false
         },
       }
     }
