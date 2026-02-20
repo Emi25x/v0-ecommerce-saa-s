@@ -620,8 +620,7 @@ Libro nuevo. Envíos a todo el país.`
         buying_mode: "buy_it_now",
         condition: template.condition || "new",
         listing_type_id: template.listing_type_id || "gold_special",
-        // SKU del vendedor = EAN (para relacionar con nuestro inventario)
-        seller_sku: product.ean || product.sku || null,
+        // NOTA: seller_sku NO es válido para listings tradicionales en ML API
         // NOTA: La descripción se agrega en POST separado después de crear el item
         // Imagenes
         pictures: pictures,
@@ -666,8 +665,7 @@ Libro nuevo. Envíos a todo el país.`
         buying_mode: "buy_it_now",
         condition: template.condition || "new",
         listing_type_id: template.listing_type_id || "gold_special",
-        // SKU del vendedor = EAN (para relacionar con nuestro inventario)
-        seller_sku: product.ean || product.sku || null,
+        // NOTA: seller_sku NO es válido para listings de catálogo en ML API
         // NOTA: La descripción se agrega en POST separado después de crear el item
         // Imagenes
         pictures: pictures,
@@ -741,11 +739,74 @@ Libro nuevo. Envíos a todo el país.`
     // Para "catalog" ya tiene catalog_product_id y catalog_listing
     const itemToPublish = mlItem
     
+    // VALIDACION ESTRICTA antes de enviar a ML
+    const item = itemToPublish as Record<string, unknown>
+    
+    // Validar family_name (requerido para tradicional/linked)
+    if (publish_mode !== "catalog") {
+      if (!item.family_name || typeof item.family_name !== 'string' || item.family_name.trim().length === 0) {
+        return NextResponse.json({
+          success: false,
+          error: `family_name inválido: "${item.family_name}". El título del producto no puede estar vacío.`,
+          validation_error: true
+        }, { status: 400 })
+      }
+      
+      // Validar atributos requeridos
+      const attrs = item.attributes as Array<{id: string, value_name?: string, value_id?: string}>
+      const bookTitle = attrs?.find(a => a.id === "BOOK_TITLE")
+      const author = attrs?.find(a => a.id === "AUTHOR")
+      const publisher = attrs?.find(a => a.id === "BOOK_PUBLISHER")
+      const genre = attrs?.find(a => a.id === "BOOK_GENRE")
+      
+      if (!bookTitle || !bookTitle.value_name || bookTitle.value_name.trim().length === 0) {
+        return NextResponse.json({
+          success: false,
+          error: `BOOK_TITLE inválido. El producto "${product.id}" no tiene título válido.`,
+          validation_error: true
+        }, { status: 400 })
+      }
+      
+      if (!author || !author.value_name || author.value_name.trim().length === 0) {
+        return NextResponse.json({
+          success: false,
+          error: `AUTHOR inválido. El producto "${product.title}" no tiene autor válido.`,
+          validation_error: true
+        }, { status: 400 })
+      }
+      
+      if (!publisher || !publisher.value_name || publisher.value_name.trim().length === 0) {
+        return NextResponse.json({
+          success: false,
+          error: `BOOK_PUBLISHER inválido. El producto "${product.title}" no tiene editorial válida.`,
+          validation_error: true
+        }, { status: 400 })
+      }
+      
+      if (!genre || !genre.value_id) {
+        return NextResponse.json({
+          success: false,
+          error: `BOOK_GENRE inválido. Error interno de validación.`,
+          validation_error: true
+        }, { status: 400 })
+      }
+    }
+    
+    // Validar precio (requerido siempre)
+    if (!item.price || typeof item.price !== 'number' || item.price <= 0) {
+      return NextResponse.json({
+        success: false,
+        error: `Precio inválido: ${item.price}. No se pudo calcular el precio de venta.`,
+        validation_error: true
+      }, { status: 400 })
+    }
+    
     // Log para debug - ver exactamente que se envia a ML
-    console.log("[v0] Item to publish - pictures:", JSON.stringify((itemToPublish as Record<string, unknown>).pictures))
-    console.log("[v0] Item to publish - description:", JSON.stringify((itemToPublish as Record<string, unknown>).description))
-    console.log("[v0] Item to publish - shipping:", JSON.stringify((itemToPublish as Record<string, unknown>).shipping))
-    console.log("[v0] Item to publish - warranty:", (itemToPublish as Record<string, unknown>).warranty)
+    console.log("[v0] Item to publish - family_name:", item.family_name)
+    console.log("[v0] Item to publish - price:", item.price)
+    console.log("[v0] Item to publish - pictures:", JSON.stringify(item.pictures))
+    console.log("[v0] Item to publish - shipping:", JSON.stringify(item.shipping))
+    console.log("[v0] Item to publish - attributes (first 5):", JSON.stringify((item.attributes as Array<unknown>)?.slice(0, 5)))
     console.log("[v0] Product image_url from DB:", product.image_url)
 
     // Publicar en ML (tradicional primero si es linked)
@@ -762,20 +823,44 @@ Libro nuevo. Envíos a todo el país.`
 
     if (!mlResponse.ok) {
       console.log("[v0] ML Error Response:", JSON.stringify(mlData))
+      
       // ML puede devolver errores en varios formatos
       let errorMsg = "Error al publicar en ML"
-      if (mlData.message) {
+      const invalidFields: string[] = []
+      
+      // Buscar campos inválidos en la respuesta de ML
+      if (mlData.cause && Array.isArray(mlData.cause)) {
+        mlData.cause.forEach((cause: any) => {
+          if (cause.message) {
+            invalidFields.push(cause.message)
+          }
+          if (cause.field) {
+            invalidFields.push(`Campo "${cause.field}": ${cause.message || 'inválido'}`)
+          }
+        })
+      }
+      
+      if (invalidFields.length > 0) {
+        errorMsg = `Campos inválidos: ${invalidFields.join("; ")}`
+      } else if (mlData.message) {
         errorMsg = mlData.message
       } else if (mlData.error) {
         errorMsg = mlData.error
-      } else if (mlData.cause && mlData.cause.length > 0) {
-        // A veces ML pone el detalle en cause[0].message
-        errorMsg = mlData.cause.map((c: { message?: string }) => c.message).filter(Boolean).join(", ") || errorMsg
       }
+      
       return NextResponse.json({
         success: false,
         error: errorMsg,
-        ml_error_detail: mlData // Incluir toda la respuesta para debug
+        invalid_fields: invalidFields.length > 0 ? invalidFields : undefined,
+        ml_error_detail: mlData, // Incluir toda la respuesta para debug
+        product_info: {
+          id: product.id,
+          title: product.title,
+          author: product.author,
+          brand: product.brand,
+          ean: product.ean,
+          cost_price: product.cost_price
+        }
       }, { status: 400 })
     }
 
