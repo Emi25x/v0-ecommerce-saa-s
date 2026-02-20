@@ -185,6 +185,8 @@ export default function MLTemplatesPage() {
     warranty: "30 días de garantía",
     description_template: "",
     is_default: true,
+    handling_days: 3,
+    price_profile_id: "",
     attribute_mapping: {} as Record<string, string>,
   })
 
@@ -559,7 +561,7 @@ export default function MLTemplatesPage() {
     }
   }
 
-  const editTemplate = (template: Template) => {
+  const editTemplate = (template: any) => {
     setEditingTemplate(template)
     setTemplateForm({
       name: template.name,
@@ -575,6 +577,8 @@ export default function MLTemplatesPage() {
       warranty: template.warranty || "",
       description_template: template.description_template || "",
       is_default: template.is_default,
+      handling_days: template.handling_days || 3,
+      price_profile_id: template.price_profile_id || "",
       attribute_mapping: template.attribute_mapping || {},
     })
     setShowEditor(true)
@@ -582,6 +586,8 @@ export default function MLTemplatesPage() {
 
   const newTemplate = () => {
     setEditingTemplate(null)
+    // Obtener el perfil por defecto
+    const defaultProfile = priceProfiles.find(p => p.is_default)
     setTemplateForm({
       name: "Nueva Plantilla",
       description: "",
@@ -595,6 +601,8 @@ export default function MLTemplatesPage() {
       local_pick_up: false,
       warranty: "30 días de garantía",
       is_default: false,
+      handling_days: 3,
+      price_profile_id: defaultProfile?.id || "",
       attribute_mapping: {},
     })
     setShowEditor(true)
@@ -1354,7 +1362,77 @@ export default function MLTemplatesPage() {
                 </p>
               </div>
 
+              <div className="space-y-2">
+                <Label>Perfil de Precio</Label>
+                <Select
+                  value={templateForm.price_profile_id}
+                  onValueChange={(value) => setTemplateForm({ ...templateForm, price_profile_id: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona un perfil" />
+                  </SelectTrigger>
+                  <SelectContent>
+                      {priceProfiles.map(profile => (
+                        <div key={profile.id} className="flex items-center justify-between p-3 rounded-lg border">
+                          <div className="flex-1">
+                            <p className="font-medium">{profile.name} {profile.is_default && <Badge className="ml-2">Por defecto</Badge>}</p>
+                            <p className="text-sm text-muted-foreground">Margen: {profile.margin_percent}%</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline" onClick={() => loadProfile(profile)}>
+                              Cargar
+                            </Button>
+                            {!profile.is_default && (
+                              <Button 
+                                size="sm" 
+                                variant="outline"
+                                onClick={async () => {
+                                  try {
+                                    const response = await fetch("/api/price-profiles", {
+                                      method: "PUT",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ id: profile.id, is_default: true })
+                                    })
+                                    if (response.ok) {
+                                      toast({ title: "Perfil establecido como por defecto" })
+                                      fetchPriceProfiles()
+                                    }
+                                  } catch (error) {
+                                    toast({ title: "Error", variant: "destructive" })
+                                  }
+                                }}
+                              >
+                                ★ Por defecto
+                              </Button>
+                            )}
+                            <Button size="sm" variant="destructive" onClick={() => deleteProfile(profile.id)}>
+                              Eliminar
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Este perfil determina el margen de ganancia. Ve a "Calculadora de precios" para gestionar perfiles.
+                </p>
+              </div>
+
               <div className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-2">
+                  <Label>Días de disponibilidad</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="30"
+                    value={templateForm.handling_days}
+                    onChange={(e) => setTemplateForm({ ...templateForm, handling_days: parseInt(e.target.value) || 3 })}
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Tiempo de preparación del envío (1-30 días)
+                  </p>
+                </div>
+                
                 <div className="space-y-2">
                   <Label>Modo de envio</Label>
                   <Select

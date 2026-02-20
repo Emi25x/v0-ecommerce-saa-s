@@ -137,6 +137,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Plantilla no encontrada" }, { status: 404 })
     }
 
+    // Si la plantilla tiene un perfil de precio vinculado, cargar el margen de ese perfil
+    let marginPercent = template.margin_percent || 20 // Valor por defecto
+    if (template.price_profile_id) {
+      const { data: priceProfile } = await supabase
+        .from("price_profiles")
+        .select("margin_percent")
+        .eq("id", template.price_profile_id)
+        .single()
+      
+      if (priceProfile) {
+        marginPercent = Number(priceProfile.margin_percent)
+        console.log("[v0] Using margin from price profile:", marginPercent, "%")
+      }
+    }
+
     // Obtener la cuenta ML
     const { data: account, error: accountError } = await supabase
       .from("ml_accounts")
@@ -256,7 +271,7 @@ export async function POST(request: NextRequest) {
     let priceCalculation = null
 
     if (!finalPrice && product.cost_price) {
-      const marginPercent = template.margin_percent || 20
+      // Usar marginPercent de perfil de precio (ya cargado arriba) en lugar del template
       priceCalculation = await calculatePriceForProduct(product.cost_price, marginPercent)
       finalPrice = priceCalculation.price
     }
@@ -620,6 +635,13 @@ Libro nuevo. Envíos a todo el país.`
         buying_mode: "buy_it_now",
         condition: template.condition || "new",
         listing_type_id: template.listing_type_id || "gold_special",
+        // Días de disponibilidad (handling_time)
+        shipping: {
+          mode: template.shipping_mode || "me2",
+          local_pick_up: template.local_pick_up || false,
+          free_shipping: template.free_shipping || false,
+          ...(template.handling_days && { dimensions: null, handling_time: { unit: "days", value: template.handling_days } })
+        },
         // NOTA: seller_sku NO es válido para listings tradicionales en ML API
         // NOTA: La descripción se agrega en POST separado después de crear el item
         // Imagenes
@@ -665,6 +687,13 @@ Libro nuevo. Envíos a todo el país.`
         buying_mode: "buy_it_now",
         condition: template.condition || "new",
         listing_type_id: template.listing_type_id || "gold_special",
+        // Días de disponibilidad (handling_time)
+        shipping: {
+          mode: template.shipping_mode || "me2",
+          local_pick_up: template.local_pick_up || false,
+          free_shipping: template.free_shipping || false,
+          ...(template.handling_days && { dimensions: null, handling_time: { unit: "days", value: template.handling_days } })
+        },
         // NOTA: seller_sku NO es válido para listings de catálogo en ML API
         // NOTA: La descripción se agrega en POST separado después de crear el item
         // Imagenes

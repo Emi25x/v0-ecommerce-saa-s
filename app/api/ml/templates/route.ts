@@ -88,6 +88,8 @@ export async function POST(request: NextRequest) {
         fixed_attributes: fixed_attributes || [],
         attribute_mapping: attribute_mapping || {},
         is_default: is_default || false,
+        handling_days: body.handling_days || 3,
+        price_profile_id: body.price_profile_id || null,
       })
       .select()
       .single()
