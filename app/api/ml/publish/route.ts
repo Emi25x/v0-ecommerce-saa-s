@@ -635,23 +635,9 @@ Libro nuevo. Envíos a todo el país.`
         buying_mode: "buy_it_now",
         condition: template.condition || "new",
         listing_type_id: template.listing_type_id || "gold_special",
-        // Días de disponibilidad (handling_time)
-        ...(template.handling_days && template.handling_days > 0 ? {
-          shipping: {
-            mode: template.shipping_mode || "me2",
-            local_pick_up: template.local_pick_up || false,
-            free_shipping: template.free_shipping || false,
-            dimensions: null,
-            handling_time: { unit: "days", value: template.handling_days }
-          }
-        } : {
-          shipping: {
-            mode: template.shipping_mode || "me2",
-            local_pick_up: template.local_pick_up || false,
-            free_shipping: template.free_shipping || false
-          }
-        }),
-        // NOTA: seller_sku NO es válido para listings de catálogo en ML API
+        // ATRIBUTOS OBLIGATORIOS (incluyen BOOK_TITLE)
+        attributes: attributes,
+        // NOTA: seller_sku NO es válido para listings tradicionales en ML API
         // NOTA: La descripción se agrega en POST separado después de crear el item
         // Imagenes
         pictures: pictures,
@@ -666,11 +652,53 @@ Libro nuevo. Envíos a todo el país.`
             value_name: template.warranty_time || "30 días"
           }
         ],
-        // Configuracion de envio
+        // Configuracion de envio (con handling_time si está configurado)
         shipping: {
           mode: template.shipping_mode || "me2",
-          local_pick_up: template.local_pick_up !== false,
+          local_pick_up: template.local_pick_up || false,
           free_shipping: template.free_shipping || false,
+          ...(template.handling_days && template.handling_days > 0 ? {
+            handling_time: { unit: "days", value: template.handling_days }
+          } : {})
+        },
+      }
+    }
+    
+    // Helper para construir publicacion de catalogo
+    const buildCatalogItem = () => {
+      const pictures: Array<{ id?: string; source?: string }> = []
+      if (mlPictureId) {
+        pictures.push({ id: mlPictureId })
+      }
+      
+      return {
+        site_id: "MLA",
+        catalog_product_id: catalogProductId,
+        catalog_listing: true,
+        price: finalPrice,
+        currency_id: template.currency_id || "ARS",
+        available_quantity: Math.min(product.stock || 1, 50),
+        buying_mode: "buy_it_now",
+        condition: template.condition || "new",
+        listing_type_id: template.listing_type_id || "gold_special",
+        pictures: pictures,
+        sale_terms: [
+          {
+            id: "WARRANTY_TYPE",
+            value_name: template.warranty_type || "Garantía del vendedor"
+          },
+          {
+            id: "WARRANTY_TIME", 
+            value_name: template.warranty_time || "30 días"
+          }
+        ],
+        shipping: {
+          mode: template.shipping_mode || "me2",
+          local_pick_up: template.local_pick_up || false,
+          free_shipping: template.free_shipping || false,
+          ...(template.handling_days && template.handling_days > 0 ? {
+            handling_time: { unit: "days", value: template.handling_days }
+          } : {})
         },
       }
     }
