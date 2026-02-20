@@ -90,7 +90,6 @@ export default function MLPublishPage() {
   const [publishStartTime, setPublishStartTime] = useState<number | null>(null)
   const [bulkAction, setBulkAction] = useState<"publish" | "update_price">("publish") // Acción masiva
   const [priceProfiles, setPriceProfiles] = useState<{id: string, name: string, margin_percent: number, is_default: boolean}[]>([])
-  const [selectedPriceProfile, setSelectedPriceProfile] = useState<string>("")
   const [useIva, setUseIva] = useState<boolean>(false)
   const [ivaPercent, setIvaPercent] = useState<number>(0)
   const [useCommission, setUseCommission] = useState<boolean>(false)
@@ -186,12 +185,7 @@ export default function MLPublishPage() {
       const profilesRes = await fetch("/api/price-profiles")
       const profilesData = await profilesRes.json()
       setPriceProfiles(profilesData.profiles || [])
-      const defaultProfile = profilesData.profiles?.find((p: any) => p.is_default)
-      if (defaultProfile) {
-        setSelectedPriceProfile(defaultProfile.id)
-      } else if (profilesData.profiles?.length > 0) {
-        setSelectedPriceProfile(profilesData.profiles[0].id)
-      }
+      // El perfil de precio se toma de la plantilla, no se selecciona aquí
     } catch (error) {
       toast({ title: "Error", description: "Error al cargar datos", variant: "destructive" })
     } finally {
