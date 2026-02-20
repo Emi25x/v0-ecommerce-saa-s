@@ -21,7 +21,7 @@ export default function BatchImportPage() {
   const [created, setCreated] = useState(0)
   const [status, setStatus] = useState<string>("")
   const [logs, setLogs] = useState<string[]>([])
-  const [debugCounters, setDebugCounters] = useState({ skipped_no_ean: 0, processed_valid_rows: 0 })
+  const [debugCounters, setDebugCounters] = useState({ skipped_missing_ean: 0, skipped_invalid_ean: 0, processed_valid_rows: 0 })
   const abortRef = useRef(false)
 
   const addLog = (message: string) => {
@@ -132,8 +132,8 @@ export default function BatchImportPage() {
         addLog(`Lote completado: ${result.created || 0} creados, ${result.updated || 0} actualizados, progreso ${result.progress}%`)
         
         // Log de debug si hay filas descartadas
-        if (result.debug && result.debug.skipped_no_ean > 0) {
-          addLog(`[DEBUG] Descartados: ${result.debug.skipped_no_ean} sin EAN/ISBN`)
+        if (result.debug && (result.debug.skipped_missing_ean > 0 || result.debug.skipped_invalid_ean > 0)) {
+          addLog(`[DEBUG] Descartados: ${result.debug.skipped_missing_ean || 0} sin EAN, ${result.debug.skipped_invalid_ean || 0} EAN inválido`)
         }
 
         if (result.done) {
@@ -238,14 +238,18 @@ export default function BatchImportPage() {
               {debugCounters.processed_valid_rows > 0 && (
                 <div className="border border-yellow-200 bg-yellow-50 dark:bg-yellow-950/20 rounded p-3 text-xs">
                   <div className="font-medium mb-2">Debug - Último lote:</div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-3">
                     <div>
-                      <span className="text-muted-foreground">Filas válidas procesadas:</span>{" "}
+                      <span className="text-muted-foreground">Procesadas:</span>{" "}
                       <span className="font-mono font-bold text-green-600">{debugCounters.processed_valid_rows}</span>
                     </div>
                     <div>
-                      <span className="text-muted-foreground">Descartadas (sin EAN/ISBN):</span>{" "}
-                      <span className="font-mono font-bold text-orange-600">{debugCounters.skipped_no_ean}</span>
+                      <span className="text-muted-foreground">Sin EAN:</span>{" "}
+                      <span className="font-mono font-bold text-orange-600">{debugCounters.skipped_missing_ean || 0}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">EAN inválido:</span>{" "}
+                      <span className="font-mono font-bold text-red-600">{debugCounters.skipped_invalid_ean || 0}</span>
                     </div>
                   </div>
                 </div>

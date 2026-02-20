@@ -216,57 +216,159 @@ export async function POST(request: NextRequest) {
     const productsToInsert: Array<Record<string, any>> = []
     
     // Contadores de debug
-    let skippedMissingKey = 0
-    let skippedNoEan = 0
+    let skippedMissingEan = 0
+    let skippedInvalidEan = 0
     let processedValidRows = 0
     
-    // Debug detallado en el primer lote
+    // AUTO-DETECCIÓN DE COLUMNAS
     const isFirstBatch = offset === 0
+    let detectedColumns = {
+      ean: mapping.ean || null,
+      isbn: mapping.isbn || null,
+      title: mapping.title || null,
+      author: mapping.author || null,
+      price: mapping.price || null,
+      image: mapping.image_url || null
+    }
+    
     if (isFirstBatch && batch.length > 0) {
-      console.log(`[v0][DEBUG] === DEBUG PRIMERA FILA ===`)
-      console.log(`[v0][DEBUG] Column mapping:`, JSON.stringify(mapping))
+      const headers = Object.keys(batch[0])
+      const normalize = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      
+      // Auto-detectar EAN/ISBN (key obligatoria)
+      if (!detectedColumns.ean) {
+        for (const h of headers) {
+          const nh = normalize(h)
+          if (nh === "ean" || nh === "ean13") { detectedColumns.ean = h; break }
+        }
+      }
+      if (!detectedColumns.ean && !detectedColumns.isbn) {
+        for (const h of headers) {
+          const nh = normalize(h)
+          if (nh === "isbn" || nh === "isbn13") { detectedColumns.isbn = h; break }
+        }
+      }
+      if (!detectedColumns.ean && !detectedColumns.isbn) {
+        for (const h of headers) {
+          const nh = normalize(h)
+          if (nh === "gtin" || nh === "codbarras" || nh === "codigo de barras") { 
+            detectedColumns.ean = h; break 
+          }
+        }
+      }
+      
+      // Auto-detectar título
+      if (!detectedColumns.title) {
+        for (const h of headers) {
+          const nh = normalize(h)
+          if (nh === "titulo" || nh === "title") { detectedColumns.title = h; break }
+        }
+      }
+      if (!detectedColumns.title) {
+        for (const h of headers) {
+          const nh = normalize(h)
+          if (nh === "descripcion") { detectedColumns.title = h; break }
+        }
+      }
+      
+      // Auto-detectar autor
+      if (!detectedColumns.author) {
+        for (const h of headers) {
+          const nh = normalize(h)
+          if (nh === "autor" || nh === "author") { detectedColumns.author = h; break }
+        }
+      }
+      
+      // Auto-detectar precio (priorizar PVP)
+      if (!detectedColumns.price) {
+        for (const h of headers) {
+          const nh = normalize(h)
+          if (nh === "pvp") { detectedColumns.price = h; break }
+        }
+      }
+      if (!detectedColumns.price) {
+        for (const h of headers) {
+          const nh = normalize(h)
+          if (nh === "precio" || nh === "price") { detectedColumns.price = h; break }
+        }
+      }
+      
+      // Auto-detectar imagen
+      if (!detectedColumns.image) {
+        for (const h of headers) {
+          const nh = normalize(h)
+          if (nh === "portada" || nh === "imagen" || nh === "image" || nh === "url_imagen") { 
+            detectedColumns.image = h; break 
+          }
+        }
+      }
+      
+      console.log(`[v0][DEBUG] === AUTO-DETECCIÓN DE COLUMNAS ===`)
+      console.log(`[v0][DEBUG] Headers disponibles:`, headers.join(", "))
+      console.log(`[v0][DEBUG] Columnas detectadas:`, JSON.stringify(detectedColumns))
+      console.log(`[v0][DEBUG] Column mapping original:`, JSON.stringify(mapping))
       console.log(`[v0][DEBUG] Primera fila RAW:`, JSON.stringify(batch[0]).substring(0, 500))
-      console.log(`[v0][DEBUG] Headers disponibles:`, Object.keys(batch[0]).join(", "))
+    }
+
+    // Función para normalizar EAN (solo dígitos)
+    const normalizeEan = (raw: string | undefined): string | null => {
+      if (!raw) return null
+      const digits = raw.replace(/\D/g, "")
+      return digits || null
     }
 
     for (const row of batch) {
-      const sku = row[mapping.sku || "SKU"]?.trim() || null
-      let ean = row[mapping.ean || "EAN"]?.trim()
-      const isbn = row[mapping.isbn || "ISBN"]?.trim()
+      // Extraer valores usando columnas detectadas
+      let eanRaw = row[detectedColumns.ean || ""]?.trim()
+      const isbnRaw = row[detectedColumns.isbn || ""]?.trim()
+      
+      // Si no hay EAN, usar ISBN
+      if (!eanRaw && isbnRaw) {
+        eanRaw = isbnRaw
+      }
+      
+      // Normalizar EAN (solo dígitos)
+      const ean = normalizeEan(eanRaw)
       
       // Debug de primera fila
-      if (isFirstBatch && processedValidRows === 0 && skippedNoEan === 0) {
-        console.log(`[v0][DEBUG] Extrayendo valores de primera fila:`)
-        console.log(`[v0][DEBUG]   - EAN column: "${mapping.ean || "EAN"}" -> valor: "${ean || '(vacío)'}"`)
-        console.log(`[v0][DEBUG]   - ISBN column: "${mapping.isbn || "ISBN"}" -> valor: "${isbn || '(vacío)'}"`)
-        console.log(`[v0][DEBUG]   - SKU column: "${mapping.sku || "SKU"}" -> valor: "${sku || '(vacío/opcional)'}"`)
+      if (isFirstBatch && processedValidRows === 0 && skippedMissingEan === 0 && skippedInvalidEan === 0) {
+        console.log(`[v0][DEBUG] === PRIMERA FILA - EXTRACCIÓN ===`)
+        console.log(`[v0][DEBUG]   EAN raw: "${eanRaw || '(vacío)'}"`)
+        console.log(`[v0][DEBUG]   EAN normalizado: "${ean || '(vacío)'}"`)
+        console.log(`[v0][DEBUG]   ISBN raw: "${isbnRaw || '(vacío)'}"`)
       }
       
-      // Si no hay EAN, usar ISBN como EAN
-      if (!ean && isbn) {
-        ean = isbn
-      }
-      
-      // SOLO EAN/ISBN es obligatorio (SKU es opcional)
+      // Validar EAN obligatorio
       if (!ean) {
-        skippedNoEan++
-        if (isFirstBatch && skippedNoEan === 1) {
-          console.log(`[v0][DEBUG] DESCARTADO: Falta EAN/ISBN (sin identificador válido)`)
+        skippedMissingEan++
+        if (isFirstBatch && skippedMissingEan === 1) {
+          console.log(`[v0][DEBUG] DESCARTADO: EAN/ISBN faltante`)
+        }
+        continue
+      }
+      
+      // Validar longitud EAN (debe ser 13 dígitos para EAN-13)
+      if (ean.length !== 13) {
+        skippedInvalidEan++
+        if (isFirstBatch && skippedInvalidEan === 1) {
+          console.log(`[v0][DEBUG] DESCARTADO: EAN inválido (longitud=${ean.length}, esperado=13)`)
         }
         continue
       }
       
       processedValidRows++
       
-      const title = row[mapping.title || "TITULO"]?.trim()
-      const price = parseFloat(row[mapping.price || "PRECIO"]?.replace(",", ".") || "0")
+      const title = row[detectedColumns.title || ""]?.trim() || ean
+      const author = row[detectedColumns.author || ""]?.trim() || null
+      const price = parseFloat(row[detectedColumns.price || ""]?.replace(",", ".") || "0")
+      const imageUrl = row[detectedColumns.image || ""]?.trim() || null
+      
+      // Campos adicionales del mapping (si existen)
       const description = row[mapping.description]?.trim() || null
       const brand = row[mapping.brand]?.trim() || null
       const category = row[mapping.category]?.trim() || null
       const stock = parseInt(row[mapping.stock] || "0", 10)
       const internalCode = row[mapping.internal_code]?.trim() || null
-      const imageUrl = row[mapping.image_url]?.trim() || null
-      const author = row[mapping.author]?.trim() || null
       const language = row[mapping.language]?.trim() || null
       const yearEdition = row[mapping.year_edition]?.trim() || null
       const subject = row[mapping.subject]?.trim() || null
@@ -282,10 +384,10 @@ export async function POST(request: NextRequest) {
       const ibicSubjects = row[mapping.ibic_subjects]?.trim() || null
 
       productsToInsert.push({
-        sku: sku || ean, // Si no hay SKU, usar EAN como SKU
+        sku: ean, // Usar EAN como SKU (identificador único)
         ean: ean,
-        isbn: isbn || null,
-        title: title || ean,
+        isbn: isbnRaw || null,
+        title: title,
         price: price || 0,
         description,
         brand,
@@ -364,7 +466,7 @@ export async function POST(request: NextRequest) {
     const progress = Math.round((newOffset / totalRows) * 100)
 
     console.log(`[v0] Batch import: Lote procesado. Creados: ${createdCount}, Actualizados: ${updatedCount}, Fallidos: ${failedCount}, Progreso: ${progress}%`)
-    console.log(`[v0] Batch import: Debug counters - Valid: ${processedValidRows}, Sin EAN/ISBN: ${skippedNoEan}`)
+    console.log(`[v0] Batch import: Debug counters - Valid: ${processedValidRows}, Sin EAN: ${skippedMissingEan}, EAN inválido: ${skippedInvalidEan}`)
 
     return NextResponse.json({
       success: true,
@@ -377,7 +479,8 @@ export async function POST(request: NextRequest) {
       nextOffset: done ? null : newOffset,
       progress,
       debug: {
-        skipped_no_ean: skippedNoEan,
+        skipped_missing_ean: skippedMissingEan,
+        skipped_invalid_ean: skippedInvalidEan,
         processed_valid_rows: processedValidRows,
         products_to_insert: productsToInsert.length
       }
