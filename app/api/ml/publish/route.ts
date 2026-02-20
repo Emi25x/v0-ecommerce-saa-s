@@ -931,34 +931,9 @@ Libro nuevo. Envíos a todo el país.`
       descriptionError = "Descripción vacía o no disponible"
     }
 
-    // Actualizar handling_time con PUT si está configurado
-    if (template.handling_days && template.handling_days > 0 && mlData.id) {
-      try {
-        console.log(`[v0] Updating handling_time to ${template.handling_days} days for item ${mlData.id}`)
-        const updateResponse = await fetch(`https://api.mercadolibre.com/items/${mlData.id}`, {
-          method: "PUT",
-          headers: {
-            "Authorization": `Bearer ${accessToken}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            shipping: {
-              logistic_type: "drop_off",
-              handling_time: template.handling_days
-            }
-          })
-        })
-        
-        if (updateResponse.ok) {
-          console.log(`[v0] handling_time updated successfully to ${template.handling_days} days`)
-        } else {
-          const errorData = await updateResponse.json()
-          console.log(`[v0] Failed to update handling_time:`, errorData)
-        }
-      } catch (error) {
-        console.log(`[v0] Error updating handling_time:`, error)
-      }
-    }
+    // NOTA: handling_time NO puede configurarse manualmente en ML
+    // ML lo calcula automáticamente según la configuración logística del vendedor
+    // Referencia: https://developers.mercadolibre.com.ar/en_us/calculate-shipping-costs-handling-time
 
     // Guardar publicacion tradicional en nuestra base de datos
     const { error: insertError } = await supabase
