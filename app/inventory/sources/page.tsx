@@ -1306,6 +1306,19 @@ const App = () => {
                           <Play className="h-4 w-4" />
                         )}
                       </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const encodedName = encodeURIComponent(source.name)
+                          const defaultMode = source.feed_type === "catalog" ? "upsert" : "update"
+                          router.push(`/inventory/sources/import-pro?sourceId=${source.id}&name=${encodedName}&mode=${defaultMode}`)
+                        }}
+                        disabled={isRunning || importing === source.id}
+                        title="Importador PRO (anti-timeout)"
+                      >
+                        <Database className="h-4 w-4" />
+                      </Button>
                       <Button variant="outline" size="sm" onClick={() => handleDeleteSource(source)}>
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -1777,38 +1790,9 @@ const App = () => {
             <Button variant="outline" onClick={() => setShowResetDialog(false)}>
               Cancelar
             </Button>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      onClick={() => handleRunImport(source)}
-                      disabled={importing === source.id || runningImports.has(source.id)}
-                      variant="outline"
-                    >
-                      {importing === source.id || runningImports.has(source.id) ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Ejecutando...
-                        </>
-                      ) : (
-                        <>
-                          <Play className="h-4 w-4 mr-2" />
-                          Ejecutar
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        const encodedName = encodeURIComponent(source.name)
-                        const defaultMode = source.feed_type === "catalog" ? "upsert" : "update"
-                        router.push(`/inventory/sources/import-pro?sourceId=${source.id}&name=${encodedName}&mode=${defaultMode}`)
-                      }}
-                      disabled={importing === source.id || runningImports.has(source.id)}
-                    >
-                      <Database className="h-4 w-4 mr-2" />
-                      PRO
-                    </Button>
-                  </div>
+            <Button onClick={confirmResetSchedules}>
+              Restablecer todo
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
