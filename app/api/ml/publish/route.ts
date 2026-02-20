@@ -652,15 +652,11 @@ Libro nuevo. Envíos a todo el país.`
             value_name: template.warranty_time || "30 días"
           }
         ],
-        // Configuracion de envio (con handling_time si está configurado)
+        // Configuracion de envio
         shipping: {
           mode: template.shipping_mode || "me2",
           local_pick_up: template.local_pick_up || false,
-          free_shipping: template.free_shipping || false,
-          ...(template.handling_days && template.handling_days > 0 ? {
-            logistic_type: "drop_off",
-            handling_time: template.handling_days
-          } : {})
+          free_shipping: template.free_shipping || false
         },
       }
     }
@@ -696,11 +692,7 @@ Libro nuevo. Envíos a todo el país.`
         shipping: {
           mode: template.shipping_mode || "me2",
           local_pick_up: template.local_pick_up || false,
-          free_shipping: template.free_shipping || false,
-          ...(template.handling_days && template.handling_days > 0 ? {
-            logistic_type: "drop_off",
-            handling_time: template.handling_days
-          } : {})
+          free_shipping: template.free_shipping || false
         },
       }
     }
@@ -937,6 +929,35 @@ Libro nuevo. Envíos a todo el país.`
     } else {
       console.log("[v0] No description to add (empty or null)")
       descriptionError = "Descripción vacía o no disponible"
+    }
+
+    // Actualizar handling_time con PUT si está configurado
+    if (template.handling_days && template.handling_days > 0 && mlData.id) {
+      try {
+        console.log(`[v0] Updating handling_time to ${template.handling_days} days for item ${mlData.id}`)
+        const updateResponse = await fetch(`https://api.mercadolibre.com/items/${mlData.id}`, {
+          method: "PUT",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            shipping: {
+              logistic_type: "drop_off",
+              handling_time: template.handling_days
+            }
+          })
+        })
+        
+        if (updateResponse.ok) {
+          console.log(`[v0] handling_time updated successfully to ${template.handling_days} days`)
+        } else {
+          const errorData = await updateResponse.json()
+          console.log(`[v0] Failed to update handling_time:`, errorData)
+        }
+      } catch (error) {
+        console.log(`[v0] Error updating handling_time:`, error)
+      }
     }
 
     // Guardar publicacion tradicional en nuestra base de datos
