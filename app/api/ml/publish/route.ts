@@ -479,6 +479,10 @@ Idioma: ${product.language || "Español"}
 ${product.pages ? `Páginas: ${product.pages}` : ""}
 ${product.binding ? `Encuadernación: ${product.binding}` : ""}
 ${product.year_edition ? `Año de edición: ${product.year_edition}` : ""}
+${product.subject ? `Materia: ${product.subject}` : ""}
+${product.category ? `Categoría: ${product.category}` : ""}
+${product.width && product.height && product.thickness ? `Dimensiones: ${product.width} x ${product.height} x ${product.thickness} cm` : ""}
+${product.canonical_weight_g ? `Peso: ${product.canonical_weight_g} gramos` : ""}
 
 ${product.description || ""}
 
@@ -566,6 +570,9 @@ Libro nuevo. Envíos a todo el país.`
       // BOOK_TITLE - Titulo (required)
       attributes.push({ id: "BOOK_TITLE", value_name: product.title?.substring(0, 255) || "Libro" })
       
+      // BOOK_SUBTITLE - Subtítulo (opcional, pero mejor indicar "No aplica" si no existe)
+      attributes.push({ id: "BOOK_SUBTITLE", value_name: "No aplica" })
+      
       // AUTHOR - Autor (required)
       attributes.push({ id: "AUTHOR", value_name: product.author || "Desconocido" })
       
@@ -592,7 +599,6 @@ Libro nuevo. Envíos a todo el país.`
       }
       
       // BOOK_COVER - Tapa del libro (Blanda/Dura)
-      // Solo agregar si tenemos un valor mapeado válido
       if (product.binding) {
         const bindingLower = product.binding.toLowerCase()
         const coverMap: Record<string, string> = {
@@ -607,15 +613,32 @@ Libro nuevo. Envíos a todo el país.`
           "cartón": "Dura",
           "dura": "Dura",
         }
-        // Solo agregar si el valor está en el mapa, sino omitir
-        if (coverMap[bindingLower]) {
-          attributes.push({ id: "BOOK_COVER", value_name: coverMap[bindingLower] })
-        }
+        const coverValue = coverMap[bindingLower]
+        attributes.push({ id: "BOOK_COVER", value_name: coverValue || "No aplica" })
+      } else {
+        // Si no tenemos binding, indicar "No aplica" explícitamente
+        attributes.push({ id: "BOOK_COVER", value_name: "No aplica" })
       }
       
       // PAGES_NUMBER - Cantidad de paginas
       if (product.pages) {
         attributes.push({ id: "PAGES_NUMBER", value_name: product.pages.toString() })
+      }
+      
+      // DIMENSIONES (en milímetros para ML)
+      if (product.width && product.width > 0) {
+        attributes.push({ id: "ITEM_WIDTH", value_name: `${Math.round(product.width * 10)} mm` })
+      }
+      if (product.height && product.height > 0) {
+        attributes.push({ id: "ITEM_HEIGHT", value_name: `${Math.round(product.height * 10)} mm` })
+      }
+      if (product.thickness && product.thickness > 0) {
+        attributes.push({ id: "ITEM_THICKNESS", value_name: `${Math.round(product.thickness * 10)} mm` })
+      }
+      
+      // PESO (si tenemos canonical_weight_g)
+      if (product.canonical_weight_g && product.canonical_weight_g > 0) {
+        attributes.push({ id: "ITEM_WEIGHT", value_name: `${product.canonical_weight_g} g` })
       }
       
       // Usar el ID de imagen subido a ML (NO usamos fallback a URL porque ML la rechazará si es pequeña)
