@@ -95,6 +95,11 @@ export default function MLPublishPage() {
   const [useCommission, setUseCommission] = useState<boolean>(false)
   const [commissionPercent, setCommissionPercent] = useState<number>(0)
   const [marginPercent, setMarginPercent] = useState<number>(20)
+  const [minStock, setMinStock] = useState<number>(5)
+  const [minPrice, setMinPrice] = useState<number>(9)
+  const [maxPrice, setMaxPrice] = useState<number>(1000)
+  const [languageFilter, setLanguageFilter] = useState<string>("SPA")
+  const [searchTerm, setSearchTerm] = useState<string>("")
 
   // Construir URL de filtros para el servidor
   const buildFilterUrl = (onlyIds = false) => {
