@@ -103,18 +103,19 @@ export async function POST(request: NextRequest) {
         const name = source.name || ""
         
         // Hardcodear delimiters según proveedor:
-        // - AZETA catálogo completo (notexto): pipe "|"
-        // - AZETA stock: semicolon ";"
-        // - ARNOIA: semicolon ";"
-        if (url.includes("notexto") || name.toLowerCase().includes("total") || name.toLowerCase().includes("catalogo")) {
+        // - AZETA Total/Catálogo/Parcial: pipe "|"
+        // - AZETA Stock: semicolon ";"
+        // - ARNOIA: mantener como estaba (no tocar)
+        const nameLower = name.toLowerCase()
+        
+        if (nameLower.includes("azeta") && nameLower.includes("stock")) {
+          // AZETA Stock usa ";"
+          detectedDelimiter = ";"
+          console.log(`[v0][RUN/STEP] HARDCODED delimiter para AZETA Stock: ";"`)
+        } else if (nameLower.includes("azeta") || url.includes("notexto") || nameLower.includes("total") || nameLower.includes("catalogo") || nameLower.includes("parcial")) {
+          // AZETA Total / Catálogo / Parcial usan "|"
           detectedDelimiter = "|"
-          console.log(`[v0][RUN/STEP] HARDCODED delimiter para AZETA catálogo: "|"`)
-        } else if (url.includes("azeta") || name.toLowerCase().includes("azeta")) {
-          detectedDelimiter = ";"
-          console.log(`[v0][RUN/STEP] HARDCODED delimiter para AZETA stock: ";"`)
-        } else if (url.includes("arnoia") || name.toLowerCase().includes("arnoia")) {
-          detectedDelimiter = ";"
-          console.log(`[v0][RUN/STEP] HARDCODED delimiter para ARNOIA: ";"`)
+          console.log(`[v0][RUN/STEP] HARDCODED delimiter para AZETA Catálogo/Total/Parcial: "|"`)
         } else {
           // Fallback: intentar auto-detectar
           const firstLine = csvText.split("\n")[0] || ""
