@@ -170,12 +170,31 @@ export async function POST(request: NextRequest) {
       console.log(`[v0][DEBUG] ========================================`)
       console.log(`[v0][DEBUG] === INICIO DEBUG PRIMER CHUNK ===`)
       console.log(`[v0][DEBUG] ========================================`)
+      console.log(`[v0][DEBUG] Delimiter: "${detectedDelimiter}"`)
+      console.log(`[v0][DEBUG] Headers (${headersOriginal.length} primeros): ${headersOriginal.slice(0, 10).join(", ")}`)
       console.log(`[v0][DEBUG] Total headers detectados: ${headersOriginal.length}`)
-      console.log(`[v0][DEBUG] === HEADERS ORIGINALES (primeros 30) ===`)
-      console.log(headersOriginal.slice(0, 30).join(" | "))
-      console.log(`[v0][DEBUG] === HEADERS NORMALIZADOS (primeros 30) ===`)
-      console.log(headersNormalized.slice(0, 30).join(" | "))
-      console.log(`[v0][DEBUG] Delimiter usado: "${detectedDelimiter}"`)
+      
+      // VALIDACIÓN CRÍTICA: Verificar que existe columna EAN para AZETA
+      const hasEan = headersNormalized.some(h => h.toLowerCase().includes("ean"))
+      
+      if (!hasEan) {
+        console.log(`[v0][DEBUG] ❌ ERROR: No se encontró columna "Ean" en headers`)
+        console.log(`[v0][DEBUG] Headers originales: ${headersOriginal.join(", ")}`)
+        
+        // Abortar si es AZETA y no tiene EAN
+        const { data: source } = await supabase
+          .from("import_sources")
+          .select("name")
+          .eq("id", run.source_id)
+          .single()
+        
+        if (source?.name.toLowerCase().includes("azeta")) {
+          throw new Error(`CSV de Azeta no parseado correctamente (delimiter incorrecto). Esperado '|'. Headers detectados: ${headersOriginal.slice(0, 5).join(", ")}`)
+        }
+      } else {
+        console.log(`[v0][DEBUG] ✓ Columna EAN encontrada`)
+      }
+      
       console.log(`[v0][DEBUG] ========================================`)
     }
     
@@ -197,6 +216,14 @@ export async function POST(request: NextRequest) {
     })
 
     console.log(`[v0][RUN/STEP] CSV parseado: ${allRows.length} filas totales (headers normalizados)`)
+
+    // Debug: Sample EAN de la primera fila (SIEMPRE en primer chunk)
+    if (run.processed_rows === 0 && allRows.length > 0) {
+      const firstRow = allRows[0]
+      const eanField = Object.keys(firstRow).find(k => k.toLowerCase().includes("ean"))
+      const sampleEan = eanField ? firstRow[eanField] : "(no encontrado)"
+      console.log(`[v0][DEBUG] Sample EAN: ${sampleEan}`)
+    }
 
     // 6. Tomar chunk actual
     const offset = run.processed_rows
