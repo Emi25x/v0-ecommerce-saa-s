@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
 
     const csvText = await response.text()
     const lines = csvText.split("\n")
-    const headers = lines[0].split(";").map(h => h.trim())
+    const headers = lines[0].split("|").map(h => h.trim())
     
     console.log("[v0] CSV Headers:", headers)
     console.log("[v0] Total lines:", lines.length)
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
       for (const line of batch) {
         if (!line.trim()) continue
 
-        const fields = line.split(";")
+        const fields = line.split("|")
         const eanRaw = fields[eanIdx] || fields[isbnIdx]
         const ean = normalizeEan(eanRaw)
 

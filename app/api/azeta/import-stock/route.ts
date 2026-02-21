@@ -50,6 +50,7 @@ export async function POST(request: NextRequest) {
 
     const csvText = await response.text()
     const lines = csvText.split("\n")
+    // Stock CSV usa ";" como delimiter
     const headers = lines[0].split(";").map(h => h.trim())
     
     const eanIdx = headers.indexOf("ean")
