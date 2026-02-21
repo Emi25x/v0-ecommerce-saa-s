@@ -86,57 +86,66 @@ export async function POST(request: NextRequest) {
 
     const csvText = await csvBlob.text()
 
-    // 3. FORZAR delimiter hardcodeado en primer chunk SIEMPRE (ignorar metadata viejo)
+    // 3. FORZAR delimiter hardcodeado SIEMPRE según source (ignorar metadata y processed_rows)
+    console.log(`[v0][RUN/STEP] 🔍 CRITICAL DEBUG - processed_rows: ${run.processed_rows}`)
+    
     const runMetadata = run.metadata as any
     let detectedDelimiter: string
     
-    if (run.processed_rows === 0) {
-      // PRIMER CHUNK: Siempre hardcodear según source (ignorar metadata)
-      const { data: source } = await supabase
-        .from("import_sources")
-        .select("*")
-        .eq("id", run.source_id)
-        .single()
+    // OBTENER SOURCE SIEMPRE para determinar delimiter
+    const { data: source } = await supabase
+      .from("import_sources")
+      .select("*")
+      .eq("id", run.source_id)
+      .single()
+    
+    console.log(`[v0][RUN/STEP] 🔍 Source fetched: ${source ? source.name : 'NULL'}`)
+    
+    if (source) {
+      const url = source.url_template || ""
+      const name = source.name || ""
+      const nameLower = name.toLowerCase()
       
-      if (source) {
-        const url = source.url_template || ""
-        const name = source.name || ""
-        const nameLower = name.toLowerCase()
-        
-        console.log(`[v0][RUN/STEP] Source: "${name}", URL: ${url}`)
-        
-        // HARDCODED delimiters según proveedor:
-        // - AZETA Total/Catálogo/Parcial: pipe "|"
-        // - AZETA Stock: semicolon ";"
-        // - ARNOIA: auto-detect
-        
-        if (nameLower.includes("azeta") && nameLower.includes("stock")) {
-          // AZETA Stock usa ";"
-          detectedDelimiter = ";"
-          console.log(`[v0][RUN/STEP] ✓ HARDCODED delimiter para AZETA Stock: ";"`)
-        } else if (nameLower.includes("azeta") || url.includes("notexto") || nameLower.includes("total") || nameLower.includes("catalogo") || nameLower.includes("parcial")) {
-          // AZETA Total / Catálogo / Parcial usan "|"
-          detectedDelimiter = "|"
-          console.log(`[v0][RUN/STEP] ✓ HARDCODED delimiter para AZETA Catálogo/Total/Parcial: "|"`)
-        } else {
-          // Fallback: auto-detectar para otras fuentes
-          const firstLine = csvText.split("\n")[0] || ""
-          const candidates = ["|", ";", "\t", ","]
-          const counts = candidates.map(d => ({
-            delimiter: d,
-            count: firstLine.split(d).length
-          }))
-          counts.sort((a, b) => b.count - a.count)
-          detectedDelimiter = counts[0].delimiter
-          console.log(`[v0][RUN/STEP] Auto-detected delimiter: "${detectedDelimiter}"`)
-        }
+      console.log(`[v0][RUN/STEP] 🔍 Source: "${name}", URL: ${url}`)
+      
+      // HARDCODED delimiters según proveedor:
+      // - AZETA Total/Catálogo/Parcial: pipe "|"
+      // - AZETA Stock: semicolon ";"
+      // - ARNOIA: auto-detect
+      
+      if (nameLower.includes("azeta") && nameLower.includes("stock")) {
+        // AZETA Stock usa ";"
+        detectedDelimiter = ";"
+        console.log(`[v0][RUN/STEP] ✅ HARDCODED delimiter para AZETA Stock: ";"`)
+      } else if (nameLower.includes("azeta") || url.includes("notexto") || nameLower.includes("total") || nameLower.includes("catalogo") || nameLower.includes("parcial")) {
+        // AZETA Total / Catálogo / Parcial usan "|"
+        detectedDelimiter = "|"
+        console.log(`[v0][RUN/STEP] ✅ HARDCODED delimiter para AZETA Catálogo/Total/Parcial: "|"`)
+      } else if (runMetadata?.detected_delimiter) {
+        // Usar delimiter del metadata si existe (chunks siguientes)
+        detectedDelimiter = runMetadata.detected_delimiter
+        console.log(`[v0][RUN/STEP] Using delimiter from metadata: "${detectedDelimiter}"`)
       } else {
-        // No source encontrado, usar coma por defecto
-        detectedDelimiter = ","
-        console.log(`[v0][RUN/STEP] ⚠️ No source found, using default: ","`)
+        // Fallback: auto-detectar para otras fuentes
+        const firstLine = csvText.split("\n")[0] || ""
+        const candidates = ["|", ";", "\t", ","]
+        const counts = candidates.map(d => ({
+          delimiter: d,
+          count: firstLine.split(d).length
+        }))
+        counts.sort((a, b) => b.count - a.count)
+        detectedDelimiter = counts[0].delimiter
+        console.log(`[v0][RUN/STEP] Auto-detected delimiter: "${detectedDelimiter}"`)
       }
-      
-      // Guardar en metadata para siguientes chunks
+    } else {
+      // No source encontrado, usar metadata o coma por defecto
+      detectedDelimiter = runMetadata?.detected_delimiter || ","
+      console.log(`[v0][RUN/STEP] ⚠️ No source found, using: "${detectedDelimiter}"`)
+    }
+    
+    // Guardar en metadata en el primer chunk
+    if (run.processed_rows === 0) {
+      // Guardar en metadata para logging/referencia
       await supabase
         .from("import_runs")
         .update({
@@ -146,10 +155,6 @@ export async function POST(request: NextRequest) {
           }
         })
         .eq("id", run_id)
-    } else {
-      // CHUNKS SIGUIENTES: usar delimiter del metadata
-      detectedDelimiter = runMetadata?.detected_delimiter || ","
-      console.log(`[v0][RUN/STEP] Using delimiter from metadata: "${detectedDelimiter}"`)
     }
 
     // 4. Parsear CSV completo usando el delimiter correcto
