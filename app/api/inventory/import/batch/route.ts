@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import Papa from "papaparse"
 import { fetchWithAuth } from "@/lib/import/fetch-with-auth"
+import { normalizeEan } from "@/lib/ean-utils"
 
 const BATCH_SIZE = 1000 // Procesar 1000 filas por batch
 export const maxDuration = 60 // Máximo 60s por request
@@ -149,22 +150,20 @@ export async function POST(request: NextRequest) {
     let invalid_ean = 0
 
     for (const row of batchRows) {
-      // Buscar EAN/ISBN
+      // Buscar EAN/ISBN usando normalizeEan (previene notación científica)
       const eanRaw = row["ean"] || row["ean13"] || row["gtin"] || row["codigo_de_barras"]
       const isbnRaw = row["isbn"] || row["isbn13"]
       
-      let ean = eanRaw?.toString().replace(/\D/g, "") || null
-      if (!ean && isbnRaw) {
-        ean = isbnRaw.toString().replace(/\D/g, "")
-      }
+      // Usar normalizeEan que maneja correctamente números grandes
+      let ean = normalizeEan(eanRaw || isbnRaw)
 
       if (!ean) {
         missing_ean++
         continue
       }
 
-      // Validar longitud EAN (8/12/13/14 dígitos)
-      if (![8, 12, 13, 14].includes(ean.length)) {
+      // Validar longitud EAN (13 dígitos después de normalización)
+      if (ean.length !== 13) {
         invalid_ean++
         continue
       }
