@@ -86,25 +86,52 @@ export async function POST(request: NextRequest) {
 
     const csvText = await csvBlob.text()
 
-    // 3. Auto-detectar delimiter en primer chunk si no existe en metadata
+    // 3. Determinar delimiter hardcodeado según source
     const runMetadata = run.metadata as any
     let detectedDelimiter = runMetadata?.detected_delimiter || null
     
     if (!detectedDelimiter && run.processed_rows === 0) {
-      // Auto-detectar delimiter mirando la primera línea
-      const firstLine = csvText.split("\n")[0] || ""
-      const candidates = ["|", ";", "\t", ","]
-      const counts = candidates.map(d => ({
-        delimiter: d,
-        count: firstLine.split(d).length
-      }))
+      // Obtener source para determinar delimiter por URL
+      const { data: source } = await supabase
+        .from("import_sources")
+        .select("*")
+        .eq("id", run.source_id)
+        .single()
       
-      // El delimiter más probable es el que tiene más ocurrencias
-      counts.sort((a, b) => b.count - a.count)
-      detectedDelimiter = counts[0].delimiter
-      
-      console.log(`[v0][RUN/STEP] Auto-detected delimiter: "${detectedDelimiter}" (counts:`, 
-        counts.map(c => `"${c.delimiter}"=${c.count}`).join(", "), ")")
+      if (source) {
+        const url = source.url_template || ""
+        const name = source.name || ""
+        
+        // Hardcodear delimiters según proveedor:
+        // - AZETA catálogo completo (notexto): pipe "|"
+        // - AZETA stock: semicolon ";"
+        // - ARNOIA: semicolon ";"
+        if (url.includes("notexto") || name.toLowerCase().includes("total") || name.toLowerCase().includes("catalogo")) {
+          detectedDelimiter = "|"
+          console.log(`[v0][RUN/STEP] HARDCODED delimiter para AZETA catálogo: "|"`)
+        } else if (url.includes("azeta") || name.toLowerCase().includes("azeta")) {
+          detectedDelimiter = ";"
+          console.log(`[v0][RUN/STEP] HARDCODED delimiter para AZETA stock: ";"`)
+        } else if (url.includes("arnoia") || name.toLowerCase().includes("arnoia")) {
+          detectedDelimiter = ";"
+          console.log(`[v0][RUN/STEP] HARDCODED delimiter para ARNOIA: ";"`)
+        } else {
+          // Fallback: intentar auto-detectar
+          const firstLine = csvText.split("\n")[0] || ""
+          const candidates = ["|", ";", "\t", ","]
+          const counts = candidates.map(d => ({
+            delimiter: d,
+            count: firstLine.split(d).length
+          }))
+          counts.sort((a, b) => b.count - a.count)
+          detectedDelimiter = counts[0].delimiter
+          console.log(`[v0][RUN/STEP] Auto-detected delimiter for unknown source: "${detectedDelimiter}"`)
+        }
+      } else {
+        // No hay source, usar coma por defecto
+        detectedDelimiter = ","
+        console.log(`[v0][RUN/STEP] No source found, using default: ","`)
+      }
       
       // Guardar en metadata para siguientes chunks
       await supabase
@@ -120,10 +147,10 @@ export async function POST(request: NextRequest) {
       console.log(`[v0][RUN/STEP] Usando delimiter del metadata: "${detectedDelimiter}"`)
     }
     
-    // Fallback a coma si aún no hay delimiter
+    // Fallback final
     if (!detectedDelimiter) {
       detectedDelimiter = ","
-      console.log(`[v0][RUN/STEP] Warning: No se pudo detectar delimiter, usando "," por defecto`)
+      console.log(`[v0][RUN/STEP] Warning: No se pudo determinar delimiter, usando "," por defecto`)
     }
 
     // 4. Parsear CSV completo usando el delimiter correcto
