@@ -86,12 +86,44 @@ export async function POST(request: NextRequest) {
 
     const csvText = await csvBlob.text()
 
-    // 3. Obtener delimiter detectado del metadata del run (desde sanity check)
+    // 3. Auto-detectar delimiter en primer chunk si no existe en metadata
     const runMetadata = run.metadata as any
-    const detectedDelimiter = runMetadata?.detected_delimiter || ","
+    let detectedDelimiter = runMetadata?.detected_delimiter || null
     
-    if (run.processed_rows === 0) {
-      console.log(`[v0][RUN/STEP] Usando delimiter detectado en sanity check: "${detectedDelimiter}"`)
+    if (!detectedDelimiter && run.processed_rows === 0) {
+      // Auto-detectar delimiter mirando la primera línea
+      const firstLine = csvText.split("\n")[0] || ""
+      const candidates = ["|", ";", "\t", ","]
+      const counts = candidates.map(d => ({
+        delimiter: d,
+        count: firstLine.split(d).length
+      }))
+      
+      // El delimiter más probable es el que tiene más ocurrencias
+      counts.sort((a, b) => b.count - a.count)
+      detectedDelimiter = counts[0].delimiter
+      
+      console.log(`[v0][RUN/STEP] Auto-detected delimiter: "${detectedDelimiter}" (counts:`, 
+        counts.map(c => `"${c.delimiter}"=${c.count}`).join(", "), ")")
+      
+      // Guardar en metadata para siguientes chunks
+      await supabase
+        .from("import_runs")
+        .update({
+          metadata: {
+            ...runMetadata,
+            detected_delimiter: detectedDelimiter
+          }
+        })
+        .eq("id", run_id)
+    } else if (run.processed_rows === 0) {
+      console.log(`[v0][RUN/STEP] Usando delimiter del metadata: "${detectedDelimiter}"`)
+    }
+    
+    // Fallback a coma si aún no hay delimiter
+    if (!detectedDelimiter) {
+      detectedDelimiter = ","
+      console.log(`[v0][RUN/STEP] Warning: No se pudo detectar delimiter, usando "," por defecto`)
     }
 
     // 4. Parsear CSV completo usando el delimiter correcto
