@@ -3,9 +3,10 @@ import { createClient } from "@/lib/supabase/server"
 import Papa from "papaparse"
 import { fetchWithAuth } from "@/lib/import/fetch-with-auth"
 import { normalizeEan } from "@/lib/ean-utils"
+import { ImportHeartbeat } from "@/lib/import/heartbeat"
 
-const BATCH_SIZE = 1000 // Procesar 1000 filas por batch
-export const maxDuration = 60 // Máximo 60s por request
+const BATCH_SIZE = 5000 // Procesar 5000 filas por batch (optimizado)
+export const maxDuration = 300 // Máximo 300s (5 minutos) por request
 
 /**
  * Normaliza un header: trim + remove BOM + lowercase + remove accents
@@ -40,12 +41,21 @@ function detectDelimiter(firstLine: string): string {
  */
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
+  const heartbeat = new ImportHeartbeat(null) // Se inicializará después
   
   try {
     const { sourceId, offset = 0, mode = "upsert", historyId = null } = await request.json()
 
     if (!sourceId) {
       return NextResponse.json({ error: "sourceId es requerido" }, { status: 400 })
+    }
+
+    // Iniciar heartbeat si tenemos historyId
+    if (historyId) {
+      const hb = new ImportHeartbeat(historyId)
+      hb.start()
+      // Guardar referencia para limpieza
+      Object.assign(heartbeat, hb)
     }
 
     const supabase = await createClient()
@@ -191,7 +201,7 @@ export async function POST(request: NextRequest) {
 
     const rows_processed = productsToInsert.length
 
-    // 8. Upsert en DB
+    // 8. Upsert en DB - chunked para mejor performance
     let created = 0
     let updated = 0
     let upsert_attempted = 0
@@ -201,17 +211,32 @@ export async function POST(request: NextRequest) {
     if (productsToInsert.length > 0) {
       upsert_attempted = productsToInsert.length
       
-      const { error } = await supabase
-        .from("products")
-        .upsert(productsToInsert, { onConflict: "ean" })
+      // Dividir en chunks de 1000 para evitar límites de Supabase
+      const UPSERT_CHUNK_SIZE = 1000
+      const chunks = []
+      for (let i = 0; i < productsToInsert.length; i += UPSERT_CHUNK_SIZE) {
+        chunks.push(productsToInsert.slice(i, i + UPSERT_CHUNK_SIZE))
+      }
 
-      if (error) {
-        console.error(`[v0][BATCH] Upsert error:`, error)
-        last_error = error.message
-        last_reason = "upsert_failed"
-      } else {
-        // Simplificado: contar todos como updated (o podríamos SELECT antes para distinguir)
-        updated = productsToInsert.length
+      console.log(`[v0][BATCH] Upserting ${productsToInsert.length} products in ${chunks.length} chunks`)
+
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i]
+        const { error } = await supabase
+          .from("products")
+          .upsert(chunk, { onConflict: "ean" })
+
+        if (error) {
+          console.error(`[v0][BATCH] Upsert error in chunk ${i + 1}/${chunks.length}:`, error)
+          last_error = error.message
+          last_reason = "upsert_failed"
+          break
+        } else {
+          updated += chunk.length
+        }
+      }
+
+      if (!last_error) {
         last_reason = "success"
       }
     } else {
@@ -267,6 +292,9 @@ export async function POST(request: NextRequest) {
 
     const totalElapsed = Date.now() - startTime
 
+    // Detener heartbeat
+    heartbeat.stop()
+
     // 11. Respuesta
     return NextResponse.json({
       ok: true,
@@ -294,6 +322,7 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     console.error("[v0][BATCH] Fatal error:", error)
+    heartbeat.stop() // Limpiar heartbeat en caso de error
     return NextResponse.json({ 
       error: error.message || "Error interno" 
     }, { status: 500 })
