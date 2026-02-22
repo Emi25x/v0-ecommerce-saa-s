@@ -93,17 +93,17 @@ export async function POST(request: NextRequest) {
     let detectedDelimiter: string
     
     // OBTENER SOURCE SIEMPRE para determinar delimiter
-    const { data: source } = await supabase
+    const { data: sourceForDelimiter } = await supabase
       .from("import_sources")
       .select("*")
       .eq("id", run.source_id)
       .single()
     
-    console.log(`[v0][RUN/STEP] 🔍 Source fetched: ${source ? source.name : 'NULL'}`)
+    console.log(`[v0][RUN/STEP] 🔍 Source fetched: ${sourceForDelimiter ? sourceForDelimiter.name : 'NULL'}`)
     
-    if (source) {
-      const url = source.url_template || ""
-      const name = source.name || ""
+    if (sourceForDelimiter) {
+      const url = sourceForDelimiter.url_template || ""
+      const name = sourceForDelimiter.name || ""
       const nameLower = name.toLowerCase()
       
       console.log(`[v0][RUN/STEP] 🔍 Source: "${name}", URL: ${url}`)
@@ -185,13 +185,13 @@ export async function POST(request: NextRequest) {
         console.log(`[v0][DEBUG] Headers originales: ${headersOriginal.join(", ")}`)
         
         // Abortar si es AZETA y no tiene EAN
-        const { data: source } = await supabase
+        const { data: sourceForValidation } = await supabase
           .from("import_sources")
           .select("name")
           .eq("id", run.source_id)
           .single()
         
-        if (source?.name.toLowerCase().includes("azeta")) {
+        if (sourceForValidation?.name.toLowerCase().includes("azeta")) {
           throw new Error(`CSV de Azeta no parseado correctamente (delimiter incorrecto). Esperado '|'. Headers detectados: ${headersOriginal.slice(0, 5).join(", ")}`)
         }
       } else {
@@ -259,17 +259,17 @@ export async function POST(request: NextRequest) {
     console.log(`[v0][RUN/STEP] Procesando ${chunk.length} filas`)
 
     // 7. Obtener source para mapping
-    const { data: source } = await supabase
+    const { data: sourceForMapping } = await supabase
       .from("import_sources")
       .select("*")
       .eq("id", run.source_id)
       .single()
 
-    if (!source) {
+    if (!sourceForMapping) {
       return NextResponse.json({ error: "Source no encontrada" }, { status: 404 })
     }
 
-    const mapping = source.column_mapping || {}
+    const mapping = sourceForMapping.column_mapping || {}
 
     // 8. Ya no necesitamos auto-detectar porque los headers están normalizados
     // Accedemos directamente usando headers normalizados: "ean", "isbn", "titulo", etc.
