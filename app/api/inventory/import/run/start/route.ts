@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { fetchWithAuth } from "@/lib/import/fetch-with-auth"
+import { extractFirstCSVFromZip, isZipFile } from "@/lib/import/extract-zip"
 import crypto from "crypto"
 
 export const maxDuration = 300 // 5 minutos para descargas grandes
@@ -53,9 +54,20 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
 
-    const csvText = await fileResponse.text()
+    // Detectar si es ZIP y extraer CSV si es necesario
+    const fileBuffer = Buffer.from(await fileResponse.arrayBuffer())
+    let csvText: string
+    
+    if (isZipFile(fileBuffer)) {
+      console.log(`[v0][RUN/START] Archivo ZIP detectado, extrayendo CSV...`)
+      const csvBuffer = await extractFirstCSVFromZip(fileBuffer)
+      csvText = csvBuffer.toString('utf-8')
+    } else {
+      csvText = fileBuffer.toString('utf-8')
+    }
+    
     const elapsed = Date.now() - startTime
-    console.log(`[v0][RUN/START] CSV descargado en ${elapsed}ms, ${csvText.length} chars`)
+    console.log(`[v0][RUN/START] CSV descargado/extraído en ${elapsed}ms, ${csvText.length} chars`)
 
     // 3. Upload a Storage (sin procesar el CSV aún)
     const runId = crypto.randomUUID()

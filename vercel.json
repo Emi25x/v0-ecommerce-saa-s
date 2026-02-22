@@ -53,6 +53,10 @@
       "schedule": "0 */4 * * *"
     },
     {
+      "path": "/api/azeta/update-stock",
+      "schedule": "0 */4 * * *"
+    },
+    {
       "path": "/api/arnoia/import-stock",
       "schedule": "0 */3 * * *"
     }
