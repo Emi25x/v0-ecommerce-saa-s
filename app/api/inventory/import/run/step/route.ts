@@ -29,6 +29,8 @@ function normalizeHeader(header: string): string {
  * Procesa UN chunk de filas desde Storage (resumible, anti-timeout)
  */
 export async function POST(request: NextRequest) {
+  console.log("[v0][RUN/STEP] ========== VERSION 2024-DELIMITER-FIX ==========")
+  
   try {
     const supabase = await createClient()
     const body = await request.json()
