@@ -15,6 +15,7 @@ export const maxDuration = 300 // 5 minutos para descargas grandes
  * 4. Retorna inmediatamente (sanity check se hace en primer step)
  */
 export async function POST(request: NextRequest) {
+  console.log("[v0][RUN/START] ========== VERSION 2024-ZIP-FIX ==========")
   const startTime = Date.now()
   
   try {
