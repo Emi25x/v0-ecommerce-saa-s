@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 
 export async function GET(request: NextRequest) {
-  // URL correcta con credenciales
-  const baseUrl = "https://www.azetadistribuciones.es/servicios_web/azeta_catalogo_notexto_csv.csv.zip"
-  const user = "680899"
-  const password = "badajoz24"
-  const url = `${baseUrl}?user=${user}&password=${password}`
+  // URL CORRECTA del catálogo total según documentación de AZETA
+  const url = "https://www.azetadistribuciones.es/servicios_web/csv.php?user=680899&password=badajoz24"
   
-  console.log("[v0] Fetching AZETA file from:", baseUrl)
+  console.log("[v0] Fetching AZETA catalog from:", url)
   
   try {
     const response = await fetch(url)
