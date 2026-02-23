@@ -58,11 +58,26 @@ export async function POST(request: NextRequest) {
     const fileBuffer = Buffer.from(await fileResponse.arrayBuffer())
     let csvText: string
     
-    if (isZipFile(fileBuffer)) {
-      console.log(`[v0][RUN/START] Archivo ZIP detectado, extrayendo CSV...`)
-      const csvBuffer = await extractFirstCSVFromZip(fileBuffer)
-      csvText = csvBuffer.toString('utf-8')
+    // Debug crítico: mostrar primeros bytes
+    const firstBytes = fileBuffer.slice(0, 10).toString('hex')
+    console.log(`[v0][RUN/START] 🔍 Primeros bytes del archivo: ${firstBytes}`)
+    console.log(`[v0][RUN/START] 🔍 Content-Type: ${fileResponse.headers.get('content-type')}`)
+    
+    const isZip = isZipFile(fileBuffer)
+    console.log(`[v0][RUN/START] 🔍 isZipFile detectado: ${isZip}`)
+    
+    if (isZip) {
+      console.log(`[v0][RUN/START] ✅ Archivo ZIP detectado, extrayendo CSV...`)
+      try {
+        const csvBuffer = await extractFirstCSVFromZip(fileBuffer)
+        csvText = csvBuffer.toString('utf-8')
+        console.log(`[v0][RUN/START] ✅ CSV extraído exitosamente: ${csvText.length} chars`)
+      } catch (error: any) {
+        console.error(`[v0][RUN/START] ❌ Error extrayendo ZIP:`, error.message)
+        throw new Error(`Error extrayendo ZIP: ${error.message}`)
+      }
     } else {
+      console.log(`[v0][RUN/START] 📄 Archivo CSV directo (no ZIP)`)
       csvText = fileBuffer.toString('utf-8')
     }
     
