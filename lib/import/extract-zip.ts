@@ -1,49 +1,60 @@
-import { unzipSync } from "node:zlib"
-import { parse as parsePath } from "node:path"
+import { inflateRawSync } from "node:zlib"
 
 /**
  * Extrae el primer archivo .csv de un buffer ZIP
- * Usa implementación simple con unzipSync - asume ZIP con un solo archivo
+ * Parser manual simple de formato ZIP para evitar dependencias externas
  * @param zipBuffer Buffer del archivo ZIP descargado
  * @returns Buffer del CSV extraído
  */
 export async function extractFirstCSVFromZip(zipBuffer: Buffer): Promise<Buffer> {
   try {
-    // Intentar descomprimir directamente (funciona para ZIPs simples con deflate)
-    // NOTA: Esta es una implementación simplificada que asume el CSV es el contenido principal
-    // Para ZIPs más complejos, necesitaríamos una librería de parsing completo
-    
-    // Buscar inicio de datos comprimidos en el archivo ZIP
-    // ZIP format: local file header (30 bytes min) + file name + extra + compressed data
+    // Buscar local file header: 0x04034b50
     let offset = 0
     
-    // Buscar signature del local file header: 0x04034b50
-    while (offset < zipBuffer.length - 4) {
-      if (zipBuffer[offset] === 0x50 && 
-          zipBuffer[offset + 1] === 0x4B &&
-          zipBuffer[offset + 2] === 0x03 &&
-          zipBuffer[offset + 3] === 0x04) {
-        
-        // Encontrado header, leer offsets
+    while (offset < zipBuffer.length - 30) {
+      // Verificar signature del local file header
+      if (zipBuffer.readUInt32LE(offset) === 0x04034b50) {
+        // Leer header fields
+        const compressionMethod = zipBuffer.readUInt16LE(offset + 8)
+        const compressedSize = zipBuffer.readUInt32LE(offset + 18)
+        const uncompressedSize = zipBuffer.readUInt32LE(offset + 22)
         const fileNameLength = zipBuffer.readUInt16LE(offset + 26)
         const extraFieldLength = zipBuffer.readUInt16LE(offset + 28)
-        const compressedSize = zipBuffer.readUInt32LE(offset + 18)
         
-        // Offset a datos comprimidos
-        const dataOffset = offset + 30 + fileNameLength + extraFieldLength
-        const compressedData = zipBuffer.subarray(dataOffset, dataOffset + compressedSize)
+        // Leer nombre del archivo
+        const fileName = zipBuffer.toString('utf-8', offset + 30, offset + 30 + fileNameLength)
         
-        // Descomprimir usando deflate
-        const decompressed = unzipSync(compressedData)
-        console.log(`[v0] CSV extraído del ZIP: ${decompressed.length} bytes`)
-        return decompressed
+        // Verificar que sea un CSV
+        if (fileName.toLowerCase().endsWith('.csv')) {
+          console.log(`[v0] Encontrado CSV en ZIP: ${fileName} (${uncompressedSize} bytes)`)
+          
+          // Offset a los datos comprimidos
+          const dataStart = offset + 30 + fileNameLength + extraFieldLength
+          const compressedData = zipBuffer.subarray(dataStart, dataStart + compressedSize)
+          
+          // Descomprimir según método
+          if (compressionMethod === 0) {
+            // Sin compresión (stored)
+            console.log(`[v0] CSV sin compresión, retornando directamente`)
+            return compressedData
+          } else if (compressionMethod === 8) {
+            // DEFLATE
+            console.log(`[v0] Descomprimiendo con DEFLATE...`)
+            const decompressed = inflateRawSync(compressedData)
+            console.log(`[v0] CSV extraído: ${decompressed.length} bytes`)
+            return decompressed
+          } else {
+            throw new Error(`Método de compresión no soportado: ${compressionMethod}`)
+          }
+        }
       }
       offset++
     }
     
-    throw new Error("No se pudo encontrar datos comprimidos en el ZIP")
+    throw new Error("No se encontró archivo CSV en el ZIP")
   } catch (error: any) {
-    throw new Error(`Error al extraer CSV del ZIP: ${error.message}`)
+    console.error(`[v0] Error en extractFirstCSVFromZip:`, error)
+    throw new Error(`Error extrayendo CSV del ZIP: ${error.message}`)
   }
 }
 
