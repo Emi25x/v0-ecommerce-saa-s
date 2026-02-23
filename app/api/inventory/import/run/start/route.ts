@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { fetchWithAuth } from "@/lib/import/fetch-with-auth"
-import { extractFirstCSVFromZip, isZipFile } from "@/lib/import/extract-zip"
 import crypto from "crypto"
 
 export const maxDuration = 300 // 5 minutos para descargas grandes
@@ -55,35 +54,11 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
 
-    // Detectar si es ZIP y extraer CSV si es necesario
-    const fileBuffer = Buffer.from(await fileResponse.arrayBuffer())
-    let csvText: string
-    
-    // Debug crítico: mostrar primeros bytes
-    const firstBytes = fileBuffer.slice(0, 10).toString('hex')
-    console.log(`[v0][RUN/START] 🔍 Primeros bytes del archivo: ${firstBytes}`)
-    console.log(`[v0][RUN/START] 🔍 Content-Type: ${fileResponse.headers.get('content-type')}`)
-    
-    const isZip = isZipFile(fileBuffer)
-    console.log(`[v0][RUN/START] 🔍 isZipFile detectado: ${isZip}`)
-    
-    if (isZip) {
-      console.log(`[v0][RUN/START] ✅ Archivo ZIP detectado, extrayendo CSV...`)
-      try {
-        const csvBuffer = await extractFirstCSVFromZip(fileBuffer)
-        csvText = csvBuffer.toString('utf-8')
-        console.log(`[v0][RUN/START] ✅ CSV extraído exitosamente: ${csvText.length} chars`)
-      } catch (error: any) {
-        console.error(`[v0][RUN/START] ❌ Error extrayendo ZIP:`, error.message)
-        throw new Error(`Error extrayendo ZIP: ${error.message}`)
-      }
-    } else {
-      console.log(`[v0][RUN/START] 📄 Archivo CSV directo (no ZIP)`)
-      csvText = fileBuffer.toString('utf-8')
-    }
+    // Descargar archivo como texto (asume CSV directo, no ZIP)
+    const csvText = await fileResponse.text()
     
     const elapsed = Date.now() - startTime
-    console.log(`[v0][RUN/START] CSV descargado/extraído en ${elapsed}ms, ${csvText.length} chars`)
+    console.log(`[v0][RUN/START] CSV descargado en ${elapsed}ms, ${csvText.length} chars`)
 
     // 3. Upload a Storage (sin procesar el CSV aún)
     const runId = crypto.randomUUID()
