@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { fetchWithAuth } from "@/lib/import/fetch-with-auth"
+import { inflateRawSync } from "node:zlib"
 import crypto from "crypto"
 
 export const maxDuration = 300 // 5 minutos para descargas grandes
@@ -54,11 +55,75 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
 
-    // Descargar archivo como texto (asume CSV directo, no ZIP)
-    const csvText = await fileResponse.text()
+    // Descargar como buffer para detectar si es ZIP
+    const fileBuffer = Buffer.from(await fileResponse.arrayBuffer())
+    console.log(`[v0][RUN/START] Archivo descargado: ${fileBuffer.length} bytes`)
+    
+    // Detectar si es ZIP (magic bytes: PK = 0x50 0x4B)
+    const isZip = fileBuffer.length >= 4 && fileBuffer[0] === 0x50 && fileBuffer[1] === 0x4B
+    console.log(`[v0][RUN/START] Es ZIP: ${isZip}`)
+    
+    let csvText: string
+    
+    if (isZip) {
+      console.log(`[v0][RUN/START] Extrayendo CSV del ZIP...`)
+      try {
+        // Buscar local file header: 0x04034b50
+        let offset = 0
+        let found = false
+        
+        while (offset < fileBuffer.length - 30 && !found) {
+          if (fileBuffer.readUInt32LE(offset) === 0x04034b50) {
+            // Leer header fields
+            const compressionMethod = fileBuffer.readUInt16LE(offset + 8)
+            const compressedSize = fileBuffer.readUInt32LE(offset + 18)
+            const fileNameLength = fileBuffer.readUInt16LE(offset + 26)
+            const extraFieldLength = fileBuffer.readUInt16LE(offset + 28)
+            
+            // Leer nombre del archivo
+            const fileName = fileBuffer.toString('utf-8', offset + 30, offset + 30 + fileNameLength)
+            console.log(`[v0][RUN/START] Archivo encontrado en ZIP: ${fileName}`)
+            
+            // Verificar que sea CSV
+            if (fileName.toLowerCase().endsWith('.csv')) {
+              const dataStart = offset + 30 + fileNameLength + extraFieldLength
+              const compressedData = fileBuffer.subarray(dataStart, dataStart + compressedSize)
+              
+              if (compressionMethod === 0) {
+                // Sin compresión
+                csvText = compressedData.toString('utf-8')
+                console.log(`[v0][RUN/START] CSV extraído (sin compresión): ${csvText.length} chars`)
+              } else if (compressionMethod === 8) {
+                // DEFLATE
+                const decompressed = inflateRawSync(compressedData)
+                csvText = decompressed.toString('utf-8')
+                console.log(`[v0][RUN/START] CSV extraído (DEFLATE): ${csvText.length} chars`)
+              } else {
+                throw new Error(`Método de compresión no soportado: ${compressionMethod}`)
+              }
+              found = true
+            }
+          }
+          offset++
+        }
+        
+        if (!found) {
+          throw new Error("No se encontró archivo CSV en el ZIP")
+        }
+      } catch (error: any) {
+        console.error(`[v0][RUN/START] Error extrayendo ZIP:`, error)
+        return NextResponse.json({ 
+          error: `Error extrayendo ZIP: ${error.message}` 
+        }, { status: 500 })
+      }
+    } else {
+      // Archivo CSV directo
+      csvText = fileBuffer.toString('utf-8')
+      console.log(`[v0][RUN/START] CSV directo: ${csvText.length} chars`)
+    }
     
     const elapsed = Date.now() - startTime
-    console.log(`[v0][RUN/START] CSV descargado en ${elapsed}ms, ${csvText.length} chars`)
+    console.log(`[v0][RUN/START] Procesamiento completado en ${elapsed}ms`)
 
     // 3. Upload a Storage (sin procesar el CSV aún)
     const runId = crypto.randomUUID()
