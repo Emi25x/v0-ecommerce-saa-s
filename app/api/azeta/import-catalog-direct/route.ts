@@ -68,7 +68,17 @@ export async function POST(_request: NextRequest) {
       return NextResponse.json({ error: `Error ${res.status} del servidor AZETA` }, { status: 502 })
     }
 
-    const fileBuffer = Buffer.from(await res.arrayBuffer())
+    // Descargar en chunks para evitar límite de memoria de 50MB de Vercel
+    const chunks: Uint8Array[] = []
+    const reader = res.body!.getReader()
+    let totalBytes = 0
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
+      totalBytes += value.length
+    }
+    const fileBuffer = Buffer.concat(chunks)
     console.log(`[AZETA] Descargado: ${(fileBuffer.length / 1024 / 1024).toFixed(1)}MB en ${((Date.now() - startTime) / 1000).toFixed(1)}s`)
 
     // Detectar ZIP
