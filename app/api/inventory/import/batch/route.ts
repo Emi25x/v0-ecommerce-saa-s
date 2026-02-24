@@ -254,18 +254,30 @@ export async function POST(request: NextRequest) {
       const title = row["titulo"] || row["title"] || ean
       const author = row["autor"] || row["author"] || null
       const priceRaw = row["pvp"] || row["precio"] || row["price"] || "0"
-      const price = parseFloat(priceRaw.toString().replace(",", ".")) || 0
+      const price = parseFloat(priceRaw.toString().replace(",", ".").replace(/[^\d.]/g, "")) || null
+
+      // Debug first row to inspect exact keys from PapaParse
+      if (productsToInsert.length === 0) {
+        console.log(`[v0][BATCH][MAPEO] Keys:`, Object.keys(row).join(" | "))
+        console.log(`[v0][BATCH][MAPEO] pvp="${row["pvp"]}" precio="${row["precio"]}" -> price=${price}`)
+        console.log(`[v0][BATCH][MAPEO] sinopsis(html)="${row["sinopsis(html)"]?.substring(0,50)}"`)
+        console.log(`[v0][BATCH][MAPEO] ano_edicion="${row["ano_edicion"]}" url="${row["url"]?.substring(0,50)}"`)
+      }
+
       // Arnoia Act: campo "url" contiene la imagen de portada
       const imageUrl = row["url"] || row["portada"] || row["imagen"] || row["image"] || null
-      const stock = parseInt(row["stock"] || "0", 10)
+      const stock = parseInt(row["stock"] || "0", 10) || null
       // Arnoia Act: "sinopsis(html)" o "sinopsis" para descripcion
-      const description = row["sinopsis(html)"] || row["sinopsis"] || row["descripcion"] || row["description"] || null
+      // PapaParse puede cambiar "(html)" - buscar por todas las variantes
+      const descKey = Object.keys(row).find(k => k.toLowerCase().includes("sinopsis"))
+      const description = (descKey ? row[descKey] : null) || row["descripcion"] || row["description"] || null
       // Arnoia Act: "editorial" para brand/editorial
       const brand = row["editorial"] || row["marca"] || row["brand"] || null
       // Arnoia Act: "idioma" para language
       const language = row["idioma"] || row["language"] || null
-      // Arnoia Act: "ano_edicion" para year_edition
-      const yearEdition = row["ano_edicion"] || row["year_edition"] || null
+      // Arnoia Act: "ano_edicion" para year_edition - buscar variantes
+      const yearKey = Object.keys(row).find(k => k.toLowerCase().includes("ano") || k.toLowerCase().includes("año"))
+      const yearEdition = (yearKey ? row[yearKey] : null) || row["year_edition"] || null
       // Arnoia Act: "codigo_interno" para internal_code
       const internalCode = row["codigo_interno"] || row["internal_code"] || null
 
@@ -387,12 +399,19 @@ export async function POST(request: NextRequest) {
             .upsert(chunkToUpsert, { onConflict: "ean" })
 
           if (chunkError) {
-            console.error(`[v0][BATCH] Upsert error in chunk ${chunkIndex + 1}/${chunks.length}:`, chunkError)
+            console.error(`[v0][BATCH] Upsert error in chunk ${chunkIndex + 1}/${chunks.length}:`, chunkError.message)
             last_error = chunkError.message
             last_reason = "upsert_failed"
-            break
+            // No break - continuar con el siguiente chunk
           } else {
-            updated += chunkToUpsert.length
+            // Separar creados vs actualizados usando el eanToSku map
+            for (const p of chunkToUpsert) {
+              if (eanToSku.has(p.ean)) {
+                updated++
+              } else {
+                created++
+              }
+            }
           }
         }
       }
