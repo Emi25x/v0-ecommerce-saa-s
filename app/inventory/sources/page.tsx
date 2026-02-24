@@ -6,7 +6,7 @@ import { createBrowserClient } from "@supabase/ssr"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Calendar, Clock, FileText, Play, Settings, Trash2, Upload, History, CheckCircle2, ChevronDown, ChevronUp, StopCircle, Hourglass, X, Loader2, RefreshCw, Database, ExternalLink, ArrowRight, Copy, AlertTriangle, Search } from 'lucide-react' // Importar AlertTriangle y DollarSign
+import { Calendar, Clock, FileText, Play, Settings, Trash2, Upload, History, CheckCircle2, ChevronDown, ChevronUp, StopCircle, Hourglass, X, Loader2, RefreshCw, Database, ExternalLink, ArrowRight, Copy, AlertTriangle, Search, Download, RotateCcw } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -198,8 +198,59 @@ const App = () => {
   })
 
   const [importMode, setImportMode] = useState<"update" | "overwrite" | "skip">("update")
+  const [exportingConfig, setExportingConfig] = useState(false)
+  const [restoringConfig, setRestoringConfig] = useState(false)
 
-  const isExecutingRef = useRef(false) // Renamed from executingRef
+  const isExecutingRef = useRef(false)
+
+  async function handleExportConfig() {
+    setExportingConfig(true)
+    try {
+      const res = await fetch("/api/inventory/sources/export-config")
+      if (!res.ok) throw new Error(`Error ${res.status}`)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `import_sources_${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast({ title: "Configuración exportada", description: "El archivo JSON fue descargado." })
+    } catch (e: any) {
+      toast({ title: "Error al exportar", description: e.message, variant: "destructive" })
+    } finally {
+      setExportingConfig(false)
+    }
+  }
+
+  async function handleRestoreConfig() {
+    const input = document.createElement("input")
+    input.type = "file"
+    input.accept = ".json,application/json"
+    input.onchange = async (e: any) => {
+      const file = e.target.files?.[0]
+      if (!file) return
+      setRestoringConfig(true)
+      try {
+        const text = await file.text()
+        const json = JSON.parse(text)
+        const res = await fetch("/api/inventory/sources/import-config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(json),
+        })
+        const result = await res.json()
+        if (!res.ok) throw new Error(result.error || `Error ${res.status}`)
+        toast({ title: "Config restaurada", description: `${result.restored} fuentes actualizadas: ${result.names.join(", ")}` })
+        loadSources()
+      } catch (e: any) {
+        toast({ title: "Error al restaurar", description: e.message, variant: "destructive" })
+      } finally {
+        setRestoringConfig(false)
+      }
+    }
+    input.click()
+  }
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -1215,6 +1266,14 @@ const App = () => {
           <p className="text-muted-foreground">Administra tus fuentes de datos y configuraciones de importación</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={handleExportConfig} disabled={exportingConfig}>
+            {exportingConfig ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Exportar config
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleRestoreConfig} disabled={restoringConfig}>
+            {restoringConfig ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+            Restaurar config
+          </Button>
           <Button variant="outline" size="sm" onClick={handleRunCron} disabled={runningCron}>
             {runningCron ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
             Ejecutar Cron
