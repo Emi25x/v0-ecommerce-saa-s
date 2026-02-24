@@ -253,9 +253,21 @@ export async function POST(request: NextRequest) {
 
       const title = row["titulo"] || row["title"] || ean
       const author = row["autor"] || row["author"] || null
-      const price = parseFloat(row["pvp"]?.replace(",", ".") || row["precio"]?.replace(",", ".") || "0")
-      const imageUrl = row["portada"] || row["imagen"] || row["image"] || null
+      const priceRaw = row["pvp"] || row["precio"] || row["price"] || "0"
+      const price = parseFloat(priceRaw.toString().replace(",", ".")) || 0
+      // Arnoia Act: campo "url" contiene la imagen de portada
+      const imageUrl = row["url"] || row["portada"] || row["imagen"] || row["image"] || null
       const stock = parseInt(row["stock"] || "0", 10)
+      // Arnoia Act: "sinopsis(html)" o "sinopsis" para descripcion
+      const description = row["sinopsis(html)"] || row["sinopsis"] || row["descripcion"] || row["description"] || null
+      // Arnoia Act: "editorial" para brand/editorial
+      const brand = row["editorial"] || row["marca"] || row["brand"] || null
+      // Arnoia Act: "idioma" para language
+      const language = row["idioma"] || row["language"] || null
+      // Arnoia Act: "ano_edicion" para year_edition
+      const yearEdition = row["ano_edicion"] || row["year_edition"] || null
+      // Arnoia Act: "codigo_interno" para internal_code
+      const internalCode = row["codigo_interno"] || row["internal_code"] || null
 
       productsToInsert.push({
         ean,
@@ -265,9 +277,12 @@ export async function POST(request: NextRequest) {
         cost_price: price,
         image_url: imageUrl,
         stock,
-        brand: row["marca"] || row["brand"] || null,
+        brand,
         category: row["categoria"] || row["category"] || null,
-        description: row["descripcion"] || row["description"] || null,
+        description,
+        language,
+        year_edition: yearEdition,
+        internal_code: internalCode,
       })
     }
 
