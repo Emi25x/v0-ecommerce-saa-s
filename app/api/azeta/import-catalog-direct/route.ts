@@ -58,15 +58,36 @@ export async function POST(_request: NextRequest) {
   try {
     const url = "https://www.azetadistribuciones.es/servicios_web/csv.php?user=680899&password=badajoz24"
 
-    // Descargar archivo
-    const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; catalog-importer/1.0)", "Accept": "*/*" },
+    // Descargar archivo — AZETA requiere POST (devuelve 405 con GET)
+    console.log(`[AZETA] Intentando POST a ${url}`)
+    let res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "es-ES,es;q=0.9",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
     })
+    // Si POST falla, intentar GET
+    if (!res.ok && res.status === 405) {
+      console.log(`[AZETA] POST devolvió 405, intentando GET...`)
+      res = await fetch(url, {
+        method: "GET",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "es-ES,es;q=0.9",
+        },
+      })
+    }
 
     console.log(`[AZETA] HTTP ${res.status}, Content-Type: ${res.headers.get("content-type")}, Size: ${res.headers.get("content-length")}`)
 
     if (!res.ok) {
-      return NextResponse.json({ error: `HTTP ${res.status}: ${res.statusText}` }, { status: 500 })
+      const body = await res.text().catch(() => "")
+      console.error(`[AZETA] Error HTTP ${res.status}: ${res.statusText}. Body: ${body.substring(0, 300)}`)
+      return NextResponse.json({ error: `HTTP ${res.status}: ${res.statusText}`, body: body.substring(0, 300) }, { status: 500 })
     }
 
     const fileBuffer = Buffer.from(await res.arrayBuffer())

@@ -345,9 +345,21 @@ export async function POST(request: NextRequest) {
         if (isStockImport) {
           // Stock: un único UPDATE por EAN usando CASE WHEN para todo el chunk
           // Construir arrays de EANs, stocks y precios para pasar al rpc
-          const eans = deduplicatedChunk.map(p => p.ean)
-          const stocks = deduplicatedChunk.map(p => p.stock ?? null)
-          const prices = deduplicatedChunk.map(p => p.cost_price ?? null)
+          const eans = deduplicatedChunk.map(p => String(p.ean))
+          const stocks = deduplicatedChunk.map(p => {
+            const s = p.stock
+            if (s === null || s === undefined) return 0
+            const n = parseInt(String(s), 10)
+            return isNaN(n) ? 0 : n
+          })
+          const prices = deduplicatedChunk.map(p => {
+            const pr = p.cost_price
+            if (pr === null || pr === undefined) return null
+            const n = parseFloat(String(pr).replace(",", "."))
+            return isNaN(n) ? null : n
+          })
+
+          console.log(`[v0][BATCH][STOCK] RPC bulk_update_stock_price: ${eans.length} EANs, sample EAN=${eans[0]}, stock=${stocks[0]}, price=${prices[0]}`)
 
           const { error: rpcError, data: rpcData } = await supabase.rpc("bulk_update_stock_price", {
             p_eans: eans,
