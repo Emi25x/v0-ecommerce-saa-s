@@ -1,6 +1,6 @@
 -- bulk_update_azeta_stock
--- Actualiza stock_by_source.azeta para un batch de EANs en una sola query
--- Retorna conteo de actualizados y no encontrados
+-- Actualiza stock para un batch de EANs en una sola query
+-- Retorna conteo de actualizados
 
 CREATE OR REPLACE FUNCTION bulk_update_azeta_stock(
   p_eans TEXT[],
@@ -20,7 +20,6 @@ BEGIN
     RETURN json_build_object('updated', 0, 'not_found', 0);
   END IF;
 
-  -- Actualizar stock_by_source.azeta para todos los EANs del batch
   WITH input AS (
     SELECT
       p_eans[i] AS ean,
@@ -29,7 +28,9 @@ BEGIN
   ),
   updated AS (
     UPDATE products p
-    SET stock_by_source = COALESCE(p.stock_by_source, '{}'::jsonb) || jsonb_build_object('azeta', input.stock)
+    SET
+      stock      = input.stock,
+      updated_at = NOW()
     FROM input
     WHERE p.ean = input.ean
     RETURNING p.ean
@@ -37,12 +38,11 @@ BEGIN
   SELECT COUNT(*) INTO v_updated FROM updated;
 
   v_not_found := v_total - v_updated;
-
   RETURN json_build_object('updated', v_updated, 'not_found', v_not_found);
 END;
 $$;
 
--- bulk_update_stock_price (para Arnoia Stock - actualiza stock_by_source.arnoia y cost_price)
+-- bulk_update_stock_price (para Arnoia Stock - actualiza stock y cost_price)
 CREATE OR REPLACE FUNCTION bulk_update_stock_price(
   p_eans TEXT[],
   p_stocks INT[],
@@ -71,8 +71,9 @@ BEGIN
   updated AS (
     UPDATE products p
     SET
-      stock_by_source = COALESCE(p.stock_by_source, '{}'::jsonb) || jsonb_build_object('arnoia', input.stock),
-      cost_price = CASE WHEN input.price IS NOT NULL AND input.price > 0 THEN input.price ELSE p.cost_price END
+      stock      = input.stock,
+      cost_price = CASE WHEN input.price IS NOT NULL AND input.price > 0 THEN input.price ELSE p.cost_price END,
+      updated_at = NOW()
     FROM input
     WHERE p.ean = input.ean
     RETURNING p.ean
