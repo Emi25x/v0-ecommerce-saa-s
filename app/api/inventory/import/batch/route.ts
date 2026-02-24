@@ -351,9 +351,10 @@ export async function POST(request: NextRequest) {
           }
         } else {
           // Catálogos: upsert normal (crea o actualiza)
+          // Usar SKU existente si el producto ya existe, sino usar el EAN como SKU
           chunkToUpsert = deduplicatedChunk.map(p => ({
             ...p,
-            sku: eanToSku.get(p.ean) || `${p.ean}-${Date.now().toString(36)}`
+            sku: eanToSku.get(p.ean) || p.ean
           }))
         }
 
