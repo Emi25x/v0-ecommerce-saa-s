@@ -256,19 +256,13 @@ export async function POST(request: NextRequest) {
       const price = parseFloat(row["pvp"]?.replace(",", ".") || row["precio"]?.replace(",", ".") || "0")
       const imageUrl = row["portada"] || row["imagen"] || row["image"] || null
       const stock = parseInt(row["stock"] || "0", 10)
-      
-      // Generate unique SKU to avoid duplicate key violations
-      // Use EAN + timestamp hash for uniqueness
-      const timestamp = Date.now()
-      const sku = `${ean}-${timestamp.toString(36)}`
 
       productsToInsert.push({
-        sku,
         ean,
         isbn: isbnRaw || null,
         title,
         author,
-        cost_price: price, // Asumir que price del CSV es cost_price
+        cost_price: price,
         image_url: imageUrl,
         stock,
         brand: row["marca"] || row["brand"] || null,
@@ -298,11 +292,30 @@ export async function POST(request: NextRequest) {
 
       console.log(`[v0][BATCH] Upserting ${productsToInsert.length} products in ${chunks.length} chunks`)
 
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i]
-        const { error } = await supabase
+      for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+        const chunk = chunks[chunkIndex]
+        console.log(`[v0][BATCH] Processing chunk ${chunkIndex + 1}/${chunks.length} (${chunk.length} products)`)
+
+        // Para Stock: primero buscar productos existentes por EAN
+        const eans = chunk.map(p => p.ean)
+        const { data: existingProducts } = await supabase
           .from("products")
-          .upsert(chunk, { onConflict: "ean" })
+          .select("ean, sku")
+          .in("ean", eans)
+        
+        // Crear map de EAN -> SKU existente
+        const eanToSku = new Map<string, string>()
+        existingProducts?.forEach(p => eanToSku.set(p.ean, p.sku))
+        
+        // Agregar SKU a cada producto (usar existente o generar nuevo)
+        const chunkWithSku = chunk.map(p => ({
+          ...p,
+          sku: eanToSku.get(p.ean) || `${p.ean}-${Date.now().toString(36)}`
+        }))
+
+        const { error: chunkError } = await supabase
+          .from("products")
+          .upsert(chunkWithSku, { onConflict: "ean" })
 
         if (error) {
           console.error(`[v0][BATCH] Upsert error in chunk ${i + 1}/${chunks.length}:`, error)
