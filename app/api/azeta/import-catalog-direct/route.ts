@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { inflateRawSync, inflateSync } from "node:zlib"
+import { decompressSync, strFromU8 } from "fflate"
 
 export const maxDuration = 300
 
@@ -11,39 +11,51 @@ function normalizeEan(raw: string): string {
   return cleaned.padStart(13, "0")
 }
 
-async function extractCSVFromZip(zipBuffer: Buffer): Promise<string> {
+async function extractCSVFromZip(zipBuffer: Uint8Array): Promise<string> {
+  // Parsear el ZIP manualmente buscando el primer entry CSV/TXT
   let offset = 0
   while (offset < zipBuffer.length - 30) {
-    if (zipBuffer.readUInt32LE(offset) === 0x04034b50) {
-      const compressionMethod = zipBuffer.readUInt16LE(offset + 8)
-      const compressedSize = zipBuffer.readUInt32LE(offset + 18)
-      const fileNameLength = zipBuffer.readUInt16LE(offset + 26)
-      const extraFieldLength = zipBuffer.readUInt16LE(offset + 28)
-      const fileName = zipBuffer.toString("utf-8", offset + 30, offset + 30 + fileNameLength)
+    // Local file header signature = 0x04034b50
+    if (
+      zipBuffer[offset] === 0x50 &&
+      zipBuffer[offset + 1] === 0x4b &&
+      zipBuffer[offset + 2] === 0x03 &&
+      zipBuffer[offset + 3] === 0x04
+    ) {
+      const compressionMethod =
+        zipBuffer[offset + 8] | (zipBuffer[offset + 9] << 8)
+      const compressedSize =
+        zipBuffer[offset + 18] |
+        (zipBuffer[offset + 19] << 8) |
+        (zipBuffer[offset + 20] << 16) |
+        (zipBuffer[offset + 21] << 24)
+      const fileNameLength =
+        zipBuffer[offset + 26] | (zipBuffer[offset + 27] << 8)
+      const extraFieldLength =
+        zipBuffer[offset + 28] | (zipBuffer[offset + 29] << 8)
 
-      console.log(`[AZETA] ZIP entry: "${fileName}" method:${compressionMethod} size:${compressedSize}`)
+      const fileNameBytes = zipBuffer.subarray(offset + 30, offset + 30 + fileNameLength)
+      const fileName = new TextDecoder().decode(fileNameBytes)
+
+      console.log(`[AZETA] ZIP entry: "${fileName}" method:${compressionMethod} compressed:${compressedSize}`)
 
       if (fileName.toLowerCase().match(/\.(csv|txt)$/)) {
         const dataStart = offset + 30 + fileNameLength + extraFieldLength
         const compressedData = zipBuffer.subarray(dataStart, dataStart + compressedSize)
 
-        let decompressed: Buffer
+        let decompressed: Uint8Array
         if (compressionMethod === 0) {
           decompressed = compressedData
         } else if (compressionMethod === 8) {
-          try { decompressed = inflateRawSync(compressedData) }
-          catch { decompressed = inflateSync(compressedData) }
+          // fflate decompressSync = inflate raw (deflate)
+          decompressed = decompressSync(compressedData)
         } else {
-          throw new Error(`Unsupported compression: ${compressionMethod}`)
+          throw new Error(`Compression method ${compressionMethod} not supported`)
         }
 
-        // Convertir en chunks de 50MB para no exceder límite V8
-        const CHUNK = 50 * 1024 * 1024
-        const parts: string[] = []
-        for (let i = 0; i < decompressed.length; i += CHUNK) {
-          parts.push(decompressed.subarray(i, i + CHUNK).toString("latin1"))
-        }
-        return parts.join("")
+        // Decodificar como latin1 para soportar caracteres españoles
+        const decoder = new TextDecoder("latin1")
+        return decoder.decode(decompressed)
       }
     }
     offset++
@@ -81,31 +93,29 @@ export async function POST(_request: NextRequest) {
       }, { status: 502 })
     }
 
-    // Descargar en chunks para evitar límite de memoria de 50MB de Vercel
+    // Descargar en chunks via stream reader
     const chunks: Uint8Array[] = []
     const reader = res.body!.getReader()
-    let totalBytes = 0
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
-      chunks.push(value)
-      totalBytes += value.length
+      if (value) chunks.push(value)
     }
-    const fileBuffer = Buffer.concat(chunks)
+    // Concatenar en un solo Uint8Array
+    const totalLen = chunks.reduce((s, c) => s + c.length, 0)
+    const fileBuffer = new Uint8Array(totalLen)
+    let pos = 0
+    for (const chunk of chunks) { fileBuffer.set(chunk, pos); pos += chunk.length }
+
     console.log(`[AZETA] Descargado: ${(fileBuffer.length / 1024 / 1024).toFixed(1)}MB en ${((Date.now() - startTime) / 1000).toFixed(1)}s`)
 
-    // Detectar ZIP
-    const isZip = fileBuffer[0] === 0x50 && fileBuffer[1] === 0x4B
+    // Detectar ZIP por magic bytes PK
+    const isZip = fileBuffer[0] === 0x50 && fileBuffer[1] === 0x4b
     let csvText: string
     if (isZip) {
       csvText = await extractCSVFromZip(fileBuffer)
     } else {
-      const CHUNK = 50 * 1024 * 1024
-      const parts: string[] = []
-      for (let i = 0; i < fileBuffer.length; i += CHUNK) {
-        parts.push(fileBuffer.subarray(i, i + CHUNK).toString("latin1"))
-      }
-      csvText = parts.join("")
+      csvText = new TextDecoder("latin1").decode(fileBuffer)
     }
     console.log(`[AZETA] CSV listo: ${(csvText.length / 1024 / 1024).toFixed(1)}MB en ${((Date.now() - startTime) / 1000).toFixed(1)}s`)
 
