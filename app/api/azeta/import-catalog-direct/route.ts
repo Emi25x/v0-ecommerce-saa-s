@@ -26,9 +26,22 @@ async function extractCSVFromZip(zipBuffer: Buffer): Promise<string> {
         const compressedData = zipBuffer.subarray(dataStart, dataStart + compressedSize)
         
         if (compressionMethod === 0) {
-          return compressedData.toString('utf-8')
+          // Convert in chunks to avoid string length limit
+          const chunks: string[] = []
+          const chunkSize = 50 * 1024 * 1024 // 50MB chunks
+          for (let i = 0; i < compressedData.length; i += chunkSize) {
+            chunks.push(compressedData.subarray(i, i + chunkSize).toString('utf-8'))
+          }
+          return chunks.join('')
         } else if (compressionMethod === 8) {
-          return inflateRawSync(compressedData).toString('utf-8')
+          const decompressed = inflateRawSync(compressedData)
+          // Convert in chunks
+          const chunks: string[] = []
+          const chunkSize = 50 * 1024 * 1024 // 50MB chunks
+          for (let i = 0; i < decompressed.length; i += chunkSize) {
+            chunks.push(decompressed.subarray(i, i + chunkSize).toString('utf-8'))
+          }
+          return chunks.join('')
         }
       }
     }
@@ -65,7 +78,7 @@ export async function POST(request: NextRequest) {
     console.log(`[AZETA-DIRECT] Total líneas: ${lines.length}`)
     
     // 4. Encontrar índices de columnas
-    const eamIdx = headers.findIndex(h => h.toLowerCase() === 'ean')
+    const eanIdx = headers.findIndex(h => h.toLowerCase() === 'ean')
     const tituloIdx = headers.findIndex(h => h.toLowerCase() === 'titulo')
     const autorIdx = headers.findIndex(h => h.toLowerCase() === 'autor')
     const editorialIdx = headers.findIndex(h => h.toLowerCase() === 'editorial')
@@ -101,11 +114,12 @@ export async function POST(request: NextRequest) {
       }
       
       batch.push({
+        sku: `AZETA-${ean}`,
         ean,
         title: tituloIdx >= 0 ? row[tituloIdx]?.trim() : null,
         author: autorIdx >= 0 ? row[autorIdx]?.trim() : null,
         publisher: editorialIdx >= 0 ? row[editorialIdx]?.trim() : null,
-        price: precioIdx >= 0 ? parseFloat(row[precioIdx]) || null : null,
+        cost_price: precioIdx >= 0 ? parseFloat(row[precioIdx]) || null : null,
       })
       
       // Procesar cada 100
