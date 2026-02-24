@@ -4,6 +4,7 @@ import Papa from "papaparse"
 import { fetchWithAuth } from "@/lib/import/fetch-with-auth"
 import { normalizeEan } from "@/lib/ean-utils"
 import { ImportHeartbeat } from "@/lib/import/heartbeat"
+import { inflateRawSync } from "node:zlib"
 
 const BATCH_SIZE = 5000 // Procesar 5000 filas por batch (optimizado)
 export const maxDuration = 300 // Máximo 300s (5 minutos) por request
@@ -84,9 +85,69 @@ export async function POST(request: NextRequest) {
       }, { status: fileResponse.status })
     }
 
-    const csvText = await fileResponse.text()
+    // Descargar como buffer para detectar ZIP
+    const fileBuffer = Buffer.from(await fileResponse.arrayBuffer())
+    console.log(`[v0][BATCH] File downloaded: ${fileBuffer.length} bytes`)
+    
+    // Detectar si es ZIP (magic bytes: PK = 0x50 0x4B)
+    const isZip = fileBuffer.length >= 4 && fileBuffer[0] === 0x50 && fileBuffer[1] === 0x4B
+    console.log(`[v0][BATCH] Is ZIP: ${isZip}`)
+    
+    let csvText: string
+    
+    if (isZip) {
+      console.log(`[v0][BATCH] Extracting CSV from ZIP...`)
+      try {
+        // Buscar local file header: 0x04034b50
+        let offset_zip = 0
+        let found = false
+        
+        while (offset_zip < fileBuffer.length - 30 && !found) {
+          if (fileBuffer.readUInt32LE(offset_zip) === 0x04034b50) {
+            const compressionMethod = fileBuffer.readUInt16LE(offset_zip + 8)
+            const compressedSize = fileBuffer.readUInt32LE(offset_zip + 18)
+            const fileNameLength = fileBuffer.readUInt16LE(offset_zip + 26)
+            const extraFieldLength = fileBuffer.readUInt16LE(offset_zip + 28)
+            
+            const fileName = fileBuffer.toString('utf-8', offset_zip + 30, offset_zip + 30 + fileNameLength)
+            console.log(`[v0][BATCH] Found file in ZIP: ${fileName}`)
+            
+            if (fileName.toLowerCase().endsWith('.csv')) {
+              const dataStart = offset_zip + 30 + fileNameLength + extraFieldLength
+              const compressedData = fileBuffer.subarray(dataStart, dataStart + compressedSize)
+              
+              if (compressionMethod === 0) {
+                csvText = compressedData.toString('utf-8')
+                console.log(`[v0][BATCH] CSV extracted (stored): ${csvText.length} chars`)
+              } else if (compressionMethod === 8) {
+                const decompressed = inflateRawSync(compressedData)
+                csvText = decompressed.toString('utf-8')
+                console.log(`[v0][BATCH] CSV extracted (DEFLATE): ${csvText.length} chars`)
+              } else {
+                throw new Error(`Unsupported compression method: ${compressionMethod}`)
+              }
+              found = true
+            }
+          }
+          offset_zip++
+        }
+        
+        if (!found) {
+          throw new Error("No CSV file found in ZIP")
+        }
+      } catch (error: any) {
+        console.error(`[v0][BATCH] Error extracting ZIP:`, error)
+        return NextResponse.json({ 
+          error: `Error extracting ZIP: ${error.message}` 
+        }, { status: 500 })
+      }
+    } else {
+      csvText = fileBuffer.toString('utf-8')
+      console.log(`[v0][BATCH] Direct CSV file: ${csvText.length} chars`)
+    }
+    
     const fetchElapsed = Date.now() - startTime
-    console.log(`[v0][BATCH] CSV downloaded in ${fetchElapsed}ms, ${csvText.length} chars`)
+    console.log(`[v0][BATCH] Processing completed in ${fetchElapsed}ms`)
 
     // 3. Auto-detect delimiter si no está configurado
     let delimiter = source.delimiter || ","
