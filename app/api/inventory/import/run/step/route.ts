@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import Papa from "papaparse"
 
-export const maxDuration = 30 // Anti-timeout: máximo 30s por chunk
+export const maxDuration = 60 // Anti-timeout: máximo 60s por chunk
 
-const CHUNK_SIZE = 2000 // Procesar 2000 filas por vez
+const CHUNK_SIZE = 1000 // Procesar 1000 filas por vez
+const UPSERT_BATCH_SIZE = 100 // Insertar 100 productos por batch (evita timeouts)
 
 /**
  * Normaliza un header del CSV:
@@ -354,22 +355,31 @@ export async function POST(request: NextRequest) {
 
     console.log(`[v0][RUN/STEP] Productos a insertar: ${productsToInsert.length}, skipped: ${skipped_missing + skipped_invalid}`)
 
-    // 10. Insertar en DB (upsert por EAN)
+    // 10. Insertar en DB (upsert por EAN) en batches pequeños para evitar timeout
     let createdCount = 0
     let updatedCount = 0
+    let upsertErrors = 0
 
     if (productsToInsert.length > 0) {
-      const { error } = await supabase
-        .from("products")
-        .upsert(productsToInsert, { onConflict: "ean" })
+      console.log(`[v0][RUN/STEP] Iniciando upsert de ${productsToInsert.length} productos en batches de ${UPSERT_BATCH_SIZE}`)
+      
+      // Dividir en batches pequeños
+      for (let i = 0; i < productsToInsert.length; i += UPSERT_BATCH_SIZE) {
+        const batch = productsToInsert.slice(i, i + UPSERT_BATCH_SIZE)
+        
+        const { error } = await supabase
+          .from("products")
+          .upsert(batch, { onConflict: "ean" })
 
-      if (error) {
-        console.error(`[v0][RUN/STEP] Error insertando productos:`, error)
-      } else {
-        // Para simplificar, contamos todos como "creados"
-        // (podríamos hacer query antes para contar updates vs creates)
-        createdCount = productsToInsert.length
+        if (error) {
+          console.error(`[v0][RUN/STEP] Error en batch ${i}-${i + batch.length}:`, error.message)
+          upsertErrors += batch.length
+        } else {
+          createdCount += batch.length
+        }
       }
+      
+      console.log(`[v0][RUN/STEP] Upsert completado: ${createdCount} exitosos, ${upsertErrors} errores`)
     }
 
     // 11. Actualizar run
