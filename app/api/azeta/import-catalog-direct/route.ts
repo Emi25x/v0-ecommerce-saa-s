@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { decompressSync, strFromU8 } from "fflate"
+import { inflateRawSync } from "zlib"
 
 export const maxDuration = 300
 
@@ -47,8 +47,7 @@ async function extractCSVFromZip(zipBuffer: Uint8Array): Promise<string> {
         if (compressionMethod === 0) {
           decompressed = compressedData
         } else if (compressionMethod === 8) {
-          // fflate decompressSync = inflate raw (deflate)
-          decompressed = decompressSync(compressedData)
+          decompressed = inflateRawSync(compressedData)
         } else {
           throw new Error(`Compression method ${compressionMethod} not supported`)
         }
