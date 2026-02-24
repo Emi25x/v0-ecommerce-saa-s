@@ -78,7 +78,46 @@ export default function BatchImportPage() {
 
     addLog(`Iniciando importacion por lotes de ${sourceName}...`)
 
-    // Importación por lotes para todas las fuentes (incluido AZETA)
+    // AZETA usa endpoint especializado (maneja ZIP grande de una sola vez)
+    const isAzeta = sourceName.toLowerCase().includes("azeta")
+    if (isAzeta) {
+      try {
+        setStatus("Descargando y procesando catálogo AZETA (puede tardar varios minutos)...")
+        addLog("Usando importador AZETA (ZIP grande, procesamiento único)...")
+
+        const response = await fetch("/api/azeta/import-catalog-direct", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        })
+
+        const responseText = await response.text()
+        let result: any = {}
+        try { result = JSON.parse(responseText) } catch {}
+
+        if (!response.ok) {
+          const msg = result.error || `Error ${response.status}`
+          addLog(`Error: ${msg}`)
+          setStatus(`Error: ${msg}`)
+          return
+        }
+
+        const total = (result.created || 0) + (result.updated || 0)
+        setCreated(result.created || 0)
+        setUpdated(result.updated || 0)
+        setProcessed(result.total_rows || total)
+        setTotal(result.total_rows || total)
+        setProgress(100)
+        addLog(`Completado: ${result.created || 0} creados, ${result.updated || 0} actualizados, ${result.skipped || 0} saltados`)
+        setStatus(`Importación completada - ${total.toLocaleString()} productos procesados`)
+        return
+      } catch (err: any) {
+        addLog(`Error: ${err.message}`)
+        setStatus(`Error: ${err.message}`)
+        return
+      }
+    }
+
+    // Importación por lotes para ARNOIA y otras fuentes
     while (!done && !abortRef.current) {
       try {
         setStatus(`Procesando lote desde offset ${offset}...`)

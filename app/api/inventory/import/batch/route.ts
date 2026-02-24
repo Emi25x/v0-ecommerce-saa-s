@@ -323,57 +323,62 @@ export async function POST(request: NextRequest) {
           console.log(`[v0][BATCH] Removed ${duplicatesRemoved} duplicate EANs within chunk`)
         }
 
-        // Buscar productos existentes por EAN
-        const eans = deduplicatedChunk.map(p => p.ean)
-        const { data: existingProducts } = await supabase
-          .from("products")
-          .select("ean, sku")
-          .in("ean", eans)
-        
-        // Crear map de EAN -> SKU existente
-        const eanToSku = new Map<string, string>()
-        existingProducts?.forEach(p => eanToSku.set(p.ean, p.sku))
-        
         let chunkToUpsert: any[]
         
         if (isStockImport) {
-          // Stock: SOLO actualizar productos existentes, ignorar los nuevos
-          chunkToUpsert = deduplicatedChunk
-            .filter(p => eanToSku.has(p.ean)) // Solo los que existen
-            .map(p => ({
-              ...p,
-              sku: eanToSku.get(p.ean)! // Usar SKU existente
-            }))
-          
-          const skipped = deduplicatedChunk.length - chunkToUpsert.length
-          if (skipped > 0) {
-            console.log(`[v0][BATCH] Stock mode: skipped ${skipped} new products (not in DB)`)
+          // Stock: UPDATE directo por EAN, sin necesitar SKU, solo actualiza existentes
+          for (const product of deduplicatedChunk) {
+            const updateData: any = {}
+            if (product.stock !== undefined) updateData.stock = product.stock
+            if (product.cost_price !== undefined && product.cost_price !== null) updateData.cost_price = product.cost_price
+            
+            const { error: updateError, count } = await supabase
+              .from("products")
+              .update(updateData)
+              .eq("ean", product.ean)
+            
+            if (updateError) {
+              console.error(`[v0][BATCH] Update error for EAN ${product.ean}:`, updateError.message)
+              last_error = updateError.message
+              last_reason = "update_failed"
+            } else if (count && count > 0) {
+              updated += count
+            }
           }
         } else {
-          // Catálogos: upsert normal (crea o actualiza)
+          // Catálogos: buscar SKUs existentes por EAN para reutilizarlos
+          const eans = deduplicatedChunk.map(p => p.ean)
+          const { data: existingProducts } = await supabase
+            .from("products")
+            .select("ean, sku")
+            .in("ean", eans)
+          const eanToSku = new Map<string, string>()
+          existingProducts?.forEach(p => eanToSku.set(p.ean, p.sku))
+
+          // Upsert normal (crea o actualiza) matcheando por EAN
           // Usar SKU existente si el producto ya existe, sino usar el EAN como SKU
           chunkToUpsert = deduplicatedChunk.map(p => ({
             ...p,
             sku: eanToSku.get(p.ean) || p.ean
           }))
-        }
 
-        if (chunkToUpsert.length === 0) {
-          console.log(`[v0][BATCH] Chunk ${chunkIndex + 1}: nothing to upsert (all filtered)`)
-          continue
-        }
+          if (chunkToUpsert.length === 0) {
+            console.log(`[v0][BATCH] Chunk ${chunkIndex + 1}: nothing to upsert`)
+            continue
+          }
 
-        const { error: chunkError } = await supabase
-          .from("products")
-          .upsert(chunkToUpsert, { onConflict: "ean" })
+          const { error: chunkError } = await supabase
+            .from("products")
+            .upsert(chunkToUpsert, { onConflict: "ean" })
 
-        if (chunkError) {
-          console.error(`[v0][BATCH] Upsert error in chunk ${chunkIndex + 1}/${chunks.length}:`, chunkError)
-          last_error = chunkError.message
-          last_reason = "upsert_failed"
-          break
-        } else {
-          updated += chunkToUpsert.length
+          if (chunkError) {
+            console.error(`[v0][BATCH] Upsert error in chunk ${chunkIndex + 1}/${chunks.length}:`, chunkError)
+            last_error = chunkError.message
+            last_reason = "upsert_failed"
+            break
+          } else {
+            updated += chunkToUpsert.length
+          }
         }
       }
 
