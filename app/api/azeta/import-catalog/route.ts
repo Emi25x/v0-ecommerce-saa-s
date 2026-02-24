@@ -4,6 +4,13 @@ import { normalizeEan } from "@/lib/ean-utils"
 
 export const maxDuration = 300 // 5 minutos
 
+// Vercel Cron invoca con GET — delegar a POST
+export async function GET(request: NextRequest) {
+  const isCron = request.headers.get("x-vercel-cron") === "1"
+  console.log(`[CRON] azeta/import-catalog GET - ${isCron ? "accepted" : "forwarded to POST"}`)
+  return POST(request)
+}
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const startTime = Date.now()

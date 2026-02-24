@@ -339,8 +339,30 @@ export async function POST(request: NextRequest) {
 
       const title = row["titulo"]?.trim() || row["title"]?.trim() || ean
       const author = row["autor"]?.trim() || row["author"]?.trim() || null
-      const price = parseFloat(row["pvp"]?.replace(",", ".") || row["precio"]?.replace(",", ".") || row["price"]?.replace(",", ".") || "0")
-      const imageUrl = row["portada"]?.trim() || row["imagen"]?.trim() || row["image"]?.trim() || null
+
+      // Precio: usar pvp o precio, reemplazar coma decimal
+      const priceRaw = row["pvp"] || row["precio"] || row["price"] || "0"
+      const cost_price = parseFloat(priceRaw.toString().replace(",", ".").replace(/[^\d.]/g, "")) || null
+
+      // Imagen: "url" en Arnoia Act contiene la portada
+      const image_url = row["url"]?.trim() || row["portada"]?.trim() || row["imagen"]?.trim() || row["image"]?.trim() || null
+
+      // Descripcion: "sinopsis(html)" viene normalizado a "sinopsis_html_" o buscar por substring
+      const descKey = Object.keys(row).find(k => k.includes("sinopsis"))
+      const description = (descKey ? row[descKey]?.trim() : null) || row["descripcion"]?.trim() || row["description"]?.trim() || null
+
+      // Editorial: "editorial" → brand
+      const brand = row["editorial"]?.trim() || row["marca"]?.trim() || row["brand"]?.trim() || null
+
+      // Idioma
+      const language = row["idioma"]?.trim() || row["language"]?.trim() || null
+
+      // Año edicion
+      const yearKey = Object.keys(row).find(k => k.includes("ano") || k.includes("ano_edicion"))
+      const year_edition = (yearKey ? row[yearKey]?.trim() : null) || row["year_edition"]?.trim() || null
+
+      // Código interno
+      const internal_code = row["codigo_interno"]?.trim() || row["internal_code"]?.trim() || null
 
       productsToInsert.push({
         sku: ean,
@@ -348,8 +370,13 @@ export async function POST(request: NextRequest) {
         isbn: isbnRaw || null,
         title,
         author,
-        price,
-        image_url: imageUrl
+        cost_price,
+        image_url,
+        description,
+        brand,
+        language,
+        year_edition,
+        internal_code,
       })
     }
 
@@ -362,7 +389,15 @@ export async function POST(request: NextRequest) {
 
     if (productsToInsert.length > 0) {
       console.log(`[v0][RUN/STEP] Iniciando upsert de ${productsToInsert.length} productos en batches de ${UPSERT_BATCH_SIZE}`)
-      
+
+      // Obtener EANs que ya existen para distinguir created vs updated
+      const allEans = productsToInsert.map(p => p.ean)
+      const { data: existingRows } = await supabase
+        .from("products")
+        .select("ean")
+        .in("ean", allEans)
+      const existingEans = new Set((existingRows || []).map((r: any) => r.ean))
+
       // Dividir en batches pequeños
       for (let i = 0; i < productsToInsert.length; i += UPSERT_BATCH_SIZE) {
         const batch = productsToInsert.slice(i, i + UPSERT_BATCH_SIZE)
@@ -375,11 +410,17 @@ export async function POST(request: NextRequest) {
           console.error(`[v0][RUN/STEP] Error en batch ${i}-${i + batch.length}:`, error.message)
           upsertErrors += batch.length
         } else {
-          createdCount += batch.length
+          for (const p of batch) {
+            if (existingEans.has(p.ean)) {
+              updatedCount++
+            } else {
+              createdCount++
+            }
+          }
         }
       }
       
-      console.log(`[v0][RUN/STEP] Upsert completado: ${createdCount} exitosos, ${upsertErrors} errores`)
+      console.log(`[v0][RUN/STEP] Upsert completado: ${createdCount} creados, ${updatedCount} actualizados, ${upsertErrors} errores`)
     }
 
     // 11. Actualizar run
