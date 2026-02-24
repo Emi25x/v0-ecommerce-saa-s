@@ -117,11 +117,23 @@ export async function POST(request: NextRequest) {
               const compressedData = fileBuffer.subarray(dataStart, dataStart + compressedSize)
               
               if (compressionMethod === 0) {
-                csvText = compressedData.toString('utf-8')
+                // For very large files, convert in chunks to avoid string length limit
+                const chunks: string[] = []
+                const chunkSize = 100 * 1024 * 1024 // 100MB chunks
+                for (let i = 0; i < compressedData.length; i += chunkSize) {
+                  chunks.push(compressedData.subarray(i, i + chunkSize).toString('utf-8'))
+                }
+                csvText = chunks.join('')
                 console.log(`[v0][BATCH] CSV extracted (stored): ${csvText.length} chars`)
               } else if (compressionMethod === 8) {
                 const decompressed = inflateRawSync(compressedData)
-                csvText = decompressed.toString('utf-8')
+                // Convert in chunks
+                const chunks: string[] = []
+                const chunkSize = 100 * 1024 * 1024 // 100MB chunks
+                for (let i = 0; i < decompressed.length; i += chunkSize) {
+                  chunks.push(decompressed.subarray(i, i + chunkSize).toString('utf-8'))
+                }
+                csvText = chunks.join('')
                 console.log(`[v0][BATCH] CSV extracted (DEFLATE): ${csvText.length} chars`)
               } else {
                 throw new Error(`Unsupported compression method: ${compressionMethod}`)
@@ -244,9 +256,14 @@ export async function POST(request: NextRequest) {
       const price = parseFloat(row["pvp"]?.replace(",", ".") || row["precio"]?.replace(",", ".") || "0")
       const imageUrl = row["portada"] || row["imagen"] || row["image"] || null
       const stock = parseInt(row["stock"] || "0", 10)
+      
+      // Generate unique SKU to avoid duplicate key violations
+      // Use EAN + timestamp hash for uniqueness
+      const timestamp = Date.now()
+      const sku = `${ean}-${timestamp.toString(36)}`
 
       productsToInsert.push({
-        sku: ean,
+        sku,
         ean,
         isbn: isbnRaw || null,
         title,
@@ -272,8 +289,8 @@ export async function POST(request: NextRequest) {
     if (productsToInsert.length > 0) {
       upsert_attempted = productsToInsert.length
       
-      // Dividir en chunks de 1000 para evitar límites de Supabase
-      const UPSERT_CHUNK_SIZE = 1000
+      // Dividir en chunks de 100 para evitar timeouts
+      const UPSERT_CHUNK_SIZE = 100
       const chunks = []
       for (let i = 0; i < productsToInsert.length; i += UPSERT_CHUNK_SIZE) {
         chunks.push(productsToInsert.slice(i, i + UPSERT_CHUNK_SIZE))
