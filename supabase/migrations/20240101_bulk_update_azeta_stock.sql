@@ -51,6 +51,7 @@ CREATE OR REPLACE FUNCTION bulk_update_stock_price(
 RETURNS INT
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET statement_timeout = '60s'
 AS $$
 DECLARE
   v_updated INT := 0;

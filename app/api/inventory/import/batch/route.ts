@@ -304,8 +304,9 @@ export async function POST(request: NextRequest) {
       const isStockImport = source.name.toLowerCase().includes('stock')
       console.log(`[v0][BATCH] Is Stock import: ${isStockImport}`)
       
-      // Dividir en chunks de 100 para evitar timeouts
-      const UPSERT_CHUNK_SIZE = 100
+      // Stock usa chunks de 200 para la RPC bulk (evita statement timeout de 8s de Supabase)
+      // Catálogo usa chunks de 100 para upsert individual
+      const UPSERT_CHUNK_SIZE = isStockImport ? 200 : 100
       const chunks = []
       for (let i = 0; i < productsToInsert.length; i += UPSERT_CHUNK_SIZE) {
         chunks.push(productsToInsert.slice(i, i + UPSERT_CHUNK_SIZE))
