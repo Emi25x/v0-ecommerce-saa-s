@@ -78,61 +78,7 @@ export default function BatchImportPage() {
 
     addLog(`Iniciando importacion por lotes de ${sourceName}...`)
 
-    // Detectar si es AZETA y usar endpoint especializado
-    const isAzeta = sourceName.toLowerCase().includes('azeta')
-    
-    if (isAzeta) {
-      // AZETA usa endpoint especializado que maneja ZIP grandes
-      try {
-        setStatus(`Procesando catálogo completo de AZETA...`)
-        addLog(`Usando importador especializado para AZETA`)
-
-        const response = await fetch("/api/azeta/import-catalog-direct", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        })
-
-        const responseText = await response.text()
-        
-        if (!response.ok) {
-          let errorMessage = `Error ${response.status}: ${response.statusText}`
-          try {
-            const error = JSON.parse(responseText)
-            errorMessage = error.error || errorMessage
-          } catch {
-            errorMessage = responseText.substring(0, 200) || errorMessage
-          }
-          addLog(`Error: ${errorMessage}`)
-          setStatus(`Error: ${errorMessage}`)
-          return
-        }
-
-        let result
-        try {
-          result = JSON.parse(responseText)
-        } catch (e) {
-          addLog(`Error: Respuesta inválida del servidor`)
-          setStatus(`Error: Respuesta inválida del servidor`)
-          return
-        }
-
-        const totalProducts = (result.created || 0) + (result.updated || 0)
-        setCreated(result.created || 0)
-        setUpdated(result.updated || 0)
-        setProcessed(result.total_rows || totalProducts)
-        setTotal(result.total_rows || totalProducts)
-        setProgress(100)
-        addLog(`Importación completada: ${result.created || 0} creados, ${result.updated || 0} actualizados, ${totalProducts} total`)
-        setStatus(`Importación completada - ${totalProducts.toLocaleString()} productos procesados`)
-        return
-      } catch (error: any) {
-        addLog(`Error: ${error.message}`)
-        setStatus(`Error: ${error.message}`)
-        return
-      }
-    }
-
-    // Importación por lotes para otras fuentes
+    // Importación por lotes para todas las fuentes (incluido AZETA)
     while (!done && !abortRef.current) {
       try {
         setStatus(`Procesando lote desde offset ${offset}...`)
