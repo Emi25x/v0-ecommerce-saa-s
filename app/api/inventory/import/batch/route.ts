@@ -353,24 +353,24 @@ export async function POST(request: NextRequest) {
         let chunkToUpsert: any[]
         
         if (isStockImport) {
-          // Stock: UPDATE directo por EAN, sin necesitar SKU, solo actualiza existentes
-          for (const product of deduplicatedChunk) {
-            const updateData: any = {}
-            if (product.stock !== undefined) updateData.stock = product.stock
-            if (product.cost_price !== undefined && product.cost_price !== null) updateData.cost_price = product.cost_price
-            
-            const { error: updateError, count } = await supabase
-              .from("products")
-              .update(updateData)
-              .eq("ean", product.ean)
-            
-            if (updateError) {
-              console.error(`[v0][BATCH] Update error for EAN ${product.ean}:`, updateError.message)
-              last_error = updateError.message
-              last_reason = "update_failed"
-            } else if (count && count > 0) {
-              updated += count
-            }
+          // Stock: un único UPDATE por EAN usando CASE WHEN para todo el chunk
+          // Construir arrays de EANs, stocks y precios para pasar al rpc
+          const eans = deduplicatedChunk.map(p => p.ean)
+          const stocks = deduplicatedChunk.map(p => p.stock ?? null)
+          const prices = deduplicatedChunk.map(p => p.cost_price ?? null)
+
+          const { error: rpcError, data: rpcData } = await supabase.rpc("bulk_update_stock_price", {
+            p_eans: eans,
+            p_stocks: stocks,
+            p_prices: prices,
+          })
+
+          if (rpcError) {
+            console.error(`[v0][BATCH] bulk_update_stock_price error:`, rpcError.message)
+            last_error = rpcError.message
+            last_reason = "update_failed"
+          } else {
+            updated += rpcData ?? 0
           }
         } else {
           // Catálogos: buscar SKUs existentes por EAN para reutilizarlos

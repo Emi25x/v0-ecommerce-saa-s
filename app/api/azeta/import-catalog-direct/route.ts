@@ -163,11 +163,11 @@ export async function POST(_request: NextRequest) {
       if (!ean || ean.length !== 13) { skipped++; continue }
       
       batch.push({
-        sku: ean, // usar EAN como SKU
+        sku: ean,
         ean,
         title: tituloIdx >= 0 ? cols[tituloIdx]?.replace(/['"]/g, "").trim() || null : null,
         author: autorIdx >= 0 ? cols[autorIdx]?.replace(/['"]/g, "").trim() || null : null,
-        publisher: editorialIdx >= 0 ? cols[editorialIdx]?.replace(/['"]/g, "").trim() || null : null,
+        brand: editorialIdx >= 0 ? cols[editorialIdx]?.replace(/['"]/g, "").trim() || null : null,
         cost_price: pvpIdx >= 0 ? parseFloat(cols[pvpIdx]?.replace(",", ".") || "0") || null : null,
       })
       
