@@ -343,13 +343,13 @@ export async function POST(request: NextRequest) {
           .from("products")
           .upsert(chunkToUpsert, { onConflict: "ean" })
 
-        if (error) {
-          console.error(`[v0][BATCH] Upsert error in chunk ${i + 1}/${chunks.length}:`, error)
-          last_error = error.message
+        if (chunkError) {
+          console.error(`[v0][BATCH] Upsert error in chunk ${chunkIndex + 1}/${chunks.length}:`, chunkError)
+          last_error = chunkError.message
           last_reason = "upsert_failed"
           break
         } else {
-          updated += chunk.length
+          updated += chunkToUpsert.length
         }
       }
 
