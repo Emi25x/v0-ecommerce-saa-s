@@ -116,10 +116,14 @@ export default function BatchImportPage() {
           return
         }
 
-        setTotalCreated(result.created || 0)
-        setTotalUpdated(result.updated || 0)
-        addLog(`Importación completada: ${result.created || 0} creados, ${result.updated || 0} actualizados`)
-        setStatus(`Importación completada`)
+        const totalProducts = (result.created || 0) + (result.updated || 0)
+        setCreated(result.created || 0)
+        setUpdated(result.updated || 0)
+        setProcessed(result.total_rows || totalProducts)
+        setTotal(result.total_rows || totalProducts)
+        setProgress(100)
+        addLog(`Importación completada: ${result.created || 0} creados, ${result.updated || 0} actualizados, ${totalProducts} total`)
+        setStatus(`Importación completada - ${totalProducts.toLocaleString()} productos procesados`)
         return
       } catch (error: any) {
         addLog(`Error: ${error.message}`)
@@ -181,9 +185,16 @@ export default function BatchImportPage() {
         const newProcessed = processed + (result.rows_processed || 0)
         setProcessed(newProcessed)
         
-        // Total es 0 (no lo calculamos)
-        setTotal(0)
-        setProgress(0)
+        // Calcular total estimado y progreso basado en si hay más datos
+        if (result.done) {
+          setTotal(newProcessed)
+          setProgress(100)
+        } else {
+          // Estimar total basado en el patrón de lotes (cada lote procesa ~5000)
+          const estimatedTotal = Math.max(newProcessed + 5000, total)
+          setTotal(estimatedTotal)
+          setProgress(Math.min(95, Math.round((newProcessed / estimatedTotal) * 100)))
+        }
 
         const skipped = (result.missing_ean || 0) + (result.invalid_ean || 0)
         addLog(`Lote: ${result.rows_seen} vistas, ${result.rows_processed} válidas, ${result.updated} actualizadas, ${skipped} descartadas`)
@@ -206,10 +217,12 @@ export default function BatchImportPage() {
         // Detener cuando done=true
         if (result.done) {
           done = true
-          setStatus("Importacion completada")
-          addLog(`✓ Finalizado. Procesadas: ${newProcessed}, Actualizadas: ${totalUpdated}, Creadas: ${totalCreated}`)
+          const totalProducts = totalUpdated + totalCreated
+          setStatus(`Importación completada - ${totalProducts.toLocaleString()} productos procesados`)
+          addLog(`✓ Finalizado. Procesadas: ${newProcessed.toLocaleString()}, Actualizadas: ${totalUpdated.toLocaleString()}, Creadas: ${totalCreated.toLocaleString()}`)
         } else {
           offset = result.next_offset || (offset + result.rows_seen)
+          setStatus(`Procesando... ${newProcessed.toLocaleString()} filas procesadas, ${(totalUpdated + totalCreated).toLocaleString()} productos actualizados`)
           // Pequeña pausa entre lotes
           await new Promise((resolve) => setTimeout(resolve, 500))
         }
