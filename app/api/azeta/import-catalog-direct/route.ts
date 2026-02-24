@@ -58,14 +58,27 @@ export async function POST(_request: NextRequest) {
   try {
     const url = "https://www.azetadistribuciones.es/servicios_web/csv.php?user=680899&password=badajoz24"
 
-    // Descarga simple — la URL con credenciales funciona directo en cualquier browser
-    console.log(`[AZETA] Descargando...`)
-    const res = await fetch(url)
+    // LOG OBLIGATORIO: método y URL antes del fetch
+    console.log(`[AZETA][FETCH] method=GET`)
+    console.log(`[AZETA][FETCH] url=${url}`)
 
-    console.log(`[AZETA] HTTP ${res.status}`)
+    const res = await fetch(url, { method: "GET" })
+
+    // LOG OBLIGATORIO: status, content-type, allow header, body preview
+    const ct = res.headers.get("content-type") || ""
+    const allow = res.headers.get("allow") || "(no allow header)"
+    console.log(`[AZETA][FETCH] status=${res.status}`)
+    console.log(`[AZETA][FETCH] content-type=${ct}`)
+    console.log(`[AZETA][FETCH] allow=${allow}`)
 
     if (!res.ok) {
-      return NextResponse.json({ error: `Error ${res.status} del servidor AZETA` }, { status: 502 })
+      const bodyPreview = await res.clone().text().then(t => t.substring(0, 200)).catch(() => "")
+      console.log(`[AZETA][FETCH] body[0:200]=${bodyPreview}`)
+      return NextResponse.json({
+        error: `Error ${res.status} del servidor AZETA`,
+        allow,
+        body_preview: bodyPreview,
+      }, { status: 502 })
     }
 
     // Descargar en chunks para evitar límite de memoria de 50MB de Vercel

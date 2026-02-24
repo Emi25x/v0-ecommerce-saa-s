@@ -24,18 +24,24 @@ export async function GET() {
       console.log(`[v0] URL: ${source.url_template}`)
 
       try {
-        // Make a HEAD request to get headers without downloading the file
-        const response = await fetch(source.url_template, {
-          method: "HEAD",
-        })
+        // Intentar HEAD primero; si devuelve 405 → fallback a GET con Range bytes=0-2048
+        let response = await fetch(source.url_template, { method: "HEAD" })
+        let fallbackUsed = false
+
+        if (response.status === 405 || response.status === 403 || response.status === 501) {
+          console.log(`[v0] ${source.name} - HEAD devolvió ${response.status}, fallback a GET Range`)
+          response = await fetch(source.url_template, {
+            method: "GET",
+            headers: { "Range": "bytes=0-2048" },
+          })
+          fallbackUsed = true
+        }
 
         const lastModified = response.headers.get("last-modified")
         const contentLength = response.headers.get("content-length")
         const etag = response.headers.get("etag")
 
-        console.log(`[v0] ${source.name} - Last-Modified: ${lastModified}`)
-        console.log(`[v0] ${source.name} - Content-Length: ${contentLength}`)
-        console.log(`[v0] ${source.name} - ETag: ${etag}`)
+        console.log(`[v0] ${source.name} - status:${response.status} fallback:${fallbackUsed} Last-Modified:${lastModified} Content-Length:${contentLength}`)
 
         results.push({
           name: source.name,
@@ -47,6 +53,7 @@ export async function GET() {
           contentLength: contentLength ? Number.parseInt(contentLength) : null,
           etag,
           status: response.status,
+          fallbackUsed,
         })
       } catch (error) {
         console.error(`[v0] Error checking ${source.name}:`, error)
