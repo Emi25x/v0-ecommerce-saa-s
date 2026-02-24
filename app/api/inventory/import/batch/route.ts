@@ -300,8 +300,31 @@ export async function POST(request: NextRequest) {
         const chunk = chunks[chunkIndex]
         console.log(`[v0][BATCH] Processing chunk ${chunkIndex + 1}/${chunks.length} (${chunk.length} products)`)
 
+        // Deduplicate by EAN within chunk (keep last occurrence)
+        const deduplicatedChunk: any[] = []
+        const seenEans = new Map<string, number>()
+        
+        for (let i = 0; i < chunk.length; i++) {
+          const product = chunk[i]
+          const existingIndex = seenEans.get(product.ean)
+          
+          if (existingIndex !== undefined) {
+            // Replace previous occurrence with newer data
+            deduplicatedChunk[existingIndex] = product
+          } else {
+            // First time seeing this EAN
+            seenEans.set(product.ean, deduplicatedChunk.length)
+            deduplicatedChunk.push(product)
+          }
+        }
+        
+        const duplicatesRemoved = chunk.length - deduplicatedChunk.length
+        if (duplicatesRemoved > 0) {
+          console.log(`[v0][BATCH] Removed ${duplicatesRemoved} duplicate EANs within chunk`)
+        }
+
         // Buscar productos existentes por EAN
-        const eans = chunk.map(p => p.ean)
+        const eans = deduplicatedChunk.map(p => p.ean)
         const { data: existingProducts } = await supabase
           .from("products")
           .select("ean, sku")
@@ -315,20 +338,20 @@ export async function POST(request: NextRequest) {
         
         if (isStockImport) {
           // Stock: SOLO actualizar productos existentes, ignorar los nuevos
-          chunkToUpsert = chunk
+          chunkToUpsert = deduplicatedChunk
             .filter(p => eanToSku.has(p.ean)) // Solo los que existen
             .map(p => ({
               ...p,
               sku: eanToSku.get(p.ean)! // Usar SKU existente
             }))
           
-          const skipped = chunk.length - chunkToUpsert.length
+          const skipped = deduplicatedChunk.length - chunkToUpsert.length
           if (skipped > 0) {
             console.log(`[v0][BATCH] Stock mode: skipped ${skipped} new products (not in DB)`)
           }
         } else {
           // Catálogos: upsert normal (crea o actualiza)
-          chunkToUpsert = chunk.map(p => ({
+          chunkToUpsert = deduplicatedChunk.map(p => ({
             ...p,
             sku: eanToSku.get(p.ean) || `${p.ean}-${Date.now().toString(36)}`
           }))
