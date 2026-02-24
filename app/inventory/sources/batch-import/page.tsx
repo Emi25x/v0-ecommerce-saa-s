@@ -78,14 +78,20 @@ export default function BatchImportPage() {
 
     addLog(`Iniciando importacion por lotes de ${sourceName}...`)
 
-    // AZETA usa endpoint especializado (maneja ZIP grande de una sola vez)
-    const isAzeta = sourceName.toLowerCase().includes("azeta")
-    if (isAzeta) {
-      try {
-        setStatus("Descargando y procesando catálogo AZETA (puede tardar varios minutos)...")
-        addLog("Usando importador AZETA (ZIP grande, procesamiento único)...")
+    const nameLower = sourceName.toLowerCase()
+    const isAzeta = nameLower.includes("azeta")
+    const isArnoiaStock = nameLower.includes("arnoia") && nameLower.includes("stock")
 
-        const response = await fetch("/api/azeta/import-catalog-direct", {
+    // Fuentes con endpoints dedicados: descargan UNA vez y procesan todo internamente
+    if (isAzeta || isArnoiaStock) {
+      const endpoint = isAzeta ? "/api/azeta/import-catalog-direct" : "/api/arnoia/import-stock"
+      const label = isAzeta ? "AZETA (ZIP grande)" : "Arnoia Stock"
+
+      try {
+        setStatus(`Procesando ${label}...`)
+        addLog(`Usando importador dedicado para ${label}...`)
+
+        const response = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
         })
@@ -101,14 +107,14 @@ export default function BatchImportPage() {
           return
         }
 
-        const total = (result.created || 0) + (result.updated || 0)
+        const totalProcessed = (result.created || 0) + (result.updated || 0) + (result.total_rows || 0)
         setCreated(result.created || 0)
-        setUpdated(result.updated || 0)
-        setProcessed(result.total_rows || total)
-        setTotal(result.total_rows || total)
+        setUpdated(result.updated || (result.updated_count || 0))
+        setProcessed(result.total_rows || totalProcessed)
+        setTotal(result.total_rows || totalProcessed)
         setProgress(100)
-        addLog(`Completado: ${result.created || 0} creados, ${result.updated || 0} actualizados, ${result.skipped || 0} saltados`)
-        setStatus(`Importación completada - ${total.toLocaleString()} productos procesados`)
+        addLog(`Completado: ${result.created || 0} creados, ${result.updated || result.updated_count || 0} actualizados`)
+        setStatus(`Importación completada`)
         return
       } catch (err: any) {
         addLog(`Error: ${err.message}`)
@@ -117,7 +123,7 @@ export default function BatchImportPage() {
       }
     }
 
-    // Importación por lotes para ARNOIA y otras fuentes
+    // Importación por lotes para otras fuentes (batch genérico)
     while (!done && !abortRef.current) {
       try {
         setStatus(`Procesando lote desde offset ${offset}...`)
