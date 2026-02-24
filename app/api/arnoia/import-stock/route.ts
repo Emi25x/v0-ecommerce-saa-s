@@ -1,173 +1,137 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeEan } from "@/lib/ean-utils"
 import Papa from "papaparse"
 
-export const maxDuration = 300 // 5 minutos
+export const maxDuration = 300
 
 // Vercel Cron invoca con GET — delegar a POST
 export async function GET(request: NextRequest) {
-  const isCron = request.headers.get("x-vercel-cron") === "1"
-  console.log(`[CRON] arnoia/import-stock GET - ${isCron ? "accepted" : "forwarded to POST"}`)
   return POST(request)
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
   const startTime = Date.now()
-  
-  console.log("[v0] ARNOIA Stock Update - Starting")
+  console.log("[ARNOIA-STOCK] Starting bulk stock update")
 
   try {
-    // Verificar autenticación (permitir cron sin auth)
+    // Auth: cron secret o usuario autenticado
     const authHeader = request.headers.get("authorization")
     const cronSecret = process.env.CRON_SECRET
-    
     if (authHeader !== `Bearer ${cronSecret}`) {
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
-      if (authError || !user) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-      }
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Obtener configuración de ARNOIA
+    // Obtener fuente Arnoia Stock
     const { data: source } = await supabase
       .from("import_sources")
       .select("*")
-      .eq("name", "ARNOIA")
+      .ilike("name", "%arnoia%stock%")
       .eq("is_active", true)
       .single()
 
-    if (!source) {
-      return NextResponse.json({ error: "ARNOIA source not configured or inactive" }, { status: 400 })
-    }
+    if (!source) return NextResponse.json({ error: "Arnoia Stock source not found or inactive" }, { status: 400 })
 
-    const credentials = source.credentials as { login: string; pass: string; url: string }
-    if (!credentials?.url) {
-      return NextResponse.json({ error: "ARNOIA URL missing" }, { status: 400 })
-    }
+    const credentials = source.credentials as any
+    const url = credentials?.url || source.url_template
+    if (!url) return NextResponse.json({ error: "URL not configured" }, { status: 400 })
 
-    // Descargar CSV de ARNOIA
-    console.log("[v0] Fetching ARNOIA stock from:", credentials.url)
-    const response = await fetch(credentials.url)
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch ARNOIA stock: ${response.status}`)
-    }
+    // Descargar CSV
+    console.log("[ARNOIA-STOCK] Fetching from:", url)
+    const fetchRes = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 compatible" },
+    })
+    if (!fetchRes.ok) throw new Error(`HTTP ${fetchRes.status} fetching stock CSV`)
+    const csvText = await fetchRes.text()
 
-    const csvText = await response.text()
-    
-    // Parsear CSV usando Papa Parse
-    const parseResult = Papa.parse(csvText, {
+    // Parsear CSV con PapaParse (autodetectar delimiter)
+    const parsed = Papa.parse(csvText, {
       header: true,
       skipEmptyLines: true,
-      delimiter: ";",
-      encoding: "ISO-8859-1"
+      dynamicTyping: false,
     })
+    const rows = parsed.data as any[]
+    console.log(`[ARNOIA-STOCK] Parsed ${rows.length} rows, headers: ${Object.keys(rows[0] || {}).slice(0, 5).join(", ")}`)
 
-    const rows = parseResult.data as any[]
-    console.log("[v0] Parsed rows:", rows.length)
+    if (rows.length === 0) throw new Error("CSV vacío o sin datos")
 
-    let processed = 0
-    let updated = 0
-    let notFound = 0
-    let errors = 0
+    // Construir arrays EAN, stock, precio deduplicados
+    const eanMap = new Map<string, { stock: number; price: number | null }>()
 
-    // Procesar cada fila
     for (const row of rows) {
-      const eanRaw = row["EAN"] || row["ean"] || row["ean13"]
-      const ean = normalizeEan(eanRaw)
+      const eanRaw = row["ean"] || row["EAN"] || row["ean13"] || row["EAN13"] || Object.values(row)[0]
+      const ean = normalizeEan(String(eanRaw || ""))
+      if (!ean || ean.length !== 13) continue
 
-      if (!ean || ean.length !== 13) {
-        errors++
-        continue
-      }
+      const stockRaw = row["stock"] || row["STOCK"] || row["Stock"] || row["cantidad"] || "0"
+      const priceRaw = row["precio_sin_iva"] || row["precio"] || row["PRECIO"] || row["pvp"] || null
 
-      const stock = parseInt(row["STOCK"] || row["stock"] || row["Stock"]) || 0
-      const costPrice = parseFloat(row["PRECIO"] || row["precio"] || row["Precio"]) || null
+      const stock = parseInt(String(stockRaw).replace(/\D/g, ""), 10) || 0
+      const price = priceRaw ? parseFloat(String(priceRaw).replace(",", ".")) || null : null
 
-      // Actualizar SOLO stock_by_source.arnoia y cost_price
-      const updateData: any = {
-        stock_by_source: {
-          arnoia: stock
-        }
-      }
-
-      if (costPrice !== null) {
-        updateData.cost_price = costPrice
-      }
-
-      const { data, error } = await supabase
-        .from("products")
-        .update(updateData)
-        .eq("ean", ean)
-        .select("id")
-
-      if (error) {
-        console.error(`[v0] Error updating stock for EAN ${ean}:`, error)
-        errors++
-      } else if (data && data.length > 0) {
-        updated++
+      // Si EAN duplicado, sumar stock
+      if (eanMap.has(ean)) {
+        const existing = eanMap.get(ean)!
+        eanMap.set(ean, { stock: existing.stock + stock, price: price ?? existing.price })
       } else {
-        notFound++
+        eanMap.set(ean, { stock, price })
       }
+    }
 
-      processed++
+    const eans = Array.from(eanMap.keys())
+    const stocks = eans.map(e => eanMap.get(e)!.stock)
+    const prices = eans.map(e => eanMap.get(e)!.price)
 
-      // Log progreso cada 500 productos
-      if (processed % 500 === 0) {
-        console.log(`[v0] Progress: ${processed} processed, ${updated} updated`)
+    console.log(`[ARNOIA-STOCK] ${eans.length} unique EANs to update`)
+
+    // Enviar en lotes de 1000 a la RPC bulk
+    const BATCH_SIZE = 1000
+    let totalUpdated = 0
+    let totalNotFound = 0
+
+    for (let i = 0; i < eans.length; i += BATCH_SIZE) {
+      const batchEans = eans.slice(i, i + BATCH_SIZE)
+      const batchStocks = stocks.slice(i, i + BATCH_SIZE)
+      const batchPrices = prices.slice(i, i + BATCH_SIZE)
+
+      const { data: rpcResult, error: rpcError } = await supabase.rpc("bulk_update_stock_price", {
+        p_eans: batchEans,
+        p_stocks: batchStocks,
+        p_prices: batchPrices,
+      })
+
+      if (rpcError) {
+        console.error(`[ARNOIA-STOCK] RPC error batch ${i}-${i + batchEans.length}:`, rpcError.message)
+      } else {
+        const batchUpdated = typeof rpcResult === "number" ? rpcResult : 0
+        totalUpdated += batchUpdated
+        totalNotFound += batchEans.length - batchUpdated
+        console.log(`[ARNOIA-STOCK] Batch ${i}-${i + batchEans.length}: ${batchUpdated} updated`)
       }
     }
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2)
 
-    // Actualizar estado del source
-    await supabase
-      .from("import_sources")
-      .update({
-        last_run: new Date().toISOString(),
-        last_status: "success"
-      })
-      .eq("id", source.id)
+    // Actualizar last_run del source
+    await supabase.from("import_sources").update({
+      last_run: new Date().toISOString(),
+      last_status: "success",
+    }).eq("id", source.id)
 
-    console.log("[v0] ARNOIA Stock Update - Completed")
-    console.log(`[v0] Stats: ${processed} processed, ${updated} updated, ${notFound} not found, ${errors} errors in ${duration}s`)
+    console.log(`[ARNOIA-STOCK] Done: ${totalUpdated} updated, ${totalNotFound} not found, ${duration}s`)
 
     return NextResponse.json({
       success: true,
-      stats: {
-        processed,
-        updated,
-        not_found: notFound,
-        errors,
-        duration_seconds: parseFloat(duration)
-      }
+      updated: totalUpdated,
+      not_found: totalNotFound,
+      total_rows: rows.length,
+      unique_eans: eans.length,
+      duration_seconds: parseFloat(duration),
     })
-
-  } catch (error: any) {
-    console.error("[v0] ARNOIA Stock Update - Error:", error)
-    
-    // Actualizar estado a error
-    const { data: source } = await supabase
-      .from("import_sources")
-      .select("id")
-      .eq("name", "ARNOIA")
-      .single()
-    
-    if (source) {
-      await supabase
-        .from("import_sources")
-        .update({
-          last_run: new Date().toISOString(),
-          last_status: "error"
-        })
-        .eq("id", source.id)
-    }
-
-    return NextResponse.json(
-      { error: error.message || "Stock update failed" },
-      { status: 500 }
-    )
+  } catch (err: any) {
+    console.error("[ARNOIA-STOCK] Fatal error:", err.message)
+    return NextResponse.json({ error: err.message }, { status: 500 })
   }
 }

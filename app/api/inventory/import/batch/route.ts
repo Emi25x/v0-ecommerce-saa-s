@@ -251,50 +251,40 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      const title = row["titulo"] || row["title"] || ean
+      // Precio: pvp, precio, precio_sin_iva
+      const priceRaw = row["pvp"] || row["precio_sin_iva"] || row["precio"] || row["price"] || null
+      const cost_price = priceRaw ? parseFloat(String(priceRaw).replace(",", ".").replace(/[^\d.]/g, "")) || null : null
+
+      // Stock
+      const stockRaw = row["stock"] || row["cantidad"] || null
+      const stock = stockRaw !== null ? parseInt(String(stockRaw).replace(/\D/g, ""), 10) || 0 : null
+
+      // Catálogo: resto de campos
+      const title = row["titulo"] || row["title"] || null
       const author = row["autor"] || row["author"] || null
-      const priceRaw = row["pvp"] || row["precio"] || row["price"] || "0"
-      const price = parseFloat(priceRaw.toString().replace(",", ".").replace(/[^\d.]/g, "")) || null
-
-      // Debug first row to inspect exact keys from PapaParse
-      if (productsToInsert.length === 0) {
-        console.log(`[v0][BATCH][MAPEO] Keys:`, Object.keys(row).join(" | "))
-        console.log(`[v0][BATCH][MAPEO] pvp="${row["pvp"]}" precio="${row["precio"]}" -> price=${price}`)
-        console.log(`[v0][BATCH][MAPEO] sinopsis(html)="${row["sinopsis(html)"]?.substring(0,50)}"`)
-        console.log(`[v0][BATCH][MAPEO] ano_edicion="${row["ano_edicion"]}" url="${row["url"]?.substring(0,50)}"`)
-      }
-
-      // Arnoia Act: campo "url" contiene la imagen de portada
-      const imageUrl = row["url"] || row["portada"] || row["imagen"] || row["image"] || null
-      const stock = parseInt(row["stock"] || "0", 10) || null
-      // Arnoia Act: "sinopsis(html)" o "sinopsis" para descripcion
-      // PapaParse puede cambiar "(html)" - buscar por todas las variantes
+      const image_url = row["url"] || row["portada"] || row["imagen"] || row["image"] || null
       const descKey = Object.keys(row).find(k => k.toLowerCase().includes("sinopsis"))
       const description = (descKey ? row[descKey] : null) || row["descripcion"] || row["description"] || null
-      // Arnoia Act: "editorial" para brand/editorial
       const brand = row["editorial"] || row["marca"] || row["brand"] || null
-      // Arnoia Act: "idioma" para language
       const language = row["idioma"] || row["language"] || null
-      // Arnoia Act: "ano_edicion" para year_edition - buscar variantes
-      const yearKey = Object.keys(row).find(k => k.toLowerCase().includes("ano") || k.toLowerCase().includes("año"))
-      const yearEdition = (yearKey ? row[yearKey] : null) || row["year_edition"] || null
-      // Arnoia Act: "codigo_interno" para internal_code
-      const internalCode = row["codigo_interno"] || row["internal_code"] || null
+      const yearKey = Object.keys(row).find(k => k.includes("ano_edicion") || k.includes("año_edicion"))
+      const year_edition = (yearKey ? row[yearKey] : null) || row["year_edition"] || null
+      const internal_code = row["codigo_interno"] || row["internal_code"] || null
 
       productsToInsert.push({
         ean,
         isbn: isbnRaw || null,
         title,
         author,
-        cost_price: price,
-        image_url: imageUrl,
+        cost_price,
+        image_url,
         stock,
         brand,
         category: row["categoria"] || row["category"] || null,
         description,
         language,
-        year_edition: yearEdition,
-        internal_code: internalCode,
+        year_edition,
+        internal_code,
       })
     }
 
