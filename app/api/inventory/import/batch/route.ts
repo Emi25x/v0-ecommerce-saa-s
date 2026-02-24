@@ -283,6 +283,10 @@ export async function POST(request: NextRequest) {
     if (productsToInsert.length > 0) {
       upsert_attempted = productsToInsert.length
       
+      // Detectar si es una fuente de Stock (solo actualiza, no crea)
+      const isStockImport = source.name.toLowerCase().includes('stock')
+      console.log(`[v0][BATCH] Is Stock import: ${isStockImport}`)
+      
       // Dividir en chunks de 100 para evitar timeouts
       const UPSERT_CHUNK_SIZE = 100
       const chunks = []
@@ -290,13 +294,13 @@ export async function POST(request: NextRequest) {
         chunks.push(productsToInsert.slice(i, i + UPSERT_CHUNK_SIZE))
       }
 
-      console.log(`[v0][BATCH] Upserting ${productsToInsert.length} products in ${chunks.length} chunks`)
+      console.log(`[v0][BATCH] Processing ${productsToInsert.length} products in ${chunks.length} chunks`)
 
       for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
         const chunk = chunks[chunkIndex]
         console.log(`[v0][BATCH] Processing chunk ${chunkIndex + 1}/${chunks.length} (${chunk.length} products)`)
 
-        // Para Stock: primero buscar productos existentes por EAN
+        // Buscar productos existentes por EAN
         const eans = chunk.map(p => p.ean)
         const { data: existingProducts } = await supabase
           .from("products")
@@ -307,15 +311,37 @@ export async function POST(request: NextRequest) {
         const eanToSku = new Map<string, string>()
         existingProducts?.forEach(p => eanToSku.set(p.ean, p.sku))
         
-        // Agregar SKU a cada producto (usar existente o generar nuevo)
-        const chunkWithSku = chunk.map(p => ({
-          ...p,
-          sku: eanToSku.get(p.ean) || `${p.ean}-${Date.now().toString(36)}`
-        }))
+        let chunkToUpsert: any[]
+        
+        if (isStockImport) {
+          // Stock: SOLO actualizar productos existentes, ignorar los nuevos
+          chunkToUpsert = chunk
+            .filter(p => eanToSku.has(p.ean)) // Solo los que existen
+            .map(p => ({
+              ...p,
+              sku: eanToSku.get(p.ean)! // Usar SKU existente
+            }))
+          
+          const skipped = chunk.length - chunkToUpsert.length
+          if (skipped > 0) {
+            console.log(`[v0][BATCH] Stock mode: skipped ${skipped} new products (not in DB)`)
+          }
+        } else {
+          // Catálogos: upsert normal (crea o actualiza)
+          chunkToUpsert = chunk.map(p => ({
+            ...p,
+            sku: eanToSku.get(p.ean) || `${p.ean}-${Date.now().toString(36)}`
+          }))
+        }
+
+        if (chunkToUpsert.length === 0) {
+          console.log(`[v0][BATCH] Chunk ${chunkIndex + 1}: nothing to upsert (all filtered)`)
+          continue
+        }
 
         const { error: chunkError } = await supabase
           .from("products")
-          .upsert(chunkWithSku, { onConflict: "ean" })
+          .upsert(chunkToUpsert, { onConflict: "ean" })
 
         if (error) {
           console.error(`[v0][BATCH] Upsert error in chunk ${i + 1}/${chunks.length}:`, error)
