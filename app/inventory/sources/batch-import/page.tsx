@@ -85,7 +85,11 @@ export default function BatchImportPage() {
         setStatus(`Procesando ${label}...`)
         addLog(`Usando importador dedicado para ${label}...`)
 
-        const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" } })
+        const response = await fetch(endpoint, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+        })
         const responseText = await response.text()
         let result: any = {}
         try { result = JSON.parse(responseText) } catch {}

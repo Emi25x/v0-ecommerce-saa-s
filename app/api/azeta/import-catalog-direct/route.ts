@@ -58,36 +58,54 @@ export async function POST(_request: NextRequest) {
   try {
     const url = "https://www.azetadistribuciones.es/servicios_web/csv.php?user=680899&password=badajoz24"
 
-    // Descargar archivo — AZETA requiere POST (devuelve 405 con GET)
-    console.log(`[AZETA] Intentando POST a ${url}`)
+    // Descargar archivo — intentar GET primero con redirect:follow (spec Parte 2)
+    console.log(`[AZETA] GET ${url}`)
     let res = await fetch(url, {
-      method: "POST",
+      method: "GET",
+      redirect: "follow",
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept": "*/*",
         "Accept-Language": "es-ES,es;q=0.9",
-        "Content-Type": "application/x-www-form-urlencoded",
       },
     })
-    // Si POST falla, intentar GET
-    if (!res.ok && res.status === 405) {
-      console.log(`[AZETA] POST devolvió 405, intentando GET...`)
-      res = await fetch(url, {
-        method: "GET",
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "es-ES,es;q=0.9",
-        },
-      })
+    console.log(`[AZETA] GET status: ${res.status}`)
+
+    // Si GET falla con 405, intentar POST con credenciales como form fields
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "")
+      console.log(`[AZETA] GET ${res.status} body[0:200]: ${errBody.substring(0, 200)}`)
+
+      if (res.status === 405 || res.status === 403 || res.status === 401) {
+        console.log(`[AZETA] Intentando POST con form fields...`)
+        const formData = new URLSearchParams()
+        formData.append("user", "680899")
+        formData.append("password", "badajoz24")
+
+        res = await fetch("https://www.azetadistribuciones.es/servicios_web/csv.php", {
+          method: "POST",
+          redirect: "follow",
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "*/*",
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: formData.toString(),
+        })
+        console.log(`[AZETA] POST status: ${res.status}`)
+      }
     }
 
     console.log(`[AZETA] HTTP ${res.status}, Content-Type: ${res.headers.get("content-type")}, Size: ${res.headers.get("content-length")}`)
 
     if (!res.ok) {
       const body = await res.text().catch(() => "")
-      console.error(`[AZETA] Error HTTP ${res.status}: ${res.statusText}. Body: ${body.substring(0, 300)}`)
-      return NextResponse.json({ error: `HTTP ${res.status}: ${res.statusText}`, body: body.substring(0, 300) }, { status: 500 })
+      console.error(`[AZETA] Final error HTTP ${res.status}. Body[0:200]: ${body.substring(0, 200)}`)
+      return NextResponse.json({
+        error: `Error ${res.status} del servidor AZETA`,
+        status: res.status,
+        body_preview: body.substring(0, 200),
+      }, { status: 502 })
     }
 
     const fileBuffer = Buffer.from(await res.arrayBuffer())
