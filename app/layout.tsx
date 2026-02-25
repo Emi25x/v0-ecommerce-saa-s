@@ -8,7 +8,7 @@ import "./globals.css"
 
 export const metadata: Metadata = {
   title: "Ecommerce Manager",
-  description: "Gestiona tu ecommerce con integraciones de Mercado Libre y Shopify",
+  description: "Gestiona tu ecommerce con integraciones de Mercado Libre, Shopify y más.",
   generator: "v0.app",
 }
 
