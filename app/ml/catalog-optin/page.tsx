@@ -233,7 +233,7 @@ export default function CatalogOptinPage() {
     setRunning(false)
   }, [accountId, pubs, selected, dryRun, confirmLive, running, addLog])
 
-  // ── Optin masivo (sin listar — pagina en servidor) ────────────────────────
+  // ── Optin masivo (loop de batches desde el cliente) ───────────────────────
 
   const runBulkOptin = useCallback(async () => {
     if (!accountId || running) return
@@ -241,23 +241,57 @@ export default function CatalogOptinPage() {
     setRunning(true)
     abortRef.current = false
 
-    addLog(`Iniciando optin masivo ${dryRun ? "DRY RUN" : "LIVE"} — ${total.toLocaleString()} publicaciones estimadas...`)
+    addLog(`Iniciando optin masivo ${dryRun ? "DRY RUN" : "LIVE"}...`)
 
-    const res = await fetch("/api/ml/catalog-optin/bulk", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ account_id: accountId, dry_run: dryRun }),
-    }).catch(() => null)
-    const data = await res?.json().catch(() => ({}))
+    let offset = 0
+    let totalPubs = 0
+    let accOk = 0, accFailed = 0, accNoMatch = 0, accNoEan = 0
+    let batchNum = 0
+    let done = false
 
-    if (!res?.ok || !data?.ok) {
-      addLog(`Error en optin masivo: ${data?.error ?? "desconocido"}`, "error")
-    } else {
-      addLog(`Optin masivo ${dryRun ? "DRY RUN" : "LIVE"} completo: ${data.ok_count} ok | ${data.failed_count} fallidos | ${data.no_match_count} sin match (${data.elapsed_seconds}s)`, data.failed_count > 0 ? "warn" : "ok")
+    while (!done) {
+      if (abortRef.current) { addLog("Detenido por el usuario.", "warn"); break }
+
+      batchNum++
+      const res = await fetch("/api/ml/catalog-optin/bulk/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: accountId, dry_run: dryRun, offset }),
+      }).catch(() => null)
+
+      if (!res) { addLog(`Error de red en batch ${batchNum}`, "error"); break }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        addLog(`Error HTTP ${res.status} en batch ${batchNum}: ${errData.error ?? "desconocido"}`, "error")
+        break
+      }
+
+      const data = await res.json().catch(() => ({}))
+      if (!data.ok) { addLog(`Error en batch ${batchNum}: ${data.error ?? "desconocido"}`, "error"); break }
+
+      accOk      += data.ok_count      ?? 0
+      accFailed  += data.failed_count  ?? 0
+      accNoMatch += data.no_match_count ?? 0
+      accNoEan   += data.no_ean_count   ?? 0
+      offset      = data.offset ?? offset + (data.batch_size ?? 20)
+      totalPubs   = data.total  ?? totalPubs
+      done        = data.done === true
+
+      const pct = totalPubs > 0 ? Math.min(99, Math.round((offset / totalPubs) * 100)) : 0
+      addLog(
+        `Batch ${batchNum}: +${data.ok_count} ok | +${data.no_match_count} sin match | +${data.failed_count} fallidos | ${offset.toLocaleString()}/${totalPubs.toLocaleString()} (${pct}%)`,
+        data.failed_count > 0 ? "warn" : "info"
+      )
+
+      if (!done) await new Promise(r => setTimeout(r, 300))
     }
 
+    addLog(
+      `Masivo ${dryRun ? "DRY RUN" : "LIVE"} completo: ${accOk} ok | ${accFailed} fallidos | ${accNoMatch} sin match | ${accNoEan} sin EAN en ${batchNum} batches`,
+      accFailed > 0 ? "warn" : "ok"
+    )
     setRunning(false)
-  }, [accountId, total, dryRun, confirmLive, running, addLog])
+  }, [accountId, dryRun, confirmLive, running, addLog])
 
   // ── Derived counts ─────────────────────────────────────────────────────────
 
@@ -436,16 +470,26 @@ export default function CatalogOptinPage() {
           {/* Action buttons */}
           {pubs.length > 0 && (
             <div className="flex flex-wrap items-center gap-3">
-              <Button
-                onClick={resolveAll}
-                disabled={running || loading || counts.pending === 0}
-                variant="outline"
-                size="sm"
-              >
-                {running ? "Resolviendo..." : selected.size > 0
-                  ? `Resolver seleccionados (${pubs.filter(p => selected.has(p.id) && p.resolve_status === "pending").length})`
-                  : `Resolver todos (${counts.pending} pendientes)`}
-              </Button>
+              {/* Cuantos seleccionados tienen EAN y estan pendientes de resolver */}
+              {(() => {
+                const selPending = selected.size > 0
+                  ? pubs.filter(p => selected.has(p.id) && p.resolve_status === "pending").length
+                  : counts.pending
+                return (
+                  <Button
+                    onClick={resolveAll}
+                    disabled={running || loading || selPending === 0}
+                    variant="outline"
+                    size="sm"
+                  >
+                    {running
+                      ? "Resolviendo..."
+                      : selected.size > 0
+                        ? `Resolver seleccionados (${selPending})`
+                        : `Resolver todos (${selPending} pendientes)`}
+                  </Button>
+                )
+              })()}
 
               <div className="flex items-center gap-3 border border-border rounded-lg px-3 py-2">
                 <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
@@ -470,16 +514,22 @@ export default function CatalogOptinPage() {
                     Confirmo LIVE
                   </label>
                 )}
-                <Button
-                  onClick={runOptin}
-                  disabled={running || loading || optinTarget === 0 || (!dryRun && !confirmLive)}
-                  size="sm"
-                  className={dryRun ? "" : "bg-orange-600 hover:bg-orange-700 text-white"}
-                >
-                  {dryRun
-                    ? `Simular optin (${optinTarget})`
-                    : `Optin LIVE (${optinTarget})`}
-                </Button>
+                {/* Optin actua sobre seleccionados resueltos, o todos los resueltos si no hay seleccion */}
+                {(() => {
+                  const targetCount = selected.size > 0 ? selectedResolved : counts.resolved
+                  return (
+                    <Button
+                      onClick={runOptin}
+                      disabled={running || targetCount === 0 || (!dryRun && !confirmLive)}
+                      size="sm"
+                      className={dryRun ? "" : "bg-orange-600 hover:bg-orange-700 text-white"}
+                    >
+                      {dryRun
+                        ? `Simular optin (${targetCount})`
+                        : `Optin LIVE (${targetCount})`}
+                    </Button>
+                  )
+                })()}
               </div>
 
               {running && (
