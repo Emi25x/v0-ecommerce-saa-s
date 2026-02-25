@@ -5,7 +5,7 @@
  */
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { mlFetchJson, isMlFetchError } from "@/lib/ml/http"
+// mlFetchJson no se usa — búsqueda pública de ML no requiere Authorization
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 55
@@ -137,18 +137,29 @@ export async function POST(req: NextRequest) {
 
   let scanned = 0
   let errors = 0
+  let firstErrorLogged = false
 
   for (const ean of toScan) {
     try {
+      // Búsqueda pública de ML — NO requiere Authorization, pasarlo causa 401 en algunos entornos
       const url = `https://api.mercadolibre.com/sites/${SITE_ID}/search?q=${encodeURIComponent(ean)}&limit=50`
-      const res = await mlFetchJson(url, { accessToken: account.access_token }, { account_id: job.account_id, op_name: `market-scan-${ean}` })
+      const httpRes = await fetch(url, {
+        headers: { "Accept": "application/json" },
+        signal: AbortSignal.timeout(10000),
+      })
 
-      if (isMlFetchError(res)) {
-        console.warn(`[MARKET-SCAN-RUN] Error ML EAN ${ean}: status=${res.status}`)
+      if (!httpRes.ok) {
+        const body = await httpRes.text()
+        if (!firstErrorLogged) {
+          console.error(`[MARKET-SCAN-RUN] PRIMER ERROR HTTP ${httpRes.status} EAN=${ean} body=${body.slice(0, 300)}`)
+          firstErrorLogged = true
+        }
         errors++
         await delay(DELAY_MS)
         continue
       }
+
+      const res = await httpRes.json()
 
       const items: any[] = res.results ?? []
       if (items.length === 0) { await delay(DELAY_MS); continue }
