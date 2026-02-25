@@ -61,13 +61,33 @@ export async function POST(req: NextRequest) {
     })
   }
 
+  const authHeaders = {
+    "Authorization": `Bearer ${account.access_token}`,
+    "Content-Type": "application/json",
+  }
+
+  // ML requiere que el item esté ACTIVE para hacer optin — si está paused, activarlo primero
+  const itemRes = await fetch(`https://api.mercadolibre.com/items/${item_id}?attributes=id,status`, {
+    headers: authHeaders,
+  })
+  if (itemRes.ok) {
+    const itemData = await itemRes.json()
+    if (itemData.status === "paused") {
+      console.log(`[CATALOG-OPTIN] Activando item pausado ${item_id} antes del optin`)
+      await fetch(`https://api.mercadolibre.com/items/${item_id}`, {
+        method: "PUT",
+        headers: authHeaders,
+        body: JSON.stringify({ status: "active" }),
+      })
+      // Pequeña pausa para que ML propague el cambio
+      await new Promise(r => setTimeout(r, 1500))
+    }
+  }
+
   // Mismo mecanismo exacto que publish/route.ts línea 1021
   const optinRes = await fetch("https://api.mercadolibre.com/items/catalog_listings", {
     method: "POST",
-    headers: {
-      "Authorization": `Bearer ${account.access_token}`,
-      "Content-Type": "application/json",
-    },
+    headers: authHeaders,
     body: JSON.stringify({ item_id, catalog_product_id }),
   })
 
