@@ -13,54 +13,54 @@ export async function POST() {
   const url = "https://www.azetadistribuciones.es/servicios_web/csv.php?user=680899&password=badajoz24"
 
   try {
-    // 1. Descargar ZIP
-    console.log("[AZETA-DL] Descargando ZIP...")
+    // 1. Fetch del ZIP desde AZETA — streaming directo a Blob sin bufferear en memoria
+    console.log("[AZETA-DL] Iniciando stream ZIP → Blob...")
     const res = await fetch(url)
     console.log(`[AZETA-DL] status=${res.status} content-length=${res.headers.get("content-length")}`)
-
     if (!res.ok) {
       const preview = await res.text().then(t => t.slice(0, 200)).catch(() => "")
       return NextResponse.json({ error: `Error ${res.status} AZETA`, preview }, { status: 502 })
     }
 
-    // Leer ZIP en memoria via stream
-    const chunks: Uint8Array[] = []
-    const reader = res.body!.getReader()
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      if (value) chunks.push(value)
-    }
-    const totalLen = chunks.reduce((s, c) => s + c.length, 0)
-    const zipBuf = new Uint8Array(totalLen)
-    let pos = 0
-    for (const c of chunks) { zipBuf.set(c, pos); pos += c.length }
-    console.log(`[AZETA-DL] ZIP: ${(zipBuf.length / 1024 / 1024).toFixed(1)}MB en ${((Date.now()-startTime)/1000).toFixed(1)}s`)
-
-    // 2. Extraer y descomprimir CSV del ZIP
-    const csvText = await extractCSVFromZip(zipBuf)
-    console.log(`[AZETA-DL] CSV descomprimido: ${(csvText.length / 1024 / 1024).toFixed(1)}MB`)
-
-    // 3. Borrar blobs anteriores
+    // 2. Borrar blobs anteriores del ZIP
     try {
       const { blobs } = await list({ prefix: "azeta-catalog/" })
       await Promise.all(blobs.map(b => del(b.url)))
-      if (blobs.length > 0) console.log(`[AZETA-DL] Borrados ${blobs.length} blobs anteriores`)
     } catch {}
 
-    // 4. Subir el CSV descomprimido como texto a Blob
-    const csvBlob = new Blob([csvText], { type: "text/plain; charset=latin1" })
-    const blob = await put("azeta-catalog/catalog.csv", csvBlob, { access: "public" })
+    // 3. Stream directo del body del fetch al put() de Blob — nunca carga nada en memoria
+    const zipBlob = await put("azeta-catalog/catalog.zip", res.body!, {
+      access: "public",
+      contentType: "application/zip",
+    })
+    const elapsed1 = ((Date.now() - startTime) / 1000).toFixed(1)
+    console.log(`[AZETA-DL] ZIP subido a Blob en ${elapsed1}s: ${zipBlob.url}`)
+
+    // 4. Descargar el ZIP desde Blob, descomprimir, recontar lineas
+    const zipRes = await fetch(zipBlob.url)
+    const zipBuf = Buffer.from(await zipRes.arrayBuffer())
+    console.log(`[AZETA-DL] ZIP descargado desde Blob: ${(zipBuf.length/1024/1024).toFixed(1)}MB`)
+
+    const csvText = await extractCSVFromZip(new Uint8Array(zipBuf))
+    const lines = csvText.split("\n")
+    const totalLines = lines.filter(l => l.trim()).length - 1 // sin header
+
+    // 5. Subir CSV descomprimido a Blob (para que process pueda usar Range)
+    const csvBlobResult = await put("azeta-catalog/catalog.csv", csvText, {
+      access: "public",
+      contentType: "text/plain; charset=utf-8",
+    })
+    // Borrar ZIP ya que tenemos el CSV
+    await del(zipBlob.url).catch(() => {})
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-    const lineCount = csvText.split("\n").length - 1  // sin contar header
-    console.log(`[AZETA-DL] CSV subido a Blob: ${blob.url} lineas=${lineCount} en ${elapsed}s`)
+    console.log(`[AZETA-DL] CSV subido a Blob: ${csvBlobResult.url} lineas=${totalLines} en ${elapsed}s`)
 
     return NextResponse.json({
       ok: true,
-      blob_url: blob.url,
+      blob_url: csvBlobResult.url,
       csv_size_mb: parseFloat((csvText.length / 1024 / 1024).toFixed(1)),
-      total_lines: lineCount,
+      total_lines: totalLines,
       elapsed_seconds: parseFloat(elapsed),
     })
   } catch (err: any) {
