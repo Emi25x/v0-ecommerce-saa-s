@@ -8,12 +8,6 @@ export async function GET() {
   return NextResponse.json({ ok: true, route: "azeta-run-v1", bundle: 3 })
 }
 
-// POST stub — responde inmediatamente para confirmar que el handler está registrado
-export async function POST(_req: NextRequest) {
-  // STUB: confirmar registro del handler — reemplazar con lógica real después
-  return NextResponse.json({ ok: true, stub: true, msg: "POST handler registrado correctamente" })
-}
-
 export async function POST(_request: NextRequest) {
   const startTime = Date.now()
   console.log("[AZETA] === Inicio importacion catalogo ===")
