@@ -13,7 +13,12 @@ export function normalizeEan(ean: string | number | null | undefined): string {
   
   // Convert to string while preserving all digits
   let eanStr = String(ean).trim()
-  
+
+  // Manejar notación científica de Excel: 9.78845E+12 → 9788450000000
+  if (/^[0-9]+\.?[0-9]*[eE][+\-][0-9]+$/.test(eanStr)) {
+    eanStr = Number(eanStr).toFixed(0)
+  }
+
   // Remove any non-digit characters (spaces, dashes, etc.)
   eanStr = eanStr.replace(/\D/g, "")
   
