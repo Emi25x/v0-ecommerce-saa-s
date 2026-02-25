@@ -3,13 +3,14 @@ import { createAdminClient } from "@/lib/supabase/admin"
 
 export const dynamic = "force-dynamic"
 
-// GET: diagnóstico — confirma que el módulo carga y prueba APIs disponibles
+// GET: diagnóstico v2
 export async function GET() {
-  const probe: Record<string, boolean> = {}
-  try { const z = require("zlib"); probe["require_zlib"] = typeof z.inflateRawSync === "function" } catch { probe["require_zlib"] = false }
-  try { probe["DecompressionStream"] = typeof DecompressionStream !== "undefined" } catch { probe["DecompressionStream"] = false }
-  try { const { inflateRawSync } = await import("node:zlib"); probe["import_node_zlib"] = typeof inflateRawSync === "function" } catch { probe["import_node_zlib"] = false }
-  return NextResponse.json({ ok: true, route: "azeta-import-catalog-direct", ts: Date.now(), runtime_probe: probe })
+  const probe: Record<string, unknown> = { v: 2 }
+  try { const z = require("zlib"); probe.require_zlib = typeof z.inflateRawSync === "function" } catch(e:any) { probe.require_zlib = e.message }
+  try { probe.DecompressionStream = typeof DecompressionStream !== "undefined" } catch(e:any) { probe.DecompressionStream = e.message }
+  try { const m = await import("node:zlib"); probe.import_node_zlib = typeof m.inflateRawSync === "function" } catch(e:any) { probe.import_node_zlib = e.message }
+  try { probe.Buffer = typeof Buffer !== "undefined" } catch(e:any) { probe.Buffer = e.message }
+  return NextResponse.json({ ok: true, route: "azeta-v2", ts: Date.now(), probe })
 }
 
 export async function POST(_request: NextRequest) {
