@@ -447,6 +447,19 @@ export function AppSidebar() {
                 </svg>
                 <span>Migrar a Catálogo</span>
               </a>
+              <a
+                href="/ml/catalog-optin"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  isActive("/ml/catalog-optin")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 5v14M5 12l7 7 7-7" />
+                </svg>
+                <span>Optin Catálogo</span>
+              </a>
             </div>
           )}
         </div>
