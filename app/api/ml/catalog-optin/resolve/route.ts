@@ -20,8 +20,8 @@ export async function POST(req: NextRequest) {
 
   if (!account) return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
 
-  // Buscar en ML Products por GTIN — mismo endpoint que usa el matcher
-  const url = `https://api.mercadolibre.com/products/search?site_id=MLA&q=GTIN:${encodeURIComponent(ean)}&limit=5`
+  // Igual que publish/route.ts: product_identifier hace búsqueda exacta por EAN/ISBN/GTIN
+  const url = `https://api.mercadolibre.com/products/search?status=active&site_id=MLA&product_identifier=${encodeURIComponent(ean)}`
   const res = await fetch(url, {
     headers: { "Authorization": `Bearer ${account.access_token}` },
   })
@@ -38,53 +38,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, status: "not_found", ean, results: [] })
   }
 
-  // Auto-match: buscar el resultado cuyo gtin o isbn coincide exactamente con el EAN
-  const eanNorm = ean.replace(/\D/g, "").toLowerCase()
-
-  function getIdentifiers(r: any): string[] {
-    const ids: string[] = []
-    // ML devuelve attributes como array [{id, value_name}] o un objeto plain
-    const attrs: any[] = Array.isArray(r.attributes) ? r.attributes : []
-    for (const a of attrs) {
-      if (["GTIN", "ISBN", "EAN", "UPC"].includes((a.id ?? "").toUpperCase())) {
-        const val = String(a.value_name ?? "").replace(/\D/g, "").toLowerCase()
-        if (val) ids.push(val)
-      }
-    }
-    // También revisar campos top-level que a veces devuelve ML
-    if (r.gtin) ids.push(String(r.gtin).replace(/\D/g, "").toLowerCase())
-    if (r.isbn) ids.push(String(r.isbn).replace(/\D/g, "").toLowerCase())
-    return ids
-  }
-
-  // Si hay un solo resultado, confiar directamente
-  if (results.length === 1) {
-    return NextResponse.json({
-      ok: true, status: "resolved", ean,
-      catalog_product_id: results[0].id,
-      product_title: results[0].name ?? results[0].title,
-      results,
-    })
-  }
-
-  // Múltiples: intentar auto-seleccionar por GTIN/ISBN
-  const matched = results.filter(r => getIdentifiers(r).includes(eanNorm))
-
-  if (matched.length === 1) {
-    return NextResponse.json({
-      ok: true, status: "resolved", ean,
-      catalog_product_id: matched[0].id,
-      product_title: matched[0].name ?? matched[0].title,
-      auto_matched: true,
-      results,
-    })
-  }
-
-  // Sin match exacto en atributos — devolver todos para que el usuario elija
+  // product_identifier es búsqueda exacta — tomar el primero directamente (igual que publish)
   return NextResponse.json({
     ok: true,
-    status: "ambiguous",
+    status: "resolved",
     ean,
-    results: results.map((r) => ({ id: r.id, name: r.name ?? r.title })),
+    catalog_product_id: results[0].id,
+    product_title: results[0].name ?? results[0].title,
+    results,
   })
 }
