@@ -432,6 +432,21 @@ export function AppSidebar() {
                 </svg>
                 <span>Oportunidades</span>
               </a>
+              <a
+                href="/ml/catalog"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  isActive("/ml/catalog")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 3h18v4H3z" />
+                  <path d="M3 10h18v4H3z" />
+                  <path d="M3 17h18v4H3z" />
+                </svg>
+                <span>Migrar a Catálogo</span>
+              </a>
             </div>
           )}
         </div>
