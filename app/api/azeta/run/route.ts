@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 
 export const dynamic = "force-dynamic"
-// bundle-version: 3
+// bundle-version: 4
 
 export async function GET() {
   return NextResponse.json({ ok: true, route: "azeta-run-v1", bundle: 3 })
@@ -40,8 +40,8 @@ export async function POST(_request: NextRequest) {
           if (method === 0) {
             decompressed = compressed
           } else if (method === 8) {
-            const zlib = require("zlib")
-            decompressed = zlib.inflateRawSync(Buffer.from(compressed))
+            const { inflateRawSync } = await import("zlib")
+            decompressed = inflateRawSync(Buffer.from(compressed))
           } else {
             throw new Error(`ZIP method ${method} not supported`)
           }
