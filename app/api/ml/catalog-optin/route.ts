@@ -74,10 +74,11 @@ export async function POST(req: NextRequest) {
   const optinBody = await optinRes.json().catch(() => ({}))
 
   if (!optinRes.ok) {
-    console.error(`[CATALOG-OPTIN] Error item=${item_id} status=${optinRes.status}`, optinBody)
+    console.error(`[CATALOG-OPTIN] FAIL item=${item_id} product=${catalog_product_id} status=${optinRes.status} body=${JSON.stringify(optinBody)}`)
     return NextResponse.json({
       ok: false,
       item_id,
+      catalog_product_id,
       status: optinRes.status,
       ml_error: optinBody,
     }, { status: 200 }) // 200 para que la UI lo reciba siempre

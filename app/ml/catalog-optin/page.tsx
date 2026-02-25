@@ -86,7 +86,7 @@ export default function CatalogOptinPage() {
     setSelected(new Set())
     addLog("Cargando publicaciones...")
     try {
-      const res = await fetch(`/api/ml/catalog-optin?account_id=${accountId}&limit=500`)
+      const res = await fetch(`/api/ml/catalog-optin?account_id=${accountId}&limit=50`)
       const data = await res.json()
       if (!data.ok) { addLog(`Error al cargar: ${data.error}`, "error"); return }
       const enriched: Pub[] = (data.pubs ?? []).map((p: Pub) => ({
@@ -117,7 +117,7 @@ export default function CatalogOptinPage() {
     return true
   })
 
-  const visibleIds = filteredPubs.slice(0, 500).map(p => p.id)
+  const visibleIds = filteredPubs.slice(0, 50).map(p => p.id)
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selected.has(id))
   const someVisibleSelected = visibleIds.some(id => selected.has(id))
 
@@ -252,10 +252,13 @@ export default function CatalogOptinPage() {
         okOptin++
         if (!dryRun) addLog(`OK: ${pub.ml_item_id} → ${resolvedId}`, "ok")
       } else {
-        const errMsg = oData?.ml_error?.message ?? oData?.ml_error?.error ?? JSON.stringify(oData?.ml_error ?? {})
-        setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, optin_status: "failed", optin_error: errMsg } : p))
+        // Extraer el error completo de ML para diagnosticar
+        const mlErr = oData?.ml_error ?? oData
+        const errMsg = mlErr?.message ?? mlErr?.cause ?? mlErr?.error ?? JSON.stringify(mlErr)
+        const errDetail = `HTTP ${oData?.status ?? "?"} | ${errMsg}`
+        setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, optin_status: "failed", optin_error: errDetail } : p))
         failedOptin++
-        addLog(`FAIL: ${pub.ml_item_id} — ${errMsg}`, "error")
+        addLog(`FAIL ${pub.ml_item_id} (${resolvedId}): ${errDetail}`, "error")
       }
       await new Promise(r => setTimeout(r, 300))
     }
@@ -298,10 +301,12 @@ export default function CatalogOptinPage() {
         ok++
         if (!dryRun) addLog(`OK: ${pub.ml_item_id} → ${pub.catalog_product_id}`, "ok")
       } else {
-        const errMsg = data?.ml_error?.message ?? data?.ml_error?.error ?? JSON.stringify(data?.ml_error ?? {})
-        setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, optin_status: "failed", optin_error: errMsg } : p))
+        const mlErr = data?.ml_error ?? data
+        const errMsg = mlErr?.message ?? mlErr?.cause ?? mlErr?.error ?? JSON.stringify(mlErr)
+        const errDetail = `HTTP ${data?.status ?? "?"} | ${errMsg}`
+        setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, optin_status: "failed", optin_error: errDetail } : p))
         failed++
-        addLog(`FAIL: ${pub.ml_item_id} — ${errMsg}`, "error")
+        addLog(`FAIL ${pub.ml_item_id}: ${errDetail}`, "error")
       }
       await new Promise(r => setTimeout(r, 300))
     }
@@ -684,7 +689,7 @@ export default function CatalogOptinPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredPubs.slice(0, 500).map(p => (
+                  {filteredPubs.slice(0, 50).map(p => (
                     <tr
                       key={p.id}
                       onClick={() => toggleOne(p.id)}
@@ -730,9 +735,9 @@ export default function CatalogOptinPage() {
                   ))}
                 </tbody>
               </table>
-              {filteredPubs.length > 500 && (
+              {filteredPubs.length > 50 && (
                 <div className="px-3 py-2 text-xs text-muted-foreground border-t border-border">
-                  Mostrando 500 de {filteredPubs.length} — usa el filtro para ver segmentos especificos
+                  Mostrando 50 de {filteredPubs.length} — usa el filtro para ver segmentos especificos
                 </div>
               )}
             </div>
