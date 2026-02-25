@@ -109,6 +109,18 @@ export default function DailyActionsPage() {
     if (selectedAccountId) loadActions()
   }, [selectedAccountId, loadActions])
 
+  async function handleCancelScan() {
+    if (!selectedAccountId) return
+    const res = await fetch("/api/market/scan/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ account_id: selectedAccountId }),
+    })
+    const data = await res.json()
+    setRefreshLog((prev) => [...prev, `${new Date().toLocaleTimeString("es-AR")} — Cancelados ${data.cancelled ?? 0} job(s) activos`])
+    setRefreshing(false)
+  }
+
   async function handleRefreshData() {
     if (!selectedAccountId || refreshing) return
     setRefreshing(true)
@@ -117,7 +129,14 @@ export default function DailyActionsPage() {
     const log = (msg: string) => setRefreshLog((prev) => [...prev, `${new Date().toLocaleTimeString("es-AR")} — ${msg}`])
 
     try {
-      // Paso 1: Crear job de scan
+      // Paso 1: Cancelar jobs viejos colgados y crear job nuevo
+      log("Cancelando jobs anteriores...")
+      await fetch("/api/market/scan/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: selectedAccountId }),
+      })
+
       log("Iniciando job de scan de mercado...")
       const startRes = await fetch("/api/market/scan/start", {
         method: "POST",
@@ -133,12 +152,12 @@ export default function DailyActionsPage() {
 
       const job = startData.job
       const total = job.total_estimated ?? 0
-      log(`Job creado: ${job.id.slice(0, 8)}... | Publicaciones estimadas: ${total.toLocaleString("es-AR")} | ${startData.resumed ? "retomando" : "nuevo"}`)
+      log(`Job creado: ${job.id.slice(0, 8)}... | Publicaciones estimadas: ${total.toLocaleString("es-AR")}`)
 
       // Paso 2: Loop run hasta done=true
-      let jobId = job.id
-      let accScanned = job.scanned ?? 0
-      let accErrors = job.errors ?? 0
+      const jobId = job.id
+      let accScanned = 0
+      let accErrors = 0
       let batchNum = 0
       let done = false
 
@@ -164,10 +183,13 @@ export default function DailyActionsPage() {
 
         log(`Batch ${batchNum}: +${runData.scanned} escaneados, +${runData.skipped_cached} en cache, +${runData.skipped_invalid} inválidos, +${runData.errors} errores | ${cursor.toLocaleString("es-AR")}/${total.toLocaleString("es-AR")} (${pct}%)`)
 
-        if (!done) {
-          // Pausa breve entre batches para no saturar
-          await new Promise(r => setTimeout(r, 500))
+        // Si el primer batch tiene 0 escaneados y errores altos, abortar y avisar
+        if (batchNum === 1 && accScanned === 0 && accErrors > 50) {
+          log(`ADVERTENCIA: primer batch con 0 escaneados y ${accErrors} errores. Abortando — revisar conectividad con ML API.`)
+          break
         }
+
+        if (!done) await new Promise(r => setTimeout(r, 300))
       }
 
       log(`Scan completado: ${accScanned.toLocaleString("es-AR")} EANs escaneados en ${batchNum} batches, ${accErrors} errores`)
@@ -226,6 +248,11 @@ export default function DailyActionsPage() {
                 <option key={a.id} value={a.id}>{a.nickname}</option>
               ))}
             </select>
+          )}
+          {refreshing && (
+            <Button size="sm" variant="destructive" onClick={handleCancelScan}>
+              Cancelar scan
+            </Button>
           )}
           <Button size="sm" onClick={handleRefreshData} disabled={refreshing}>
             {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}

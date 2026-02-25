@@ -143,10 +143,17 @@ export async function POST(req: NextRequest) {
     try {
       // Búsqueda pública de ML — NO requiere Authorization, pasarlo causa 401 en algunos entornos
       const url = `https://api.mercadolibre.com/sites/${SITE_ID}/search?q=${encodeURIComponent(ean)}&limit=50`
-      const httpRes = await fetch(url, {
-        headers: { "Accept": "application/json" },
-        signal: AbortSignal.timeout(10000),
-      })
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 10000)
+      let httpRes: Response
+      try {
+        httpRes = await fetch(url, {
+          headers: { "Accept": "application/json" },
+          signal: controller.signal,
+        })
+      } finally {
+        clearTimeout(timeoutId)
+      }
 
       if (!httpRes.ok) {
         const body = await httpRes.text()
