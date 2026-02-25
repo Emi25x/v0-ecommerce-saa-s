@@ -76,24 +76,17 @@ export default function BatchImportPage() {
     const isAzeta = nameLower.includes("azeta")
     const isArnoiaStock = nameLower.includes("arnoia") && nameLower.includes("stock")
 
-    // Endpoints dedicados (descarga una sola vez)
-    if (isAzeta || isArnoiaStock) {
-      const endpoint = isAzeta ? "/api/azeta/run" : "/api/arnoia/import-stock"
-      const label = isAzeta ? "AZETA (ZIP grande)" : "Arnoia Stock"
-
+    // Arnoia Stock: endpoint dedicado simple
+    if (isArnoiaStock) {
       try {
-        setStatus(`Procesando ${label}...`)
-        addLog(`Usando importador dedicado para ${label}...`)
-
-        const response = await fetch(endpoint, {
+        setStatus("Procesando Arnoia Stock...")
+        addLog("Usando importador dedicado para Arnoia Stock...")
+        const response = await fetch("/api/arnoia/import-stock", {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
         })
-        const responseText = await response.text()
-        let result: any = {}
-        try { result = JSON.parse(responseText) } catch {}
-
+        const result = await response.json().catch(() => ({}))
         if (!response.ok) {
           const msg = result.error || `Error ${response.status}`
           addLog(`Error: ${msg}`)
@@ -101,17 +94,93 @@ export default function BatchImportPage() {
           setIsRunning(false)
           return
         }
-
         const c = result.created || 0
         const u = result.updated || result.updated_count || 0
-        const t = result.total_rows || c + u
-        setTotalCreated(c)
-        setTotalUpdated(u)
-        setTotalProcessed(t)
-        setTotalRows(t)
-        setProgress(100)
+        setTotalCreated(c); setTotalUpdated(u); setTotalProcessed(c + u); setTotalRows(c + u); setProgress(100)
         addLog(`Completado: ${c} creados, ${u} actualizados`)
-        setStatus(`Importacion completada`)
+        setStatus("Importacion completada")
+        setIsRunning(false)
+        return
+      } catch (err: any) {
+        addLog(`Error: ${err.message}`)
+        setStatus(`Error: ${err.message}`)
+        setIsRunning(false)
+        return
+      }
+    }
+
+    // AZETA: flujo 2 pasos — descargar ZIP a Blob, luego procesar en lotes desde Blob
+    if (isAzeta) {
+      try {
+        // Paso 1: Descargar ZIP y subir a Vercel Blob
+        setStatus("Descargando ZIP de AZETA a almacenamiento temporal...")
+        addLog("Paso 1/2: Descargando ZIP de AZETA (~230MB)...")
+        const dlRes = await fetch("/api/azeta/download", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" } })
+        const dlData = await dlRes.json().catch(() => ({}))
+        if (!dlRes.ok) {
+          addLog(`Error en descarga: ${dlData.error || `HTTP ${dlRes.status}`}`)
+          setStatus(`Error en descarga`)
+          setIsRunning(false)
+          return
+        }
+        const blobUrl = dlData.blob_url
+        addLog(`ZIP subido a almacenamiento temporal en ${dlData.elapsed_seconds}s`)
+
+        // Paso 2: Procesar en lotes desde Blob
+        addLog("Paso 2/2: Procesando productos en lotes de 5000...")
+        let offset = 0
+        let accCreated = 0
+        let accUpdated = 0
+        let accProcessed = 0
+        let totalLines = 0
+        let loopDone = false
+
+        while (!loopDone && !abortRef.current) {
+          setStatus(`Procesando offset ${offset}...`)
+          const procRes = await fetch("/api/azeta/process", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ blob_url: blobUrl, offset }),
+          })
+          const procData = await procRes.json().catch(() => ({}))
+          if (!procRes.ok) {
+            addLog(`Error en proceso offset ${offset}: ${procData.error || `HTTP ${procRes.status}`}`)
+            setStatus(`Error en procesamiento`)
+            setIsRunning(false)
+            // Limpiar blob
+            await fetch("/api/azeta/process", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ blob_url: blobUrl, offset: 0, cleanup: true }) }).catch(() => {})
+            return
+          }
+
+          accCreated += procData.created || 0
+          accUpdated += procData.updated || 0
+          accProcessed += procData.rows_processed || 0
+          if (procData.total_lines) totalLines = procData.total_lines
+          loopDone = procData.done === true
+          offset = procData.next_offset || offset + 5000
+
+          setTotalCreated(accCreated)
+          setTotalUpdated(accUpdated)
+          setTotalProcessed(accProcessed)
+          if (totalLines > 0) {
+            setTotalRows(totalLines)
+            setProgress(Math.min(99, Math.round((accProcessed / totalLines) * 100)))
+          }
+          addLog(`Offset ${procData.offset}: +${procData.created} creados, +${procData.updated} actualizados, +${procData.discarded} descartados (${procData.elapsed_seconds}s)`)
+        }
+
+        // Limpiar blob temporal
+        await fetch("/api/azeta/process", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ blob_url: blobUrl, offset: 0, cleanup: true }),
+        }).catch(() => {})
+
+        setProgress(100)
+        addLog(`Completado: ${accCreated} creados, ${accUpdated} actualizados`)
+        setStatus("Importacion completada")
         setIsRunning(false)
         return
       } catch (err: any) {
