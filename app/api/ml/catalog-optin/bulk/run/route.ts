@@ -16,13 +16,14 @@ export async function POST(req: NextRequest) {
 
   const { data: account } = await supabase
     .from("ml_accounts")
-    .select("access_token, ml_user_id, nickname")
+    .select("access_token, ml_user_id, nickname, site_id")
     .eq("id", account_id)
     .single()
 
   if (!account) return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
 
-  const siteId = (account.nickname ?? "").startsWith("MLB") ? "MLB" : "MLA"
+  // site_id viene de la tabla, fallback a MLA
+  const siteId = account.site_id ?? "MLA"
 
   // Obtener el total de publicaciones de esta cuenta (para el progreso)
   const { count: totalCount } = await supabase
@@ -66,7 +67,10 @@ export async function POST(req: NextRequest) {
       const controller = new AbortController()
       const tid = setTimeout(() => controller.abort(), 8000)
       const searchRes = await fetch(searchUrl, {
-        headers: { "Accept": "application/json" },
+        headers: {
+          "Accept": "application/json",
+          "Authorization": `Bearer ${account.access_token}`,
+        },
         signal: controller.signal,
       }).finally(() => clearTimeout(tid))
 
