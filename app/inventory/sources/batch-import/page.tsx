@@ -78,7 +78,7 @@ export default function BatchImportPage() {
 
     // Endpoints dedicados (descarga una sola vez)
     if (isAzeta || isArnoiaStock) {
-      const endpoint = isAzeta ? "/api/azeta/import-catalog-direct" : "/api/arnoia/import-stock"
+      const endpoint = isAzeta ? "/api/azeta/run" : "/api/arnoia/import-stock"
       const label = isAzeta ? "AZETA (ZIP grande)" : "Arnoia Stock"
 
       try {
