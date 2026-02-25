@@ -3,14 +3,8 @@ import { createAdminClient } from "@/lib/supabase/admin"
 
 export const dynamic = "force-dynamic"
 
-// GET: diagnóstico v2
 export async function GET() {
-  const probe: Record<string, unknown> = { v: 2 }
-  try { const z = require("zlib"); probe.require_zlib = typeof z.inflateRawSync === "function" } catch(e:any) { probe.require_zlib = e.message }
-  try { probe.DecompressionStream = typeof DecompressionStream !== "undefined" } catch(e:any) { probe.DecompressionStream = e.message }
-  try { const m = await import("node:zlib"); probe.import_node_zlib = typeof m.inflateRawSync === "function" } catch(e:any) { probe.import_node_zlib = e.message }
-  try { probe.Buffer = typeof Buffer !== "undefined" } catch(e:any) { probe.Buffer = e.message }
-  return NextResponse.json({ ok: true, route: "azeta-v2", ts: Date.now(), probe })
+  return NextResponse.json({ ok: true, route: "azeta-import-catalog-direct" })
 }
 
 export async function POST(_request: NextRequest) {
