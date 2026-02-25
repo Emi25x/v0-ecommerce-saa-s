@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
     opp_id?: string
   }> = []
 
-  for (const pub of pubs || []) {
+  for (const pub of (pubs ?? [])) {
     const snap = snapMap.get(pub.ean!)
     const myPrice = Number(pub.price) || 0
     if (!snap || !myPrice) continue
@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Agregar oportunidades
-  for (const opp of opps || []) {
+  for (const opp of (opps ?? [])) {
     actions.push({
       type: "opportunity",
       priority: "info",
@@ -131,14 +131,21 @@ export async function GET(request: NextRequest) {
   const ORDER: Record<Priority, number> = { critical: 0, warning: 1, good: 2, info: 3 }
   actions.sort((a, b) => ORDER[a.priority] - ORDER[b.priority])
 
-  const summary = {
-    zona_33k: actions.filter((a) => a.type === "zona_33k").length,
-    overpriced: actions.filter((a) => a.type === "overpriced").length,
-    underpriced: actions.filter((a) => a.type === "underpriced").length,
-    opportunities: actions.filter((a) => a.type === "opportunity").length,
-    total: actions.length,
-    has_snapshot_today: snaps?.length || 0,
+  const safeActions = actions ?? []
+  const oppCount = (opps ?? []).length
+
+  if (oppCount === 0) {
+    console.log("[daily-actions] No se detectaron oportunidades")
   }
 
-  return NextResponse.json({ actions, summary, today })
+  const summary = {
+    zona_33k: safeActions.filter((a) => a.type === "zona_33k").length,
+    overpriced: safeActions.filter((a) => a.type === "overpriced").length,
+    underpriced: safeActions.filter((a) => a.type === "underpriced").length,
+    opportunities: safeActions.filter((a) => a.type === "opportunity").length,
+    total: safeActions.length,
+    has_snapshot_today: snaps?.length ?? 0,
+  }
+
+  return NextResponse.json({ actions: safeActions, summary, today })
 }

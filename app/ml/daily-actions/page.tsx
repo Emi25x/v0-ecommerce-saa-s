@@ -87,9 +87,15 @@ export default function DailyActionsPage() {
     try {
       const res = await fetch(`/api/ml/intel/daily-actions?account_id=${selectedAccountId}`)
       const data = await res.json()
-      setActions(data.actions || [])
-      setSummary(data.summary || null)
-      setToday(data.today || "")
+      const safeActions = data.actions ?? []
+      const safeSummary = data.summary ?? null
+      setActions(safeActions)
+      setSummary(safeSummary)
+      setToday(data.today ?? "")
+      const oppCount = safeSummary?.opportunities ?? 0
+      if (oppCount === 0) {
+        console.log("[daily-actions] No se detectaron oportunidades")
+      }
     } finally {
       setLoading(false)
     }
@@ -224,8 +230,8 @@ export default function DailyActionsPage() {
         <Card className="flex flex-col items-center justify-center py-20 gap-3 text-muted-foreground">
           <CheckCircle2 className="h-10 w-10 opacity-20" />
           <p className="text-sm">
-            {actions.length === 0
-              ? "No hay acciones — hacé clic en \"Refrescar datos\" para escanear el mercado"
+            {(actions?.length ?? 0) === 0
+              ? "No hay acciones — hace clic en \"Refrescar datos\" para escanear el mercado"
               : "No hay acciones de este tipo"}
           </p>
         </Card>
