@@ -236,7 +236,7 @@ export default function CatalogOptinPage() {
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold text-foreground">Optin a Catalogo ML</h1>
         <p className="text-sm text-muted-foreground">
-          Vincula publicaciones tradicionales existentes al catalogo de ML usando el mismo mecanismo que la seccion de publicar. Solo actua sobre publicaciones con <code className="bg-muted px-1 rounded text-xs">catalog_listing_eligible = true</code>.
+          Vincula publicaciones tradicionales existentes al catalogo de ML usando el mismo mecanismo que la seccion de publicar. Actua sobre publicaciones activas o pausadas que tengan EAN, ISBN o GTIN.
         </p>
       </div>
 
@@ -424,7 +424,7 @@ export default function CatalogOptinPage() {
 
       {!loading && pubs.length === 0 && accountId && (
         <div className="text-sm text-muted-foreground text-center py-8">
-          No hay publicaciones con <code className="bg-muted px-1 rounded">catalog_listing_eligible = true</code> para esta cuenta.
+          No hay publicaciones activas o pausadas con EAN, ISBN o GTIN para esta cuenta.
         </div>
       )}
 

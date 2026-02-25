@@ -16,13 +16,15 @@ export async function GET(req: NextRequest) {
 
   if (!account_id) return NextResponse.json({ error: "account_id requerido" }, { status: 400 })
 
-  // Publicaciones tradicionales elegibles: catalog_listing_eligible=true
+  // Publicaciones activas/pausadas con algún identificador (ean, isbn o gtin)
+  // NO filtramos por catalog_listing_eligible — ese campo suele ser null en el import
+  // La elegibilidad real la devuelve ML al intentar el optin
   const { data: pubs, error, count } = await supabase
     .from("ml_publications")
-    .select("id, ml_item_id, title, price, status, ean, isbn, gtin", { count: "exact" })
+    .select("id, ml_item_id, title, price, status, ean, isbn, gtin, catalog_listing_eligible", { count: "exact" })
     .eq("account_id", account_id)
-    .eq("catalog_listing_eligible", true)
     .in("status", ["active", "paused"])
+    .or("ean.not.is.null,isbn.not.is.null,gtin.not.is.null")
     .range(offset, offset + limit - 1)
     .order("created_at", { ascending: false })
 
