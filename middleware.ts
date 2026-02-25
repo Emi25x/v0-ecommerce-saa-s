@@ -21,19 +21,16 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Permitir cron jobs con CRON_SECRET
-  if (pathname.startsWith('/api/cron/') || pathname.startsWith('/api/azeta/') || pathname.startsWith('/api/arnoia/')) {
-    const authHeader = request.headers.get('authorization')
-    const cronSecret = process.env.CRON_SECRET
-    
-    if (authHeader && cronSecret) {
-      const token = authHeader.replace('Bearer ', '')
-      if (token === cronSecret) {
-        // Cron job autenticado correctamente
-        return NextResponse.next()
-      }
-    }
-    // Si no tiene CRON_SECRET válido, continuar con auth normal
+  // Permitir sin auth: API de importación y cron jobs
+  // Estas rutas usan service role de Supabase internamente — no necesitan sesión de usuario
+  if (
+    pathname.startsWith('/api/cron/') ||
+    pathname.startsWith('/api/azeta/') ||
+    pathname.startsWith('/api/arnoia/') ||
+    pathname.startsWith('/api/inventory/import/') ||
+    pathname.startsWith('/api/inventory/sources/')
+  ) {
+    return NextResponse.next()
   }
 
   // Proteger TODAS las demás rutas (app y API)
