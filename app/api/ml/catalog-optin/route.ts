@@ -16,17 +16,43 @@ export async function GET(req: NextRequest) {
 
   if (!account_id) return NextResponse.json({ error: "account_id requerido" }, { status: 400 })
 
-  // Publicaciones activas/pausadas con algún identificador (ean, isbn o gtin)
-  // NO filtramos por catalog_listing_eligible — ese campo suele ser null en el import
-  // La elegibilidad real la devuelve ML al intentar el optin
-  const { data: pubs, error, count } = await supabase
+  // Obtener ml_item_ids que ya tienen publicación de catálogo vinculada en listing_relationships
+  // (original_listing_id apunta a la pub tradicional, catalog_listing_id a la de catálogo)
+  const { data: alreadyLinked } = await supabase
+    .from("listing_relationships")
+    .select("original_listing_id")
+
+  const linkedIds = new Set((alreadyLinked ?? []).map((r: any) => r.original_listing_id))
+
+  // También excluir ml_item_ids que en ml_listings tienen catalog_listing=true
+  // (se guardan como ml_id en ml_listings — son las publicaciones de catálogo ya registradas)
+  const { data: catalogListings } = await supabase
+    .from("ml_listings")
+    .select("ml_id")
+    .eq("account_id", account_id)
+    .eq("catalog_listing", true)
+
+  const catalogMlIds = new Set((catalogListings ?? []).map((r: any) => r.ml_id))
+
+  // Traer publicaciones activas/pausadas con identificador (sin filtrar aún las ya vinculadas)
+  // Filtramos post-query para evitar problemas con NOT IN vacío en Supabase
+  let query = supabase
     .from("ml_publications")
     .select("id, ml_item_id, title, price, status, ean, isbn, gtin, catalog_listing_eligible", { count: "exact" })
     .eq("account_id", account_id)
     .in("status", ["active", "paused"])
     .or("ean.not.is.null,isbn.not.is.null,gtin.not.is.null")
-    .range(offset, offset + limit - 1)
     .order("created_at", { ascending: false })
+
+  // Si hay IDs ya vinculados, excluirlos con NOT IN (Supabase acepta array en .not)
+  if (linkedIds.size > 0) {
+    query = query.not("id", "in", `(${[...linkedIds].join(",")})`)
+  }
+  if (catalogMlIds.size > 0) {
+    query = query.not("ml_item_id", "in", `(${[...catalogMlIds].map(id => `"${id}"`).join(",")})`)
+  }
+
+  const { data: pubs, error, count } = await query.range(offset, offset + limit - 1)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
