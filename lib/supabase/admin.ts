@@ -1,5 +1,4 @@
 import { createClient } from "@supabase/supabase-js"
-import type { Database } from "@/types/supabase"
 
 /**
  * Supabase Admin Client - Usa service_role key
@@ -23,7 +22,7 @@ export function createAdminClient() {
     throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY")
   }
 
-  return createClient<Database>(supabaseUrl, supabaseServiceKey, {
+  return createClient(supabaseUrl, supabaseServiceKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,
