@@ -77,8 +77,27 @@ export async function POST(req: NextRequest) {
       if (searchRes.ok) {
         const searchData = await searchRes.json()
         const results: any[] = searchData.results ?? []
+
         if (results.length === 1) {
           catalog_product_id = results[0].id
+        } else if (results.length > 1) {
+          // Intentar auto-matchear por GTIN/ISBN en los atributos del resultado
+          const eanNorm = ean.replace(/\D/g, "").toLowerCase()
+          const matched = results.filter(r => {
+            const attrs: any[] = Array.isArray(r.attributes) ? r.attributes : []
+            return attrs.some(a =>
+              ["GTIN", "ISBN", "EAN", "UPC"].includes((a.id ?? "").toUpperCase()) &&
+              String(a.value_name ?? "").replace(/\D/g, "").toLowerCase() === eanNorm
+            ) || String(r.gtin ?? "").replace(/\D/g, "") === eanNorm
+              || String(r.isbn ?? "").replace(/\D/g, "") === eanNorm
+          })
+          if (matched.length === 1) {
+            catalog_product_id = matched[0].id
+          } else {
+            no_match_count++
+            await delay(RESOLVE_DELAY)
+            continue
+          }
         } else {
           no_match_count++
           await delay(RESOLVE_DELAY)
