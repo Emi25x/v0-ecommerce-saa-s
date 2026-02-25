@@ -160,10 +160,10 @@ export default function MLCatalogMigrationPage() {
 
   // ── Actions ──────────────────────────────────────────────────────────────
 
-  const handleAudit = useCallback(async () => {
+  const handleAudit = useCallback(async (forceNew = false) => {
     if (!accountId) return
     addLog("Iniciando auditoria...")
-    const startData = await post("/api/ml/catalog-migration/audit/start", { accountId })
+    const startData = await post("/api/ml/catalog-migration/audit/start", { accountId, force_new: forceNew })
     if (startData.error) { addLog(`Error: ${startData.error}`); return }
     setJob(startData.job || null)
     addLog(`Job ${startData.jobId} ${startData.resumed ? "retomado" : "creado"}`)
@@ -316,7 +316,7 @@ export default function MLCatalogMigrationPage() {
       {/* Action buttons */}
       <div className="flex flex-wrap gap-3 items-start">
 
-        <Button onClick={handleAudit} disabled={running || !accountId} variant="outline" size="sm">
+              <Button onClick={() => handleAudit(true)} disabled={running || !accountId} variant="outline" size="sm">
           {running ? "Procesando..." : job ? "Re-auditar" : "Auditar publicaciones"}
         </Button>
 

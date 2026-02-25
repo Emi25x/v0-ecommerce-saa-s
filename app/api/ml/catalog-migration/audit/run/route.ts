@@ -40,19 +40,13 @@ export async function POST(req: NextRequest) {
   const accessToken = validAccount.access_token
   const mlUserId = validAccount.ml_user_id
 
-  // Paginación usando scroll_id de ML (o offset como fallback)
+  // Paginación por offset (scroll_id de ML no mantiene filtros y es poco fiable en cuentas grandes)
   const cursor = job.cursor || {}
-  const scrollId: string | null = cursor.scroll_id || null
   const offset: number = cursor.offset || 0
   const limit = Math.min(batchSize, 200) // ML max 200 por request
 
-  // Fetch del listado de items del seller
-  let itemsUrl: string
-  if (scrollId) {
-    itemsUrl = `https://api.mercadolibre.com/users/${mlUserId}/items/search?scroll_id=${scrollId}&limit=${limit}`
-  } else {
-    itemsUrl = `https://api.mercadolibre.com/users/${mlUserId}/items/search?offset=${offset}&limit=${limit}&status=active`
-  }
+  // Fetch del listado de items del seller por offset
+  const itemsUrl = `https://api.mercadolibre.com/users/${mlUserId}/items/search?offset=${offset}&limit=${limit}&status=active`
 
   const searchData = await mlFetchJson(itemsUrl, { accessToken }, { account_id: job.account_id, op_name: "catalog_audit_search" })
 
@@ -66,8 +60,9 @@ export async function POST(req: NextRequest) {
 
   const itemIds: string[] = searchData.results || []
   const paging = searchData.paging || {}
-  const nextScrollId: string | null = searchData.scroll_id || null
   const totalEstimated: number = paging.total || job.total_estimated || 0
+
+  console.log(`[CATALOG-AUDIT-RUN] job=${jobId.slice(0,8)} offset=${offset} limit=${limit} got=${itemIds.length} total=${totalEstimated}`)
 
   // Si no hay más items, fase audit completada
   if (itemIds.length === 0) {
@@ -144,27 +139,27 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Calcular nuevo cursor
-  const newOffset = scrollId ? offset : offset + itemIds.length
-  const newCursor = nextScrollId
-    ? { scroll_id: nextScrollId, offset: newOffset }
-    : { offset: newOffset }
+  // Calcular nuevo cursor — siempre por offset
+  const newOffset = offset + itemIds.length
+  const newCursor = { offset: newOffset }
 
-  // Detectar fin real: si ML no devolvió scroll_id y ya procesamos todos
-  const isLastPage = !nextScrollId && itemIds.length < limit
+  // Fin real: recibimos menos items que el limit O ya llegamos al total conocido
+  const cumulativeProcessed = job.processed_count + batchProcessed
+  const isLastPage = itemIds.length < limit || (totalEstimated > 0 && newOffset >= totalEstimated)
+
+  console.log(`[CATALOG-AUDIT-RUN] newOffset=${newOffset} cumulative=${cumulativeProcessed} isLastPage=${isLastPage}`)
 
   // Actualizar job
   await supabase.from("ml_catalog_migration_jobs").update({
     status: isLastPage ? "completed" : "running",
     phase: "audit",
     total_estimated: totalEstimated || job.total_estimated,
-    processed_count: job.processed_count + batchProcessed,
+    processed_count: cumulativeProcessed,
     already_catalog_count: job.already_catalog_count + batchAlreadyCatalog,
     no_ean_count: job.no_ean_count + batchNoEan,
     candidates_count: job.candidates_count + batchCandidates,
     cursor: newCursor,
     last_heartbeat_at: new Date().toISOString(),
-    ...(isLastPage ? { phase: "audit" } : {}),
   }).eq("id", jobId)
 
   return NextResponse.json({
@@ -175,8 +170,7 @@ export async function POST(req: NextRequest) {
     batch_already_catalog: batchAlreadyCatalog,
     batch_no_ean: batchNoEan,
     total_estimated: totalEstimated || job.total_estimated,
-    cumulative_processed: job.processed_count + batchProcessed,
-    has_more: !isLastPage,
-    cursor: newCursor,
+    cumulative_processed: cumulativeProcessed,
+    new_offset: newOffset,
   })
 }

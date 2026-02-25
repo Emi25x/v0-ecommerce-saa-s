@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic"
 // Crea o retoma un job de auditoría para la cuenta dada.
 // Si ya hay un job running para esa cuenta, devuelve ese job sin crear otro.
 export async function POST(req: NextRequest) {
-  const { accountId } = await req.json()
+  const { accountId, force_new = false } = await req.json()
   if (!accountId) return NextResponse.json({ error: "accountId requerido" }, { status: 400 })
 
   const supabase = createAdminClient()
@@ -20,20 +20,22 @@ export async function POST(req: NextRequest) {
     .single()
   if (accErr || !account) return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
 
-  // Buscar job running o idle para esta cuenta en fase audit
-  const { data: existing } = await supabase
-    .from("ml_catalog_migration_jobs")
-    .select("*")
-    .eq("account_id", accountId)
-    .in("status", ["running", "idle"])
-    .eq("phase", "audit")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle()
+  if (!force_new) {
+    // Retomar job running o idle (no completed) para esta cuenta
+    const { data: existing } = await supabase
+      .from("ml_catalog_migration_jobs")
+      .select("*")
+      .eq("account_id", accountId)
+      .in("status", ["running", "idle"])
+      .eq("phase", "audit")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
 
-  if (existing) {
-    console.log(`[CATALOG-MIGRATION] Retomando job existente ${existing.id} status=${existing.status}`)
-    return NextResponse.json({ ok: true, jobId: existing.id, resumed: true, job: existing })
+    if (existing) {
+      console.log(`[CATALOG-MIGRATION] Retomando job existente ${existing.id} status=${existing.status}`)
+      return NextResponse.json({ ok: true, jobId: existing.id, resumed: true, job: existing })
+    }
   }
 
   // Crear job nuevo
