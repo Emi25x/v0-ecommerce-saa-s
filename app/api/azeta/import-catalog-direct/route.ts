@@ -3,9 +3,13 @@ import { createAdminClient } from "@/lib/supabase/admin"
 
 export const dynamic = "force-dynamic"
 
-// GET: diagnóstico — confirma que el módulo carga correctamente
+// GET: diagnóstico — confirma que el módulo carga y prueba APIs disponibles
 export async function GET() {
-  return NextResponse.json({ ok: true, route: "azeta-import-catalog-direct", ts: Date.now() })
+  const probe: Record<string, boolean> = {}
+  try { const z = require("zlib"); probe["require_zlib"] = typeof z.inflateRawSync === "function" } catch { probe["require_zlib"] = false }
+  try { probe["DecompressionStream"] = typeof DecompressionStream !== "undefined" } catch { probe["DecompressionStream"] = false }
+  try { const { inflateRawSync } = await import("node:zlib"); probe["import_node_zlib"] = typeof inflateRawSync === "function" } catch { probe["import_node_zlib"] = false }
+  return NextResponse.json({ ok: true, route: "azeta-import-catalog-direct", ts: Date.now(), runtime_probe: probe })
 }
 
 export async function POST(_request: NextRequest) {
