@@ -141,14 +141,16 @@ export async function POST(req: NextRequest) {
 
   for (const ean of toScan) {
     try {
-      // Búsqueda pública de ML — NO requiere Authorization, pasarlo causa 401 en algunos entornos
       const url = `https://api.mercadolibre.com/sites/${SITE_ID}/search?q=${encodeURIComponent(ean)}&limit=50`
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 10000)
       let httpRes: Response
       try {
         httpRes = await fetch(url, {
-          headers: { "Accept": "application/json" },
+          headers: {
+            "Accept": "application/json",
+            "Authorization": `Bearer ${account.access_token}`,
+          },
           signal: controller.signal,
         })
       } finally {
@@ -158,7 +160,7 @@ export async function POST(req: NextRequest) {
       if (!httpRes.ok) {
         const body = await httpRes.text()
         if (!firstErrorLogged) {
-          console.error(`[MARKET-SCAN-RUN] PRIMER ERROR HTTP ${httpRes.status} EAN=${ean} body=${body.slice(0, 300)}`)
+          console.error(`[MARKET-SCAN-RUN] PRIMER ERROR HTTP ${httpRes.status} EAN=${ean} url=${url} body=${body.slice(0, 400)}`)
           firstErrorLogged = true
         }
         errors++
@@ -207,7 +209,12 @@ export async function POST(req: NextRequest) {
         scanned++
       }
     } catch (err: any) {
-      console.error(`[MARKET-SCAN-RUN] exception EAN ${ean}:`, err.message)
+      const isTimeout = err?.name === "AbortError"
+      if (!firstErrorLogged) {
+        console.error(`[MARKET-SCAN-RUN] PRIMER EXCEPTION EAN=${ean} type=${err?.name} msg=${err?.message}`)
+        firstErrorLogged = true
+      }
+      console.error(`[MARKET-SCAN-RUN] exception EAN=${ean} ${isTimeout ? "TIMEOUT" : err?.message}`)
       errors++
     }
 
