@@ -117,32 +117,67 @@ export default function DailyActionsPage() {
     const log = (msg: string) => setRefreshLog((prev) => [...prev, `${new Date().toLocaleTimeString("es-AR")} — ${msg}`])
 
     try {
-      log("Iniciando scan de mercado...")
-      const scanRes = await fetch(`/api/ml/intel/scan?account_id=${selectedAccountId}`)
-      const scanData = await scanRes.json()
-      if (scanData.ok) {
-        log(`Scan completado: ${scanData.scanned} EANs escaneados, ${scanData.cached} en cache (${scanData.elapsed_seconds}s)`)
-      } else {
-        log(`Error en scan: ${scanData.error || "desconocido"}`)
+      // Paso 1: Crear job de scan
+      log("Iniciando job de scan de mercado...")
+      const startRes = await fetch("/api/market/scan/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: selectedAccountId, batch_size: 200 }),
+      })
+      const startData = await startRes.json().catch(() => ({}))
+      if (!startRes.ok || !startData.job) {
+        log(`Error al crear job: ${startData.error || `HTTP ${startRes.status}`}`)
+        setRefreshing(false)
+        return
       }
 
-      // Log diagnóstico de EANs
-      if (scanData.diag) {
-        const { total_products, products_with_ean, invalid_ean_count } = scanData.diag
-        log(`Diagnostico EANs — total_products: ${total_products ?? "?"} | products_with_ean: ${products_with_ean ?? "?"} | invalid_ean_count: ${invalid_ean_count ?? "?"}`)
-        if ((invalid_ean_count ?? 0) > 0) {
-          log(`ADVERTENCIA: ${invalid_ean_count} publicaciones tienen EAN con longitud != 13 — pueden no encontrarse en ML`)
+      const job = startData.job
+      const total = job.total_estimated ?? 0
+      log(`Job creado: ${job.id.slice(0, 8)}... | Publicaciones estimadas: ${total.toLocaleString("es-AR")} | ${startData.resumed ? "retomando" : "nuevo"}`)
+
+      // Paso 2: Loop run hasta done=true
+      let jobId = job.id
+      let accScanned = job.scanned ?? 0
+      let accErrors = job.errors ?? 0
+      let batchNum = 0
+      let done = false
+
+      while (!done) {
+        batchNum++
+        const runRes = await fetch("/api/market/scan/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ job_id: jobId }),
+        })
+        const runData = await runRes.json().catch(() => ({}))
+
+        if (!runRes.ok) {
+          log(`Error en batch ${batchNum}: ${runData.error || `HTTP ${runRes.status}`}`)
+          break
         }
-        if ((products_with_ean ?? 0) === 0) {
-          log(`ADVERTENCIA: Ninguna publicacion tiene EAN — el scanner no puede buscar precios de mercado`)
+
+        accScanned += runData.scanned ?? 0
+        accErrors += runData.errors ?? 0
+        done = runData.done === true
+        const cursor = runData.cursor ?? 0
+        const pct = total > 0 ? Math.min(99, Math.round((cursor / total) * 100)) : 0
+
+        log(`Batch ${batchNum}: +${runData.scanned} escaneados, +${runData.skipped_cached} en cache, +${runData.skipped_invalid} inválidos, +${runData.errors} errores | ${cursor.toLocaleString("es-AR")}/${total.toLocaleString("es-AR")} (${pct}%)`)
+
+        if (!done) {
+          // Pausa breve entre batches para no saturar
+          await new Promise(r => setTimeout(r, 500))
         }
       }
 
+      log(`Scan completado: ${accScanned.toLocaleString("es-AR")} EANs escaneados en ${batchNum} batches, ${accErrors} errores`)
+
+      // Paso 3: Buscar oportunidades
       log("Buscando nuevas oportunidades...")
-      let oppData: any = { items: [], saved: 0, scanned: 0 }
+      let oppData: any = { saved: 0, scanned: 0 }
       try {
         const oppRes = await fetch(`/api/ml/intel/opportunities?account_id=${selectedAccountId}`)
-        oppData = await oppRes.json().catch(() => ({ items: [], saved: 0, scanned: 0 }))
+        oppData = await oppRes.json().catch(() => ({ saved: 0, scanned: 0 }))
       } catch (e: any) {
         log(`Error de red en oportunidades: ${e.message}`)
       }
@@ -151,9 +186,10 @@ export default function DailyActionsPage() {
       if (oppData?.ok === false && oppData?.error) {
         log(`Error en oportunidades: ${oppData.error}`)
       } else {
-        log(`Oportunidades: ${oppSaved} guardadas de ${oppScanned} items escaneados (${oppData?.elapsed_seconds ?? 0}s)`)
+        log(`Oportunidades: ${oppSaved} guardadas de ${oppScanned} items (${oppData?.elapsed_seconds ?? 0}s)`)
       }
 
+      // Paso 4: Recargar acciones
       log("Recargando acciones del dia...")
       await loadActions()
       log("Listo.")
