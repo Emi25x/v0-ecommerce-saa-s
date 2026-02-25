@@ -59,14 +59,56 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: pubsErr.message }, { status: 500 })
     }
 
+    // --- DIAGNÓSTICO EAN ---
+    const { count: totalProducts } = await supabase
+      .from("ml_publications")
+      .select("*", { count: "exact", head: true })
+      .eq("account_id", account_id)
+
+    const { count: productsWithEan } = await supabase
+      .from("ml_publications")
+      .select("*", { count: "exact", head: true })
+      .eq("account_id", account_id)
+      .not("ean", "is", null)
+      .neq("ean", "")
+
+    // EANs con longitud != 13 (inválidos)
+    const { data: allEanRows } = await supabase
+      .from("ml_publications")
+      .select("ean")
+      .eq("account_id", account_id)
+      .not("ean", "is", null)
+      .neq("ean", "")
+      .limit(2000)
+
+    const invalidEans = (allEanRows || []).filter(r => (r.ean || "").replace(/\D/g, "").length !== 13)
+    const invalidEanCount = invalidEans.length
+
+    console.log(`[ML-INTEL-SCAN] DIAG total_publications=${totalProducts} publications_with_ean=${productsWithEan} invalid_ean_count=${invalidEanCount}`)
+    if (invalidEanCount > 0) {
+      console.warn(`[ML-INTEL-SCAN] WARN EANs invalidos (length!=13): ${invalidEans.slice(0, 10).map(r => JSON.stringify(r.ean)).join(", ")}`)
+    }
+    // --- FIN DIAGNÓSTICO ---
+
     if (!pubs || pubs.length === 0) {
-      return NextResponse.json({ ok: true, message: "No hay publicaciones con EAN", scanned: 0 })
+      return NextResponse.json({
+        ok: true,
+        message: "No hay publicaciones con EAN",
+        scanned: 0,
+        diag: { total_products: totalProducts, products_with_ean: productsWithEan, invalid_ean_count: invalidEanCount },
+      })
     }
 
-    // Deduplicar EANs
+    // Deduplicar EANs — incluir TODOS aunque length != 13, solo logear warning
     const eanMap = new Map<string, string>() // ean → title
     for (const p of pubs) {
-      if (p.ean && !eanMap.has(p.ean)) eanMap.set(p.ean, p.title || "")
+      if (!p.ean) continue
+      const cleaned = p.ean.replace(/\D/g, "")
+      if (cleaned.length !== 13) {
+        console.warn(`[ML-INTEL-SCAN] WARN EAN invalido ignorado: "${p.ean}" (${cleaned.length} digitos) titulo="${p.title?.slice(0,40)}"`)
+        // No filtrar — buscar igual por si ML lo acepta
+      }
+      if (!eanMap.has(p.ean)) eanMap.set(p.ean, p.title || "")
     }
     const eans = Array.from(eanMap.entries())
 
@@ -83,12 +125,15 @@ export async function GET(request: NextRequest) {
 
     console.log(`[ML-INTEL-SCAN] account=${account.nickname} total_eans=${eans.length} already_cached=${alreadyScanned.size} to_scan=${toScan.length}`)
 
+    const diag = { total_products: totalProducts, products_with_ean: productsWithEan, invalid_ean_count: invalidEanCount }
+
     if (toScan.length === 0) {
       return NextResponse.json({
         ok: true,
         message: "Todos los EANs ya tienen snapshot de hoy",
         scanned: 0,
         cached: alreadyScanned.size,
+        diag,
       })
     }
 
@@ -178,6 +223,7 @@ export async function GET(request: NextRequest) {
       cached: alreadyScanned.size,
       elapsed_seconds: parseFloat(elapsed),
       results,
+      diag,
     })
 
   } catch (err: any) {

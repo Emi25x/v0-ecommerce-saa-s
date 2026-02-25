@@ -116,6 +116,18 @@ export default function DailyActionsPage() {
         log(`Error en scan: ${scanData.error || "desconocido"}`)
       }
 
+      // Log diagnóstico de EANs
+      if (scanData.diag) {
+        const { total_products, products_with_ean, invalid_ean_count } = scanData.diag
+        log(`Diagnostico EANs — total_products: ${total_products ?? "?"} | products_with_ean: ${products_with_ean ?? "?"} | invalid_ean_count: ${invalid_ean_count ?? "?"}`)
+        if ((invalid_ean_count ?? 0) > 0) {
+          log(`ADVERTENCIA: ${invalid_ean_count} publicaciones tienen EAN con longitud != 13 — pueden no encontrarse en ML`)
+        }
+        if ((products_with_ean ?? 0) === 0) {
+          log(`ADVERTENCIA: Ninguna publicacion tiene EAN — el scanner no puede buscar precios de mercado`)
+        }
+      }
+
       log("Buscando nuevas oportunidades...")
       const oppRes = await fetch(`/api/ml/intel/opportunities?account_id=${selectedAccountId}`)
       const oppData = await oppRes.json()
