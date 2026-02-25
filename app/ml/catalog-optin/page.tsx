@@ -190,6 +190,83 @@ export default function CatalogOptinPage() {
     setRunning(false)
   }, [accountId, pubs, selected, running, addLog])
 
+  // ── Resolver + Optin en un solo paso ──────────────────────────────────────
+
+  const resolveAndOptin = useCallback(async () => {
+    if (!accountId || running) return
+    if (!dryRun && !confirmLive) { addLog("Confirma LIVE antes de ejecutar", "warn"); return }
+    setRunning(true)
+    abortRef.current = false
+
+    const targets = selected.size > 0
+      ? pubs.filter(p => selected.has(p.id) && p.resolve_status !== "no_ean")
+      : pubs.filter(p => p.resolve_status !== "no_ean")
+
+    addLog(`Resolver + Optin ${dryRun ? "DRY RUN" : "LIVE"} sobre ${targets.length} items...`)
+    let okOptin = 0, failedOptin = 0, noMatch = 0, errors = 0
+
+    for (const pub of targets) {
+      if (abortRef.current) break
+
+      // Paso 1: resolver si no está ya resuelto
+      let resolvedId = pub.catalog_product_id ?? null
+      if (pub.resolve_status !== "resolved" || !resolvedId) {
+        const ean = getEan(pub)
+        if (!ean) continue
+        setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, resolve_status: "resolving" } : p))
+        const rRes = await fetch("/api/ml/catalog-optin/resolve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ account_id: accountId, ean }),
+        }).catch(() => null)
+        const rData = await rRes?.json().catch(() => ({}))
+
+        if (rData?.status === "resolved") {
+          resolvedId = rData.catalog_product_id
+          setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, resolve_status: "resolved", catalog_product_id: resolvedId, product_title: rData.product_title } : p))
+        } else if (rData?.status === "ambiguous") {
+          setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, resolve_status: "ambiguous", ambiguous_options: rData.results } : p))
+          addLog(`Ambiguo: ${pub.ml_item_id} — elegir manualmente`, "warn")
+          continue
+        } else {
+          setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, resolve_status: "not_found" } : p))
+          noMatch++
+          continue
+        }
+        await new Promise(r => setTimeout(r, 200))
+      }
+
+      if (!resolvedId) { noMatch++; continue }
+
+      // Paso 2: optin
+      setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, optin_status: "running" } : p))
+      const oRes = await fetch("/api/ml/catalog-optin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: accountId, item_id: pub.ml_item_id, catalog_product_id: resolvedId, dry_run: dryRun }),
+      }).catch(() => null)
+      const oData = await oRes?.json().catch(() => ({}))
+
+      if (dryRun || oData?.ok) {
+        setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, optin_status: dryRun ? "dry" : "ok" } : p))
+        okOptin++
+        if (!dryRun) addLog(`OK: ${pub.ml_item_id} → ${resolvedId}`, "ok")
+      } else {
+        const errMsg = oData?.ml_error?.message ?? oData?.ml_error?.error ?? JSON.stringify(oData?.ml_error ?? {})
+        setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, optin_status: "failed", optin_error: errMsg } : p))
+        failedOptin++
+        addLog(`FAIL: ${pub.ml_item_id} — ${errMsg}`, "error")
+      }
+      await new Promise(r => setTimeout(r, 300))
+    }
+
+    addLog(
+      `Listo ${dryRun ? "(DRY RUN)" : "(LIVE)"}: ${okOptin} optin ok | ${failedOptin} fallidos | ${noMatch} sin match`,
+      failedOptin > 0 ? "warn" : "ok"
+    )
+    setRunning(false)
+  }, [accountId, pubs, selected, dryRun, confirmLive, running, addLog])
+
   // ── Optin manual (sobre seleccionados o todos resueltos) ──────────────────
 
   const runOptin = useCallback(async () => {
@@ -469,29 +546,10 @@ export default function CatalogOptinPage() {
 
           {/* Action buttons */}
           {pubs.length > 0 && (
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Cuantos seleccionados tienen EAN y estan pendientes de resolver */}
-              {(() => {
-                const selPending = selected.size > 0
-                  ? pubs.filter(p => selected.has(p.id) && p.resolve_status === "pending").length
-                  : counts.pending
-                return (
-                  <Button
-                    onClick={resolveAll}
-                    disabled={running || loading || selPending === 0}
-                    variant="outline"
-                    size="sm"
-                  >
-                    {running
-                      ? "Resolviendo..."
-                      : selected.size > 0
-                        ? `Resolver seleccionados (${selPending})`
-                        : `Resolver todos (${selPending} pendientes)`}
-                  </Button>
-                )
-              })()}
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/10 px-4 py-3">
 
-              <div className="flex items-center gap-3 border border-border rounded-lg px-3 py-2">
+              {/* Modo DRY / LIVE */}
+              <div className="flex items-center gap-3 mr-2">
                 <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
                   <input
                     type="checkbox"
@@ -500,7 +558,7 @@ export default function CatalogOptinPage() {
                     disabled={running}
                     className="rounded border-input"
                   />
-                  Modo DRY
+                  Modo DRY (simular)
                 </label>
                 {!dryRun && (
                   <label className="flex items-center gap-2 text-xs cursor-pointer select-none text-orange-400">
@@ -514,23 +572,61 @@ export default function CatalogOptinPage() {
                     Confirmo LIVE
                   </label>
                 )}
-                {/* Optin actua sobre seleccionados resueltos, o todos los resueltos si no hay seleccion */}
-                {(() => {
-                  const targetCount = selected.size > 0 ? selectedResolved : counts.resolved
-                  return (
-                    <Button
-                      onClick={runOptin}
-                      disabled={running || targetCount === 0 || (!dryRun && !confirmLive)}
-                      size="sm"
-                      className={dryRun ? "" : "bg-orange-600 hover:bg-orange-700 text-white"}
-                    >
-                      {dryRun
-                        ? `Simular optin (${targetCount})`
-                        : `Optin LIVE (${targetCount})`}
-                    </Button>
-                  )
-                })()}
               </div>
+
+              {/* Boton principal: resolver + optin en un paso */}
+              {(() => {
+                const mainCount = selected.size > 0
+                  ? pubs.filter(p => selected.has(p.id) && p.resolve_status !== "no_ean").length
+                  : pubs.filter(p => p.resolve_status !== "no_ean").length
+                return (
+                  <Button
+                    onClick={resolveAndOptin}
+                    disabled={running || mainCount === 0 || (!dryRun && !confirmLive)}
+                    size="sm"
+                    className={dryRun ? "" : "bg-orange-600 hover:bg-orange-700 text-white"}
+                  >
+                    {running ? "Procesando..." : dryRun
+                      ? `Simular (${mainCount}${selected.size > 0 ? " selec." : ""})`
+                      : `Resolver y hacer Optin LIVE (${mainCount}${selected.size > 0 ? " selec." : ""})`}
+                  </Button>
+                )
+              })()}
+
+              {/* Separador */}
+              <span className="text-muted-foreground/40 text-xs">|</span>
+
+              {/* Solo resolver (sin optin) */}
+              {(() => {
+                const pendingCount = selected.size > 0
+                  ? pubs.filter(p => selected.has(p.id) && p.resolve_status === "pending").length
+                  : counts.pending
+                return (
+                  <Button
+                    onClick={resolveAll}
+                    disabled={running || loading || pendingCount === 0}
+                    variant="outline"
+                    size="sm"
+                  >
+                    {running ? "..." : `Solo resolver (${pendingCount})`}
+                  </Button>
+                )
+              })()}
+
+              {/* Solo optin (sobre ya resueltos) */}
+              {(() => {
+                const resolvedCount = selected.size > 0 ? selectedResolved : counts.resolved
+                return (
+                  <Button
+                    onClick={runOptin}
+                    disabled={running || resolvedCount === 0 || (!dryRun && !confirmLive)}
+                    variant="outline"
+                    size="sm"
+                  >
+                    {dryRun ? `Solo optin DRY (${resolvedCount})` : `Solo optin LIVE (${resolvedCount})`}
+                  </Button>
+                )
+              })()}
 
               {running && (
                 <Button onClick={() => { abortRef.current = true; setRunning(false) }} variant="destructive" size="sm">
