@@ -126,48 +126,51 @@ export default function BatchImportPage() {
         const blobUrl = dlData.blob_url
         addLog(`ZIP subido a almacenamiento temporal en ${dlData.elapsed_seconds}s`)
 
-        // Paso 2: Procesar en lotes desde Blob
-        addLog("Paso 2/2: Procesando productos en lotes de 5000...")
-        let offset = 0
+        // Paso 2: Procesar en lotes de 4MB desde el CSV en Blob
+        addLog(`ZIP descomprimido a CSV (${dlData.csv_size_mb}MB, ${dlData.total_lines?.toLocaleString()} lineas). Procesando...`)
+        setTotalRows(dlData.total_lines || 0)
+        let byteStart = 0
+        let headerLine: string | null = null
         let accCreated = 0
         let accUpdated = 0
         let accProcessed = 0
-        let totalLines = 0
         let loopDone = false
+        let loteNum = 0
 
         while (!loopDone && !abortRef.current) {
-          setStatus(`Procesando offset ${offset}...`)
+          loteNum++
+          setStatus(`Lote ${loteNum} (${(byteStart / 1024 / 1024).toFixed(1)}MB procesados)...`)
+          const procBody: any = { blob_url: blobUrl, byte_start: byteStart, total_lines: dlData.total_lines }
+          if (headerLine) procBody.header_line = headerLine
           const procRes = await fetch("/api/azeta/process", {
             method: "POST",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ blob_url: blobUrl, offset }),
+            body: JSON.stringify(procBody),
           })
           const procData = await procRes.json().catch(() => ({}))
           if (!procRes.ok) {
-            addLog(`Error en proceso offset ${offset}: ${procData.error || `HTTP ${procRes.status}`}`)
-            setStatus(`Error en procesamiento`)
+            addLog(`Error lote ${loteNum}: ${procData.error || `HTTP ${procRes.status}`}`)
+            setStatus("Error en procesamiento")
             setIsRunning(false)
-            // Limpiar blob
-            await fetch("/api/azeta/process", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ blob_url: blobUrl, offset: 0, cleanup: true }) }).catch(() => {})
+            await fetch("/api/azeta/process", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ blob_url: blobUrl, cleanup: true }) }).catch(() => {})
             return
           }
 
           accCreated += procData.created || 0
           accUpdated += procData.updated || 0
           accProcessed += procData.rows_processed || 0
-          if (procData.total_lines) totalLines = procData.total_lines
           loopDone = procData.done === true
-          offset = procData.next_offset || offset + 5000
+          byteStart = procData.next_byte_start ?? byteStart
+          if (procData.header_line && !headerLine) headerLine = procData.header_line
 
           setTotalCreated(accCreated)
           setTotalUpdated(accUpdated)
           setTotalProcessed(accProcessed)
-          if (totalLines > 0) {
-            setTotalRows(totalLines)
-            setProgress(Math.min(99, Math.round((accProcessed / totalLines) * 100)))
+          if (dlData.total_lines > 0) {
+            setProgress(Math.min(99, Math.round((accProcessed / dlData.total_lines) * 100)))
           }
-          addLog(`Offset ${procData.offset}: +${procData.created} creados, +${procData.updated} actualizados, +${procData.discarded} descartados (${procData.elapsed_seconds}s)`)
+          addLog(`Lote ${loteNum}: +${procData.created} creados, +${procData.updated} actualizados, +${procData.discarded} descartados (${procData.elapsed_seconds}s)`)
         }
 
         // Limpiar blob temporal

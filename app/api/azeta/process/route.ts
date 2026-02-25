@@ -3,11 +3,12 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { del } from "@vercel/blob"
 
 export const dynamic = "force-dynamic"
+export const maxDuration = 60
 
-// Cuantas lineas CSV procesar por llamada (ajustable segun tiempo de respuesta)
-const LINES_PER_CALL = 5000
+// Lineas a procesar por llamada
+const LINES_PER_CALL = 3000
 
-// Column mapping exacto de Azeta Total segun seed
+// Column mapping Azeta Total (delimitador pipe)
 const COL_MAP: Record<string, string[]> = {
   ean:       ["ean", "isbn"],
   title:     ["titulo"],
@@ -17,42 +18,27 @@ const COL_MAP: Record<string, string[]> = {
   binding:   ["encuadernacion"],
   language:  ["idioma"],
   pages:     ["num pag", "num_pag", "paginas"],
-  width:     ["ancho"],
-  height:    ["alto"],
-  weight:    ["peso"],
-  pub_date:  ["fecha de edicion", "fecha_de_edicion"],
 }
 
 function normalizeEan(raw: string): string {
   if (!raw) return ""
   let s = String(raw).trim().replace(/['"]/g, "")
-  // Notacion cientifica de Excel: 9.78845E+12
-  if (/^[0-9]+\.?[0-9]*[eE][+\-]?[0-9]+$/.test(s)) {
-    s = Math.round(Number(s)).toString()
-  }
+  if (/^[0-9]+\.?[0-9]*[eE][+\-]?[0-9]+$/.test(s)) s = Math.round(Number(s)).toString()
   s = s.replace(/[^0-9]/g, "")
   if (!s) return ""
-  if (s.length === 10) s = "978" + s  // ISBN-10 → ISBN-13
+  if (s.length === 10) s = "978" + s
   return s.length <= 13 ? s.padStart(13, "0") : s
 }
 
-function col(cols: string[], idx: number): string | null {
-  if (idx < 0 || idx >= cols.length) return null
-  const v = cols[idx].replace(/['"]/g, "").trim()
-  return v || null
-}
-
 export async function GET() {
-  return NextResponse.json({ ok: true, route: "azeta-process" })
+  return NextResponse.json({ ok: true, route: "azeta-process-v2" })
 }
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}))
-  const { blob_url, offset = 0, cleanup = false } = body
+  const { blob_url, byte_start = 0, total_lines, header_line, cleanup = false } = body
 
-  if (!blob_url) {
-    return NextResponse.json({ error: "blob_url requerido" }, { status: 400 })
-  }
+  if (!blob_url) return NextResponse.json({ error: "blob_url requerido" }, { status: 400 })
 
   // Cleanup: borrar blob al terminar
   if (cleanup) {
@@ -61,167 +47,119 @@ export async function POST(request: NextRequest) {
   }
 
   const startTime = Date.now()
-  console.log(`[AZETA-PROC] offset=${offset} blob=${blob_url.slice(-40)}`)
+  const CHUNK_SIZE = 4 * 1024 * 1024 // 4MB por llamada
 
   try {
-    // Descargar ZIP desde Blob
-    const zipRes = await fetch(blob_url)
-    if (!zipRes.ok) return NextResponse.json({ error: `Error fetching blob: ${zipRes.status}` }, { status: 502 })
+    // Fetch parcial con Range bytes
+    const rangeEnd = byte_start + CHUNK_SIZE - 1
+    console.log(`[AZETA-PROC] Range bytes=${byte_start}-${rangeEnd}`)
 
-    const chunks: Uint8Array[] = []
-    const reader = zipRes.body!.getReader()
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      if (value) chunks.push(value)
+    const fetchRes = await fetch(blob_url, {
+      headers: { Range: `bytes=${byte_start}-${rangeEnd}` },
+    })
+
+    // 206 = partial content, 200 = servidor no soporta range (devuelve todo)
+    console.log(`[AZETA-PROC] fetch status=${fetchRes.status} content-range=${fetchRes.headers.get("content-range")}`)
+
+    const chunkText = await fetchRes.text()
+    const contentRange = fetchRes.headers.get("content-range") || ""
+
+    // Detectar si hay mas datos
+    // content-range: bytes 0-4194303/52428800
+    let totalBytes: number | null = null
+    const crMatch = contentRange.match(/\/(\d+)$/)
+    if (crMatch) totalBytes = parseInt(crMatch[1])
+    const isLastChunk = fetchRes.status === 200 || (totalBytes !== null && rangeEnd >= totalBytes - 1)
+
+    // Parsear lineas del chunk
+    // El chunk puede empezar en medio de una linea — la primera linea incompleta va a ser descartada
+    // excepto en el primer chunk (byte_start=0)
+    let lines = chunkText.split("\n")
+
+    // En el primer chunk: primera linea es el header
+    let headerCols: string[]
+    if (byte_start === 0) {
+      headerCols = lines[0].split("|").map(h => h.replace(/['"]/g, "").trim().toLowerCase())
+      lines = lines.slice(1) // sacar el header
+    } else {
+      // El header viene en el body
+      if (!header_line) return NextResponse.json({ error: "header_line requerido para offset > 0" }, { status: 400 })
+      headerCols = header_line.split("|").map((h: string) => h.replace(/['"]/g, "").trim().toLowerCase())
+      lines = lines.slice(1) // descartar primera linea (incompleta)
     }
-    const totalLen = chunks.reduce((s, c) => s + c.length, 0)
-    const zipBuf = new Uint8Array(totalLen)
-    let pos = 0
-    for (const c of chunks) { zipBuf.set(c, pos); pos += c.length }
-    console.log(`[AZETA-PROC] ZIP descargado: ${(zipBuf.length / 1024 / 1024).toFixed(1)}MB`)
 
-    // Extraer CSV del ZIP
-    const csvText = await extractCSVFromZip(zipBuf)
-    console.log(`[AZETA-PROC] CSV: ${(csvText.length / 1024 / 1024).toFixed(1)}MB`)
+    // La ultima linea puede estar incompleta — calcular el byte donde termina la penultima \n
+    const lastNewlineIdx = chunkText.lastIndexOf("\n")
+    const next_byte_start = byte_start + Buffer.byteLength(chunkText.substring(0, lastNewlineIdx + 1), "utf8")
+    lines = lines.slice(0, lines.length - 1) // sacar la ultima linea (incompleta)
 
-    // Detectar delimitador y headers
-    const firstNewline = csvText.indexOf("\n")
-    const firstLine = csvText.substring(0, firstNewline).trim()
-    const pipeCount = (firstLine.match(/\|/g) || []).length
-    const delimiter = pipeCount > 0 ? "|" : ";"
+    console.log(`[AZETA-PROC] header=${headerCols.slice(0,5).join(",")} lineas_en_chunk=${lines.length}`)
 
-    const rawHeaders = firstLine.split(delimiter).map(h => h.replace(/['"]/g, "").trim().toLowerCase())
-    console.log(`[AZETA-PROC] delimiter="${delimiter}" headers[0..5]=${rawHeaders.slice(0, 6).join(",")}`)
-
-    // Resolver indices de columnas
+    // Resolver indices
     const idx: Record<string, number> = {}
     for (const [field, aliases] of Object.entries(COL_MAP)) {
-      idx[field] = rawHeaders.findIndex(h => aliases.includes(h))
+      idx[field] = headerCols.findIndex(h => aliases.includes(h))
     }
-    // EAN puede estar en "ean" o "isbn"
-    const eanIdx = rawHeaders.findIndex(h => h === "ean" || h === "isbn")
-    if (eanIdx < 0) {
-      return NextResponse.json({ error: `Columna EAN no encontrada. Headers: ${rawHeaders.slice(0, 8).join(",")}` }, { status: 500 })
-    }
+    const eanIdx = headerCols.findIndex(h => h === "ean" || h === "isbn")
+    if (eanIdx < 0) return NextResponse.json({ error: `EAN no encontrado. Headers: ${headerCols.slice(0,8).join(",")}` }, { status: 500 })
 
-    // Partir en lineas y procesar el slice correspondiente
-    const lines = csvText.split("\n")
-    const dataStart = 1 // Siempre hay header en Azeta
-    const totalDataLines = lines.length - dataStart
-    const sliceStart = dataStart + offset
-    const sliceEnd = Math.min(sliceStart + LINES_PER_CALL, lines.length)
-    const done = sliceEnd >= lines.length
-
-    console.log(`[AZETA-PROC] Procesando lineas ${sliceStart}..${sliceEnd} de ${lines.length} total`)
-
+    // Construir productos
     const products: any[] = []
     let discarded = 0
-
-    for (let i = sliceStart; i < sliceEnd; i++) {
-      const line = lines[i].trim()
-      if (!line) continue
-      const cols = line.split(delimiter)
-
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      const cols = trimmed.split("|")
       const rawEan = cols[eanIdx]?.replace(/['"]/g, "").trim() || ""
       const ean = normalizeEan(rawEan)
       if (!ean || (ean.length !== 13 && ean.length !== 8)) { discarded++; continue }
-
-      const priceStr = idx.price >= 0 ? col(cols, idx.price) : null
+      const priceStr = idx.price >= 0 ? (cols[idx.price] || "").replace(/['"]/g, "").trim() : ""
       products.push({
-        sku:          ean,
-        ean,
-        title:        col(cols, idx.title),
-        author:       col(cols, idx.author),
-        brand:        col(cols, idx.publisher),  // publisher → brand en products
-        cost_price:   priceStr ? parseFloat(priceStr.replace(",", ".")) || null : null,
-        language:     col(cols, idx.language),
-        binding:      col(cols, idx.binding),
+        sku: ean, ean,
+        title:      idx.title >= 0     ? (cols[idx.title]     || "").replace(/['"]/g,"").trim() || null : null,
+        author:     idx.author >= 0    ? (cols[idx.author]    || "").replace(/['"]/g,"").trim() || null : null,
+        brand:      idx.publisher >= 0 ? (cols[idx.publisher] || "").replace(/['"]/g,"").trim() || null : null,
+        cost_price: priceStr ? parseFloat(priceStr.replace(",", ".")) || null : null,
+        language:   idx.language >= 0  ? (cols[idx.language]  || "").replace(/['"]/g,"").trim() || null : null,
       })
     }
 
     console.log(`[AZETA-PROC] validos=${products.length} descartados=${discarded}`)
 
-    // Upsert en Supabase en sub-batches de 500
+    // Upsert en Supabase batches de 500
     const supabase = createAdminClient()
     let created = 0, updated = 0, errors = 0
 
-    // Pre-fetch EANs existentes para este batch
+    // Pre-fetch EANs existentes
     const batchEans = products.map(p => p.ean)
     const existingSet = new Set<string>()
-    if (batchEans.length > 0) {
-      for (let i = 0; i < batchEans.length; i += 1000) {
-        const { data } = await supabase.from("products").select("ean").in("ean", batchEans.slice(i, i + 1000))
-        ;(data || []).forEach((r: any) => existingSet.add(r.ean))
-      }
+    for (let i = 0; i < batchEans.length; i += 1000) {
+      const { data } = await supabase.from("products").select("ean").in("ean", batchEans.slice(i, i+1000))
+      ;(data||[]).forEach((r: any) => existingSet.add(r.ean))
     }
 
     for (let i = 0; i < products.length; i += 500) {
-      const batch = products.slice(i, i + 500)
+      const batch = products.slice(i, i+500)
       const { error } = await supabase.from("products").upsert(batch, { onConflict: "ean" })
-      if (error) {
-        console.error(`[AZETA-PROC] upsert error: ${error.message}`)
-        errors += batch.length
-      } else {
-        for (const p of batch) {
-          existingSet.has(p.ean) ? updated++ : created++
-        }
-      }
+      if (error) { console.error(`[AZETA-PROC] upsert error: ${error.message}`); errors += batch.length }
+      else { for (const p of batch) existingSet.has(p.ean) ? updated++ : created++ }
     }
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-    console.log(`[AZETA-PROC] Lote done=${done} created=${created} updated=${updated} errors=${errors} en ${elapsed}s`)
+    console.log(`[AZETA-PROC] done=${isLastChunk} created=${created} updated=${updated} en ${elapsed}s`)
 
     return NextResponse.json({
       ok: true,
-      done,
-      offset,
-      next_offset: done ? null : offset + LINES_PER_CALL,
+      done: isLastChunk,
+      next_byte_start: isLastChunk ? null : next_byte_start,
+      header_line: headerCols.join("|"),
       rows_processed: products.length + discarded,
-      created,
-      updated,
-      errors,
-      discarded,
-      total_lines: totalDataLines,
+      created, updated, errors, discarded,
+      total_lines: total_lines || null,
       elapsed_seconds: parseFloat(elapsed),
     })
-
   } catch (err: any) {
-    console.error("[AZETA-PROC] Error fatal:", err.message, err.stack?.slice(0, 300))
+    console.error("[AZETA-PROC] Error fatal:", err.message)
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
-}
-
-// Extrae el primer CSV/TXT de un ZIP usando inflate raw (method 8) o stored (method 0)
-async function extractCSVFromZip(buf: Uint8Array): Promise<string> {
-  let off = 0
-  while (off < buf.length - 30) {
-    if (buf[off] === 0x50 && buf[off+1] === 0x4b && buf[off+2] === 0x03 && buf[off+3] === 0x04) {
-      const method = buf[off+8] | (buf[off+9] << 8)
-      const compressedSize = (buf[off+18] | (buf[off+19] << 8) | (buf[off+20] << 16) | (buf[off+21] << 24)) >>> 0
-      const fileNameLen = buf[off+26] | (buf[off+27] << 8)
-      const extraLen = buf[off+28] | (buf[off+29] << 8)
-      const fileName = new TextDecoder().decode(buf.subarray(off+30, off+30+fileNameLen))
-      console.log(`[ZIP] entry="${fileName}" method=${method} compressed=${(compressedSize/1024/1024).toFixed(1)}MB`)
-
-      if (/\.(csv|txt)$/i.test(fileName)) {
-        const dataStart = off + 30 + fileNameLen + extraLen
-        const compressed = buf.subarray(dataStart, dataStart + compressedSize)
-
-        if (method === 0) {
-          return new TextDecoder("latin1").decode(compressed)
-        } else if (method === 8) {
-          const { inflateRawSync } = await import("zlib")
-          const decompressed = inflateRawSync(Buffer.from(compressed))
-          return new TextDecoder("latin1").decode(decompressed)
-        } else {
-          throw new Error(`ZIP method ${method} no soportado`)
-        }
-      }
-      off += 30 + fileNameLen + extraLen + compressedSize
-      continue
-    }
-    off++
-  }
-  throw new Error("No se encontro CSV/TXT en el ZIP")
 }
