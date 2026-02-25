@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 
-export const maxDuration = 300
+export const dynamic = "force-dynamic"
 
-// GET de diagnóstico — confirma que el endpoint está registrado correctamente
 export async function GET() {
   return NextResponse.json({ ok: true, route: "azeta-import-catalog-direct", ts: Date.now() })
 }
+
 
 function normalizeEan(raw: string): string {
   if (!raw) return ""
@@ -31,6 +31,9 @@ function readUInt16LE(buf: Uint8Array, offset: number): number {
 
 // Descomprimir deflate raw usando DecompressionStream (Web API nativa — sin dependencias)
 async function inflateRaw(compressed: Uint8Array): Promise<Uint8Array> {
+  if (typeof DecompressionStream === "undefined") {
+    throw new Error("DecompressionStream no disponible en este runtime")
+  }
   const ds = new DecompressionStream("deflate-raw")
   const writer = ds.writable.getWriter()
   const reader = ds.readable.getReader()
