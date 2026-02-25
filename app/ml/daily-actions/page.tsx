@@ -77,7 +77,11 @@ export default function DailyActionsPage() {
       .then((d) => {
         const accs = d.accounts || []
         setAccounts(accs)
-        if (accs.length > 0) setSelectedAccountId(accs[0].id)
+        // Restaurar cuenta seleccionada de localStorage
+        const saved = typeof window !== "undefined" ? localStorage.getItem("ml_selected_account") : null
+        const match = saved && accs.find((a: any) => a.id === saved)
+        if (match) setSelectedAccountId(match.id)
+        else if (accs.length > 0) setSelectedAccountId(accs[0].id)
       })
   }, [])
 
@@ -135,12 +139,19 @@ export default function DailyActionsPage() {
       }
 
       log("Buscando nuevas oportunidades...")
-      const oppRes = await fetch(`/api/ml/intel/opportunities?account_id=${selectedAccountId}`)
-      const oppData = await oppRes.json()
-      if (oppData.ok) {
-        log(`Oportunidades: ${oppData.opportunities_upserted} guardadas de ${oppData.items_found} items (${oppData.elapsed_seconds}s)`)
+      let oppData: any = { items: [], saved: 0, scanned: 0 }
+      try {
+        const oppRes = await fetch(`/api/ml/intel/opportunities?account_id=${selectedAccountId}`)
+        oppData = await oppRes.json().catch(() => ({ items: [], saved: 0, scanned: 0 }))
+      } catch (e: any) {
+        log(`Error de red en oportunidades: ${e.message}`)
+      }
+      const oppSaved = oppData?.saved ?? oppData?.opportunities_upserted ?? 0
+      const oppScanned = oppData?.scanned ?? oppData?.items_found ?? 0
+      if (oppData?.ok === false && oppData?.error) {
+        log(`Error en oportunidades: ${oppData.error}`)
       } else {
-        log(`Error en oportunidades: ${oppData.error || "desconocido"}`)
+        log(`Oportunidades: ${oppSaved} guardadas de ${oppScanned} items escaneados (${oppData?.elapsed_seconds ?? 0}s)`)
       }
 
       log("Recargando acciones del dia...")
@@ -166,10 +177,13 @@ export default function DailyActionsPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {accounts.length > 1 && (
+          {accounts.length > 0 && (
             <select
               value={selectedAccountId || ""}
-              onChange={(e) => setSelectedAccountId(e.target.value)}
+              onChange={(e) => {
+                setSelectedAccountId(e.target.value)
+                if (typeof window !== "undefined") localStorage.setItem("ml_selected_account", e.target.value)
+              }}
               className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground"
             >
               {accounts.map((a) => (

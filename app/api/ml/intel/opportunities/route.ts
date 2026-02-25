@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (categories.length === 0) {
-      return NextResponse.json({ ok: true, message: "No hay categorías en las publicaciones", found: 0 })
+      return NextResponse.json({ ok: true, items: [], saved: 0, scanned: 0, message: "No hay categorias en las publicaciones" })
     }
 
     // 3. Obtener EANs ya publicados por esta cuenta (para excluir)
@@ -179,6 +179,11 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
+      // Contrato estable: siempre estos campos
+      items: [],           // los items procesados (reservado para futuro)
+      saved: totalUpserted,
+      scanned: totalFound,
+      // Alias legacy por compatibilidad
       categories_scanned: categories.length,
       items_found: totalFound,
       opportunities_upserted: totalUpserted,
@@ -187,7 +192,13 @@ export async function GET(request: NextRequest) {
 
   } catch (err: any) {
     console.error("[ML-INTEL-OPP] Fatal:", err.message)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    return NextResponse.json({
+      ok: false,
+      items: [],
+      saved: 0,
+      scanned: 0,
+      error: err.message,
+    }, { status: 500 })
   }
 }
 

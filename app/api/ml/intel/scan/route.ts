@@ -99,17 +99,34 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Deduplicar EANs — incluir TODOS aunque length != 13, solo logear warning
-    const eanMap = new Map<string, string>() // ean → title
+    // Deduplicar EANs — normalizar notación científica antes de deduplicar
+    console.log(`[ML-INTEL-SCAN] STEP candidatos raw: ${pubs.length}`)
+    const eanMap = new Map<string, string>() // ean_normalizado → title
+    let skippedSci = 0
+    let skippedEmpty = 0
     for (const p of pubs) {
-      if (!p.ean) continue
-      const cleaned = p.ean.replace(/\D/g, "")
+      if (!p.ean) { skippedEmpty++; continue }
+
+      // Normalizar notación científica de Excel: 9.78845E+12 → "9788450000000"
+      let ean = p.ean.trim()
+      if (/^[0-9]+\.?[0-9]*[eE][+\-][0-9]+$/.test(ean)) {
+        const normalized = Number(ean).toFixed(0)
+        console.log(`[ML-INTEL-SCAN] Notacion cientifica normalizada: "${ean}" → "${normalized}"`)
+        ean = normalized
+        skippedSci++
+      }
+
+      if (!ean) { skippedEmpty++; continue }
+
+      const cleaned = ean.replace(/\D/g, "")
       if (cleaned.length !== 13) {
-        console.warn(`[ML-INTEL-SCAN] WARN EAN invalido ignorado: "${p.ean}" (${cleaned.length} digitos) titulo="${p.title?.slice(0,40)}"`)
+        console.warn(`[ML-INTEL-SCAN] WARN EAN invalido: "${ean}" (${cleaned.length} digitos) titulo="${p.title?.slice(0, 40)}"`)
         // No filtrar — buscar igual por si ML lo acepta
       }
-      if (!eanMap.has(p.ean)) eanMap.set(p.ean, p.title || "")
+      if (!eanMap.has(ean)) eanMap.set(ean, p.title || "")
     }
+    console.log(`[ML-INTEL-SCAN] STEP tras dedup: ${eanMap.size} EANs únicos (sci_normalized=${skippedSci} skipped_empty=${skippedEmpty})`)
+    console.log(`[ML-INTEL-SCAN] sample EANs: ${Array.from(eanMap.keys()).slice(0, 5).join(", ")}`)
     const eans = Array.from(eanMap.entries())
 
     // 3. Filtrar EANs que ya tienen snapshot hoy
@@ -123,7 +140,18 @@ export async function GET(request: NextRequest) {
     const alreadyScanned = new Set((existingSnaps || []).map((s: any) => s.ean))
     const toScan = eans.filter(([ean]) => !alreadyScanned.has(ean))
 
+    console.log(`[ML-INTEL-SCAN] STEP tras filtro cache: ${toScan.length} a escanear (${alreadyScanned.size} ya cacheados hoy)`)
     console.log(`[ML-INTEL-SCAN] account=${account.nickname} total_eans=${eans.length} already_cached=${alreadyScanned.size} to_scan=${toScan.length}`)
+
+    if (toScan.length === 0 && eans.length === 0) {
+      return NextResponse.json({
+        ok: false,
+        status: "no_candidates",
+        reason: "no_publications_for_account",
+        message: "No hay publicaciones con EAN para esta cuenta",
+        diag: { total_products: totalProducts, products_with_ean: productsWithEan, invalid_ean_count: invalidEanCount },
+      })
+    }
 
     const diag = { total_products: totalProducts, products_with_ean: productsWithEan, invalid_ean_count: invalidEanCount }
 
