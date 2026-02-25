@@ -109,61 +109,25 @@ export default function BatchImportPage() {
       }
     }
 
-    // AZETA: el browser descarga el ZIP directamente (sin pasar por Vercel),
-    // lo descomprime con fflate, sube el CSV a Blob, luego el server procesa en lotes
+    // AZETA: servidor hace stream ZIP→Blob directo (sin buffering), luego procesa en lotes
     if (isAzeta) {
       try {
-        // Paso 1: Browser descarga el ZIP directamente desde AZETA
-        setStatus("Descargando ZIP de AZETA (~230MB) directamente en el browser...")
-        addLog("Paso 1/3: Descargando ZIP de AZETA en el browser (sin limite de timeout)...")
-        const azetaUrl = "https://www.azetadistribuciones.es/servicios_web/csv.php?user=680899&password=badajoz24"
-        const dlStart = Date.now()
-        const zipRes = await fetch(azetaUrl)
-        if (!zipRes.ok) {
-          addLog(`Error descargando ZIP: HTTP ${zipRes.status}`)
+        // Paso 1: Servidor descarga ZIP y lo guarda en Blob via stream directo
+        setStatus("Descargando ZIP de AZETA al servidor...")
+        addLog("Paso 1/2: Descargando y guardando ZIP de AZETA (~230MB)...")
+        const dlRes = await fetch("/api/azeta/download", {
+          method: "POST",
+          credentials: "include",
+        })
+        const dlData = await dlRes.json().catch(() => ({}))
+        if (!dlRes.ok) {
+          addLog(`Error en descarga: ${dlData.error || `HTTP ${dlRes.status}`}`)
           setStatus("Error en descarga")
           setIsRunning(false)
           return
         }
-        const zipBuf = await zipRes.arrayBuffer()
-        addLog(`ZIP descargado: ${(zipBuf.byteLength / 1024 / 1024).toFixed(1)}MB en ${((Date.now()-dlStart)/1000).toFixed(1)}s`)
-
-        // Paso 2: Descomprimir ZIP en el browser con fflate
-        setStatus("Descomprimiendo ZIP en el browser...")
-        addLog("Paso 2/3: Descomprimiendo ZIP...")
-        const { unzip } = await import("fflate")
-        const csvText: string = await new Promise((resolve, reject) => {
-          unzip(new Uint8Array(zipBuf), (err, files) => {
-            if (err) return reject(err)
-            const csvFile = Object.keys(files).find(f => /\.(csv|txt)$/i.test(f))
-            if (!csvFile) return reject(new Error("No CSV/TXT en el ZIP"))
-            // latin1 decode
-            const bytes = files[csvFile]
-            let text = ""
-            for (let i = 0; i < bytes.length; i++) text += String.fromCharCode(bytes[i])
-            resolve(text)
-          })
-        })
-        addLog(`CSV descomprimido: ${(csvText.length / 1024 / 1024).toFixed(1)}MB`)
-
-        // Paso 3: Subir CSV a Vercel Blob via nuestro endpoint
-        setStatus("Subiendo CSV a almacenamiento temporal...")
-        addLog("Paso 3/3: Subiendo CSV descomprimido a almacenamiento...")
-        const uploadRes = await fetch("/api/azeta/upload-csv", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "text/plain; charset=utf-8" },
-          body: csvText,
-        })
-        const dlData = await uploadRes.json().catch(() => ({}))
-        if (!uploadRes.ok) {
-          addLog(`Error subiendo CSV: ${dlData.error || `HTTP ${uploadRes.status}`}`)
-          setStatus("Error en upload")
-          setIsRunning(false)
-          return
-        }
         const blobUrl = dlData.blob_url
-        addLog(`CSV subido a almacenamiento (${dlData.csv_size_mb}MB, ${dlData.total_lines?.toLocaleString()} lineas)`)
+        addLog(`ZIP procesado: CSV ${dlData.csv_size_mb}MB, ${dlData.total_lines?.toLocaleString()} lineas (${dlData.elapsed_seconds}s)`)
 
         // Paso 2: Procesar en lotes de 4MB desde el CSV en Blob
         addLog(`ZIP descomprimido a CSV (${dlData.csv_size_mb}MB, ${dlData.total_lines?.toLocaleString()} lineas). Procesando...`)
