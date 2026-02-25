@@ -3,6 +3,11 @@ import { createAdminClient } from "@/lib/supabase/admin"
 
 export const maxDuration = 300
 
+// GET de diagnóstico — confirma que el endpoint está registrado correctamente
+export async function GET() {
+  return NextResponse.json({ ok: true, route: "azeta-import-catalog-direct", ts: Date.now() })
+}
+
 function normalizeEan(raw: string): string {
   if (!raw) return ""
   const cleaned = raw.replace(/[^0-9]/g, "")
