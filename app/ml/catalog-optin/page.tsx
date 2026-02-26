@@ -220,8 +220,10 @@ export default function CatalogOptinPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ account_id: accountId, item_id: pub.ml_item_id, ean, dry_run: dryRun }),
-      }).catch(() => null)
-      const data = await res?.json().catch(() => ({}))
+      }).catch((e) => { console.log("[v0] fetch exception:", e?.message); return null })
+      const rawText = await res?.text().catch(() => "")
+      console.log("[v0] POST catalog-optin status:", res?.status, "body:", rawText?.slice(0, 300))
+      const data = rawText ? JSON.parse(rawText).catch?.(() => ({})) ?? (() => { try { return JSON.parse(rawText) } catch { return {} } })() : {}
 
       if (data?.ok) {
         // Optin exitoso (o DRY RUN simulado)

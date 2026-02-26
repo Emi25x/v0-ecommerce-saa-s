@@ -43,20 +43,28 @@ export async function GET(req: NextRequest) {
 //   3. Si item está pausado → activarlo
 //   4. POST /items/catalog_listings → optin
 export async function POST(req: NextRequest) {
-  const body = await req.json()
+  try {
+  const body = await req.json().catch(() => ({}))
   const { account_id, item_id, ean, dry_run = false } = body
 
   if (!account_id || !item_id) {
-    return NextResponse.json({ error: "account_id e item_id son requeridos" }, { status: 400 })
+    return NextResponse.json({ ok: false, error: "account_id e item_id son requeridos" }, { status: 400 })
   }
 
-  const { data: account } = await supabase
+  const { data: account, error: accountError } = await supabase
     .from("ml_accounts")
-    .select("access_token, ml_user_id, site_id, nickname")
+    .select("access_token, ml_user_id, nickname")
     .eq("id", account_id)
     .single()
 
-  if (!account) return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
+  if (!account) {
+    console.error("[CATALOG-OPTIN POST] Cuenta no encontrada:", account_id, accountError?.message)
+    return NextResponse.json({ ok: false, error: "Cuenta no encontrada", account_id }, { status: 404 })
+  }
+  if (!account.access_token) {
+    console.error("[CATALOG-OPTIN POST] access_token vacío para cuenta:", account_id)
+    return NextResponse.json({ ok: false, error: "Token de acceso no disponible" }, { status: 400 })
+  }
 
   const authHeaders: Record<string, string> = {
     "Authorization": `Bearer ${account.access_token}`,
@@ -91,7 +99,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, item_id, step: "resolve", ml_error: { message: "Sin EAN/ISBN/GTIN" } })
   }
 
-  const siteId = account.site_id ?? "MLA"
+  const siteId = "MLA"
   const searchRes = await fetch(
     `https://api.mercadolibre.com/products/search?status=active&site_id=${siteId}&product_identifier=${encodeURIComponent(ean)}`,
     { headers: authHeaders }
@@ -181,4 +189,9 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, item_id, catalog_product_id, product_title, catalog_listing: optinBody })
+
+  } catch (e: any) {
+    console.error("[CATALOG-OPTIN POST] Unhandled exception:", e?.message, e?.stack)
+    return NextResponse.json({ ok: false, error: e?.message ?? "Error interno" }, { status: 500 })
+  }
 }
