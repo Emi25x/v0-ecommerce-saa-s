@@ -42,19 +42,39 @@ export async function POST(req: NextRequest) {
   const productTitle = results[0].name ?? results[0].title ?? null
 
   // Si check_vendor=true, verificar si el vendedor YA tiene una listing de catálogo
-  // para este catalog_product_id — si la tiene, no mostrar en el listado
+  // (catalog_listing=true) para este catalog_product_id
   let vendorHasCatalog = false
   if (check_vendor && account.ml_user_id) {
     try {
+      // Buscar items del vendedor asociados a este catalog_product_id
       const vendorRes = await fetch(
-        `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?catalog_product_id=${catalogProductId}&limit=1`,
+        `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?catalog_product_id=${catalogProductId}&limit=20`,
         { headers: authHeaders }
       )
       if (vendorRes.ok) {
         const vendorData = await vendorRes.json()
-        vendorHasCatalog = (vendorData.results ?? []).length > 0
+        const vendorItemIds: string[] = vendorData.results ?? []
+
+        if (vendorItemIds.length > 0) {
+          // Hacer multi-get para ver cuáles tienen catalog_listing=true
+          const ids = vendorItemIds.slice(0, 20).join(",")
+          const detailRes = await fetch(
+            `https://api.mercadolibre.com/items?ids=${ids}&attributes=id,catalog_listing`,
+            { headers: authHeaders }
+          )
+          if (detailRes.ok) {
+            const details: any[] = await detailRes.json()
+            // ML devuelve array de {code, body} o directo — manejar ambos
+            vendorHasCatalog = details.some(entry => {
+              const item = entry.body ?? entry
+              return item?.catalog_listing === true
+            })
+            console.log(`[RESOLVE] catalog_product_id=${catalogProductId} vendor_items=${vendorItemIds} catalog_items=${details.map(e => `${(e.body??e).id}:${(e.body??e).catalog_listing}`)}`)
+          }
+        }
       }
-    } catch {
+    } catch (e: any) {
+      console.error("[RESOLVE] vendor check error:", e.message)
       // Si falla la verificación, asumir que no tiene (mejor mostrar de más que filtrar)
     }
   }
