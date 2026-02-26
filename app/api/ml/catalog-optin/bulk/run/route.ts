@@ -14,16 +14,18 @@ export async function POST(req: NextRequest) {
   const { account_id, dry_run = false, offset = 0 } = await req.json()
   if (!account_id) return NextResponse.json({ error: "account_id requerido" }, { status: 400 })
 
-  const { data: account } = await supabase
+  const { data: account, error: accountError } = await supabase
     .from("ml_accounts")
-    .select("access_token, ml_user_id, nickname, site_id")
+    .select("access_token, ml_user_id, nickname")
     .eq("id", account_id)
     .single()
 
-  if (!account) return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
+  if (!account) {
+    console.error("[CATALOG-OPTIN-BULK] Cuenta no encontrada:", account_id, accountError?.message)
+    return NextResponse.json({ error: "Cuenta no encontrada", detail: accountError?.message }, { status: 404 })
+  }
 
-  // site_id viene de la tabla, fallback a MLA
-  const siteId = account.site_id ?? "MLA"
+  const siteId = "MLA"
 
   // Obtener el total de publicaciones de esta cuenta (para el progreso)
   const { count: totalCount } = await supabase
