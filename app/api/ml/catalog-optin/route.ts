@@ -6,10 +6,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const DELAY = (ms: number) => new Promise(r => setTimeout(r, ms))
-
-// GET — cargar publicaciones que ML tiene catalog product pero el vendedor aún no hizo optin
-// Para cada pub: busca product_identifier, si hay resultado y el vendedor no tiene esa listing → incluir
+// GET — devuelve publicaciones activas/pausadas con EAN (rápido, sin llamar a ML)
+// El cliente luego resuelve una a una via /api/ml/catalog-optin/resolve
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const account_id = searchParams.get("account_id")
@@ -20,17 +18,13 @@ export async function GET(req: NextRequest) {
 
   const { data: account } = await supabase
     .from("ml_accounts")
-    .select("access_token, ml_user_id, site_id")
+    .select("id")
     .eq("id", account_id)
     .single()
 
-  if (!account?.access_token) return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
+  if (!account) return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
 
-  const siteId = account.site_id ?? "MLA"
-  const authHeaders = { "Authorization": `Bearer ${account.access_token}`, "Accept": "application/json" }
-
-  // Traer publicaciones activas/pausadas con EAN/ISBN/GTIN en el rango pedido
-  const { data: rawPubs, error, count } = await supabase
+  const { data: pubs, error, count } = await supabase
     .from("ml_publications")
     .select("id, ml_item_id, title, price, status, ean, isbn, gtin", { count: "exact" })
     .eq("account_id", account_id)
@@ -41,80 +35,16 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  const allPubs = rawPubs ?? []
-  if (allPubs.length === 0) {
-    return NextResponse.json({ ok: true, pubs: [], total: count ?? 0, offset, limit })
-  }
-
-  // Para cada pub: resolver EAN → catalog_product_id y verificar si vendedor ya tiene esa listing
-  const result: any[] = []
-  let scanned = 0, noMatch = 0, alreadyHas = 0
-
-  for (const pub of allPubs) {
-    const ean = pub.ean ?? pub.isbn ?? pub.gtin
-    if (!ean) { noMatch++; continue }
-
-    // 1. Buscar catalog product para este EAN
-    let catalogProductId: string | null = null
-    let productTitle: string | null = null
-    try {
-      const searchRes = await fetch(
-        `https://api.mercadolibre.com/products/search?status=active&site_id=${siteId}&product_identifier=${encodeURIComponent(ean)}`,
-        { headers: authHeaders }
-      )
-      if (searchRes.ok) {
-        const searchData = await searchRes.json()
-        const results: any[] = searchData.results ?? []
-        if (results.length > 0) {
-          catalogProductId = results[0].id
-          productTitle = results[0].name ?? results[0].title ?? null
-        }
-      }
-    } catch { /* ignorar */ }
-
-    if (!catalogProductId) { noMatch++; await DELAY(100); continue }
-
-    // 2. Verificar si el vendedor ya tiene una pub de catálogo para ese catalog_product_id
-    let vendorAlreadyHas = false
-    try {
-      const vendorRes = await fetch(
-        `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?catalog_product_id=${catalogProductId}&limit=1`,
-        { headers: authHeaders }
-      )
-      if (vendorRes.ok) {
-        const vendorData = await vendorRes.json()
-        const existing: string[] = vendorData.results ?? []
-        // Si existe alguna listing para este producto que NO sea la publicación tradicional actual, ya tiene catálogo
-        vendorAlreadyHas = existing.some(id => id !== pub.ml_item_id)
-      }
-    } catch { /* si falla la verificación, incluir (mejor mostrar de más) */ }
-
-    if (vendorAlreadyHas) { alreadyHas++; await DELAY(100); continue }
-
-    // Esta pub es elegible: ML tiene el producto, el vendedor aún no tiene la listing de catálogo
-    result.push({
-      ...pub,
-      resolve_status: "resolved",
-      catalog_product_id: catalogProductId,
-      product_title: productTitle,
-    })
-    scanned++
-    await DELAY(100)
-  }
-
   return NextResponse.json({
     ok: true,
-    pubs: result,
+    pubs: pubs ?? [],
     total: count ?? 0,
-    scanned,
-    no_match: noMatch,
-    already_has: alreadyHas,
     offset,
     limit,
   })
 }
 
-// POST — ejecutar optin sobre un item (ya resuelto, catalog_product_id conocido)
+// POST — ejecutar optin sobre un item (catalog_product_id ya conocido)
 export async function POST(req: NextRequest) {
   const body = await req.json()
   const { account_id, item_id, catalog_product_id, dry_run = false } = body
@@ -140,11 +70,12 @@ export async function POST(req: NextRequest) {
     "Content-Type": "application/json",
   }
 
-  // Verificar estado del item — si está pausado, activar primero
+  // Verificar estado del item en ML
   const itemCheckRes = await fetch(
     `https://api.mercadolibre.com/items/${item_id}?attributes=id,status,catalog_listing,catalog_product_id`,
     { headers: authHeaders }
   )
+
   if (itemCheckRes.ok) {
     const itemData = await itemCheckRes.json()
 
@@ -156,8 +87,9 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // Activar si está pausado
+    // Activar si está pausado — ML requiere status=active para optin
     if (itemData.status === "paused") {
+      console.log(`[CATALOG-OPTIN] Activando item pausado ${item_id} antes del optin`)
       await fetch(`https://api.mercadolibre.com/items/${item_id}`, {
         method: "PUT",
         headers: authHeaders,
@@ -177,11 +109,11 @@ export async function POST(req: NextRequest) {
   const optinBody = await optinRes.json().catch(() => ({}))
 
   if (!optinRes.ok) {
-    console.error(`[CATALOG-OPTIN POST] FAIL item=${item_id} product=${catalog_product_id} status=${optinRes.status} body=${JSON.stringify(optinBody)}`)
+    console.error(`[CATALOG-OPTIN POST] FAIL item=${item_id} product=${catalog_product_id} http=${optinRes.status} body=${JSON.stringify(optinBody)}`)
     return NextResponse.json({ ok: false, item_id, catalog_product_id, status: optinRes.status, ml_error: optinBody })
   }
 
-  // Guardar la nueva listing de catálogo en nuestra DB
+  // Guardar la nueva listing de catálogo en nuestra DB si ML devolvió el nuevo item
   if (optinBody.id) {
     await supabase.from("ml_listings").upsert({
       account_id,
