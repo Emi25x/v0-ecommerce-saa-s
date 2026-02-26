@@ -45,6 +45,7 @@ export default function CatalogOptinPage() {
   const [selected, setSelected]         = useState<Set<string>>(new Set())
   // Modo masivo: no lista pubs, procesa todo en servidor paginando
   const [bulkMode, setBulkMode]         = useState(false)
+  const [offset, setOffset]             = useState(0)
   const abortRef  = useRef(false)
   const logEndRef = useRef<HTMLDivElement>(null)
 
@@ -79,14 +80,15 @@ export default function CatalogOptinPage() {
 
   // ── Load publications (solo en modo manual) ───────────────────────────────
 
-  const loadPubs = useCallback(async () => {
+  const loadPubs = useCallback(async (page = 0) => {
     if (!accountId || bulkMode) return
     setLoading(true)
     setPubs([])
     setSelected(new Set())
-    addLog("Cargando publicaciones...")
+    setOffset(page)
+    addLog(`Cargando publicaciones${page > 0 ? ` (página ${Math.floor(page / 50) + 1})` : ""}...`)
 
-    const res = await fetch(`/api/ml/catalog-optin?account_id=${accountId}&limit=50`)
+    const res = await fetch(`/api/ml/catalog-optin?account_id=${accountId}&limit=50&offset=${page}`)
     const data = await res.json()
     if (!res.ok || !data.ok) {
       addLog(`Error al cargar: ${data.error ?? "desconocido"}`, "error")
@@ -99,7 +101,9 @@ export default function CatalogOptinPage() {
     }))
     setPubs(enriched)
     setTotal(data.total ?? 0)
-    addLog(`${enriched.length} publicaciones cargadas (${data.total} totales con EAN)`, "ok")
+    const page_num = Math.floor(page / 50) + 1
+    const total_pages = Math.ceil((data.total ?? 0) / 50)
+    addLog(`${enriched.length} publicaciones cargadas — página ${page_num} de ${total_pages} (${data.total} totales con EAN)`, "ok")
     setLoading(false)
   }, [accountId, bulkMode, addLog])
 
@@ -253,12 +257,13 @@ export default function CatalogOptinPage() {
         setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, resolve_status: "not_found", optin_status: undefined } : p))
         noMatch++
       } else {
-        // Error real del optin — mostrar cause[] completo de ML
+        // Error del optin — mostrar cause[] completo de ML
         const mlErr = data?.ml_error ?? {}
         const causes: string = Array.isArray(mlErr?.cause)
           ? mlErr.cause.map((c: any) => c.message ?? c.code ?? JSON.stringify(c)).join(" | ")
           : (mlErr?.message ?? JSON.stringify(mlErr))
         const errDetail = `HTTP ${data?.status ?? "?"} | ${causes}`
+        const isAlreadyCatalog = causes.toLowerCase().includes("validation") || causes.toLowerCase().includes("already")
         setPubs(prev => prev.map(p => p.id === pub.id ? {
           ...p,
           resolve_status: data?.catalog_product_id ? "resolved" : "not_found",
@@ -266,8 +271,13 @@ export default function CatalogOptinPage() {
           optin_status: "failed",
           optin_error: errDetail,
         } : p))
-        failed++
-        addLog(`FAIL ${pub.ml_item_id}: ${errDetail}`, "error")
+        if (isAlreadyCatalog) {
+          skipped++
+          addLog(`SKIP ${pub.ml_item_id}: ya tiene publicación de catálogo en ML`, "warn")
+        } else {
+          failed++
+          addLog(`FAIL ${pub.ml_item_id}: ${errDetail}`, "error")
+        }
       }
       await new Promise(r => setTimeout(r, 300))
     }
@@ -454,9 +464,30 @@ export default function CatalogOptinPage() {
         </div>
 
         {!bulkMode && (
-          <Button onClick={loadPubs} disabled={loading || running} variant="outline" size="sm">
-            {loading ? "Cargando..." : "Recargar"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => loadPubs(Math.max(0, offset - 50))}
+              disabled={loading || running || offset === 0}
+              variant="outline" size="sm"
+            >
+              ← Anterior
+            </Button>
+            <Button onClick={() => loadPubs(offset)} disabled={loading || running} variant="outline" size="sm">
+              {loading ? "Cargando..." : "Recargar"}
+            </Button>
+            <Button
+              onClick={() => loadPubs(offset + 50)}
+              disabled={loading || running || offset + 50 >= total}
+              variant="outline" size="sm"
+            >
+              Siguiente →
+            </Button>
+            {total > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {Math.floor(offset / 50) + 1} / {Math.ceil(total / 50)}
+              </span>
+            )}
+          </div>
         )}
       </div>
 
