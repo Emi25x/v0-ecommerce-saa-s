@@ -95,7 +95,8 @@ export default function CatalogOptinPage() {
       }))
       setPubs(enriched)
       setTotal(data.total ?? 0)
-      addLog(`${enriched.length} publicaciones cargadas (${data.total} totales con EAN)`, "ok")
+      const filteredMsg = data.filtered_catalog > 0 ? ` — ${data.filtered_catalog} ya tienen catálogo en ML` : ""
+      addLog(`${enriched.length} publicaciones cargadas (${data.total_raw ?? data.total} totales con EAN${filteredMsg})`, "ok")
     } finally {
       setLoading(false)
     }
