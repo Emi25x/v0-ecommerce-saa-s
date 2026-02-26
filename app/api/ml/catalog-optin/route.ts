@@ -134,9 +134,29 @@ export async function POST(req: NextRequest) {
   // Si ya tiene catálogo, no hacer nada
   if (itemData.catalog_listing === true || (itemData.catalog_product_id && itemData.catalog_product_id !== "")) {
     return NextResponse.json({
-      ok: false, item_id, catalog_product_id,
+      ok: false, skip: true, item_id, catalog_product_id,
       ml_error: { message: `El item ya tiene catalog_product_id=${itemData.catalog_product_id}` },
     }, { status: 200 })
+  }
+
+  // Verificar si el vendedor ya tiene una pub de catálogo para este catalog_product_id
+  // ML rechaza el optin si ya existe una — devuelve 400 Validation error
+  const sellerCheckRes = await fetch(
+    `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?catalog_product_id=${catalog_product_id}&limit=1`,
+    { headers: authHeaders }
+  )
+  if (sellerCheckRes.ok) {
+    const sellerData = await sellerCheckRes.json()
+    const existingIds: string[] = sellerData.results ?? []
+    // Filtrar: si existe una listing de catálogo diferente al item original, ya hay una
+    const alreadyExists = existingIds.some(id => id !== item_id)
+    if (alreadyExists) {
+      console.log(`[CATALOG-OPTIN POST] Vendedor ya tiene pub de catálogo ${catalog_product_id}: ${existingIds}`)
+      return NextResponse.json({
+        ok: false, skip: true, item_id, catalog_product_id,
+        ml_error: { message: `Vendedor ya tiene publicacion de catalogo para ${catalog_product_id}: ${existingIds.join(", ")}` },
+      }, { status: 200 })
+    }
   }
 
   // Si está pausado, activarlo primero

@@ -252,8 +252,11 @@ export default function CatalogOptinPage() {
         setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, optin_status: dryRun ? "dry" : "ok" } : p))
         okOptin++
         if (!dryRun) addLog(`OK: ${pub.ml_item_id} → ${resolvedId}`, "ok")
+      } else if (oData?.skip) {
+        // Ya tiene publicación de catálogo — no es un error, simplemente omitir
+        setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, optin_status: "skipped", optin_error: oData.ml_error?.message } : p))
+        addLog(`SKIP ${pub.ml_item_id}: ${oData.ml_error?.message}`, "warn")
       } else {
-        // Extraer el error completo de ML para diagnosticar
         const mlErr = oData?.ml_error ?? oData
         const errMsg = mlErr?.message ?? mlErr?.cause ?? mlErr?.error ?? JSON.stringify(mlErr)
         const errDetail = `HTTP ${oData?.status ?? "?"} | ${errMsg}`
@@ -301,6 +304,9 @@ export default function CatalogOptinPage() {
         setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, optin_status: dryRun ? "dry" : "ok" } : p))
         ok++
         if (!dryRun) addLog(`OK: ${pub.ml_item_id} → ${pub.catalog_product_id}`, "ok")
+      } else if (data?.skip) {
+        setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, optin_status: "skipped", optin_error: data.ml_error?.message } : p))
+        addLog(`SKIP ${pub.ml_item_id}: ${data.ml_error?.message}`, "warn")
       } else {
         const mlErr = data?.ml_error ?? data
         const errMsg = mlErr?.message ?? mlErr?.cause ?? mlErr?.error ?? JSON.stringify(mlErr)
