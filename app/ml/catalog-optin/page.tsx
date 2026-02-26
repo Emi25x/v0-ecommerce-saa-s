@@ -515,7 +515,7 @@ export default function CatalogOptinPage() {
                 { label: "Total",     val: counts.total,      color: "text-foreground" },
                 { label: "Pendiente", val: counts.pending,    color: "text-zinc-400" },
                 { label: "Resueltos", val: counts.resolved,   color: "text-blue-400" },
-                { label: "Sin match", val: counts.not_found,  color: "text-orange-400" },
+                { label: "Sin catálogo ML", val: counts.not_found,  color: "text-orange-400" },
                 { label: "Ambiguos",  val: counts.ambiguous,  color: "text-yellow-400" },
                 { label: "Sin EAN",   val: counts.no_ean,     color: "text-zinc-600" },
                 { label: "Optin OK",  val: counts.optin_ok,   color: "text-green-400" },
@@ -664,7 +664,7 @@ export default function CatalogOptinPage() {
                 >
                   {f === "all"       ? `Todos (${counts.total})`
                    : f === "resolved"  ? `Resueltos (${counts.resolved})`
-                   : f === "not_found" ? `Sin match (${counts.not_found})`
+                   : f === "not_found" ? `Sin catálogo ML (${counts.not_found})`
                    : f === "ambiguous" ? `Ambiguos (${counts.ambiguous})`
                    : `Sin EAN (${counts.no_ean})`}
                 </button>
@@ -736,7 +736,12 @@ export default function CatalogOptinPage() {
                       <td className="px-3 py-1.5">
                         {p.optin_status === "ok"      && <Badge variant="outline" className="text-green-400 text-xs border-green-400/30">OK</Badge>}
                         {p.optin_status === "dry"     && <Badge variant="outline" className="text-yellow-400 text-xs border-yellow-400/30">DRY</Badge>}
-                        {p.optin_status === "failed"  && <span title={p.optin_error ?? ""} className="text-red-400 cursor-help">FAIL</span>}
+                        {p.optin_status === "failed"  && (
+                          <span title={p.optin_error ?? ""} className={`text-xs cursor-help ${(p.optin_error ?? "").toLowerCase().includes("validation") ? "text-orange-400" : "text-red-400"}`}>
+                            {(p.optin_error ?? "").toLowerCase().includes("validation") ? "Ya tiene catálogo" : "FAIL"}
+                          </span>
+                        )}
+                        {p.optin_status === "skipped" && <span title={p.optin_error ?? ""} className="text-xs text-orange-400 cursor-help">Ya tiene catálogo</span>}
                         {p.optin_status === "running" && <span className="text-blue-400 animate-pulse">...</span>}
                       </td>
                     </tr>
@@ -792,7 +797,7 @@ function ResolveStatusBadge({ status }: { status: string }) {
     pending:   { label: "Pendiente", cls: "text-zinc-500 border-zinc-500/30" },
     resolving: { label: "Buscando",  cls: "text-blue-400 border-blue-400/30 animate-pulse" },
     resolved:  { label: "Resuelto",  cls: "text-blue-400 border-blue-400/30" },
-    not_found: { label: "Sin match", cls: "text-orange-400 border-orange-400/30" },
+    not_found: { label: "Sin catálogo en ML", cls: "text-orange-400 border-orange-400/30" },
     ambiguous: { label: "Ambiguo",   cls: "text-yellow-400 border-yellow-400/30" },
     no_ean:    { label: "Sin EAN",   cls: "text-zinc-600 border-zinc-600/30" },
   }
