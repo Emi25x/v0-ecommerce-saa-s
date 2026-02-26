@@ -89,14 +89,21 @@ export default function CatalogOptinPage() {
       const res = await fetch(`/api/ml/catalog-optin?account_id=${accountId}&limit=50`)
       const data = await res.json()
       if (!data.ok) { addLog(`Error al cargar: ${data.error}`, "error"); return }
+      // El servidor ya resuelve cada EAN y devuelve resolve_status="resolved" + catalog_product_id
+      // No sobreescribir — preservar lo que vino del servidor
       const enriched: Pub[] = (data.pubs ?? []).map((p: Pub) => ({
         ...p,
-        resolve_status: getEan(p) ? "pending" : "no_ean",
+        resolve_status: p.resolve_status ?? (getEan(p) ? "pending" : "no_ean"),
       }))
       setPubs(enriched)
       setTotal(data.total ?? 0)
-      const filteredMsg = data.filtered_catalog > 0 ? ` — ${data.filtered_catalog} ya tienen catálogo en ML` : ""
-      addLog(`${enriched.length} publicaciones cargadas (${data.total_raw ?? data.total} totales con EAN${filteredMsg})`, "ok")
+      const parts = [
+        `${enriched.length} listas para optin`,
+        data.no_match  > 0 ? `${data.no_match} sin producto en ML`    : null,
+        data.already_has > 0 ? `${data.already_has} ya tienen catálogo` : null,
+        `(${data.total} totales con EAN)`,
+      ].filter(Boolean).join(" | ")
+      addLog(parts, "ok")
     } finally {
       setLoading(false)
     }
