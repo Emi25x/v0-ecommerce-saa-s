@@ -93,42 +93,14 @@ export default function CatalogOptinPage() {
       setLoading(false)
       return
     }
-    setLoading(false)
-
     const enriched: Pub[] = (data.pubs ?? []).map((p: Pub) => ({
       ...p,
       resolve_status: getEan(p) ? "pending" : "no_ean",
     }))
     setPubs(enriched)
     setTotal(data.total ?? 0)
-    addLog(`${enriched.length} publicaciones cargadas (${data.total} totales con EAN) — buscando en catálogo ML...`)
-
-    // Auto-resolver cada pub contra ML Products (product_identifier)
-    let resolved = 0, notFound = 0
-    for (const pub of enriched) {
-      const ean = getEan(pub)
-      if (!ean) continue
-      setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, resolve_status: "resolving" } : p))
-      const rRes = await fetch("/api/ml/catalog-optin/resolve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account_id: accountId, ean }),
-      }).catch(() => null)
-      const rData = await rRes?.json().catch(() => ({}))
-      if (rData?.status === "resolved") {
-        setPubs(prev => prev.map(p => p.id === pub.id ? {
-          ...p, resolve_status: "resolved",
-          catalog_product_id: rData.catalog_product_id,
-          product_title: rData.product_title,
-        } : p))
-        resolved++
-      } else {
-        setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, resolve_status: "not_found" } : p))
-        notFound++
-      }
-      await new Promise(r => setTimeout(r, 150))
-    }
-    addLog(`${resolved} con catálogo en ML | ${notFound} sin catálogo en ML`, resolved > 0 ? "ok" : "warn")
+    addLog(`${enriched.length} publicaciones cargadas (${data.total} totales con EAN)`, "ok")
+    setLoading(false)
   }, [accountId, bulkMode, addLog])
 
   useEffect(() => {
