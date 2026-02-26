@@ -40,7 +40,7 @@ export default function CatalogOptinPage() {
   const [dryRun, setDryRun]             = useState(true)
   const [confirmLive, setConfirmLive]   = useState(false)
   const [logs, setLogs]                 = useState<LogLine[]>([])
-  const [filter, setFilter]             = useState<"all" | "resolved" | "not_found" | "ambiguous" | "no_ean">("resolved")
+  const [filter, setFilter]             = useState<"all" | "resolved" | "not_found" | "ambiguous" | "no_ean">("all")
   // Selección
   const [selected, setSelected]         = useState<Set<string>>(new Set())
   // Modo masivo: no lista pubs, procesa todo en servidor paginando
@@ -94,60 +94,13 @@ export default function CatalogOptinPage() {
       return
     }
 
-    const rawPubs: Pub[] = (data.pubs ?? []).map((p: Pub) => ({
+    const enriched: Pub[] = (data.pubs ?? []).map((p: Pub) => ({
       ...p,
       resolve_status: getEan(p) ? "pending" : "no_ean",
     }))
+    setPubs(enriched)
     setTotal(data.total ?? 0)
-    addLog(`${rawPubs.length} publicaciones cargadas de ${data.total} con EAN — verificando en ML una a una...`)
-
-    // Mostrar las pubs inmediatamente como "pending" y luego resolver una a una
-    setPubs(rawPubs)
-    setLoading(false)
-
-    // Resolver cada pub: buscar product_identifier en ML y verificar si el vendedor ya tiene la listing
-    let eligible = 0, noMatch = 0, alreadyHas = 0
-    for (const pub of rawPubs) {
-      const ean = getEan(pub)
-      if (!ean) {
-        setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, resolve_status: "no_ean" } : p))
-        noMatch++
-        continue
-      }
-
-      // Marcar como resolviendo
-      setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, resolve_status: "resolving" } : p))
-
-      const rRes = await fetch("/api/ml/catalog-optin/resolve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account_id: accountId, ean, check_vendor: true }),
-      }).catch(() => null)
-      const rData = await rRes?.json().catch(() => ({}))
-
-      if (rData?.status === "resolved" && !rData?.vendor_has_catalog) {
-        // ML tiene el producto Y el vendedor NO tiene la listing → elegible para optin
-        setPubs(prev => prev.map(p => p.id === pub.id ? {
-          ...p,
-          resolve_status: "resolved",
-          catalog_product_id: rData.catalog_product_id,
-          product_title: rData.product_title,
-        } : p))
-        eligible++
-      } else if (rData?.vendor_has_catalog) {
-        // Vendedor ya tiene la listing de catálogo → ocultar (not_found para filtrar)
-        setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, resolve_status: "not_found", optin_error: "Ya tiene publicación de catálogo" } : p))
-        alreadyHas++
-      } else {
-        // ML no tiene catalog product para este EAN
-        setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, resolve_status: "not_found" } : p))
-        noMatch++
-      }
-
-      await new Promise(r => setTimeout(r, 200))
-    }
-
-    addLog(`Verificación completa: ${eligible} elegibles | ${alreadyHas} ya tienen catálogo | ${noMatch} sin producto en ML`, "ok")
+    addLog(`${enriched.length} publicaciones cargadas (${data.total} totales con EAN)`, "ok")
   }, [accountId, bulkMode, addLog])
 
   useEffect(() => {
