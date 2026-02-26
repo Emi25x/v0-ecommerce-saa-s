@@ -200,77 +200,79 @@ export default function CatalogOptinPage() {
     setRunning(true)
     abortRef.current = false
 
+    // Incluir todos excepto los que no tienen EAN o ya están OK
     const targets = selected.size > 0
-      ? pubs.filter(p => selected.has(p.id) && p.resolve_status !== "no_ean")
-      : pubs.filter(p => p.resolve_status !== "no_ean")
+      ? pubs.filter(p => selected.has(p.id) && p.resolve_status !== "no_ean" && p.optin_status !== "ok")
+      : pubs.filter(p => p.resolve_status !== "no_ean" && p.optin_status !== "ok")
 
     addLog(`Resolver + Optin ${dryRun ? "DRY RUN" : "LIVE"} sobre ${targets.length} items...`)
-    let okOptin = 0, failedOptin = 0, noMatch = 0, errors = 0
+    let okOptin = 0, skipped = 0, noMatch = 0, failed = 0
 
     for (const pub of targets) {
       if (abortRef.current) break
+      const ean = getEan(pub)
+      if (!ean) continue
 
-      // Paso 1: resolver si no está ya resuelto
-      let resolvedId = pub.catalog_product_id ?? null
-      if (pub.resolve_status !== "resolved" || !resolvedId) {
-        const ean = getEan(pub)
-        if (!ean) continue
-        setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, resolve_status: "resolving" } : p))
-        const rRes = await fetch("/api/ml/catalog-optin/resolve", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ account_id: accountId, ean }),
-        }).catch(() => null)
-        const rData = await rRes?.json().catch(() => ({}))
+      // El servidor hace todo: verificar ML, buscar EAN, activar si pausado, optin
+      setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, optin_status: "running", resolve_status: "resolving" } : p))
 
-        if (rData?.status === "resolved") {
-          resolvedId = rData.catalog_product_id
-          setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, resolve_status: "resolved", catalog_product_id: resolvedId, product_title: rData.product_title } : p))
-        } else if (rData?.status === "ambiguous") {
-          setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, resolve_status: "ambiguous", ambiguous_options: rData.results } : p))
-          addLog(`Ambiguo: ${pub.ml_item_id} — elegir manualmente`, "warn")
-          continue
-        } else {
-          setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, resolve_status: "not_found" } : p))
-          noMatch++
-          continue
-        }
-        await new Promise(r => setTimeout(r, 200))
-      }
-
-      if (!resolvedId) { noMatch++; continue }
-
-      // Paso 2: optin
-      setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, optin_status: "running" } : p))
-      const oRes = await fetch("/api/ml/catalog-optin", {
+      const res = await fetch("/api/ml/catalog-optin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account_id: accountId, item_id: pub.ml_item_id, catalog_product_id: resolvedId, dry_run: dryRun }),
+        body: JSON.stringify({ account_id: accountId, item_id: pub.ml_item_id, ean, dry_run: dryRun }),
       }).catch(() => null)
-      const oData = await oRes?.json().catch(() => ({}))
+      const data = await res?.json().catch(() => ({}))
 
-      if (dryRun || oData?.ok) {
-        setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, optin_status: dryRun ? "dry" : "ok" } : p))
+      if (data?.ok) {
+        // Optin exitoso (o DRY RUN simulado)
+        setPubs(prev => prev.map(p => p.id === pub.id ? {
+          ...p,
+          resolve_status: "resolved",
+          catalog_product_id: data.catalog_product_id,
+          product_title: data.product_title,
+          optin_status: dryRun ? "dry" : "ok",
+        } : p))
         okOptin++
-        if (!dryRun) addLog(`OK: ${pub.ml_item_id} → ${resolvedId}`, "ok")
-      } else if (oData?.skip) {
-        // Ya tiene publicación de catálogo — no es un error, simplemente omitir
-        setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, optin_status: "skipped", optin_error: oData.ml_error?.message } : p))
-        addLog(`SKIP ${pub.ml_item_id}: ${oData.ml_error?.message}`, "warn")
+        if (!dryRun) addLog(`OK: ${pub.ml_item_id} → ${data.catalog_product_id}`, "ok")
+        else addLog(`DRY: ${pub.ml_item_id} → ${data.catalog_product_id} (${data.product_title})`)
+      } else if (data?.skip) {
+        // Ya tiene publicación de catálogo en ML
+        setPubs(prev => prev.map(p => p.id === pub.id ? {
+          ...p,
+          resolve_status: "resolved",
+          catalog_product_id: data.catalog_product_id,
+          optin_status: "skipped",
+          optin_error: data.ml_error?.message,
+        } : p))
+        skipped++
+        addLog(`SKIP ${pub.ml_item_id}: ${data.ml_error?.message}`, "warn")
+      } else if (data?.reason === "not_found") {
+        // ML no tiene catálogo para este EAN
+        setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, resolve_status: "not_found", optin_status: undefined } : p))
+        noMatch++
       } else {
-        const mlErr = oData?.ml_error ?? oData
-        const errMsg = mlErr?.message ?? mlErr?.cause ?? mlErr?.error ?? JSON.stringify(mlErr)
-        const errDetail = `HTTP ${oData?.status ?? "?"} | ${errMsg}`
-        setPubs(prev => prev.map(p => p.id === pub.id ? { ...p, optin_status: "failed", optin_error: errDetail } : p))
-        failedOptin++
-        addLog(`FAIL ${pub.ml_item_id} (${resolvedId}): ${errDetail}`, "error")
+        // Error real del optin — mostrar cause[] completo de ML
+        const mlErr = data?.ml_error ?? {}
+        const causes: string = Array.isArray(mlErr?.cause)
+          ? mlErr.cause.map((c: any) => c.message ?? c.code ?? JSON.stringify(c)).join(" | ")
+          : (mlErr?.message ?? JSON.stringify(mlErr))
+        const errDetail = `HTTP ${data?.status ?? "?"} | ${causes}`
+        setPubs(prev => prev.map(p => p.id === pub.id ? {
+          ...p,
+          resolve_status: data?.catalog_product_id ? "resolved" : "not_found",
+          catalog_product_id: data?.catalog_product_id,
+          optin_status: "failed",
+          optin_error: errDetail,
+        } : p))
+        failed++
+        addLog(`FAIL ${pub.ml_item_id}: ${errDetail}`, "error")
       }
       await new Promise(r => setTimeout(r, 300))
     }
 
     addLog(
-      `Listo ${dryRun ? "(DRY RUN)" : "(LIVE)"}: ${okOptin} optin ok | ${failedOptin} fallidos | ${noMatch} sin match`,
-      failedOptin > 0 ? "warn" : "ok"
+      `Listo ${dryRun ? "(DRY RUN)" : "(LIVE)"}: ${okOptin} ok | ${skipped} ya tienen catálogo | ${noMatch} sin catálogo ML | ${failed} fallidos`,
+      failed > 0 ? "warn" : "ok"
     )
     setRunning(false)
   }, [accountId, pubs, selected, dryRun, confirmLive, running, addLog])
