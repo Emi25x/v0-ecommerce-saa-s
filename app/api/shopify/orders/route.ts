@@ -29,12 +29,11 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Tienda no encontrada" }, { status: 404 })
     }
 
-    // Construir URL de Shopify — soporta paginación cursor-based
-    const params = new URLSearchParams({
-      status,
-      limit: String(limit),
-      ...(page_info ? { page_info } : {}),
-    })
+    // Shopify cursor-based pagination: cuando page_info está presente,
+    // NO se pueden enviar otros filtros (status, etc.) — solo limit y page_info
+    const params = page_info
+      ? new URLSearchParams({ page_info, limit: String(limit) })
+      : new URLSearchParams({ status, limit: String(limit) })
 
     const shopifyUrl = `https://${store.shop_domain}/admin/api/2024-01/orders.json?${params}`
 
