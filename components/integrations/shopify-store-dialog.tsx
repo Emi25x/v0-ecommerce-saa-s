@@ -115,12 +115,14 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
       if (data.connected) {
         toast({
           title: "Conexión exitosa",
-          description: "Las credenciales son válidas",
+          description: data.shop?.name
+            ? `Conectado a "${data.shop.name}" (${data.shop.myshopifyDomain})`
+            : "Las credenciales son válidas",
         })
       } else {
         toast({
           title: "Error de conexión",
-          description: data.error || "No se pudo conectar",
+          description: data.error || "No se pudo conectar. Verificá el dominio y el token.",
           variant: "destructive",
         })
       }
@@ -233,9 +235,23 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
               type="password"
               value={accessToken}
               onChange={(e) => setAccessToken(e.target.value)}
-              placeholder="shpat_..."
+              placeholder="shpat_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
               required={!store}
             />
+            {!store && (
+              <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
+                <p className="font-medium text-foreground">¿Cómo obtener el Access Token?</p>
+                <ol className="list-decimal list-inside space-y-1">
+                  <li>Ingresá al panel de tu tienda Shopify</li>
+                  <li>Ir a <strong>Configuración → Aplicaciones y canales de ventas</strong></li>
+                  <li>Hacer clic en <strong>Desarrollar aplicaciones</strong> (arriba a la derecha)</li>
+                  <li>Crear una nueva app con nombre descriptivo (ej: "EcomSaaS")</li>
+                  <li>En <strong>Permisos de la API Admin</strong>, activar: <code>read_products</code>, <code>write_products</code>, <code>read_inventory</code>, <code>write_inventory</code></li>
+                  <li>Instalar la app y copiar el <strong>Admin API access token</strong> (empieza con <code>shpat_</code>)</li>
+                </ol>
+                <p className="text-yellow-500 dark:text-yellow-400 mt-1">El token solo se muestra una vez — guardalo antes de cerrar la pantalla de Shopify.</p>
+              </div>
+            )}
           </div>
 
           {store && (
