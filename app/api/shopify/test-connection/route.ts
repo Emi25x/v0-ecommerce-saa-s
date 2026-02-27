@@ -1,31 +1,38 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
-// Lightweight shop info query — mucho más rápido que traer productos
+// Usa REST shop.json — compatible con todos los tipos de token de Shopify
 async function testShopifyConnection(shop_domain: string, access_token: string) {
-  const url = `https://${shop_domain}/admin/api/2024-01/graphql.json`
-  const query = `{ shop { name email myshopifyDomain plan { displayName } } }`
+  // Normalizar dominio: asegurarse de que tenga .myshopify.com
+  const domain = shop_domain.includes(".")
+    ? shop_domain.replace(/^https?:\/\//, "")
+    : `${shop_domain}.myshopify.com`
+
+  const url = `https://${domain}/admin/api/2024-01/shop.json`
 
   const res = await fetch(url, {
-    method: "POST",
+    method: "GET",
     headers: {
-      "Content-Type": "application/json",
       "X-Shopify-Access-Token": access_token,
+      "Content-Type": "application/json",
     },
-    body: JSON.stringify({ query }),
   })
 
+  const text = await res.text()
+
   if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`)
+    let errMsg = `HTTP ${res.status}`
+    try {
+      const json = JSON.parse(text)
+      errMsg = `HTTP ${res.status}: ${json.errors ?? JSON.stringify(json)}`
+    } catch {
+      errMsg = `HTTP ${res.status}: ${text.slice(0, 200)}`
+    }
+    throw new Error(errMsg)
   }
 
-  const json = await res.json()
-  if (json.errors?.length) {
-    throw new Error(json.errors[0]?.message ?? "GraphQL error")
-  }
-
-  return json.data?.shop ?? null
+  const json = JSON.parse(text)
+  return json.shop ?? null
 }
 
 // POST: probar con credenciales pasadas en el body (desde el dialog al agregar)
