@@ -8,6 +8,7 @@ export async function GET(request: Request) {
     const limit = Math.min(Number(searchParams.get("limit") || "50"), 250)
     const page_info = searchParams.get("page_info") || ""
     const status = searchParams.get("status") || "active"
+    const query = searchParams.get("query") || ""
 
     if (!store_id) {
       return NextResponse.json({ error: "store_id requerido" }, { status: 400 })
@@ -28,10 +29,14 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Tienda no encontrada" }, { status: 404 })
     }
 
-    // No mezclar status con page_info (mismo fix que orders)
-    const params = page_info
-      ? new URLSearchParams({ page_info, limit: String(limit) })
-      : new URLSearchParams({ status, limit: String(limit) })
+    // No mezclar status/query con page_info (Shopify lo rechaza)
+    let params: URLSearchParams
+    if (page_info) {
+      params = new URLSearchParams({ page_info, limit: String(limit) })
+    } else {
+      params = new URLSearchParams({ status, limit: String(limit) })
+      if (query) params.set("title", query) // Shopify filtra por título con el param "title"
+    }
 
     const shopifyUrl = `https://${store.shop_domain}/admin/api/2024-01/products.json?${params}`
 
