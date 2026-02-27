@@ -22,6 +22,8 @@ import {
 import { useToast } from "@/hooks/use-toast"
 import { Loader2 } from "lucide-react"
 
+type AuthMode = "token" | "apikey"
+
 interface ShopifyStore {
   id: string
   shop_domain: string
@@ -39,7 +41,10 @@ interface ShopifyStoreDialogProps {
 
 export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: ShopifyStoreDialogProps) {
   const [shopDomain, setShopDomain] = useState("")
+  const [authMode, setAuthMode] = useState<AuthMode>("token")
   const [accessToken, setAccessToken] = useState("")
+  const [apiKey, setApiKey] = useState("")
+  const [apiSecret, setApiSecret] = useState("")
   const [defaultLocationId, setDefaultLocationId] = useState("")
   const [locations, setLocations] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
@@ -51,12 +56,16 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
     if (store) {
       setShopDomain(store.shop_domain)
       setDefaultLocationId(store.default_location_id || "")
-      // Don't populate access token for security
       setAccessToken("")
+      setApiKey("")
+      setApiSecret("")
     } else {
       setShopDomain("")
       setAccessToken("")
+      setApiKey("")
+      setApiSecret("")
       setDefaultLocationId("")
+      setAuthMode("token")
     }
     setLocations([])
   }, [store, open])
@@ -90,10 +99,14 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
   }
 
   const testConnection = async () => {
-    if (!shopDomain || !accessToken) {
+    const hasToken = authMode === "token" && accessToken
+    const hasApiKey = authMode === "apikey" && apiKey && apiSecret
+    if (!shopDomain || (!hasToken && !hasApiKey)) {
       toast({
         title: "Error",
-        description: "Ingresa dominio y token de acceso",
+        description: authMode === "token"
+          ? "Ingresá el dominio y el access token"
+          : "Ingresá el dominio, la clave API y el secreto",
         variant: "destructive",
       })
       return
@@ -106,7 +119,7 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           shop_domain: shopDomain,
-          access_token: accessToken,
+          ...(authMode === "token" ? { access_token: accessToken } : { api_key: apiKey, api_secret: apiSecret }),
         }),
       })
 
@@ -157,7 +170,12 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
 
       if (!store) {
         body.shop_domain = shopDomain
-        body.access_token = accessToken
+        if (authMode === "token") {
+          body.access_token = accessToken
+        } else {
+          body.api_key = apiKey
+          body.api_secret = apiSecret
+        }
       } else {
         if (accessToken) body.access_token = accessToken
       }
@@ -226,33 +244,77 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
             </p>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="access_token">
-              Access Token {store ? "(dejar vacío para no cambiar)" : "*"}
-            </Label>
-            <Input
-              id="access_token"
-              type="password"
-              value={accessToken}
-              onChange={(e) => setAccessToken(e.target.value)}
-              placeholder="shpat_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-              required={!store}
-            />
-            {!store && (
-              <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
-                <p className="font-medium text-foreground">¿Cómo obtener el Access Token?</p>
-                <ol className="list-decimal list-inside space-y-1">
-                  <li>Ingresá al panel de tu tienda Shopify</li>
-                  <li>Ir a <strong>Configuración → Aplicaciones y canales de ventas</strong></li>
-                  <li>Hacer clic en <strong>Desarrollar aplicaciones</strong> (arriba a la derecha)</li>
-                  <li>Crear una nueva app con nombre descriptivo (ej: "EcomSaaS")</li>
-                  <li>En <strong>Permisos de la API Admin</strong>, activar: <code>read_products</code>, <code>write_products</code>, <code>read_inventory</code>, <code>write_inventory</code></li>
-                  <li>Instalar la app y copiar el <strong>Admin API access token</strong> (empieza con <code>shpat_</code>)</li>
-                </ol>
-                <p className="text-yellow-500 dark:text-yellow-400 mt-1">El token solo se muestra una vez — guardalo antes de cerrar la pantalla de Shopify.</p>
+          {!store && (
+            <div className="space-y-2">
+              <Label>Método de autenticación</Label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={authMode === "token" ? "default" : "outline"}
+                  onClick={() => setAuthMode("token")}
+                >
+                  Access Token
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={authMode === "apikey" ? "default" : "outline"}
+                  onClick={() => setAuthMode("apikey")}
+                >
+                  Clave API + Secreto
+                </Button>
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {(!store || store) && authMode === "token" && (
+            <div className="space-y-2">
+              <Label htmlFor="access_token">
+                Access Token {store ? "(dejar vacío para no cambiar)" : "*"}
+              </Label>
+              <Input
+                id="access_token"
+                type="password"
+                value={accessToken}
+                onChange={(e) => setAccessToken(e.target.value)}
+                placeholder="shpat_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                required={!store}
+              />
+              <p className="text-xs text-muted-foreground">
+                Empieza con <code>shpat_</code> — se obtiene desde Shopify → Configuración → Aplicaciones → Desarrollar aplicaciones → instalar app
+              </p>
+            </div>
+          )}
+
+          {!store && authMode === "apikey" && (
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="api_key">Clave API *</Label>
+                <Input
+                  id="api_key"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="ff6e9519b99bd07a9dc17527cd48e329"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="api_secret">Clave secreta de API *</Label>
+                <Input
+                  id="api_secret"
+                  type="password"
+                  value={apiSecret}
+                  onChange={(e) => setApiSecret(e.target.value)}
+                  placeholder="shpss_..."
+                  required
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Encontrás estos datos en Shopify → Configuración → Aplicaciones → tu app → Credenciales de API
+              </p>
+            </div>
+          )}
 
           {store && (
             <div className="space-y-2">
