@@ -311,43 +311,52 @@ export default function ShopifyPage() {
     setLoading(false)
   }, [selectedStoreId, orderStatus])
 
-  const fetchProducts = useCallback(async (pageInfo?: string, query?: string) => {
+  // fetchProducts recibe todo explícitamente para evitar problemas de closure
+  const fetchProducts = useCallback(async (pageInfo?: string, queryOverride?: string, statusOverride?: string) => {
     if (!selectedStoreId) return
     setLoading(true); setError(null)
-    const params = new URLSearchParams({
-      store_id: selectedStoreId,
-      status: productStatus,
-      limit: "50",
-      ...(pageInfo ? { page_info: pageInfo } : {}),
-      ...((query ?? searchQuery) ? { query: query ?? searchQuery } : {}),
-    })
+    const q = queryOverride !== undefined ? queryOverride : searchQuery
+    const st = statusOverride !== undefined ? statusOverride : productStatus
+    const params = new URLSearchParams({ store_id: selectedStoreId, limit: "50" })
+    if (pageInfo) {
+      params.set("page_info", pageInfo)
+    } else {
+      params.set("status", st)
+      if (q) params.set("query", q)
+    }
     const res = await fetch(`/api/shopify/products?${params}`)
     const data = await res.json()
     if (!res.ok || !data.ok) { setError(data.error ?? "Error al cargar productos"); setProducts([]) }
     else {
       setProducts(data.products ?? [])
       setProductPag(data.pagination ?? { next_page_info: null, prev_page_info: null })
-      // Actualizar total solo en la primera página (sin page_info)
-      if (!pageInfo) setTotalProducts(data.products?.length ?? 0)
+      // total_count viene solo en la primera página (sin page_info)
+      if (!pageInfo && data.total_count != null) setTotalProducts(data.total_count)
     }
     setLoading(false)
-  }, [selectedStoreId, productStatus, searchQuery])
+  }, [selectedStoreId, searchQuery, productStatus])
 
   useEffect(() => {
     if (!selectedStoreId) return
     if (tab === "orders") fetchOrders()
-    else fetchProducts()
+    else fetchProducts(undefined, searchQuery, productStatus)
   }, [selectedStoreId, tab, orderStatus, productStatus]) // eslint-disable-line
 
-  // Búsqueda con debounce
+  // Búsqueda con debounce — llama fetchProducts con el valor nuevo directamente
   const handleSearchChange = (value: string) => {
     setSearchInput(value)
     if (searchTimer.current) clearTimeout(searchTimer.current)
     searchTimer.current = setTimeout(() => {
       setSearchQuery(value)
       setProductPag({ next_page_info: null, prev_page_info: null })
-      fetchProducts(undefined, value)
+      fetchProducts(undefined, value, productStatus)
     }, 500)
+  }
+
+  const handleStatusChange = (v: string) => {
+    setProductStatus(v)
+    setProductPag({ next_page_info: null, prev_page_info: null })
+    fetchProducts(undefined, searchQuery, v)
   }
 
   return (
@@ -402,7 +411,7 @@ export default function ShopifyPage() {
             <>
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Estado</label>
-                <Select value={productStatus} onValueChange={v => { setProductStatus(v); setProductPag({ next_page_info: null, prev_page_info: null }) }}>
+                <Select value={productStatus} onValueChange={handleStatusChange}>
                   <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="active">Activos</SelectItem>
@@ -574,12 +583,12 @@ export default function ShopifyPage() {
             </div>
 
             {/* Footer con total y paginación */}
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between border-t border-border pt-3 mt-1">
               <Button onClick={() => fetchProducts(productPag.prev_page_info!)} disabled={!productPag.prev_page_info || loading} variant="outline" size="sm">← Anterior</Button>
-              <div className="text-xs text-muted-foreground text-center">
-                <span className="font-medium text-foreground">{products.length}</span> productos en esta página
-                {totalProducts !== null && !productPag.prev_page_info && !productPag.next_page_info && (
-                  <span className="ml-1">(total: {totalProducts})</span>
+              <div className="text-xs text-muted-foreground text-center flex flex-col gap-0.5">
+                <span><span className="font-medium text-foreground">{products.length}</span> productos en esta página</span>
+                {totalProducts !== null && (
+                  <span className="text-muted-foreground">Total en tienda: <span className="font-medium text-foreground">{totalProducts.toLocaleString("es-AR")}</span></span>
                 )}
               </div>
               <Button onClick={() => fetchProducts(productPag.next_page_info!)} disabled={!productPag.next_page_info || loading} variant="outline" size="sm">Siguiente →</Button>

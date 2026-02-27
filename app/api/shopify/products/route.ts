@@ -60,9 +60,27 @@ export async function GET(request: Request) {
     const nextMatch = linkHeader.match(/<[^>]*page_info=([^&>]+)[^>]*>;\s*rel="next"/)
     const prevMatch = linkHeader.match(/<[^>]*page_info=([^&>]+)[^>]*>;\s*rel="previous"/)
 
+    // Obtener total real solo en la primera página (sin page_info) con count.json
+    let total_count: number | null = null
+    if (!page_info) {
+      try {
+        const countParams = new URLSearchParams({ status })
+        if (query) countParams.set("title", query)
+        const countRes = await fetch(
+          `https://${store.shop_domain}/admin/api/2024-01/products/count.json?${countParams}`,
+          { headers: { "X-Shopify-Access-Token": store.access_token } }
+        )
+        if (countRes.ok) {
+          const countJson = await countRes.json()
+          total_count = countJson.count ?? null
+        }
+      } catch { /* no fatal */ }
+    }
+
     return NextResponse.json({
       ok: true,
       products: json.products ?? [],
+      total_count,
       pagination: {
         next_page_info: nextMatch?.[1] ?? null,
         prev_page_info: prevMatch?.[1] ?? null,
