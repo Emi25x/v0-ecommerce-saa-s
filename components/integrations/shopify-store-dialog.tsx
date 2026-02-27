@@ -126,10 +126,16 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
       const data = await response.json()
 
       if (data.connected) {
+        // Si el servidor hizo el exchange OAuth, guardar el shpat_ obtenido
+        // para que al hacer "Guardar" no sea necesario intercambiar de nuevo
+        if (data.access_token && authMode === "apikey") {
+          setAccessToken(data.access_token)
+          setAuthMode("token") // cambia al modo token con el shpat_ ya listo
+        }
         toast({
           title: "Conexión exitosa",
           description: data.shop?.name
-            ? `Conectado a "${data.shop.name}" (${data.shop.myshopifyDomain})`
+            ? `Conectado a "${data.shop.name}" (${data.shop.myshopifyDomain ?? shopDomain})`
             : "Las credenciales son válidas",
         })
       } else {
@@ -359,7 +365,12 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
                 type="button"
                 variant="outline"
                 onClick={testConnection}
-                disabled={testingConnection || !shopDomain || !accessToken}
+                disabled={
+                testingConnection ||
+                !shopDomain ||
+                (authMode === "token" && !accessToken) ||
+                (authMode === "apikey" && (!apiKey || !apiSecret))
+              }
               >
                 {testingConnection ? (
                   <>

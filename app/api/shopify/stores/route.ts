@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
+import { normalizeDomain, exchangeCredentialsForToken, fetchShopInfo } from "@/app/api/shopify/test-connection/route"
 
 export async function GET() {
   try {
@@ -52,50 +53,31 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "shop_domain es requerido" }, { status: 400 })
     }
 
-    // Soportar dos métodos de autenticación:
-    // 1. Access Token (shpat_...) — directo
-    // 2. API Key + API Secret — se usa como Basic Auth (usuario:contraseña)
-    let effectiveToken = access_token
-    let authHeader: string
+    const domain = normalizeDomain(shop_domain)
+    let effectiveToken: string = access_token
 
-    if (effectiveToken) {
-      authHeader = `Bearer ${effectiveToken}`
-    } else if (api_key && api_secret) {
-      // Basic Auth con API Key:Secret — válido para apps personalizadas heredadas
-      const encoded = Buffer.from(`${api_key}:${api_secret}`).toString("base64")
-      authHeader = `Basic ${encoded}`
-      effectiveToken = `${api_key}:${api_secret}` // guardar referencia
-    } else {
-      return NextResponse.json({ error: "Se requiere access_token o api_key + api_secret" }, { status: 400 })
-    }
-
-    // Normalizar dominio
-    const domain = shop_domain.replace(/^https?:\/\//, "").replace(/\/$/, "")
-
-    // Validar credenciales con shop.json liviano
-    console.log(`[SHOPIFY-STORES] Testing connection for ${domain}`)
-    try {
-      const testRes = await fetch(`https://${domain}/admin/api/2024-01/shop.json`, {
-        headers: {
-          "X-Shopify-Access-Token": access_token || "",
-          ...(api_key && api_secret ? { "Authorization": `Basic ${Buffer.from(`${api_key}:${api_secret}`).toString("base64")}` } : {}),
-          "Content-Type": "application/json",
-        },
-      })
-      if (!testRes.ok) {
-        const txt = await testRes.text()
-        let msg = `HTTP ${testRes.status}`
-        try { msg = `HTTP ${testRes.status}: ${JSON.parse(txt).errors ?? txt}` } catch {}
-        return NextResponse.json({ error: `No se pudo conectar a Shopify: ${msg}` }, { status: 400 })
+    // Si no hay token directo, hacer el intercambio OAuth con client_id + client_secret
+    if (!effectiveToken) {
+      if (!api_key || !api_secret) {
+        return NextResponse.json({ error: "Se requiere access_token o api_key + api_secret" }, { status: 400 })
       }
-      const shopData = await testRes.json()
-      console.log(`[SHOPIFY-STORES] Conectado a tienda: ${shopData.shop?.name}`)
-    } catch (testError: any) {
-      console.error("[SHOPIFY-STORES] Connection test failed:", testError)
-      return NextResponse.json({ error: `Error al conectar: ${testError.message}` }, { status: 400 })
+      try {
+        effectiveToken = await exchangeCredentialsForToken(domain, api_key, api_secret)
+        console.log(`[SHOPIFY-STORES] Token OAuth obtenido para ${domain}`)
+      } catch (e: any) {
+        return NextResponse.json({ error: `Error al obtener token: ${e.message}` }, { status: 400 })
+      }
     }
 
-    // Insert the new store
+    // Verificar el token con shop.json
+    try {
+      const shopData = await fetchShopInfo(domain, effectiveToken)
+      console.log(`[SHOPIFY-STORES] Conectado a tienda: ${shopData?.name}`)
+    } catch (e: any) {
+      return NextResponse.json({ error: `Token inválido: ${e.message}` }, { status: 400 })
+    }
+
+    // Guardar la tienda con el shpat_ obtenido
     const { data: store, error: insertError } = await supabase
       .from("shopify_stores")
       .insert({

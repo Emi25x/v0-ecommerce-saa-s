@@ -1,52 +1,57 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
-function normalizeDomain(shop_domain: string) {
+export function normalizeDomain(shop_domain: string) {
   const clean = shop_domain.replace(/^https?:\/\//, "").replace(/\/$/, "")
   return clean.includes(".") ? clean : `${clean}.myshopify.com`
 }
 
-// Llama a shop.json con el header correcto según el modo de auth
-async function testShopifyConnection(
-  shop_domain: string,
-  opts: { access_token?: string; api_key?: string; api_secret?: string }
-) {
-  const domain = normalizeDomain(shop_domain)
-  const url = `https://${domain}/admin/api/2024-01/shop.json`
+// Intercambia client_id + client_secret por un access_token shpat_ usando el OAuth endpoint de Shopify
+export async function exchangeCredentialsForToken(
+  domain: string,
+  api_key: string,
+  api_secret: string
+): Promise<string> {
+  const url = `https://${domain}/admin/oauth/access_token`
+  const body = new URLSearchParams({
+    grant_type: "client_credentials",
+    client_id: api_key,
+    client_secret: api_secret,
+  })
 
-  // Construir headers según modo
-  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+  })
 
-  if (opts.access_token) {
-    // Access Token directo (shpat_...)
-    headers["X-Shopify-Access-Token"] = opts.access_token
-  } else if (opts.api_key && opts.api_secret) {
-    // Basic Auth con API Key:Secret — válido para apps personalizadas heredadas
-    const encoded = Buffer.from(`${opts.api_key}:${opts.api_secret}`).toString("base64")
-    headers["Authorization"] = `Basic ${encoded}`
-  } else {
-    throw new Error("Se requiere access_token o api_key + api_secret")
-  }
-
-  const res = await fetch(url, { method: "GET", headers })
   const text = await res.text()
-
   if (!res.ok) {
-    let errMsg = `HTTP ${res.status}`
-    try {
-      const json = JSON.parse(text)
-      errMsg = `HTTP ${res.status}: ${json.errors ?? JSON.stringify(json)}`
-    } catch {
-      errMsg = `HTTP ${res.status}: ${text.slice(0, 300)}`
-    }
-    throw new Error(errMsg)
+    let msg = `HTTP ${res.status}`
+    try { msg = `HTTP ${res.status}: ${JSON.parse(text).error_description ?? JSON.parse(text).errors ?? text}` } catch {}
+    throw new Error(msg)
   }
 
   const json = JSON.parse(text)
-  return json.shop ?? null
+  if (!json.access_token) throw new Error("Shopify no devolvió access_token")
+  return json.access_token as string
 }
 
-// POST: probar credenciales desde el dialog (access_token O api_key+api_secret)
+// Verifica el token llamando a shop.json
+export async function fetchShopInfo(domain: string, access_token: string) {
+  const res = await fetch(`https://${domain}/admin/api/2024-01/shop.json`, {
+    headers: { "X-Shopify-Access-Token": access_token, "Content-Type": "application/json" },
+  })
+  const text = await res.text()
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`
+    try { msg = `HTTP ${res.status}: ${JSON.parse(text).errors ?? text.slice(0, 200)}` } catch {}
+    throw new Error(msg)
+  }
+  return JSON.parse(text).shop ?? null
+}
+
+// POST: probar credenciales — soporta access_token directo O api_key + api_secret (OAuth exchange)
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}))
@@ -55,15 +60,24 @@ export async function POST(request: Request) {
     if (!shop_domain) {
       return NextResponse.json({ connected: false, error: "shop_domain es requerido" }, { status: 400 })
     }
-    if (!access_token && !(api_key && api_secret)) {
-      return NextResponse.json({ connected: false, error: "Se requiere access_token o api_key + api_secret" }, { status: 400 })
+
+    const domain = normalizeDomain(shop_domain)
+    let token = access_token
+
+    if (!token) {
+      if (!api_key || !api_secret) {
+        return NextResponse.json({ connected: false, error: "Se requiere access_token o api_key + api_secret" }, { status: 400 })
+      }
+      // Intercambiar credenciales por token OAuth
+      token = await exchangeCredentialsForToken(domain, api_key, api_secret)
     }
 
-    const shop = await testShopifyConnection(shop_domain, { access_token, api_key, api_secret })
+    const shop = await fetchShopInfo(domain, token)
     return NextResponse.json({
       connected: true,
       shop,
-      message: `Conectado a "${shop?.name ?? shop_domain}"`,
+      access_token: token, // devolver el token obtenido para guardarlo en el dialog
+      message: `Conectado a "${shop?.name ?? domain}"`,
     })
   } catch (error: any) {
     console.error("[SHOPIFY-TEST POST]", error.message)
