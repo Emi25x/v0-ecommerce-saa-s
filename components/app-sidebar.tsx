@@ -182,8 +182,9 @@ const Database = (props: React.SVGProps<SVGSVGElement>) => (
 export function AppSidebar() {
   const pathname = usePathname()
   const [mlExpanded, setMlExpanded] = useState(true)
-  const [inventoryExpanded, setInventoryExpanded] = useState(true) // Estado para Base de Productos
-  const [integrationsExpanded, setIntegrationsExpanded] = useState(true) // Declaring integrationsExpanded state
+  const [shopifyExpanded, setShopifyExpanded] = useState(true)
+  const [inventoryExpanded, setInventoryExpanded] = useState(true)
+  const [integrationsExpanded, setIntegrationsExpanded] = useState(true)
 
   const [lastVisits, setLastVisits] = useState({
     orders: null as string | null,
@@ -464,6 +465,53 @@ export function AppSidebar() {
           )}
         </div>
 
+        {/* Shopify */}
+        <div className="mt-2">
+          <button
+            onClick={() => setShopifyExpanded(!shopifyExpanded)}
+            className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <div className="flex items-center gap-3">
+              {/* Shopify bag icon */}
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" />
+                <path d="M3 6h18" />
+                <path d="M16 10a4 4 0 0 1-8 0" />
+              </svg>
+              <span className="font-medium">Shopify</span>
+            </div>
+            <ChevronDown className={`h-4 w-4 transition-transform ${shopifyExpanded ? "rotate-180" : ""}`} />
+          </button>
+
+          {shopifyExpanded && (
+            <div className="ml-8 mt-1 flex flex-col gap-1">
+              <a
+                href="/shopify/orders"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/shopify/orders")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <ShoppingBag className="h-4 w-4" />
+                <span>Ventas</span>
+              </a>
+              <a
+                href="/integrations/shopify-stores"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/integrations/shopify-stores")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <Settings className="h-4 w-4" />
+                <span>Tiendas</span>
+              </a>
+            </div>
+          )}
+        </div>
+
+        {/* Base de Productos */}
         <div className="mt-2">
           <button
             onClick={() => setInventoryExpanded(!inventoryExpanded)}
