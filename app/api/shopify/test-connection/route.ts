@@ -59,7 +59,7 @@ export async function GET(request: Request) {
 
     if (!store) return NextResponse.json({ connected: false, error: "Tienda no encontrada" }, { status: 404 })
 
-    const shop = await testShopifyConnection(store.shop_domain, store.access_token)
+    const shop = await fetchShopInfo(store.shop_domain, store.access_token)
     return NextResponse.json({ connected: true, shop })
   } catch (error: any) {
     console.error("[SHOPIFY-TEST GET]", error.message)
