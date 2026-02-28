@@ -324,13 +324,20 @@ export default function ShopifyPage() {
     setLoading(false)
   }, [selectedStoreId, orderStatus])
 
-  // fetchProducts — sin búsqueda server-side, la búsqueda se hace en cliente
-  const fetchProducts = useCallback(async (pageInfo?: string, statusOverride?: string) => {
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // fetchProducts: con query => búsqueda GraphQL en toda la tienda; sin query => listado REST paginado
+  const fetchProducts = useCallback(async (pageInfo?: string, statusOverride?: string, queryOverride?: string) => {
     if (!selectedStoreId) return
     setLoading(true); setError(null)
     const st = statusOverride ?? productStatus
+    const q  = queryOverride !== undefined ? queryOverride : searchInput
     const params = new URLSearchParams({ store_id: selectedStoreId, limit: "50" })
-    if (pageInfo) {
+    if (q.trim()) {
+      // Búsqueda: GraphQL en servidor, ignora paginación
+      params.set("query", q.trim())
+      params.set("status", st)
+    } else if (pageInfo) {
       params.set("page_info", pageInfo)
     } else {
       params.set("status", st)
@@ -340,38 +347,38 @@ export default function ShopifyPage() {
     if (!res.ok || !data.ok) { setError(data.error ?? "Error al cargar productos"); setProducts([]) }
     else {
       setProducts(data.products ?? [])
-      setProductPag(data.pagination ?? { next_page_info: null, prev_page_info: null })
-      if (!pageInfo && data.total_count != null) setTotalProducts(data.total_count)
+      // En búsqueda no hay paginación cursor
+      if (!q.trim()) setProductPag(data.pagination ?? { next_page_info: null, prev_page_info: null })
+      else setProductPag({ next_page_info: null, prev_page_info: null })
+      if (data.total_count != null) setTotalProducts(data.total_count)
     }
     setLoading(false)
-  }, [selectedStoreId, productStatus])
+  }, [selectedStoreId, productStatus, searchInput])
 
   useEffect(() => {
     if (!selectedStoreId) return
     if (tab === "orders") fetchOrders()
-    else fetchProducts()
+    else fetchProducts(undefined, productStatus, "")
   }, [selectedStoreId, tab, orderStatus, productStatus]) // eslint-disable-line
 
   const handleStatusChange = (v: string) => {
     setProductStatus(v)
     setProductPag({ next_page_info: null, prev_page_info: null })
-    fetchProducts(undefined, v)
+    fetchProducts(undefined, v, searchInput)
   }
 
-  // Filtro cliente: busca en título, SKU de cualquier variante, y tags (ISBN suele estar en tags o SKU)
-  const filteredProducts = useMemo(() => {
-    if (!searchInput.trim()) return products
-    const q = searchInput.trim().toLowerCase()
-    return products.filter(p =>
-      p.title?.toLowerCase().includes(q) ||
-      p.vendor?.toLowerCase().includes(q) ||
-      p.tags?.toLowerCase().includes(q) ||
-      p.variants?.some(v =>
-        v.sku?.toLowerCase().includes(q) ||
-        v.title?.toLowerCase().includes(q)
-      )
-    )
-  }, [products, searchInput])
+  // Buscador con debounce: llama al servidor via GraphQL
+  const handleSearchChange = (value: string) => {
+    setSearchInput(value)
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => {
+      setProductPag({ next_page_info: null, prev_page_info: null })
+      fetchProducts(undefined, productStatus, value)
+    }, 600)
+  }
+
+  // Sin búsqueda activa no hay filtro cliente adicional
+  const filteredProducts = products
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-background">
@@ -440,12 +447,15 @@ export default function ShopifyPage() {
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
                   <Input
                     value={searchInput}
-                    onChange={e => setSearchInput(e.target.value)}
+                    onChange={e => handleSearchChange(e.target.value)}
                     placeholder="Título, SKU, ISBN..."
                     className="pl-8 pr-8 h-9 text-sm"
                   />
-                  {searchInput && (
-                    <button onClick={() => setSearchInput("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  {loading && searchInput && (
+                    <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                  )}
+                  {!loading && searchInput && (
+                    <button onClick={() => handleSearchChange("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                       <X className="h-3.5 w-3.5" />
                     </button>
                   )}
@@ -605,17 +615,17 @@ export default function ShopifyPage() {
 
             {/* Footer con total y paginación */}
             <div className="flex items-center justify-between border-t border-border pt-3 mt-1">
-              <Button onClick={() => fetchProducts(productPag.prev_page_info!)} disabled={!productPag.prev_page_info || loading} variant="outline" size="sm">← Anterior</Button>
+              <Button onClick={() => fetchProducts(productPag.prev_page_info!)} disabled={!productPag.prev_page_info || loading || !!searchInput} variant="outline" size="sm">← Anterior</Button>
               <div className="text-xs text-muted-foreground text-center flex flex-col gap-0.5">
                 {searchInput
-                  ? <span><span className="font-medium text-foreground">{filteredProducts.length}</span> de {products.length} en esta página</span>
+                  ? <span><span className="font-medium text-foreground">{products.length}</span> resultados para "{searchInput}"</span>
                   : <span><span className="font-medium text-foreground">{products.length}</span> productos en esta página</span>
                 }
-                {totalProducts !== null && (
+                {totalProducts !== null && !searchInput && (
                   <span>Total en tienda: <span className="font-medium text-foreground">{totalProducts.toLocaleString("es-AR")}</span></span>
                 )}
               </div>
-              <Button onClick={() => fetchProducts(productPag.next_page_info!)} disabled={!productPag.next_page_info || loading} variant="outline" size="sm">Siguiente →</Button>
+              <Button onClick={() => fetchProducts(productPag.next_page_info!)} disabled={!productPag.next_page_info || loading || !!searchInput} variant="outline" size="sm">Siguiente →</Button>
             </div>
           </>
         )}

@@ -1,53 +1,136 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 
+// Llama a GraphQL para buscar en TODA la tienda por título, SKU o barcode/ISBN
+async function searchProductsGraphQL(
+  shop_domain: string,
+  access_token: string,
+  rawQuery: string,
+  limit: number
+) {
+  // Construir el filtro: detectar si parece un número (ISBN/SKU numérico) o texto
+  const q = rawQuery.trim()
+  // Buscar en título, sku y barcode a la vez usando OR
+  const gqlFilter = `title:*${q}* OR sku:${q} OR barcode:${q} OR tag:${q}`
+
+  const graphqlQuery = `
+    query searchProducts($query: String!, $first: Int!) {
+      products(first: $first, query: $query) {
+        edges {
+          node {
+            id
+            title
+            status
+            vendor
+            productType
+            tags
+            createdAt
+            updatedAt
+            featuredImage { url }
+            variants(first: 100) {
+              edges {
+                node {
+                  id
+                  title
+                  sku
+                  price
+                  inventoryQuantity
+                  inventoryItem { id }
+                  barcode
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `
+
+  const res = await fetch(
+    `https://${shop_domain}/admin/api/2024-01/graphql.json`,
+    {
+      method: "POST",
+      headers: {
+        "X-Shopify-Access-Token": access_token,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query: graphqlQuery, variables: { query: gqlFilter, first: limit } }),
+    }
+  )
+
+  const json = await res.json()
+  if (json.errors?.length) throw new Error(json.errors[0]?.message ?? "GraphQL error")
+
+  // Normalizar la respuesta GraphQL al mismo formato REST
+  const products = (json.data?.products?.edges ?? []).map(({ node }: any) => ({
+    id: Number(node.id.replace("gid://shopify/Product/", "")),
+    title: node.title,
+    status: node.status?.toLowerCase(),
+    vendor: node.vendor,
+    product_type: node.productType,
+    tags: node.tags?.join?.(",") ?? node.tags ?? "",
+    created_at: node.createdAt,
+    updated_at: node.updatedAt,
+    image: node.featuredImage ? { src: node.featuredImage.url } : null,
+    variants: (node.variants?.edges ?? []).map(({ node: v }: any) => ({
+      id: Number(v.id.replace("gid://shopify/ProductVariant/", "")),
+      title: v.title,
+      sku: v.sku ?? "",
+      price: v.price,
+      inventory_quantity: v.inventoryQuantity ?? 0,
+      inventory_item_id: Number((v.inventoryItem?.id ?? "").replace("gid://shopify/InventoryItem/", "")),
+      barcode: v.barcode ?? "",
+    })),
+  }))
+
+  return products
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const store_id = searchParams.get("store_id")
-    const limit = Math.min(Number(searchParams.get("limit") || "50"), 250)
+    const limit    = Math.min(Number(searchParams.get("limit") || "50"), 250)
     const page_info = searchParams.get("page_info") || ""
-    const status = searchParams.get("status") || "active"
-    const query = searchParams.get("query") || ""
+    const status   = searchParams.get("status") || "active"
+    const query    = searchParams.get("query") || ""
 
-    if (!store_id) {
-      return NextResponse.json({ error: "store_id requerido" }, { status: 400 })
-    }
+    if (!store_id) return NextResponse.json({ error: "store_id requerido" }, { status: 400 })
 
     const supabase = await createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-    const { data: store, error: storeError } = await supabase
+    const { data: store } = await supabase
       .from("shopify_stores")
       .select("shop_domain, access_token")
       .eq("id", store_id)
       .eq("owner_user_id", user.id)
       .single()
 
-    if (storeError || !store) {
-      return NextResponse.json({ error: "Tienda no encontrada" }, { status: 404 })
+    if (!store) return NextResponse.json({ error: "Tienda no encontrada" }, { status: 404 })
+
+    // ── BÚSQUEDA: usar GraphQL para buscar en toda la tienda ──────────────────
+    if (query && !page_info) {
+      const products = await searchProductsGraphQL(store.shop_domain, store.access_token, query, limit)
+      return NextResponse.json({
+        ok: true,
+        products,
+        total_count: products.length,
+        is_search: true,
+        pagination: { next_page_info: null, prev_page_info: null },
+      })
     }
 
-    // No mezclar status/query con page_info (Shopify lo rechaza)
-    let params: URLSearchParams
-    if (page_info) {
-      params = new URLSearchParams({ page_info, limit: String(limit) })
-    } else {
-      params = new URLSearchParams({ status, limit: String(limit) })
-      // No filtramos por query en el servidor — la búsqueda se hace client-side
-      // para poder buscar por SKU/ISBN además de título
-    }
+    // ── LISTADO NORMAL: REST con paginación cursor-based ──────────────────────
+    const params = page_info
+      ? new URLSearchParams({ page_info, limit: String(limit) })
+      : new URLSearchParams({ status, limit: String(limit) })
 
-    // Incluir metafields en la respuesta (sucursal_stock)
-    const shopifyUrl = `https://${store.shop_domain}/admin/api/2024-01/products.json?${params}`
-
-    const res = await fetch(shopifyUrl, {
-      headers: {
-        "X-Shopify-Access-Token": store.access_token,
-        "Content-Type": "application/json",
-      },
-    })
+    const res = await fetch(
+      `https://${store.shop_domain}/admin/api/2024-01/products.json?${params}`,
+      { headers: { "X-Shopify-Access-Token": store.access_token, "Content-Type": "application/json" } }
+    )
 
     const text = await res.text()
     if (!res.ok) {
@@ -57,25 +140,19 @@ export async function GET(request: Request) {
     }
 
     const json = JSON.parse(text)
-
     const linkHeader = res.headers.get("link") || ""
-    const nextMatch = linkHeader.match(/<[^>]*page_info=([^&>]+)[^>]*>;\s*rel="next"/)
-    const prevMatch = linkHeader.match(/<[^>]*page_info=([^&>]+)[^>]*>;\s*rel="previous"/)
+    const nextMatch  = linkHeader.match(/<[^>]*page_info=([^&>]+)[^>]*>;\s*rel="next"/)
+    const prevMatch  = linkHeader.match(/<[^>]*page_info=([^&>]+)[^>]*>;\s*rel="previous"/)
 
-    // Obtener total real solo en la primera página (sin page_info) con count.json
+    // Total con count.json (solo primera página)
     let total_count: number | null = null
     if (!page_info) {
       try {
-        const countParams = new URLSearchParams({ status })
-        if (query) countParams.set("title", query)
         const countRes = await fetch(
-          `https://${store.shop_domain}/admin/api/2024-01/products/count.json?${countParams}`,
+          `https://${store.shop_domain}/admin/api/2024-01/products/count.json?${new URLSearchParams({ status })}`,
           { headers: { "X-Shopify-Access-Token": store.access_token } }
         )
-        if (countRes.ok) {
-          const countJson = await countRes.json()
-          total_count = countJson.count ?? null
-        }
+        if (countRes.ok) total_count = (await countRes.json()).count ?? null
       } catch { /* no fatal */ }
     }
 
