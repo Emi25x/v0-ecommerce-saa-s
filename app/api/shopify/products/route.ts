@@ -1,5 +1,21 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
+import { exchangeCredentialsForToken } from "@/app/api/shopify/test-connection/route"
+
+// Obtiene token válido, renovando si expiró
+async function getValidToken(supabase: any, store: any): Promise<string> {
+  if (!store.api_key || !store.api_secret) return store.access_token
+  const expiresAt = store.token_expires_at ? new Date(store.token_expires_at) : new Date(0)
+  if (expiresAt > new Date()) return store.access_token
+  // Renovar
+  const newToken = await exchangeCredentialsForToken(store.shop_domain, store.api_key, store.api_secret)
+  await supabase.from("shopify_stores").update({
+    access_token: newToken,
+    token_expires_at: new Date(Date.now() + 23 * 60 * 60 * 1000).toISOString(),
+  }).eq("id", store.id)
+  console.log(`[SHOPIFY-PRODUCTS] Token renovado para ${store.shop_domain}`)
+  return newToken
+}
 
 // Llama a GraphQL para buscar en TODA la tienda por título, SKU o barcode/ISBN
 async function searchProductsGraphQL(
@@ -103,16 +119,19 @@ export async function GET(request: Request) {
 
     const { data: store } = await supabase
       .from("shopify_stores")
-      .select("shop_domain, access_token")
+      .select("id, shop_domain, access_token, api_key, api_secret, token_expires_at")
       .eq("id", store_id)
       .eq("owner_user_id", user.id)
       .single()
 
     if (!store) return NextResponse.json({ error: "Tienda no encontrada" }, { status: 404 })
 
+    // Renovar token si expiró
+    const token = await getValidToken(supabase, store)
+
     // ── BÚSQUEDA: usar GraphQL para buscar en toda la tienda ──────────────────
     if (query && !page_info) {
-      const products = await searchProductsGraphQL(store.shop_domain, store.access_token, query, limit)
+      const products = await searchProductsGraphQL(store.shop_domain, token, query, limit)
       return NextResponse.json({
         ok: true,
         products,
@@ -129,7 +148,7 @@ export async function GET(request: Request) {
 
     const res = await fetch(
       `https://${store.shop_domain}/admin/api/2024-01/products.json?${params}`,
-      { headers: { "X-Shopify-Access-Token": store.access_token, "Content-Type": "application/json" } }
+      { headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json" } }
     )
 
     const text = await res.text()
@@ -150,7 +169,7 @@ export async function GET(request: Request) {
       try {
         const countRes = await fetch(
           `https://${store.shop_domain}/admin/api/2024-01/products/count.json?${new URLSearchParams({ status })}`,
-          { headers: { "X-Shopify-Access-Token": store.access_token } }
+          { headers: { "X-Shopify-Access-Token": token } }
         )
         if (countRes.ok) total_count = (await countRes.json()).count ?? null
       } catch { /* no fatal */ }

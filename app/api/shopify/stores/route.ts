@@ -77,13 +77,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `Token inválido: ${e.message}` }, { status: 400 })
     }
 
-    // Guardar la tienda con el shpat_ obtenido
+    // Token OAuth expira en ~24h — guardar fecha de expiración
+    const tokenExpiresAt = api_key
+      ? new Date(Date.now() + 23 * 60 * 60 * 1000).toISOString() // 23h para renovar antes
+      : null
+
+    // Guardar la tienda con credenciales completas para poder renovar el token
     const { data: store, error: insertError } = await supabase
       .from("shopify_stores")
       .insert({
         owner_user_id: user.id,
         shop_domain: domain,
         access_token: effectiveToken,
+        api_key: api_key || null,
+        api_secret: api_secret || null,
+        token_expires_at: tokenExpiresAt,
         default_location_id: default_location_id || null,
         is_active: true,
       })
