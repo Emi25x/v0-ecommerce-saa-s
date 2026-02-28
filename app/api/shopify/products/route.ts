@@ -35,9 +35,11 @@ export async function GET(request: Request) {
       params = new URLSearchParams({ page_info, limit: String(limit) })
     } else {
       params = new URLSearchParams({ status, limit: String(limit) })
-      if (query) params.set("title", query) // Shopify filtra por título con el param "title"
+      // No filtramos por query en el servidor — la búsqueda se hace client-side
+      // para poder buscar por SKU/ISBN además de título
     }
 
+    // Incluir metafields en la respuesta (sucursal_stock)
     const shopifyUrl = `https://${store.shop_domain}/admin/api/2024-01/products.json?${params}`
 
     const res = await fetch(shopifyUrl, {

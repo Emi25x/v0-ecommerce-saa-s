@@ -32,32 +32,67 @@ export async function GET(request: Request) {
     }
     const base = `https://${store.shop_domain}/admin/api/2024-01`
 
-    // 1. Traer locations de la tienda
-    const locRes = await fetch(`${base}/locations.json`, { headers })
-    const locJson = await locRes.json()
-    const locations: Array<{ id: number; name: string; active: boolean }> = locJson.locations ?? []
-
-    // 2. Traer variantes del producto con sus inventory_item_id
+    // 1. Traer variantes del producto
     const varRes = await fetch(`${base}/products/${product_id}/variants.json`, { headers })
     const varJson = await varRes.json()
     const variants: Array<{ id: number; title: string; sku: string; inventory_item_id: number; inventory_quantity: number; price: string }> =
       varJson.variants ?? []
 
-    if (!variants.length) {
-      return NextResponse.json({ ok: true, locations, variants: [], inventory_levels: [] })
+    // 2. Traer metafields del producto — incluye custom.sucursal_stock
+    const metaRes = await fetch(`${base}/products/${product_id}/metafields.json`, { headers })
+    const metaJson = await metaRes.json()
+    const allMeta: Array<{ namespace: string; key: string; value: string; type: string }> = metaJson.metafields ?? []
+
+    // Buscar el metafield de stock por sucursal
+    const sucursalStockMeta = allMeta.find(m => m.namespace === "custom" && m.key === "sucursal_stock")
+
+    // Parsear el valor — puede ser JSON string o string plano
+    let sucursal_stock: Record<string, number> | null = null
+    if (sucursalStockMeta?.value) {
+      try {
+        const parsed = JSON.parse(sucursalStockMeta.value)
+        if (typeof parsed === "object" && parsed !== null) {
+          sucursal_stock = parsed
+        }
+      } catch {
+        // Si no es JSON, intentar interpretar como "España: 10, Argentina: 5"
+        const parts = sucursalStockMeta.value.split(",")
+        sucursal_stock = {}
+        for (const part of parts) {
+          const [k, v] = part.split(":").map(s => s.trim())
+          if (k && v && !isNaN(Number(v))) sucursal_stock[k] = Number(v)
+        }
+        if (!Object.keys(sucursal_stock).length) sucursal_stock = null
+      }
     }
 
-    // 3. Traer inventory levels para todos los inventory_item_ids de este producto
-    const inventoryItemIds = variants.map(v => v.inventory_item_id).join(",")
-    const invRes = await fetch(
-      `${base}/inventory_levels.json?inventory_item_ids=${inventoryItemIds}&limit=250`,
-      { headers }
+    // 3. Traer todos los metafields de variantes para ver si hay stock por sucursal por variante
+    const variantMetaPromises = variants.slice(0, 10).map(v =>
+      fetch(`${base}/variants/${v.id}/metafields.json`, { headers })
+        .then(r => r.json())
+        .then(d => ({ variant_id: v.id, metafields: d.metafields ?? [] }))
+        .catch(() => ({ variant_id: v.id, metafields: [] }))
     )
-    const invJson = await invRes.json()
-    const inventory_levels: Array<{ inventory_item_id: number; location_id: number; available: number }> =
-      invJson.inventory_levels ?? []
+    const variantMetas = await Promise.all(variantMetaPromises)
 
-    return NextResponse.json({ ok: true, locations, variants, inventory_levels })
+    // Extraer sucursal_stock por variante si existe
+    const variantSucursalStock: Record<number, Record<string, number>> = {}
+    for (const vm of variantMetas) {
+      const m = vm.metafields.find((mf: any) => mf.namespace === "custom" && mf.key === "sucursal_stock")
+      if (m?.value) {
+        try {
+          variantSucursalStock[vm.variant_id] = JSON.parse(m.value)
+        } catch { /* ignorar */ }
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      variants,
+      metafields: allMeta,
+      sucursal_stock,         // stock a nivel producto
+      variant_sucursal_stock: variantSucursalStock, // stock a nivel variante
+    })
   } catch (e: any) {
     console.error("[SHOPIFY-INVENTORY]", e.message)
     return NextResponse.json({ error: e.message }, { status: 500 })

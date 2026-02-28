@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
@@ -95,30 +95,37 @@ function ProductDetailModal({
   storeId: string
   onClose: () => void
 }) {
-  const [locations, setLocations] = useState<Location[]>([])
-  const [variants, setVariants] = useState<ShopifyVariant[]>([])
-  const [invLevels, setInvLevels] = useState<InventoryLevel[]>([])
-  const [loadingInv, setLoadingInv] = useState(false)
+  const [variants, setVariants]                     = useState<ShopifyVariant[]>([])
+  const [sucursalStock, setSucursalStock]           = useState<Record<string, number> | null>(null)
+  const [variantSucursal, setVariantSucursal]       = useState<Record<number, Record<string, number>>>({})
+  const [loadingInv, setLoadingInv]                 = useState(false)
 
   useEffect(() => {
     if (!product || !storeId) return
+    setVariants([]); setSucursalStock(null); setVariantSucursal({})
     setLoadingInv(true)
     fetch(`/api/shopify/inventory?store_id=${storeId}&product_id=${product.id}`)
       .then(r => r.json())
       .then(d => {
         if (d.ok) {
-          setLocations(d.locations ?? [])
           setVariants(d.variants ?? [])
-          setInvLevels(d.inventory_levels ?? [])
+          setSucursalStock(d.sucursal_stock ?? null)
+          setVariantSucursal(d.variant_sucursal_stock ?? {})
         }
       })
       .finally(() => setLoadingInv(false))
   }, [product, storeId])
 
-  const getStock = (inventoryItemId: number, locationId: number) =>
-    invLevels.find(l => l.inventory_item_id === inventoryItemId && l.location_id === locationId)?.available ?? 0
+  // Sucursales disponibles: de metafield de producto o de variantes
+  const sucursales = useMemo(() => {
+    const names = new Set<string>()
+    if (sucursalStock) Object.keys(sucursalStock).forEach(k => names.add(k))
+    Object.values(variantSucursal).forEach(vs => Object.keys(vs).forEach(k => names.add(k)))
+    return Array.from(names)
+  }, [sucursalStock, variantSucursal])
 
-  const activeLocations = locations.filter(l => l.active)
+  const getVariantSucursalStock = (variantId: number, sucursal: string): number =>
+    variantSucursal[variantId]?.[sucursal] ?? 0
 
   if (!product) return null
 
@@ -178,12 +185,12 @@ function ProductDetailModal({
           </div>
         </div>
 
-        {/* Variantes + Stock por ubicación */}
+        {/* Variantes + Stock por sucursal */}
         <div className="mt-4">
-          <h3 className="text-sm font-semibold mb-2">Variantes y stock</h3>
+          <h3 className="text-sm font-semibold mb-2">Variantes y stock por sucursal</h3>
           {loadingInv ? (
             <div className="flex items-center gap-2 py-4 text-muted-foreground text-sm">
-              <Loader2 className="h-4 w-4 animate-spin" /> Cargando stock por ubicación...
+              <Loader2 className="h-4 w-4 animate-spin" /> Cargando stock...
             </div>
           ) : (
             <div className="rounded-md border border-border overflow-x-auto">
@@ -193,53 +200,61 @@ function ProductDetailModal({
                     <th className="text-left p-2 font-medium text-muted-foreground">Variante</th>
                     <th className="text-left p-2 font-medium text-muted-foreground">SKU</th>
                     <th className="text-right p-2 font-medium text-muted-foreground">Precio</th>
-                    {activeLocations.map(loc => (
-                      <th key={loc.id} className="text-right p-2 font-medium text-muted-foreground whitespace-nowrap">{loc.name}</th>
-                    ))}
-                    <th className="text-right p-2 font-medium text-muted-foreground">Total</th>
+                    {sucursales.length > 0
+                      ? sucursales.map(s => (
+                          <th key={s} className="text-right p-2 font-medium text-muted-foreground whitespace-nowrap">{s}</th>
+                        ))
+                      : <th className="text-right p-2 font-medium text-muted-foreground">Stock total</th>
+                    }
+                    {sucursales.length > 1 && <th className="text-right p-2 font-medium text-muted-foreground">Total</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {(variants.length ? variants : product.variants).map(v => {
-                    const total = activeLocations.length
-                      ? activeLocations.reduce((sum, loc) => sum + getStock(v.inventory_item_id, loc.id), 0)
+                    const sucTotal = sucursales.length > 0
+                      ? sucursales.reduce((sum, s) => sum + getVariantSucursalStock(v.id, s), 0)
                       : (v.inventory_quantity ?? 0)
                     return (
                       <tr key={v.id} className="border-b border-border last:border-0 hover:bg-muted/20">
                         <td className="p-2 font-medium">{v.title === "Default Title" ? product.title : v.title}</td>
                         <td className="p-2 font-mono text-muted-foreground">{v.sku || "—"}</td>
                         <td className="p-2 text-right">${Number(v.price).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</td>
-                        {activeLocations.map(loc => {
-                          const stock = getStock(v.inventory_item_id, loc.id)
-                          return (
-                            <td key={loc.id} className={`p-2 text-right font-medium ${stock === 0 ? "text-red-400" : stock < 5 ? "text-yellow-500" : ""}`}>
-                              {stock}
-                            </td>
-                          )
-                        })}
-                        <td className={`p-2 text-right font-semibold ${total === 0 ? "text-red-400" : total < 5 ? "text-yellow-500" : ""}`}>
-                          {total}
-                        </td>
+                        {sucursales.length > 0
+                          ? sucursales.map(s => {
+                              const stock = getVariantSucursalStock(v.id, s)
+                              return (
+                                <td key={s} className={`p-2 text-right font-medium ${stock === 0 ? "text-red-400" : stock < 5 ? "text-yellow-500" : ""}`}>
+                                  {stock}
+                                </td>
+                              )
+                            })
+                          : <td className={`p-2 text-right font-medium ${(v.inventory_quantity ?? 0) === 0 ? "text-red-400" : (v.inventory_quantity ?? 0) < 5 ? "text-yellow-500" : ""}`}>{v.inventory_quantity ?? 0}</td>
+                        }
+                        {sucursales.length > 1 && (
+                          <td className={`p-2 text-right font-semibold ${sucTotal === 0 ? "text-red-400" : sucTotal < 5 ? "text-yellow-500" : ""}`}>
+                            {sucTotal}
+                          </td>
+                        )}
                       </tr>
                     )
                   })}
                 </tbody>
-                {activeLocations.length > 1 && (
+                {sucursales.length > 1 && (
                   <tfoot className="bg-muted/30 border-t border-border">
                     <tr>
-                      <td colSpan={3} className="p-2 text-xs font-medium text-muted-foreground">Total por ubicación</td>
-                      {activeLocations.map(loc => {
-                        const locTotal = (variants.length ? variants : product.variants)
-                          .reduce((sum, v) => sum + getStock(v.inventory_item_id, loc.id), 0)
+                      <td colSpan={3} className="p-2 text-xs font-medium text-muted-foreground">Total por sucursal</td>
+                      {sucursales.map(s => {
+                        const total = (variants.length ? variants : product.variants)
+                          .reduce((sum, v) => sum + getVariantSucursalStock(v.id, s), 0)
                         return (
-                          <td key={loc.id} className={`p-2 text-right text-xs font-semibold ${locTotal === 0 ? "text-red-400" : ""}`}>
-                            {locTotal}
+                          <td key={s} className={`p-2 text-right text-xs font-semibold ${total === 0 ? "text-red-400" : ""}`}>
+                            {total}
                           </td>
                         )
                       })}
                       <td className="p-2 text-right text-xs font-semibold">
                         {(variants.length ? variants : product.variants)
-                          .reduce((sum, v) => sum + activeLocations.reduce((s, loc) => s + getStock(v.inventory_item_id, loc.id), 0), 0)}
+                          .reduce((sum, v) => sum + sucursales.reduce((s2, s) => s2 + getVariantSucursalStock(v.id, s), 0), 0)}
                       </td>
                     </tr>
                   </tfoot>
@@ -279,11 +294,9 @@ export default function ShopifyPage() {
   const [products, setProducts]           = useState<ShopifyProduct[]>([])
   const [productStatus, setProductStatus] = useState("active")
   const [productPag, setProductPag]       = useState<Pagination>({ next_page_info: null, prev_page_info: null })
-  const [searchQuery, setSearchQuery]     = useState("")
   const [searchInput, setSearchInput]     = useState("")
   const [selectedProduct, setSelectedProduct] = useState<ShopifyProduct | null>(null)
   const [totalProducts, setTotalProducts] = useState<number | null>(null)
-  const searchTimer                       = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [loading, setLoading]             = useState(false)
   const [error, setError]                 = useState<string | null>(null)
@@ -311,18 +324,16 @@ export default function ShopifyPage() {
     setLoading(false)
   }, [selectedStoreId, orderStatus])
 
-  // fetchProducts recibe todo explícitamente para evitar problemas de closure
-  const fetchProducts = useCallback(async (pageInfo?: string, queryOverride?: string, statusOverride?: string) => {
+  // fetchProducts — sin búsqueda server-side, la búsqueda se hace en cliente
+  const fetchProducts = useCallback(async (pageInfo?: string, statusOverride?: string) => {
     if (!selectedStoreId) return
     setLoading(true); setError(null)
-    const q = queryOverride !== undefined ? queryOverride : searchQuery
-    const st = statusOverride !== undefined ? statusOverride : productStatus
+    const st = statusOverride ?? productStatus
     const params = new URLSearchParams({ store_id: selectedStoreId, limit: "50" })
     if (pageInfo) {
       params.set("page_info", pageInfo)
     } else {
       params.set("status", st)
-      if (q) params.set("query", q)
     }
     const res = await fetch(`/api/shopify/products?${params}`)
     const data = await res.json()
@@ -330,34 +341,37 @@ export default function ShopifyPage() {
     else {
       setProducts(data.products ?? [])
       setProductPag(data.pagination ?? { next_page_info: null, prev_page_info: null })
-      // total_count viene solo en la primera página (sin page_info)
       if (!pageInfo && data.total_count != null) setTotalProducts(data.total_count)
     }
     setLoading(false)
-  }, [selectedStoreId, searchQuery, productStatus])
+  }, [selectedStoreId, productStatus])
 
   useEffect(() => {
     if (!selectedStoreId) return
     if (tab === "orders") fetchOrders()
-    else fetchProducts(undefined, searchQuery, productStatus)
+    else fetchProducts()
   }, [selectedStoreId, tab, orderStatus, productStatus]) // eslint-disable-line
-
-  // Búsqueda con debounce — llama fetchProducts con el valor nuevo directamente
-  const handleSearchChange = (value: string) => {
-    setSearchInput(value)
-    if (searchTimer.current) clearTimeout(searchTimer.current)
-    searchTimer.current = setTimeout(() => {
-      setSearchQuery(value)
-      setProductPag({ next_page_info: null, prev_page_info: null })
-      fetchProducts(undefined, value, productStatus)
-    }, 500)
-  }
 
   const handleStatusChange = (v: string) => {
     setProductStatus(v)
     setProductPag({ next_page_info: null, prev_page_info: null })
-    fetchProducts(undefined, searchQuery, v)
+    fetchProducts(undefined, v)
   }
+
+  // Filtro cliente: busca en título, SKU de cualquier variante, y tags (ISBN suele estar en tags o SKU)
+  const filteredProducts = useMemo(() => {
+    if (!searchInput.trim()) return products
+    const q = searchInput.trim().toLowerCase()
+    return products.filter(p =>
+      p.title?.toLowerCase().includes(q) ||
+      p.vendor?.toLowerCase().includes(q) ||
+      p.tags?.toLowerCase().includes(q) ||
+      p.variants?.some(v =>
+        v.sku?.toLowerCase().includes(q) ||
+        v.title?.toLowerCase().includes(q)
+      )
+    )
+  }, [products, searchInput])
 
   return (
     <div className="flex min-h-screen w-full flex-col bg-background">
@@ -426,12 +440,12 @@ export default function ShopifyPage() {
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
                   <Input
                     value={searchInput}
-                    onChange={e => handleSearchChange(e.target.value)}
-                    placeholder="Titulo, SKU, ISBN..."
+                    onChange={e => setSearchInput(e.target.value)}
+                    placeholder="Título, SKU, ISBN..."
                     className="pl-8 pr-8 h-9 text-sm"
                   />
                   {searchInput && (
-                    <button onClick={() => handleSearchChange("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    <button onClick={() => setSearchInput("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                       <X className="h-3.5 w-3.5" />
                     </button>
                   )}
@@ -537,7 +551,14 @@ export default function ShopifyPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {products.map(product => {
+                  {filteredProducts.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
+                        Sin resultados para "<span className="font-medium text-foreground">{searchInput}</span>"
+                      </td>
+                    </tr>
+                  )}
+                  {filteredProducts.map(product => {
                     const totalStock = product.variants?.reduce((sum, v) => sum + (v.inventory_quantity ?? 0), 0) ?? 0
                     const prices = product.variants?.map(v => Number(v.price)) ?? [0]
                     const minP = Math.min(...prices), maxP = Math.max(...prices)
@@ -586,9 +607,12 @@ export default function ShopifyPage() {
             <div className="flex items-center justify-between border-t border-border pt-3 mt-1">
               <Button onClick={() => fetchProducts(productPag.prev_page_info!)} disabled={!productPag.prev_page_info || loading} variant="outline" size="sm">← Anterior</Button>
               <div className="text-xs text-muted-foreground text-center flex flex-col gap-0.5">
-                <span><span className="font-medium text-foreground">{products.length}</span> productos en esta página</span>
+                {searchInput
+                  ? <span><span className="font-medium text-foreground">{filteredProducts.length}</span> de {products.length} en esta página</span>
+                  : <span><span className="font-medium text-foreground">{products.length}</span> productos en esta página</span>
+                }
                 {totalProducts !== null && (
-                  <span className="text-muted-foreground">Total en tienda: <span className="font-medium text-foreground">{totalProducts.toLocaleString("es-AR")}</span></span>
+                  <span>Total en tienda: <span className="font-medium text-foreground">{totalProducts.toLocaleString("es-AR")}</span></span>
                 )}
               </div>
               <Button onClick={() => fetchProducts(productPag.next_page_info!)} disabled={!productPag.next_page_info || loading} variant="outline" size="sm">Siguiente →</Button>
