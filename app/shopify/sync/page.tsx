@@ -27,6 +27,7 @@ interface ShopifyStore {
   id: string
   shop_domain: string
   is_active: boolean
+  has_credentials: boolean // true si api_key y api_secret están guardados
 }
 
 interface ProductLink {
@@ -83,6 +84,9 @@ export default function ShopifySyncPage() {
   const [syncing, setSyncing]             = useState(false)
   const [syncResult, setSyncResult]       = useState<SyncResult | null>(null)
   const [syncError, setSyncError]         = useState<string | null>(null)
+  const [apiKey, setApiKey]               = useState("")
+  const [apiSecret, setApiSecret]         = useState("")
+  const [savingCreds, setSavingCreds]     = useState(false)
 
   const LIMIT = 50
 
@@ -91,7 +95,10 @@ export default function ShopifySyncPage() {
     fetch("/api/shopify/stores")
       .then(r => r.json())
       .then(d => {
-        const list = d.stores ?? []
+        const list = (d.stores ?? []).map((s: any) => ({
+          ...s,
+          has_credentials: !!(s.api_key && s.api_secret),
+        }))
         setStores(list)
         if (list.length > 0) setSelectedStoreId(list[0].id)
       })
@@ -129,6 +136,32 @@ export default function ShopifySyncPage() {
     setPage(0)
     fetchLinks(0)
   }, [selectedStoreId]) // eslint-disable-line
+
+  // Guardar credenciales y renovar token
+  const saveCredentials = async () => {
+    if (!selectedStoreId || !apiKey || !apiSecret) return
+    setSavingCreds(true); setSyncError(null)
+    try {
+      const res = await fetch("/api/shopify/stores", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ store_id: selectedStoreId, api_key: apiKey, api_secret: apiSecret }),
+      })
+      const d = await res.json()
+      if (!res.ok || !d.ok) {
+        setSyncError(d.error ?? "Error al guardar credenciales")
+      } else {
+        // Actualizar el has_credentials de la tienda actual
+        setStores(prev => prev.map(s => s.id === selectedStoreId ? { ...s, has_credentials: true } : s))
+        setApiKey(""); setApiSecret("")
+        setSyncError(null)
+      }
+    } catch (e: any) {
+      setSyncError(e.message)
+    } finally {
+      setSavingCreds(false)
+    }
+  }
 
   // Correr sync
   const runSync = async () => {
@@ -210,8 +243,55 @@ export default function ShopifySyncPage() {
     )
   }
 
+  const selectedStore = stores.find(s => s.id === selectedStoreId)
+  const needsCredentials = selectedStore && !selectedStore.has_credentials
+
   return (
     <div className="flex flex-col gap-6 p-6 max-w-7xl mx-auto">
+
+      {/* Aviso: tienda sin credenciales guardadas */}
+      {needsCredentials && (
+        <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 p-4 flex flex-col gap-3">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-yellow-400 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-yellow-300">Credenciales requeridas</p>
+              <p className="text-xs text-yellow-400/80 mt-0.5">
+                Esta tienda fue conectada antes de que se guardaran las credenciales. Ingresá la API Key y el API Secret de Shopify una sola vez para que el token se renueve automáticamente.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 items-end">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground">API Key (Client ID)</label>
+              <Input
+                value={apiKey}
+                onChange={e => setApiKey(e.target.value)}
+                placeholder="xxxxxxxxxxxxxxxxxxxx"
+                className="h-8 text-sm w-64 font-mono"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-muted-foreground">API Secret (Client Secret)</label>
+              <Input
+                value={apiSecret}
+                onChange={e => setApiSecret(e.target.value)}
+                placeholder="xxxxxxxxxxxxxxxxxxxx"
+                type="password"
+                className="h-8 text-sm w-64 font-mono"
+              />
+            </div>
+            <Button
+              size="sm"
+              onClick={saveCredentials}
+              disabled={savingCreds || !apiKey || !apiSecret}
+              className="h-8"
+            >
+              {savingCreds ? "Guardando..." : "Guardar y renovar token"}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -234,7 +314,7 @@ export default function ShopifySyncPage() {
               </SelectContent>
             </Select>
           )}
-          <Button onClick={runSync} disabled={syncing} size="sm" className="gap-2">
+          <Button onClick={runSync} disabled={syncing || !!needsCredentials} size="sm" className="gap-2" title={needsCredentials ? "Primero guardá las credenciales" : undefined}>
             <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
             {syncing ? "Sincronizando..." : "Sincronizar ahora"}
           </Button>
