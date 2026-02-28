@@ -94,7 +94,7 @@ export async function POST(request: Request) {
       const m = link.match(/<[^>]*page_info=([^&>]+)[^>]*>;\s*rel="next"/)
       nextPageInfo = m?.[1] ?? null
       page++
-    } while (nextPageInfo && page < 100)
+    } while (nextPageInfo) // sin límite de páginas — recorre toda la tienda
 
     console.log(`[SHOPIFY-SYNC] Tienda ${store.shop_domain}: ${allVariants.length} variantes encontradas`)
 
@@ -105,17 +105,29 @@ export async function POST(request: Request) {
       if (v.shopify_sku) byShopifySku.set(v.shopify_sku.trim(), v)
     }
 
-    // Traer todos los productos de nuestra DB que tengan EAN o ISBN
-    const { data: dbProducts } = await supabase
-      .from("products")
-      .select("id, ean, isbn")
-      .or("ean.not.is.null,isbn.not.is.null")
+    // Traer TODOS los productos de la DB con paginación (Supabase límite default = 1000 filas)
+    const DB_PAGE = 1000
+    let dbOffset = 0
+    const dbProducts: Array<{ id: string; ean: string | null; isbn: string | null }> = []
+    while (true) {
+      const { data: batch, error: dbErr } = await supabase
+        .from("products")
+        .select("id, ean, isbn")
+        .or("ean.not.is.null,isbn.not.is.null")
+        .range(dbOffset, dbOffset + DB_PAGE - 1)
+      if (dbErr) { console.error("[SHOPIFY-SYNC] DB error:", dbErr.message); break }
+      if (!batch || batch.length === 0) break
+      dbProducts.push(...batch)
+      if (batch.length < DB_PAGE) break
+      dbOffset += DB_PAGE
+    }
+    console.log(`[SHOPIFY-SYNC] DB: ${dbProducts.length} productos con EAN/ISBN`)
 
     const toUpsert: any[] = []
     let matched = 0
     let skipped = 0
 
-    for (const p of dbProducts ?? []) {
+    for (const p of dbProducts) {
       let variant: typeof allVariants[0] | undefined
       let matchedBy = ""
       let matchedValue = ""
@@ -175,7 +187,7 @@ export async function POST(request: Request) {
       store_id: store.id,
       shop_domain: store.shop_domain,
       shopify_variants_total: allVariants.length,
-      db_products_scanned: (dbProducts ?? []).length,
+      db_products_scanned: dbProducts.length,
       matched,
       upserted,
       skipped,
