@@ -1,18 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { exchangeCredentialsForToken } from "@/app/api/shopify/test-connection/route"
-
-// Renueva el access_token usando api_key + api_secret y lo persiste en DB
-async function renewToken(supabase: any, store: { id: string; shop_domain: string; api_key: string; api_secret: string }) {
-  const newToken = await exchangeCredentialsForToken(store.shop_domain, store.api_key, store.api_secret)
-  const tokenExpiresAt = new Date(Date.now() + 23 * 60 * 60 * 1000).toISOString()
-  await supabase
-    .from("shopify_stores")
-    .update({ access_token: newToken, token_expires_at: tokenExpiresAt, updated_at: new Date().toISOString() })
-    .eq("id", store.id)
-  console.log(`[SHOPIFY-SYNC] Token renovado para ${store.shop_domain}`)
-  return newToken
-}
+import { renewAndPersistToken } from "@/lib/shopify-auth"
 
 // POST /api/shopify/sync
 // Recorre todos los productos de una tienda Shopify y los vincula con la DB
@@ -42,7 +30,7 @@ export async function POST(request: Request) {
       const expiresAt = storeRaw.token_expires_at ? new Date(storeRaw.token_expires_at) : new Date(0)
       const isExpired = expiresAt <= new Date()
       if (isExpired) {
-        const newToken = await renewToken(supabase, storeRaw)
+        const newToken = await renewAndPersistToken(supabase, storeRaw)
         store = { ...storeRaw, access_token: newToken }
       }
     }
@@ -74,7 +62,7 @@ export async function POST(request: Request) {
 
       // Si el token expiró en medio del sync, renovar y reintentar una vez
       if (res.status === 401 && store.api_key && store.api_secret) {
-        const newToken = await renewToken(supabase, store)
+        const newToken = await renewAndPersistToken(supabase, store)
         store = { ...store, access_token: newToken }
         res = await fetch(
           `https://${store.shop_domain}/admin/api/2024-01/products.json?${params}`,

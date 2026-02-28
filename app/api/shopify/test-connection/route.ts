@@ -1,55 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-
-export function normalizeDomain(shop_domain: string) {
-  const clean = shop_domain.replace(/^https?:\/\//, "").replace(/\/$/, "")
-  return clean.includes(".") ? clean : `${clean}.myshopify.com`
-}
-
-// Intercambia client_id + client_secret por un access_token shpat_ usando el OAuth endpoint de Shopify
-export async function exchangeCredentialsForToken(
-  domain: string,
-  api_key: string,
-  api_secret: string
-): Promise<string> {
-  const url = `https://${domain}/admin/oauth/access_token`
-  const body = new URLSearchParams({
-    grant_type: "client_credentials",
-    client_id: api_key,
-    client_secret: api_secret,
-  })
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-  })
-
-  const text = await res.text()
-  if (!res.ok) {
-    let msg = `HTTP ${res.status}`
-    try { msg = `HTTP ${res.status}: ${JSON.parse(text).error_description ?? JSON.parse(text).errors ?? text}` } catch {}
-    throw new Error(msg)
-  }
-
-  const json = JSON.parse(text)
-  if (!json.access_token) throw new Error("Shopify no devolvió access_token")
-  return json.access_token as string
-}
-
-// Verifica el token llamando a shop.json
-export async function fetchShopInfo(domain: string, access_token: string) {
-  const res = await fetch(`https://${domain}/admin/api/2024-01/shop.json`, {
-    headers: { "X-Shopify-Access-Token": access_token, "Content-Type": "application/json" },
-  })
-  const text = await res.text()
-  if (!res.ok) {
-    let msg = `HTTP ${res.status}`
-    try { msg = `HTTP ${res.status}: ${JSON.parse(text).errors ?? text.slice(0, 200)}` } catch {}
-    throw new Error(msg)
-  }
-  return JSON.parse(text).shop ?? null
-}
+import { normalizeDomain, exchangeCredentialsForToken, fetchShopInfo } from "@/lib/shopify-auth"
 
 // POST: probar credenciales — soporta access_token directo O api_key + api_secret (OAuth exchange)
 export async function POST(request: Request) {

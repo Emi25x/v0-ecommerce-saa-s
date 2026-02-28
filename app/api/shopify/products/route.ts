@@ -1,21 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { exchangeCredentialsForToken } from "@/app/api/shopify/test-connection/route"
-
-// Obtiene token válido, renovando si expiró
-async function getValidToken(supabase: any, store: any): Promise<string> {
-  if (!store.api_key || !store.api_secret) return store.access_token
-  const expiresAt = store.token_expires_at ? new Date(store.token_expires_at) : new Date(0)
-  if (expiresAt > new Date()) return store.access_token
-  // Renovar
-  const newToken = await exchangeCredentialsForToken(store.shop_domain, store.api_key, store.api_secret)
-  await supabase.from("shopify_stores").update({
-    access_token: newToken,
-    token_expires_at: new Date(Date.now() + 23 * 60 * 60 * 1000).toISOString(),
-  }).eq("id", store.id)
-  console.log(`[SHOPIFY-PRODUCTS] Token renovado para ${store.shop_domain}`)
-  return newToken
-}
+import { getValidToken } from "@/lib/shopify-auth"
 
 // Llama a GraphQL para buscar en TODA la tienda por título, SKU o barcode/ISBN
 async function searchProductsGraphQL(

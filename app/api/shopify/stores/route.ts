@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { normalizeDomain, exchangeCredentialsForToken, fetchShopInfo } from "@/app/api/shopify/test-connection/route"
+import { normalizeDomain, exchangeCredentialsForToken, fetchShopInfo } from "@/lib/shopify-auth"
 
 export async function GET() {
   try {
