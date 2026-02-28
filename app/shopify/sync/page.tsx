@@ -163,24 +163,53 @@ export default function ShopifySyncPage() {
     }
   }
 
-  // Correr sync
+  const [syncProgress, setSyncProgress] = useState<string | null>(null)
+
+  // Correr sync — lee el stream NDJSON línea a línea para evitar timeouts
   const runSync = async () => {
     if (!selectedStoreId) return
-    setSyncing(true); setSyncResult(null); setSyncError(null)
+    setSyncing(true); setSyncResult(null); setSyncError(null); setSyncProgress(null)
     try {
       const res = await fetch("/api/shopify/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ store_id: selectedStoreId }),
       })
-      const d = await res.json()
-      if (!res.ok || !d.ok) {
-        setSyncError(d.error ?? "Error al sincronizar")
-      } else {
-        setSyncResult(d)
-        fetchStats()
-        fetchLinks(0)
-        setPage(0)
+
+      if (!res.body) throw new Error("Sin respuesta del servidor")
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ""
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        // Procesar líneas completas
+        const lines = buffer.split("\n")
+        buffer = lines.pop() ?? "" // última línea incompleta vuelve al buffer
+        for (const line of lines) {
+          if (!line.trim()) continue
+          try {
+            const msg = JSON.parse(line)
+            if (msg.error) {
+              setSyncError(msg.error)
+            } else if (msg.ok && msg.phase === "done") {
+              setSyncResult(msg)
+              setSyncProgress(null)
+              fetchStats(); fetchLinks(0); setPage(0)
+            } else if (msg.phase === "shopify") {
+              setSyncProgress(`Descargando de Shopify... ${msg.variants_fetched ? msg.variants_fetched.toLocaleString("es-AR") + " variantes" : ""}`)
+            } else if (msg.phase === "shopify_done") {
+              setSyncProgress(`Shopify: ${msg.variants_fetched.toLocaleString("es-AR")} variantes. Cargando DB...`)
+            } else if (msg.phase === "db_done") {
+              setSyncProgress(`DB: ${msg.db_count.toLocaleString("es-AR")} productos. Vinculando...`)
+            } else if (msg.phase === "upserting") {
+              setSyncProgress(`Guardando vínculos: ${msg.upserted} / ${msg.total_to_upsert}...`)
+            }
+          } catch { /* línea no parseable, ignorar */ }
+        }
       }
     } catch (e: any) {
       setSyncError(e.message)
@@ -314,10 +343,15 @@ export default function ShopifySyncPage() {
               </SelectContent>
             </Select>
           )}
-          <Button onClick={runSync} disabled={syncing || !!needsCredentials} size="sm" className="gap-2" title={needsCredentials ? "Primero guardá las credenciales" : undefined}>
-            <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Sincronizando..." : "Sincronizar ahora"}
-          </Button>
+          <div className="flex flex-col items-end gap-1">
+            <Button onClick={runSync} disabled={syncing || !!needsCredentials} size="sm" className="gap-2" title={needsCredentials ? "Primero guardá las credenciales" : undefined}>
+              <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+              {syncing ? "Sincronizando..." : "Sincronizar ahora"}
+            </Button>
+            {syncProgress && (
+              <span className="text-xs text-muted-foreground animate-pulse">{syncProgress}</span>
+            )}
+          </div>
         </div>
       </div>
 
