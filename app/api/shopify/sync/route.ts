@@ -40,17 +40,17 @@ export async function POST(request: Request) {
           }
         }
 
-        // ── FASE 1: Traer todas las variantes de Shopify ──────────────────────
+        // ── FASE 1: Descargar variantes de Shopify y guardar en cache ──────────
         send(controller, { phase: "shopify", message: "Descargando productos de Shopify..." })
 
-        type Variant = {
-          shopify_product_id: number; shopify_variant_id: number; shopify_title: string
-          shopify_sku: string; shopify_barcode: string; shopify_price: string
-          shopify_status: string; shopify_image_url: string | null
-        }
-        const allVariants: Variant[] = []
+        // Limpiar cache anterior de esta tienda
+        await supabase.from("shopify_variants_cache").delete().eq("store_id", store.id)
+
         let nextPageInfo: string | null = null
         let shopifyPage = 0
+        let totalVariants = 0
+        const fetchedAt = new Date().toISOString()
+        const CACHE_BATCH = 500
 
         do {
           const params = nextPageInfo
@@ -74,106 +74,66 @@ export async function POST(request: Request) {
           if (!res.ok) throw new Error(`Shopify HTTP ${res.status}`)
 
           const json = await res.json()
+          const rows: any[] = []
           for (const p of json.products ?? []) {
             for (const v of p.variants ?? []) {
-              allVariants.push({
-                shopify_product_id: p.id, shopify_variant_id: v.id,
-                shopify_title: p.title, shopify_sku: v.sku ?? "",
-                shopify_barcode: v.barcode ?? "", shopify_price: v.price ?? "0",
-                shopify_status: p.status ?? "active", shopify_image_url: p.image?.src ?? null,
+              rows.push({
+                store_id:           store.id,
+                shopify_product_id: p.id,
+                shopify_variant_id: v.id,
+                shopify_title:      p.title,
+                shopify_sku:        v.sku ?? "",
+                shopify_barcode:    v.barcode ?? "",
+                shopify_price:      Number(v.price ?? 0),
+                shopify_status:     p.status ?? "active",
+                shopify_image_url:  p.image?.src ?? null,
+                fetched_at:         fetchedAt,
               })
             }
           }
+
+          // Insertar en lotes en la tabla cache
+          for (let i = 0; i < rows.length; i += CACHE_BATCH) {
+            await supabase
+              .from("shopify_variants_cache")
+              .insert(rows.slice(i, i + CACHE_BATCH))
+          }
+
+          totalVariants += rows.length
 
           const link = res.headers.get("link") ?? ""
           const m = link.match(/<[^>]*page_info=([^&>]+)[^>]*>;\s*rel="next"/)
           nextPageInfo = m?.[1] ?? null
           shopifyPage++
 
-          // Enviar progreso cada 10 páginas (cada ~2500 variantes)
           if (shopifyPage % 10 === 0) {
-            send(controller, { phase: "shopify", variants_fetched: allVariants.length })
+            send(controller, { phase: "shopify", variants_fetched: totalVariants })
           }
         } while (nextPageInfo)
 
-        send(controller, { phase: "shopify_done", variants_fetched: allVariants.length })
+        send(controller, { phase: "shopify_done", variants_fetched: totalVariants })
 
-        // ── FASE 2: Traer todos los productos de la DB ────────────────────────
-        send(controller, { phase: "db", message: "Cargando productos de la base de datos..." })
+        // ── FASE 2: Matching SQL directo en la DB (instantáneo) ───────────────
+        send(controller, { phase: "matching", message: "Ejecutando vinculación SQL..." })
 
-        const byShopifySku = new Map<string, Variant>()
-        for (const v of allVariants) {
-          if (v.shopify_sku) byShopifySku.set(v.shopify_sku.trim(), v)
-        }
+        const { data: matchResult, error: matchError } = await supabase
+          .rpc("run_shopify_matching", { p_store_id: store.id })
 
-        const DB_PAGE = 1000
-        let dbOffset = 0
-        const dbProducts: Array<{ id: string; ean: string | null; isbn: string | null }> = []
-        while (true) {
-          const { data: batch, error: dbErr } = await supabase
-            .from("products").select("id, ean, isbn")
-            .or("ean.not.is.null,isbn.not.is.null")
-            .range(dbOffset, dbOffset + DB_PAGE - 1)
-          if (dbErr || !batch || batch.length === 0) break
-          dbProducts.push(...batch)
-          if (batch.length < DB_PAGE) break
-          dbOffset += DB_PAGE
-        }
+        if (matchError) throw new Error(`Matching SQL: ${matchError.message}`)
 
-        send(controller, { phase: "db_done", db_count: dbProducts.length })
-
-        // ── FASE 3: Matching y upsert ─────────────────────────────────────────
-        send(controller, { phase: "matching", message: "Vinculando productos..." })
-
-        const toUpsert: any[] = []
-        let matched = 0; let skipped = 0
-        const now = new Date().toISOString()
-
-        for (const p of dbProducts) {
-          const ean = p.ean?.trim(); const isbn = p.isbn?.trim()
-          let variant: Variant | undefined; let matchedBy = ""; let matchedValue = ""
-
-          if (ean && byShopifySku.has(ean)) {
-            variant = byShopifySku.get(ean); matchedBy = "ean_vs_sku"; matchedValue = ean
-          } else if (isbn && byShopifySku.has(isbn)) {
-            variant = byShopifySku.get(isbn); matchedBy = "isbn_vs_sku"; matchedValue = isbn
-          }
-
-          if (!variant) { skipped++; continue }
-
-          toUpsert.push({
-            product_id: p.id, store_id: store.id,
-            shopify_product_id: variant.shopify_product_id,
-            shopify_variant_id: variant.shopify_variant_id,
-            shopify_title: variant.shopify_title, shopify_sku: variant.shopify_sku,
-            shopify_barcode: variant.shopify_barcode,
-            shopify_price: Number(variant.shopify_price),
-            shopify_status: variant.shopify_status,
-            shopify_image_url: variant.shopify_image_url,
-            matched_by: matchedBy, matched_value: matchedValue,
-            sync_status: "linked", last_synced_at: now, sync_error: null,
-          })
-          matched++
-        }
-
-        // Upsert en lotes de 500
-        let upserted = 0
-        const BATCH = 500
-        for (let i = 0; i < toUpsert.length; i += BATCH) {
-          const { error } = await supabase
-            .from("shopify_product_links")
-            .upsert(toUpsert.slice(i, i + BATCH), { onConflict: "product_id,store_id,shopify_variant_id" })
-          if (!error) upserted += Math.min(BATCH, toUpsert.length - i)
-          send(controller, { phase: "upserting", upserted, total_to_upsert: toUpsert.length })
-        }
+        const r = matchResult as any
 
         // Resultado final
         send(controller, {
           ok: true, phase: "done",
-          store_id: store.id, shop_domain: store.shop_domain,
-          shopify_variants_total: allVariants.length,
-          db_products_scanned: dbProducts.length,
-          matched, upserted, skipped,
+          store_id:              store.id,
+          shop_domain:           store.shop_domain,
+          shopify_variants_total: totalVariants,
+          db_products_scanned:   r.db_count,
+          matched:               r.total_linked,
+          matched_ean:           r.matched_ean,
+          matched_isbn:          r.matched_isbn,
+          skipped:               (r.db_count ?? 0) - (r.total_linked ?? 0),
         })
       } catch (e: any) {
         send(controller, { error: e.message })

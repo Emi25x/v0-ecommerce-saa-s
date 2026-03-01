@@ -66,7 +66,8 @@ interface SyncResult {
   shopify_variants_total: number
   db_products_scanned: number
   matched: number
-  upserted: number
+  matched_ean: number
+  matched_isbn: number
   skipped: number
 }
 
@@ -202,11 +203,9 @@ export default function ShopifySyncPage() {
             } else if (msg.phase === "shopify") {
               setSyncProgress(`Descargando de Shopify... ${msg.variants_fetched ? msg.variants_fetched.toLocaleString("es-AR") + " variantes" : ""}`)
             } else if (msg.phase === "shopify_done") {
-              setSyncProgress(`Shopify: ${msg.variants_fetched.toLocaleString("es-AR")} variantes. Cargando DB...`)
-            } else if (msg.phase === "db_done") {
-              setSyncProgress(`DB: ${msg.db_count.toLocaleString("es-AR")} productos. Vinculando...`)
-            } else if (msg.phase === "upserting") {
-              setSyncProgress(`Guardando vínculos: ${msg.upserted} / ${msg.total_to_upsert}...`)
+              setSyncProgress(`Shopify: ${msg.variants_fetched.toLocaleString("es-AR")} variantes descargadas. Ejecutando vinculación SQL...`)
+            } else if (msg.phase === "matching") {
+              setSyncProgress("Ejecutando JOIN SQL en base de datos...")
             }
           } catch { /* línea no parseable, ignorar */ }
         }
@@ -390,8 +389,10 @@ export default function ShopifySyncPage() {
             <p className="font-medium text-emerald-300 mb-1">Sincronización completada</p>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground text-xs">
               <span>Variantes Shopify: <strong className="text-foreground">{syncResult.shopify_variants_total.toLocaleString("es-AR")}</strong></span>
-              <span>Productos DB escaneados: <strong className="text-foreground">{syncResult.db_products_scanned.toLocaleString("es-AR")}</strong></span>
-              <span>Matcheados: <strong className="text-emerald-400">{syncResult.matched.toLocaleString("es-AR")}</strong></span>
+              <span>Productos DB: <strong className="text-foreground">{syncResult.db_products_scanned.toLocaleString("es-AR")}</strong></span>
+              <span>Vinculados: <strong className="text-emerald-400">{syncResult.matched.toLocaleString("es-AR")}</strong></span>
+              {syncResult.matched_ean > 0 && <span>por EAN: <strong className="text-foreground">{syncResult.matched_ean.toLocaleString("es-AR")}</strong></span>}
+              {syncResult.matched_isbn > 0 && <span>por ISBN: <strong className="text-foreground">{syncResult.matched_isbn.toLocaleString("es-AR")}</strong></span>}
               <span>Sin match: <strong className="text-muted-foreground">{syncResult.skipped.toLocaleString("es-AR")}</strong></span>
             </div>
           </div>
