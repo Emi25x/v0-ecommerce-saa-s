@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     console.log("[v0] Building query...")
     
     // NO usar select("*") - seleccionar solo columnas necesarias para el listado
-    const selectColumns = "id, sku, title, price, stock, source, created_at, updated_at, image_url"
+    const selectColumns = "id, sku, title, ean, price, stock, source, created_at, updated_at, image_url"
     
     // Usar count: "estimated" para listados sin búsqueda (más rápido)
     // count: "exact" solo cuando hay búsqueda activa
