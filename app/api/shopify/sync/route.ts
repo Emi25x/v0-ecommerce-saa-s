@@ -163,39 +163,12 @@ export async function GET(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-    const { count: total } = await supabase
-      .from("shopify_product_links")
-      .select("*", { count: "exact", head: true })
-      .eq("store_id", store_id)
+    const { data, error } = await supabase
+      .rpc("get_sync_stats", { p_store_id: store_id })
 
-    const { count: linked } = await supabase
-      .from("shopify_product_links")
-      .select("*", { count: "exact", head: true })
-      .eq("store_id", store_id)
-      .eq("sync_status", "linked")
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    const { count: not_in_db } = await supabase
-      .from("shopify_product_links")
-      .select("*", { count: "exact", head: true })
-      .eq("store_id", store_id)
-      .eq("sync_status", "not_in_db")
-
-    const { data: lastSync } = await supabase
-      .from("shopify_product_links")
-      .select("last_synced_at")
-      .eq("store_id", store_id)
-      .eq("sync_status", "linked")
-      .order("last_synced_at", { ascending: false })
-      .limit(1)
-      .single()
-
-    return NextResponse.json({
-      ok: true,
-      total: total ?? 0,
-      linked: linked ?? 0,
-      not_in_db: not_in_db ?? 0,
-      last_synced_at: lastSync?.last_synced_at ?? null,
-    })
+    return NextResponse.json(data)
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
