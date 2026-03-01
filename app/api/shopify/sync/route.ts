@@ -117,7 +117,7 @@ export async function POST(request: Request) {
         send(controller, { phase: "matching", message: "Ejecutando vinculación SQL..." })
 
         const { data: matchResult, error: matchError } = await supabase
-          .rpc("run_shopify_matching", { p_store_id: store.id })
+          .rpc("run_shopify_matching_v2", { p_store_id: store.id })
 
         if (matchError) throw new Error(`Matching SQL: ${matchError.message}`)
 
