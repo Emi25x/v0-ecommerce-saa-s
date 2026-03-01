@@ -171,14 +171,19 @@ const navItems = [
     icon: Truck,
   },
   {
-    title: "Pagos",
-    href: "/pagos",
-    icon: CreditCard,
+  title: "Pagos",
+  href: "/pagos",
+  icon: CreditCard,
   },
   {
-    title: "Reportes",
-    href: "/reports",
-    icon: BarChart3,
+  title: "Facturación",
+  href: "/billing",
+  icon: Receipt,
+  },
+  {
+  title: "Reportes",
+  href: "/reports",
+  icon: BarChart3,
   },
   {
     title: "Integraciones",
