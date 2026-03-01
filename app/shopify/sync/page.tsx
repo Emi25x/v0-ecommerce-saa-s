@@ -59,6 +59,7 @@ interface ProductLink {
 interface SyncStats {
   total: number
   linked: number
+  not_in_db: number
   last_synced_at: string | null
 }
 
@@ -367,8 +368,8 @@ export default function ShopifySyncPage() {
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
             <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Sin vincular</p>
-            <p className="text-2xl font-bold text-muted-foreground">—</p>
-            <p className="text-xs text-muted-foreground">Correr sync para ver</p>
+            <p className="text-2xl font-bold text-amber-400">{stats.not_in_db.toLocaleString("es-AR")}</p>
+            <p className="text-xs text-muted-foreground">No están en la BD</p>
           </div>
           <div className="rounded-lg border border-border bg-card p-4">
             <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Última sync</p>
