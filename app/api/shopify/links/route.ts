@@ -18,28 +18,17 @@ export async function GET(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-    let query = supabase
-      .from("shopify_product_links")
-      .select(`
-        id, product_id, store_id,
-        shopify_product_id, shopify_variant_id,
-        shopify_title, shopify_sku, shopify_barcode,
-        shopify_price, shopify_status, shopify_image_url,
-        matched_by, matched_value, sync_status, last_synced_at,
-        products ( id, title, ean, isbn, sku, image_url )
-      `, { count: "exact" })
-      .eq("store_id", store_id)
-
-    if (status)  query = query.eq("sync_status", status)
-    if (q)       query = query.or(`shopify_title.ilike.%${q}%,shopify_sku.ilike.%${q}%,shopify_barcode.ilike.%${q}%`)
-
-    const { data, count, error } = await query
-      .order("shopify_title", { ascending: true })
-      .range(page * limit, page * limit + limit - 1)
+    const { data, error } = await supabase.rpc("get_shopify_links", {
+      p_store_id: store_id,
+      p_status:   status,
+      p_search:   q,
+      p_offset:   page * limit,
+      p_limit:    limit,
+    })
 
     if (error) throw error
 
-    return NextResponse.json({ ok: true, links: data ?? [], total: count ?? 0 })
+    return NextResponse.json(data)
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

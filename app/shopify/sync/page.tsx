@@ -250,8 +250,8 @@ export default function ShopifySyncPage() {
   }
 
   const statusBadge = (status: string) => {
-    if (status === "linked")   return <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-xs">Vinculado</Badge>
-    if (status === "conflict") return <Badge className="bg-yellow-500/15 text-yellow-400 border-yellow-500/30 text-xs">Conflicto</Badge>
+    if (status === "linked")    return <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-xs">Vinculado</Badge>
+    if (status === "not_in_db") return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/30 text-xs">No en BD</Badge>
     return <Badge className="bg-muted text-muted-foreground text-xs">{status}</Badge>
   }
 
@@ -439,7 +439,7 @@ export default function ShopifySyncPage() {
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>
               <SelectItem value="linked">Vinculados</SelectItem>
-              <SelectItem value="conflict">Con conflicto</SelectItem>
+              <SelectItem value="not_in_db">Sin vincular</SelectItem>
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground ml-auto">
@@ -491,13 +491,19 @@ export default function ShopifySyncPage() {
                       </td>
                       {/* Producto DB */}
                       <td className="p-3">
-                        <p className="font-medium text-sm leading-tight line-clamp-2">
-                          {link.products?.title ?? <span className="text-muted-foreground italic">Producto eliminado</span>}
-                        </p>
+                        {link.sync_status === "not_in_db" ? (
+                          <span className="text-xs text-amber-400/80 italic">No existe en la base de datos</span>
+                        ) : (
+                          <p className="font-medium text-sm leading-tight line-clamp-2">
+                            {link.products?.title ?? <span className="text-muted-foreground italic">—</span>}
+                          </p>
+                        )}
                       </td>
                       {/* EAN */}
                       <td className="p-3 hidden md:table-cell">
-                        <span className="font-mono text-xs text-muted-foreground">{link.matched_value || "—"}</span>
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {link.sync_status === "not_in_db" ? "—" : (link.matched_value || "—")}
+                        </span>
                       </td>
                       {/* Publicación Shopify */}
                       <td className="p-3">
