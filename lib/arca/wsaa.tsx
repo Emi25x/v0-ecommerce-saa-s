@@ -1,9 +1,11 @@
+"use server"
 /**
  * ARCA WSAA — Autenticación y Autorización
  * Genera el Ticket de Requerimiento de Acceso (TRA), lo firma con la clave privada
  * y lo envía al WSAA para obtener Token + Sign válidos por 12hs.
  */
 
+import * as forge from "node-forge"
 import { createClient } from "@/lib/supabase/server"
 
 const WSAA_PROD = "https://wsaa.afip.gov.ar/ws/services/LoginCms"
@@ -47,9 +49,6 @@ function buildTRA(service = "wsfe"): string {
  * node-forge produce DER compatible con el WSAA de ARCA sin depender de openssl binario.
  */
 async function signTRA(traXml: string, certPem: string, keyPem: string): Promise<string> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const forge = require("node-forge")
-
   const cert       = forge.pki.certificateFromPem(certPem)
   const privateKey = forge.pki.privateKeyFromPem(keyPem)
 
