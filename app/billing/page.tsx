@@ -11,7 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import {
   FileText, Plus, Settings, RefreshCw, Download, Search,
-  CheckCircle2, XCircle, Clock, Trash2, ChevronLeft, ChevronRight, Building2, Receipt
+  CheckCircle2, XCircle, Clock, Trash2, ChevronLeft, ChevronRight, Building2, Receipt,
+  HelpCircle, ExternalLink, ChevronDown, ChevronUp, ShieldCheck, Key, Globe, Terminal
 } from "lucide-react"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -329,10 +330,11 @@ export default function BillingPage() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="mb-4">
-          <TabsTrigger value="facturas" className="gap-2"><Receipt className="h-4 w-4" />Facturas</TabsTrigger>
-          <TabsTrigger value="config"   className="gap-2"><Settings className="h-4 w-4" />Configuración ARCA</TabsTrigger>
-        </TabsList>
+  <TabsList className="mb-4">
+  <TabsTrigger value="facturas" className="gap-2"><Receipt className="h-4 w-4" />Facturas</TabsTrigger>
+  <TabsTrigger value="config"   className="gap-2"><Settings className="h-4 w-4" />Configuración ARCA</TabsTrigger>
+  <TabsTrigger value="ayuda"    className="gap-2"><HelpCircle className="h-4 w-4" />Cómo tramitar el certificado</TabsTrigger>
+  </TabsList>
 
         {/* ── Facturas tab ── */}
         <TabsContent value="facturas">
@@ -533,8 +535,174 @@ export default function BillingPage() {
               {savingConfig ? "Guardando..." : "Guardar configuración"}
             </Button>
           </div>
-        </TabsContent>
-      </Tabs>
+  </TabsContent>
+
+  {/* ── Ayuda tab ── */}
+  <TabsContent value="ayuda">
+    <div className="max-w-3xl space-y-6">
+
+      {/* Intro */}
+      <div className="rounded-lg border border-border bg-card p-5">
+        <div className="flex items-start gap-3">
+          <ShieldCheck className="h-6 w-6 text-emerald-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <h2 className="font-semibold text-base mb-1">Certificado digital para facturación electrónica ARCA</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Para emitir facturas electrónicas necesitás un certificado digital que identifica a tu software ante los servidores de ARCA (ex-AFIP).
+              El proceso es gratuito y se realiza 100% online desde el portal de ARCA con tu CUIT y Clave Fiscal nivel 3.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Paso 1 */}
+      <div className="rounded-lg border border-border bg-card overflow-hidden">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-border bg-muted/30">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-sm flex-shrink-0">1</span>
+          <h3 className="font-semibold">Verificar Clave Fiscal nivel 3</h3>
+        </div>
+        <div className="px-5 py-4 space-y-2 text-sm text-muted-foreground leading-relaxed">
+          <p>Ingresá al portal de ARCA con tu CUIT y Clave Fiscal. Necesitás <strong className="text-foreground">nivel 3 como mínimo</strong> para administrar los webservices.</p>
+          <p>Si tenés nivel 2 o menos, debés acercarte a una oficina de ARCA con tu DNI para elevar el nivel.</p>
+          <a
+            href="https://auth.afip.gob.ar/contribuyente_/login.xhtml"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 font-medium mt-1"
+          >
+            <Globe className="h-3.5 w-3.5" />
+            Ir al portal de ARCA
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        </div>
+      </div>
+
+      {/* Paso 2 */}
+      <div className="rounded-lg border border-border bg-card overflow-hidden">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-border bg-muted/30">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-sm flex-shrink-0">2</span>
+          <h3 className="font-semibold">Generar la clave privada y el CSR (Certificate Signing Request)</h3>
+        </div>
+        <div className="px-5 py-4 space-y-3 text-sm text-muted-foreground leading-relaxed">
+          <p>Desde tu computadora (no desde el portal), ejecutá los siguientes comandos con <strong className="text-foreground">OpenSSL</strong> instalado:</p>
+
+          <div className="rounded-md bg-black/40 border border-border p-4 font-mono text-xs space-y-1">
+            <p className="text-muted-foreground"># 1. Generar la clave privada (2048 bits)</p>
+            <p className="text-emerald-400">openssl genrsa -out private_key.pem 2048</p>
+            <p className="text-muted-foreground mt-2"># 2. Generar el CSR (reemplazá los datos con los tuyos)</p>
+            <p className="text-emerald-400">openssl req -new -key private_key.pem -out cert_request.csr \</p>
+            <p className="text-emerald-400 pl-4">{'-subj "/C=AR/O=TU_RAZON_SOCIAL/CN=TU_CUIT/serialNumber=CUIT TU_CUIT"'}</p>
+          </div>
+
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-amber-400 flex items-start gap-2">
+            <Key className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            <span>Guardá el archivo <code className="font-mono text-xs bg-black/30 px-1 rounded">private_key.pem</code> en un lugar seguro. Nunca lo compartas ni lo subas al portal. Solo el CSR va a ARCA.</span>
+          </div>
+
+          <p>Si no tenés OpenSSL, podés instalarlo en Windows desde <strong className="text-foreground">winget install ShiningLight.OpenSSL</strong> o descargarlo desde slproweb.com/products/Win32OpenSSL.html</p>
+        </div>
+      </div>
+
+      {/* Paso 3 */}
+      <div className="rounded-lg border border-border bg-card overflow-hidden">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-border bg-muted/30">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-sm flex-shrink-0">3</span>
+          <h3 className="font-semibold">Subir el CSR a ARCA y obtener el certificado</h3>
+        </div>
+        <div className="px-5 py-4 space-y-2 text-sm text-muted-foreground leading-relaxed">
+          <p>Con tu Clave Fiscal en el portal de ARCA:</p>
+          <ol className="space-y-2 ml-4 list-decimal marker:text-foreground">
+            <li>Ir a <strong className="text-foreground">Administrador de Relaciones de Clave Fiscal</strong></li>
+            <li>Seleccionar tu CUIT en el panel izquierdo</li>
+            <li>Click en <strong className="text-foreground">"Nueva Relación"</strong></li>
+            <li>Buscar y seleccionar el servicio <strong className="text-foreground">"WSFE — Facturación Electrónica"</strong></li>
+            <li>En la misma sección, ir a <strong className="text-foreground">"Administración de Certificados Digitales"</strong></li>
+            <li>Click en <strong className="text-foreground">"Agregar Alias"</strong> → ponerle un nombre (ej: "MiSistema")</li>
+            <li>Subir el archivo <code className="font-mono text-xs bg-black/30 px-1 rounded">cert_request.csr</code> generado en el paso anterior</li>
+            <li>ARCA te devuelve un archivo <code className="font-mono text-xs bg-black/30 px-1 rounded">certificado.crt</code> — descargarlo</li>
+          </ol>
+        </div>
+      </div>
+
+      {/* Paso 4 */}
+      <div className="rounded-lg border border-border bg-card overflow-hidden">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-border bg-muted/30">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-sm flex-shrink-0">4</span>
+          <h3 className="font-semibold">Dar de alta el punto de venta</h3>
+        </div>
+        <div className="px-5 py-4 space-y-2 text-sm text-muted-foreground leading-relaxed">
+          <p>En el portal de ARCA, ir a <strong className="text-foreground">"Administración de Puntos de Venta y Domicilios"</strong>:</p>
+          <ol className="space-y-2 ml-4 list-decimal marker:text-foreground">
+            <li>Click en <strong className="text-foreground">"Alta de Punto de Venta"</strong></li>
+            <li>Elegir un número (ej: <code className="font-mono text-xs bg-black/30 px-1 rounded">2</code>) — el 1 suele estar reservado para RECE online</li>
+            <li>Seleccionar el sistema: <strong className="text-foreground">"Facturación Electrónica — WebService"</strong></li>
+            <li>Asignar un domicilio y confirmar</li>
+          </ol>
+          <p className="mt-1">El número elegido es el que debés ingresar en la sección <strong className="text-foreground">Configuración ARCA</strong> de esta app.</p>
+        </div>
+      </div>
+
+      {/* Paso 5 */}
+      <div className="rounded-lg border border-border bg-card overflow-hidden">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-border bg-muted/30">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-sm flex-shrink-0">5</span>
+          <h3 className="font-semibold">Cargar los datos en esta app</h3>
+        </div>
+        <div className="px-5 py-4 space-y-3 text-sm text-muted-foreground leading-relaxed">
+          <p>Ir a la pestaña <strong className="text-foreground">Configuración ARCA</strong> y completar:</p>
+          <div className="grid gap-2">
+            <div className="flex items-start gap-2">
+              <span className="font-mono text-xs bg-black/30 px-1.5 py-0.5 rounded text-foreground mt-0.5">CUIT</span>
+              <span>Tu CUIT sin guiones (ej: 20123456789)</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="font-mono text-xs bg-black/30 px-1.5 py-0.5 rounded text-foreground mt-0.5">Punto de venta</span>
+              <span>El número dado de alta en el paso anterior</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="font-mono text-xs bg-black/30 px-1.5 py-0.5 rounded text-foreground mt-0.5">Certificado PEM</span>
+              <span>El contenido del archivo <code className="font-mono text-xs bg-black/30 px-1 rounded">certificado.crt</code> que devolvió ARCA (texto completo, incluido el encabezado <code className="font-mono text-xs bg-black/30 px-1 rounded">-----BEGIN CERTIFICATE-----</code>)</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="font-mono text-xs bg-black/30 px-1.5 py-0.5 rounded text-foreground mt-0.5">Clave privada</span>
+              <span>El contenido del archivo <code className="font-mono text-xs bg-black/30 px-1 rounded">private_key.pem</code> generado en el paso 2</span>
+            </div>
+          </div>
+          <div className="rounded-md border border-blue-500/30 bg-blue-500/10 p-3 text-blue-300 flex items-start gap-2 mt-2">
+            <Terminal className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            <span>Empezá siempre en <strong>ambiente Homologación</strong> (testing) para probar que todo funciona antes de pasar a Producción. Los CAE de homologación no son válidos fiscalmente.</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Links útiles */}
+      <div className="rounded-lg border border-border bg-card p-5">
+        <h3 className="font-semibold mb-3 flex items-center gap-2"><ExternalLink className="h-4 w-4 text-muted-foreground" />Links oficiales</h3>
+        <div className="space-y-2 text-sm">
+          {[
+            { label: "Portal ARCA (Clave Fiscal)", href: "https://auth.afip.gob.ar/contribuyente_/login.xhtml" },
+            { label: "Manual WSFE v1 — ARCA", href: "https://www.afip.gob.ar/ws/documentacion/manual_desarrollador_wsfev1.pdf" },
+            { label: "OpenSSL para Windows", href: "https://slproweb.com/products/Win32OpenSSL.html" },
+            { label: "Guía de Factura Electrónica ARCA", href: "https://www.afip.gob.ar/fe/ayuda/documentos/manual-factura-electronica.pdf" },
+          ].map(({ label, href }) => (
+            <a
+              key={href}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-emerald-400 hover:text-emerald-300 transition-colors"
+            >
+              <ExternalLink className="h-3.5 w-3.5 flex-shrink-0" />
+              {label}
+            </a>
+          ))}
+        </div>
+      </div>
+
+    </div>
+  </TabsContent>
+
+  </Tabs>
 
       {/* ── Modal nueva factura ── */}
       <Dialog open={showNew} onOpenChange={setShowNew}>
