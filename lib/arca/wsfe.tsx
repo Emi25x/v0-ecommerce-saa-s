@@ -1,206 +1,196 @@
 /**
- * lib/arca/wsfe.ts
- * WebService de Facturación Electrónica WSFE v1 — ARCA/AFIP
- *
- * Soporta:
- *   - FECompUltimoAutorizado → último número de comprobante autorizado
- *   - FECAESolicitar         → solicita el CAE para una o más facturas
- *
- * Tipos de comprobante:
- *   1 = Factura A  |  6 = Factura B  |  11 = Factura C
- *   3 = Nota Débito A | 8 = Nota Débito B | 13 = Nota Débito C
- *   2 = Nota Crédito A | 7 = Nota Crédito B | 12 = Nota Crédito C
- *
- * Alícuotas IVA: 3=0% | 4=10.5% | 5=21% | 6=27%
+ * ARCA WSFE v1 — Facturación Electrónica
+ * Soporta FECAESolicitar (solicitar CAE) y FECompUltimoAutorizado (último número).
  */
 
-import type { ArcaConfig } from "./wsaa"
-
-const WSFE_HOMO = "https://wswhomo.afip.gov.ar/wsfev1/service.asmx"
 const WSFE_PROD = "https://servicios1.afip.gov.ar/wsfev1/service.asmx"
+const WSFE_HOMO = "https://wswhomo.afip.gov.ar/wsfev1/service.asmx"
 
 export type FacturaItem = {
-  descripcion:  string
-  cantidad:     number
-  precio_unit:  number
-  alicuota_iva: 0 | 10.5 | 21 | 27
+  descripcion: string
+  cantidad: number
+  precio_unitario: number
+  alicuota_iva: 0 | 10.5 | 21 | 27  // 0=exento, 10.5, 21, 27
+  subtotal: number
+  iva: number
 }
 
-export type SolicitudFactura = {
-  tipo_comprobante:      number
-  punto_venta:           number
-  fecha_emision:         string          // YYYYMMDD
-  receptor_tipo_doc:     number          // 80=CUIT 86=CUIL 96=DNI 99=sin doc
-  receptor_nro_doc:      string
-  condicion_iva_receptor: number         // 1=RI 4=Exento 5=CF
-  items:                 FacturaItem[]
-  moneda:                string          // PES
+export type SolicitarCAEParams = {
+  cuit: string
+  punto_venta: number
+  tipo_comprobante: number          // 1=FA, 6=FB, 11=FC, 51=FM
+  concepto: 1 | 2 | 3              // 1=Productos, 2=Servicios, 3=Ambos
+  tipo_doc_receptor: number         // 96=DNI, 80=CUIT, 99=Sin doc
+  nro_doc_receptor: string
+  fecha: string                     // YYYYMMDD
+  items: FacturaItem[]
+  moneda?: string
+  cotizacion?: number
+  token: string
+  sign: string
+  ambiente: string
 }
 
-export type ResultadoCAE = {
-  numero:    number
-  cae:       string
-  cae_vto:   string   // YYYYMMDD
-  subtotal:  number
-  iva_105:   number
-  iva_21:    number
-  iva_27:    number
-  total:     number
+export type CAEResponse = {
+  cae: string
+  cae_vto: string   // YYYYMMDD
+  numero: number
 }
 
-function wsfeUrl(config: ArcaConfig) {
-  return config.modo === "produccion" ? WSFE_PROD : WSFE_HOMO
+function wsfeUrl(ambiente: string) {
+  return ambiente === "produccion" ? WSFE_PROD : WSFE_HOMO
 }
 
-function soapEnvelope(action: string, body: string): string {
-  return `<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
-               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-               xmlns:xsd="http://www.w3.org/2001/XMLSchema"
-               xmlns:ar="http://ar.gov.afip.dif.FEV1/">
-  <soap:Body>${body}</soap:Body>
-</soap:Envelope>`
-}
+async function soapCall(url: string, action: string, bodyContent: string): Promise<string> {
+  const envelope = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                  xmlns:ar="http://ar.gov.afip.dif.FEV1/">
+  <soapenv:Header/>
+  <soapenv:Body>${bodyContent}</soapenv:Body>
+</soapenv:Envelope>`
 
-async function callWSFE(
-  config: ArcaConfig,
-  token: string,
-  sign: string,
-  action: string,
-  bodyInner: string
-): Promise<string> {
-  const body = `<ar:${action}>
-    <ar:Auth>
-      <ar:Token>${token}</ar:Token>
-      <ar:Sign>${sign}</ar:Sign>
-      <ar:Cuit>${config.cuit.replace(/-/g, "")}</ar:Cuit>
-    </ar:Auth>
-    ${bodyInner}
-  </ar:${action}>`
-
-  const res = await fetch(wsfeUrl(config), {
+  const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "text/xml; charset=utf-8",
-      SOAPAction: `"http://ar.gov.afip.dif.FEV1/${action}"`,
+      "SOAPAction": `http://ar.gov.afip.dif.FEV1/${action}`,
     },
-    body: soapEnvelope(action, body),
+    body: envelope,
   })
 
-  if (!res.ok) throw new Error(`WSFE HTTP ${res.status}`)
+  if (!res.ok) throw new Error(`WSFE HTTP ${res.status}: ${await res.text()}`)
   return res.text()
 }
 
-/** Obtiene el último número de comprobante autorizado para un tipo y punto de venta */
-export async function getUltimoComprobante(
-  config: ArcaConfig,
-  token: string,
-  sign: string,
-  tipoComprobante: number,
-  puntoVenta: number
-): Promise<number> {
-  const xml = await callWSFE(config, token, sign, "FECompUltimoAutorizado",
-    `<ar:PtoVta>${puntoVenta}</ar:PtoVta>
-     <ar:CbteTipo>${tipoComprobante}</ar:CbteTipo>`
-  )
+/** Obtiene el último número de comprobante autorizado para un punto de venta y tipo */
+export async function getLastInvoiceNumber(params: {
+  cuit: string
+  punto_venta: number
+  tipo_comprobante: number
+  token: string
+  sign: string
+  ambiente: string
+}): Promise<number> {
+  const url = wsfeUrl(params.ambiente)
+  const body = `
+  <ar:FECompUltimoAutorizado>
+    <ar:Auth>
+      <ar:Token>${params.token}</ar:Token>
+      <ar:Sign>${params.sign}</ar:Sign>
+      <ar:Cuit>${params.cuit}</ar:Cuit>
+    </ar:Auth>
+    <ar:PtoVta>${params.punto_venta}</ar:PtoVta>
+    <ar:CbteTipo>${params.tipo_comprobante}</ar:CbteTipo>
+  </ar:FECompUltimoAutorizado>`
 
-  const match = xml.match(/<CbteNro>(\d+)<\/CbteNro>/)
-  if (!match) throw new Error("No se pudo obtener el último comprobante")
-  return parseInt(match[1], 10)
+  const xml = await soapCall(url, "FECompUltimoAutorizado", body)
+  const nroStr = xml.match(/<CbteNro>(\d+)<\/CbteNro>/)?.[1]
+  if (!nroStr) throw new Error(`WSFE: no se pudo obtener último número:\n${xml.substring(0, 400)}`)
+  return parseInt(nroStr, 10)
 }
 
-/** Calcula IVA por alícuota y arma los arrays para el XML */
-function calcularIVA(items: FacturaItem[]) {
-  let subtotal = 0
-  const ivaMap: Record<number, { id: number; base: number; importe: number }> = {
-    0:    { id: 3, base: 0, importe: 0 },
-    10.5: { id: 4, base: 0, importe: 0 },
-    21:   { id: 5, base: 0, importe: 0 },
-    27:   { id: 6, base: 0, importe: 0 },
+/** Solicita el CAE para una factura */
+export async function requestCAE(params: SolicitarCAEParams): Promise<CAEResponse> {
+  const url = wsfeUrl(params.ambiente)
+
+  // Calcular importes agrupados por alícuota
+  const ivaMap = new Map<number, { base: number; importe: number; id: number }>()
+  // IDs de alícuota ARCA: 3=0%, 4=10.5%, 5=21%, 6=27%
+  const alicuotaId: Record<number, number> = { 0: 3, 10.5: 4, 21: 5, 27: 6 }
+
+  let importeNeto = 0
+  let importeExento = 0
+  let importeIvaTotal = 0
+
+  for (const item of params.items) {
+    if (item.alicuota_iva === 0) {
+      importeExento += item.subtotal
+    } else {
+      importeNeto += item.subtotal
+      importeIvaTotal += item.iva
+      const id = alicuotaId[item.alicuota_iva]
+      const prev = ivaMap.get(id) || { base: 0, importe: 0, id }
+      ivaMap.set(id, {
+        id,
+        base:    parseFloat((prev.base + item.subtotal).toFixed(2)),
+        importe: parseFloat((prev.importe + item.iva).toFixed(2)),
+      })
+    }
   }
 
-  for (const item of items) {
-    const base = Math.round(item.cantidad * item.precio_unit * 100) / 100
-    const iva  = Math.round(base * (item.alicuota_iva / 100) * 100) / 100
-    subtotal += base
-    const bucket = ivaMap[item.alicuota_iva]
-    if (bucket) { bucket.base += base; bucket.importe += iva }
+  const importeTotal = parseFloat((importeNeto + importeExento + importeIvaTotal).toFixed(2))
+
+  const ivaXml = Array.from(ivaMap.values()).map(a => `
+          <ar:AlicIva>
+            <ar:Id>${a.id}</ar:Id>
+            <ar:BaseImp>${a.base.toFixed(2)}</ar:BaseImp>
+            <ar:Importe>${a.importe.toFixed(2)}</ar:Importe>
+          </ar:AlicIva>`).join("")
+
+  // Obtener próximo número
+  const lastNum = await getLastInvoiceNumber({
+    cuit: params.cuit,
+    punto_venta: params.punto_venta,
+    tipo_comprobante: params.tipo_comprobante,
+    token: params.token,
+    sign: params.sign,
+    ambiente: params.ambiente,
+  })
+  const nextNum = lastNum + 1
+
+  const body = `
+  <ar:FECAESolicitar>
+    <ar:Auth>
+      <ar:Token>${params.token}</ar:Token>
+      <ar:Sign>${params.sign}</ar:Sign>
+      <ar:Cuit>${params.cuit}</ar:Cuit>
+    </ar:Auth>
+    <ar:FeCAEReq>
+      <ar:FeCabReq>
+        <ar:CantReg>1</ar:CantReg>
+        <ar:PtoVta>${params.punto_venta}</ar:PtoVta>
+        <ar:CbteTipo>${params.tipo_comprobante}</ar:CbteTipo>
+      </ar:FeCabReq>
+      <ar:FeDetReq>
+        <ar:FECAEDetRequest>
+          <ar:Concepto>${params.concepto}</ar:Concepto>
+          <ar:DocTipo>${params.tipo_doc_receptor}</ar:DocTipo>
+          <ar:DocNro>${params.nro_doc_receptor}</ar:DocNro>
+          <ar:CbteDesde>${nextNum}</ar:CbteDesde>
+          <ar:CbteHasta>${nextNum}</ar:CbteHasta>
+          <ar:CbteFch>${params.fecha}</ar:CbteFch>
+          <ar:ImpTotal>${importeTotal.toFixed(2)}</ar:ImpTotal>
+          <ar:ImpTotConc>0.00</ar:ImpTotConc>
+          <ar:ImpNeto>${importeNeto.toFixed(2)}</ar:ImpNeto>
+          <ar:ImpOpEx>${importeExento.toFixed(2)}</ar:ImpOpEx>
+          <ar:ImpIVA>${importeIvaTotal.toFixed(2)}</ar:ImpIVA>
+          <ar:ImpTrib>0.00</ar:ImpTrib>
+          <ar:MonId>${params.moneda || "PES"}</ar:MonId>
+          <ar:MonCotiz>${params.cotizacion ?? 1}</ar:MonCotiz>
+          <ar:Iva>${ivaXml}</ar:Iva>
+        </ar:FECAEDetRequest>
+      </ar:FeDetReq>
+    </ar:FeCAEReq>
+  </ar:FECAESolicitar>`
+
+  const xml = await soapCall(url, "FECAESolicitar", body)
+
+  // Verificar errores ARCA
+  const errMatch = xml.match(/<ErrMsg>([\s\S]*?)<\/ErrMsg>/)
+  const obsMatch = xml.match(/<Obs>([\s\S]*?)<\/Obs>/)
+  const result   = xml.match(/<Resultado>([A-Z]+)<\/Resultado>/)?.[1]
+
+  if (result === "R") {
+    const errMsg = errMatch?.[1] || obsMatch?.[1] || "ARCA rechazó la factura"
+    throw new Error(`ARCA rechazo: ${errMsg}`)
   }
 
-  const ivaItems = Object.values(ivaMap).filter(v => v.base > 0)
-  const totalIVA = ivaItems.reduce((s, v) => s + v.importe, 0)
-  const total    = Math.round((subtotal + totalIVA) * 100) / 100
+  const cae    = xml.match(/<CAE>(\d+)<\/CAE>/)?.[1]
+  const caeVto = xml.match(/<CAEFchVto>(\d+)<\/CAEFchVto>/)?.[1]
 
-  return {
-    subtotal: Math.round(subtotal * 100) / 100,
-    iva_105:  Math.round((ivaMap[10.5]?.importe ?? 0) * 100) / 100,
-    iva_21:   Math.round((ivaMap[21]?.importe  ?? 0) * 100) / 100,
-    iva_27:   Math.round((ivaMap[27]?.importe  ?? 0) * 100) / 100,
-    total,
-    ivaItems,
-  }
-}
-
-/** Solicita CAE para una factura individual */
-export async function solicitarCAE(
-  config: ArcaConfig,
-  token: string,
-  sign: string,
-  solicitud: SolicitudFactura,
-  numero: number
-): Promise<ResultadoCAE> {
-  const { subtotal, iva_105, iva_21, iva_27, total, ivaItems } = calcularIVA(solicitud.items)
-
-  const ivaXml = ivaItems.map(v => `
-    <ar:AlicIva>
-      <ar:Id>${v.id}</ar:Id>
-      <ar:BaseImp>${v.base.toFixed(2)}</ar:BaseImp>
-      <ar:Importe>${v.importe.toFixed(2)}</ar:Importe>
-    </ar:AlicIva>`).join("")
-
-  const bodyInner = `
-  <ar:FeCAEReq>
-    <ar:FeCabReq>
-      <ar:CantReg>1</ar:CantReg>
-      <ar:PtoVta>${solicitud.punto_venta}</ar:PtoVta>
-      <ar:CbteTipo>${solicitud.tipo_comprobante}</ar:CbteTipo>
-    </ar:FeCabReq>
-    <ar:FeDetReq>
-      <ar:FECAEDetRequest>
-        <ar:Concepto>1</ar:Concepto>
-        <ar:DocTipo>${solicitud.receptor_tipo_doc}</ar:DocTipo>
-        <ar:DocNro>${solicitud.receptor_nro_doc || 0}</ar:DocNro>
-        <ar:CbteDesde>${numero}</ar:CbteDesde>
-        <ar:CbteHasta>${numero}</ar:CbteHasta>
-        <ar:CbteFch>${solicitud.fecha_emision}</ar:CbteFch>
-        <ar:ImpTotal>${total.toFixed(2)}</ar:ImpTotal>
-        <ar:ImpTotConc>0.00</ar:ImpTotConc>
-        <ar:ImpNeto>${subtotal.toFixed(2)}</ar:ImpNeto>
-        <ar:ImpOpEx>0.00</ar:ImpOpEx>
-        <ar:ImpIVA>${(iva_105 + iva_21 + iva_27).toFixed(2)}</ar:ImpIVA>
-        <ar:ImpTrib>0.00</ar:ImpTrib>
-        <ar:MonId>${solicitud.moneda}</ar:MonId>
-        <ar:MonCotiz>1</ar:MonCotiz>
-        <ar:Iva>${ivaXml}</ar:Iva>
-      </ar:FECAEDetRequest>
-    </ar:FeDetReq>
-  </ar:FeCAEReq>`
-
-  const xml = await callWSFE(config, token, sign, "FECAESolicitar", bodyInner)
-
-  const caeMatch  = xml.match(/<CAE>([\s\S]*?)<\/CAE>/)
-  const vtoMatch  = xml.match(/<CAEFchVto>([\s\S]*?)<\/CAEFchVto>/)
-  const errMatch  = xml.match(/<Msg>([\s\S]*?)<\/Msg>/)
-
-  if (!caeMatch) {
-    const errMsg = errMatch?.[1]?.trim() ?? "Error desconocido del WSFE"
-    throw new Error(`ARCA rechazó la factura: ${errMsg}`)
+  if (!cae || !caeVto) {
+    throw new Error(`WSFE: no se obtuvo CAE en la respuesta:\n${xml.substring(0, 600)}`)
   }
 
-  return {
-    numero,
-    cae:      caeMatch[1].trim(),
-    cae_vto:  vtoMatch?.[1]?.trim() ?? "",
-    subtotal, iva_105, iva_21, iva_27, total,
-  }
+  return { cae, cae_vto: caeVto, numero: nextNum }
 }

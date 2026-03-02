@@ -1,142 +1,148 @@
 /**
- * lib/arca/wsaa.ts
- * Autenticación ARCA/AFIP — WSAA (Web Service de Autenticación y Autorización)
- *
- * Genera el TRA (Ticket de Requerimiento de Acceso) firmado con la clave privada
- * del contribuyente, lo envía al WSAA y obtiene el Token + Sign que luego
- * se usan en llamadas al WSFE. El token tiene validez de 12 horas y se cachea
- * en la tabla arca_config de Supabase para no pedirlo en cada factura.
+ * ARCA WSAA — Autenticación y Autorización
+ * Genera el Ticket de Requerimiento de Acceso (TRA), lo firma con la clave privada
+ * y lo envía al WSAA para obtener Token + Sign válidos por 12hs.
  */
 
-import { createSign } from "crypto"
 import { createClient } from "@/lib/supabase/server"
 
-const WSAA_HOMO = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms"
 const WSAA_PROD = "https://wsaa.afip.gov.ar/ws/services/LoginCms"
+const WSAA_HOMO = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms"
 
-export type ArcaConfig = {
+type ArcaConfig = {
   id: string
   user_id: string
   cuit: string
-  razon_social: string
-  punto_venta: number
-  tipo_emisor: string
-  condicion_iva: string
-  domicilio_fiscal: string | null
-  certificado_pem: string | null
+  ambiente: string
+  cert_pem: string | null
   clave_pem: string | null
-  modo: string
+  certificado_pem: string | null
   wsaa_token: string | null
   wsaa_sign: string | null
   wsaa_expires_at: string | null
 }
 
-/** Genera el XML del TRA firmado en base64 (CMS) */
-function buildSignedTRA(certPem: string, keyPem: string, service = "wsfe"): string {
+/** Genera el XML TRA (Ticket de Requerimiento de Acceso) */
+function buildTRA(service = "wsfe"): string {
   const now = new Date()
-  const from = new Date(now.getTime() - 60_000).toISOString().replace(/\.\d+Z$/, "-03:00")
-  const to   = new Date(now.getTime() + 43_200_000).toISOString().replace(/\.\d+Z$/, "-03:00")
-  const uniqueId = Math.floor(now.getTime() / 1000)
+  const from = new Date(now.getTime() - 60_000)
+  const to   = new Date(now.getTime() + 43_200_000) // +12hs
 
-  const tra = `<?xml version="1.0" encoding="UTF-8"?>
+  const fmt = (d: Date) =>
+    d.toISOString().replace(/\.\d{3}Z$/, "-03:00")
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <loginTicketRequest version="1.0">
   <header>
-    <uniqueId>${uniqueId}</uniqueId>
-    <generationTime>${from}</generationTime>
-    <expirationTime>${to}</expirationTime>
+    <uniqueId>${Math.floor(now.getTime() / 1000)}</uniqueId>
+    <generationTime>${fmt(from)}</generationTime>
+    <expirationTime>${fmt(to)}</expirationTime>
   </header>
   <service>${service}</service>
 </loginTicketRequest>`
-
-  // Firmar con SHA256withRSA usando la clave privada
-  const sign = createSign("SHA256withRSA")
-  sign.update(tra)
-  const signature = sign.sign(keyPem, "base64")
-
-  // CMS simplificado: base64 del XML + firma (ARCA acepta esto en homologación)
-  // En producción se necesita un CMS completo — usar pkijs o node-forge
-  const cms = Buffer.from(
-    JSON.stringify({ tra: Buffer.from(tra).toString("base64"), sig: signature })
-  ).toString("base64")
-
-  return cms
 }
 
-/** SOAP envelope para LoginCms */
-function buildSOAP(cms: string): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>
+/** Firma el TRA con la clave privada usando node:crypto */
+async function signTRA(traXml: string, certPem: string, keyPem: string): Promise<string> {
+  const { createSign } = await import("node:crypto")
+  const { execSync } = await import("node:child_process")
+  const { writeFileSync, readFileSync, unlinkSync } = await import("node:fs")
+  const { tmpdir } = await import("node:os")
+  const path = await import("node:path")
+
+  const tmpDir = tmpdir()
+  const traPath  = path.join(tmpDir, `tra_${Date.now()}.xml`)
+  const certPath = path.join(tmpDir, `cert_${Date.now()}.pem`)
+  const keyPath  = path.join(tmpDir, `key_${Date.now()}.pem`)
+  const cmsPath  = path.join(tmpDir, `cms_${Date.now()}.p7`)
+
+  try {
+    writeFileSync(traPath,  traXml,  "utf8")
+    writeFileSync(certPath, certPem, "utf8")
+    writeFileSync(keyPath,  keyPem,  "utf8")
+
+    // Firma CMS con openssl — disponible en el runtime de Vercel/Node
+    execSync(
+      `openssl smime -sign -in ${traPath} -out ${cmsPath} -signer ${certPath} -inkey ${keyPath} -outform DER -nodetach`,
+      { stdio: "pipe" }
+    )
+
+    const der = readFileSync(cmsPath)
+    return der.toString("base64")
+  } finally {
+    for (const f of [traPath, certPath, keyPath, cmsPath]) {
+      try { unlinkSync(f) } catch {}
+    }
+  }
+}
+
+/** Llama al WSAA y obtiene { token, sign, expiresAt } */
+async function callWSAA(cmsCms: string, ambiente: string): Promise<{ token: string; sign: string; expiresAt: Date }> {
+  const url = ambiente === "produccion" ? WSAA_PROD : WSAA_HOMO
+
+  const body = `<?xml version="1.0" encoding="UTF-8"?>
 <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-                  xmlns:wsaa="http://wsaa.view.sua.dvadac.desein.afip.gov">
+                  xmlns:wsaa="http://wsaa.view.sua.dvadac.desein.afip.gov.ar">
+  <soapenv:Header/>
   <soapenv:Body>
     <wsaa:loginCms>
-      <wsaa:in0>${cms}</wsaa:in0>
+      <wsaa:in0>${cmsCms}</wsaa:in0>
     </wsaa:loginCms>
   </soapenv:Body>
 </soapenv:Envelope>`
-}
-
-/** Parsea la respuesta XML del WSAA y extrae token + sign */
-function parseWSAAResponse(xml: string): { token: string; sign: string; expiresAt: Date } {
-  const tokenMatch = xml.match(/<token>([\s\S]*?)<\/token>/)
-  const signMatch  = xml.match(/<sign>([\s\S]*?)<\/sign>/)
-  const expiresMatch = xml.match(/<expirationTime>([\s\S]*?)<\/expirationTime>/)
-
-  if (!tokenMatch || !signMatch) throw new Error("Respuesta WSAA inválida — no se encontró token/sign")
-
-  const expiresStr = expiresMatch?.[1] ?? ""
-  const expiresAt  = expiresStr ? new Date(expiresStr) : new Date(Date.now() + 43_200_000)
-
-  return { token: tokenMatch[1].trim(), sign: signMatch[1].trim(), expiresAt }
-}
-
-/**
- * Obtiene el Token+Sign del WSAA. Si el caché en Supabase sigue vigente
- * (más de 10 min de vida útil), lo devuelve directamente sin ir a ARCA.
- */
-export async function getWSAAToken(
-  config: ArcaConfig
-): Promise<{ token: string; sign: string }> {
-  // Verificar caché
-  if (config.wsaa_token && config.wsaa_sign && config.wsaa_expires_at) {
-    const expiresAt = new Date(config.wsaa_expires_at)
-    const tenMinutes = 10 * 60 * 1000
-    if (expiresAt.getTime() - Date.now() > tenMinutes) {
-      return { token: config.wsaa_token, sign: config.wsaa_sign }
-    }
-  }
-
-  if (!config.certificado_pem || !config.clave_pem) {
-    throw new Error("Certificado o clave privada no configurados en ARCA")
-  }
-
-  const cms  = buildSignedTRA(config.certificado_pem, config.clave_pem)
-  const soap = buildSOAP(cms)
-  const url  = config.modo === "produccion" ? WSAA_PROD : WSAA_HOMO
 
   const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "text/xml; charset=utf-8",
-      SOAPAction: '""',
+      "SOAPAction": "",
     },
-    body: soap,
+    body,
   })
 
   if (!res.ok) throw new Error(`WSAA HTTP ${res.status}`)
 
   const xml = await res.text()
-  const { token, sign, expiresAt } = parseWSAAResponse(xml)
 
-  // Persistir en Supabase
+  const token = xml.match(/<token>([\s\S]*?)<\/token>/)?.[1]
+  const sign  = xml.match(/<sign>([\s\S]*?)<\/sign>/)?.[1]
+  const expStr = xml.match(/<expirationTime>([\s\S]*?)<\/expirationTime>/)?.[1]
+
+  if (!token || !sign) throw new Error(`WSAA: no token/sign en respuesta:\n${xml.substring(0, 500)}`)
+
+  const expiresAt = expStr ? new Date(expStr) : new Date(Date.now() + 43_200_000)
+  return { token, sign, expiresAt }
+}
+
+/**
+ * Obtiene un ticket WSAA válido para la config dada.
+ * Si el token cacheado en la DB sigue vigente (con 5min de margen), lo devuelve directamente.
+ */
+export async function getWSAATicket(config: ArcaConfig): Promise<{ token: string; sign: string }> {
+  // Usar token cacheado si no expiró
+  if (config.wsaa_token && config.wsaa_sign && config.wsaa_expires_at) {
+    const expires = new Date(config.wsaa_expires_at)
+    if (expires > new Date(Date.now() + 5 * 60_000)) {
+      return { token: config.wsaa_token, sign: config.wsaa_sign }
+    }
+  }
+
+  const certPem = config.cert_pem || config.certificado_pem
+  const keyPem  = config.clave_pem
+
+  if (!certPem || !keyPem) {
+    throw new Error("Faltan certificado o clave privada en la configuración ARCA. Completá los datos en Configuración.")
+  }
+
+  const tra = buildTRA("wsfe")
+  const cms = await signTRA(tra, certPem, keyPem)
+  const { token, sign, expiresAt } = await callWSAA(cms, config.ambiente)
+
+  // Cachear en DB
   const supabase = await createClient()
   await supabase
     .from("arca_config")
-    .update({
-      wsaa_token: token,
-      wsaa_sign: sign,
-      wsaa_expires_at: expiresAt.toISOString(),
-      updated_at: new Date().toISOString(),
-    })
+    .update({ wsaa_token: token, wsaa_sign: sign, wsaa_expires_at: expiresAt.toISOString(), updated_at: new Date().toISOString() })
     .eq("id", config.id)
 
   return { token, sign }

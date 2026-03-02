@@ -5,790 +5,690 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Textarea } from "@/components/ui/textarea"
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select"
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog"
-import {
-  Tabs, TabsContent, TabsList, TabsTrigger,
-} from "@/components/ui/tabs"
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table"
-import {
-  FileText, Plus, Settings, RefreshCw, Download, Eye,
-  CheckCircle, AlertCircle, Clock, Trash2,
+  FileText, Plus, Settings, RefreshCw, Download, Search,
+  CheckCircle2, XCircle, Clock, Trash2, ChevronLeft, ChevronRight, Building2, Receipt
 } from "lucide-react"
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-type ArcaConfig = {
+interface ArcaConfig {
   id: string
   cuit: string
   razon_social: string
-  domicilio_fiscal: string | null
+  domicilio_fiscal: string
   punto_venta: number
   condicion_iva: string
   ambiente: string
   wsaa_expires_at: string | null
 }
 
-type FacturaItem = {
+interface FacturaItem {
   descripcion: string
   cantidad: number
-  precio_unit: number
+  precio_unitario: number
   alicuota_iva: 0 | 10.5 | 21 | 27
+  subtotal: number
+  iva: number
 }
 
-type Factura = {
+interface Factura {
   id: string
   tipo_comprobante: number
   punto_venta: number
   numero: number
-  fecha_emision: string
-  receptor_nombre: string
-  receptor_nro_doc: string | null
-  total: number
+  fecha: string
   cae: string | null
-  cae_vto: string | null
+  cae_vencimiento: string | null
+  razon_social_receptor: string
+  nro_doc_receptor: string
+  importe_total: number
+  importe_neto: number
+  importe_iva: number
   estado: string
-  error_msg: string | null
+  error_mensaje: string | null
   items: FacturaItem[]
-  subtotal: number
-  iva_105: number
-  iva_21: number
-  iva_27: number
   created_at: string
 }
 
-// ─── Constants ───────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const TIPO_LABELS: Record<number, string> = {
-  1: "Factura A", 6: "Factura B", 11: "Factura C",
-  2: "NC A", 7: "NC B", 12: "NC C",
-  3: "ND A", 8: "ND B", 13: "ND C",
+const TIPO_COMPROBANTE: Record<number, { letra: string; label: string }> = {
+  1:  { letra: "A", label: "Factura A" },
+  6:  { letra: "B", label: "Factura B" },
+  11: { letra: "C", label: "Factura C" },
 }
 
-function formatNro(ptoVenta: number, numero: number) {
-  return `${String(ptoVenta).padStart(4,"0")}-${String(numero).padStart(8,"0")}`
+const CONDICION_IVA_OPTS = [
+  { value: "responsable_inscripto", label: "Responsable Inscripto" },
+  { value: "monotributo",           label: "Monotributista" },
+  { value: "exento",                label: "IVA Exento" },
+  { value: "consumidor_final",      label: "Consumidor Final" },
+]
+
+const TIPO_DOC_OPTS = [
+  { value: "99", label: "Sin documento" },
+  { value: "96", label: "DNI" },
+  { value: "80", label: "CUIT" },
+  { value: "86", label: "CUIL" },
+]
+
+const IVA_OPTS: Array<{ value: 0 | 10.5 | 21 | 27; label: string }> = [
+  { value: 0,    label: "Exento (0%)" },
+  { value: 10.5, label: "10.5%" },
+  { value: 21,   label: "21%" },
+  { value: 27,   label: "27%" },
+]
+
+function fmtMoney(n: number) {
+  return new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(n)
 }
 
-function formatDate(d: string) {
-  if (!d) return "—"
-  const dt = new Date(d)
-  return dt.toLocaleDateString("es-AR", { day:"2-digit", month:"2-digit", year:"numeric" })
+function fmtFecha(s: string) {
+  if (!s) return "—"
+  const [y, m, d] = s.slice(0, 10).split("-")
+  return `${d}/${m}/${y}`
+}
+
+function nroFmt(pv: number, num: number) {
+  return `${String(pv).padStart(4, "0")}-${String(num).padStart(8, "0")}`
 }
 
 function estadoBadge(estado: string) {
-  if (estado === "emitida") return (
-    <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 gap-1">
-      <CheckCircle className="h-3 w-3" /> Emitida
-    </Badge>
-  )
-  if (estado === "error") return (
-    <Badge className="bg-red-500/15 text-red-400 border-red-500/30 gap-1">
-      <AlertCircle className="h-3 w-3" /> Error
-    </Badge>
-  )
-  return (
-    <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/30 gap-1">
-      <Clock className="h-3 w-3" /> Pendiente
-    </Badge>
-  )
+  if (estado === "emitida")   return <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/30 text-xs">Emitida</Badge>
+  if (estado === "pendiente") return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/30 text-xs">Pendiente</Badge>
+  if (estado === "error")     return <Badge className="bg-red-500/15 text-red-400 border-red-500/30 text-xs">Error</Badge>
+  return <Badge className="bg-muted text-muted-foreground text-xs">{estado}</Badge>
 }
 
-// ─── Item Row ─────────────────────────────────────────────────────────────────
-
-function ItemRow({
-  item, index, onChange, onRemove,
-}: {
-  item: FacturaItem
-  index: number
-  onChange: (i: number, field: keyof FacturaItem, value: any) => void
-  onRemove: (i: number) => void
-}) {
-  const subtotal = item.cantidad * item.precio_unit
-  const ivaAmt   = subtotal * (item.alicuota_iva / 100)
-
-  return (
-    <div className="grid grid-cols-12 gap-2 items-end">
-      <div className="col-span-4">
-        <Input
-          placeholder="Descripción"
-          value={item.descripcion}
-          onChange={e => onChange(index, "descripcion", e.target.value)}
-          className="h-8 text-sm"
-        />
-      </div>
-      <div className="col-span-2">
-        <Input
-          type="number" min="1" step="1"
-          placeholder="Cant."
-          value={item.cantidad}
-          onChange={e => onChange(index, "cantidad", Number(e.target.value))}
-          className="h-8 text-sm"
-        />
-      </div>
-      <div className="col-span-2">
-        <Input
-          type="number" min="0" step="0.01"
-          placeholder="Precio"
-          value={item.precio_unit}
-          onChange={e => onChange(index, "precio_unit", Number(e.target.value))}
-          className="h-8 text-sm"
-        />
-      </div>
-      <div className="col-span-2">
-        <Select
-          value={String(item.alicuota_iva)}
-          onValueChange={v => onChange(index, "alicuota_iva", Number(v))}
-        >
-          <SelectTrigger className="h-8 text-sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="0">0%</SelectItem>
-            <SelectItem value="10.5">10.5%</SelectItem>
-            <SelectItem value="21">21%</SelectItem>
-            <SelectItem value="27">27%</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="col-span-1 text-right text-xs text-muted-foreground pt-2">
-        ${(subtotal + ivaAmt).toFixed(2)}
-      </div>
-      <div className="col-span-1 flex justify-end">
-        <Button
-          variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-red-400"
-          onClick={() => onRemove(index)}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-    </div>
-  )
+function calcItem(item: Partial<FacturaItem>): FacturaItem {
+  const cantidad   = Number(item.cantidad || 0)
+  const precio     = Number(item.precio_unitario || 0)
+  const alicuota   = Number(item.alicuota_iva ?? 21) as 0 | 10.5 | 21 | 27
+  const subtotal   = parseFloat((cantidad * precio).toFixed(2))
+  const iva        = alicuota === 0 ? 0 : parseFloat((subtotal * alicuota / 100).toFixed(2))
+  return {
+    descripcion:     item.descripcion || "",
+    cantidad,
+    precio_unitario: precio,
+    alicuota_iva:    alicuota,
+    subtotal,
+    iva,
+  }
 }
+
+const EMPTY_ITEM = (): Partial<FacturaItem> => ({
+  descripcion: "", cantidad: 1, precio_unitario: 0, alicuota_iva: 21, subtotal: 0, iva: 0,
+})
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function BillingPage() {
-  const [config, setConfig]           = useState<ArcaConfig | null>(null)
-  const [facturas, setFacturas]       = useState<Factura[]>([])
-  const [total, setTotal]             = useState(0)
-  const [loading, setLoading]         = useState(true)
-  const [configLoading, setConfigLoading] = useState(false)
-  const [emitLoading, setEmitLoading] = useState(false)
-  const [error, setError]             = useState<string | null>(null)
-  const [success, setSuccess]         = useState<string | null>(null)
-  const [filterEstado, setFilterEstado] = useState("all")
-  const [previewHtml, setPreviewHtml] = useState<string | null>(null)
-  const [selectedFactura, setSelectedFactura] = useState<Factura | null>(null)
-  const [showNewModal, setShowNewModal] = useState(false)
+  const [activeTab, setActiveTab] = useState("facturas")
 
-  // Config form
-  const [cfgForm, setCfgForm] = useState({
+  // Config
+  const [config, setConfig]           = useState<ArcaConfig | null>(null)
+  const [loadingConfig, setLoadingConfig] = useState(true)
+  const [savingConfig, setSavingConfig]   = useState(false)
+  const [configForm, setConfigForm]   = useState({
     cuit: "", razon_social: "", domicilio_fiscal: "", punto_venta: "1",
     condicion_iva: "responsable_inscripto", ambiente: "homologacion",
-    certificado_pem: "", clave_pem: "",
+    cert_pem: "", clave_pem: "",
   })
+  const [configMsg, setConfigMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null)
 
-  // Nueva factura form
-  const [nfForm, setNfForm] = useState({
-    tipo_comprobante: "11",
-    receptor_nombre: "", receptor_tipo_doc: "96", receptor_nro_doc: "",
-    receptor_domicilio: "", receptor_condicion_iva: "consumidor_final",
+  // Facturas
+  const [facturas, setFacturas]   = useState<Factura[]>([])
+  const [total, setTotal]         = useState(0)
+  const [page, setPage]           = useState(0)
+  const [loadingF, setLoadingF]   = useState(false)
+  const [searchQ, setSearchQ]     = useState("")
+  const [filterEstado, setFilterEstado] = useState("all")
+  const LIMIT = 20
+
+  // Nueva factura
+  const [showNew, setShowNew]     = useState(false)
+  const [emitting, setEmitting]   = useState(false)
+  const [emitError, setEmitError] = useState<string | null>(null)
+  const [newForm, setNewForm]     = useState({
+    tipo_comprobante: "6",
+    concepto: "1",
+    tipo_doc_receptor: "99",
+    nro_doc_receptor: "",
+    receptor_nombre: "",
+    receptor_domicilio: "",
+    receptor_condicion_iva: "consumidor_final",
+    moneda: "PES",
   })
-  const [nfItems, setNfItems] = useState<FacturaItem[]>([
-    { descripcion: "", cantidad: 1, precio_unit: 0, alicuota_iva: 21 },
-  ])
+  const [items, setItems]         = useState<Partial<FacturaItem>[]>([EMPTY_ITEM()])
 
-  // ── Fetch ──────────────────────────────────────────────────────────────────
+  // ── Data loading ──────────────────────────────────────────────────────────
 
-  const fetchConfig = useCallback(async () => {
-    const res = await fetch("/api/billing/config")
-    const d   = await res.json()
-    if (d.config) {
-      setConfig(d.config)
-      setCfgForm(prev => ({
-        ...prev,
-        cuit:             d.config.cuit ?? "",
-        razon_social:     d.config.razon_social ?? "",
-        domicilio_fiscal: d.config.domicilio_fiscal ?? "",
-        punto_venta:      String(d.config.punto_venta ?? 1),
-        condicion_iva:    d.config.condicion_iva ?? "responsable_inscripto",
-        ambiente:         d.config.ambiente ?? "homologacion",
-      }))
+  const loadConfig = useCallback(async () => {
+    setLoadingConfig(true)
+    try {
+      const r = await fetch("/api/billing/config")
+      const d = await r.json()
+      if (d.config) {
+        setConfig(d.config)
+        setConfigForm(prev => ({
+          ...prev,
+          cuit:             d.config.cuit || "",
+          razon_social:     d.config.razon_social || "",
+          domicilio_fiscal: d.config.domicilio_fiscal || "",
+          punto_venta:      String(d.config.punto_venta || "1"),
+          condicion_iva:    d.config.condicion_iva || "responsable_inscripto",
+          ambiente:         d.config.ambiente || "homologacion",
+        }))
+      }
+    } finally {
+      setLoadingConfig(false)
     }
   }, [])
 
-  const fetchFacturas = useCallback(async () => {
-    const estado = filterEstado !== "all" ? `&estado=${filterEstado}` : ""
-    const res  = await fetch(`/api/billing/facturas?page=1&limit=50${estado}`)
-    const d    = await res.json()
-    setFacturas(d.facturas ?? [])
-    setTotal(d.total ?? 0)
-  }, [filterEstado])
+  const loadFacturas = useCallback(async (p = 0) => {
+    setLoadingF(true)
+    try {
+      const params = new URLSearchParams({
+        page: String(p + 1), limit: String(LIMIT),
+        ...(filterEstado !== "all" && { estado: filterEstado }),
+        ...(searchQ && { q: searchQ }),
+      })
+      const r = await fetch(`/api/billing/facturas?${params}`)
+      const d = await r.json()
+      if (d.ok) { setFacturas(d.facturas); setTotal(d.total) }
+    } finally {
+      setLoadingF(false)
+    }
+  }, [filterEstado, searchQ])
 
-  useEffect(() => {
-    Promise.all([fetchConfig(), fetchFacturas()]).finally(() => setLoading(false))
-  }, [fetchConfig, fetchFacturas])
+  useEffect(() => { loadConfig() }, [loadConfig])
+  useEffect(() => { loadFacturas(page) }, [loadFacturas, page])
 
-  useEffect(() => { if (!loading) fetchFacturas() }, [filterEstado])
-
-  // ── Config save ────────────────────────────────────────────────────────────
+  // ── Config save ───────────────────────────────────────────────────────────
 
   const saveConfig = async () => {
-    setConfigLoading(true); setError(null); setSuccess(null)
+    setSavingConfig(true); setConfigMsg(null)
     try {
-      const res = await fetch("/api/billing/config", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(cfgForm),
+      const r = await fetch("/api/billing/config", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(configForm),
       })
-      const d = await res.json()
-      if (!d.ok) throw new Error(d.error)
-      setSuccess("Configuración guardada correctamente")
-      fetchConfig()
-    } catch (e: any) {
-      setError(e.message)
+      const d = await r.json()
+      if (d.ok) { setConfigMsg({ type: "ok", text: "Configuración guardada correctamente." }); loadConfig() }
+      else setConfigMsg({ type: "err", text: d.error || "Error al guardar" })
     } finally {
-      setConfigLoading(false)
+      setSavingConfig(false)
     }
   }
 
-  // ── Emit factura ───────────────────────────────────────────────────────────
+  // ── Emitir factura ────────────────────────────────────────────────────────
 
-  const emitFactura = async () => {
-    setEmitLoading(true); setError(null); setSuccess(null)
+  const emitirFactura = async () => {
+    setEmitting(true); setEmitError(null)
     try {
-      const res = await fetch("/api/billing/facturas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...nfForm, items: nfItems }),
+      const typedItems = items.map(calcItem).filter(i => i.descripcion && i.cantidad > 0)
+      if (!typedItems.length) { setEmitError("Agregá al menos un ítem con descripción y cantidad."); setEmitting(false); return }
+
+      const r = await fetch("/api/billing/facturas", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...newForm, items: typedItems }),
       })
-      const d = await res.json()
-      if (!d.ok) throw new Error(d.error)
-      setSuccess(`Factura emitida. CAE: ${d.cae} | Vto: ${d.cae_vto}`)
-      setShowNewModal(false)
-      setPreviewHtml(d.pdf_html)
-      fetchFacturas()
-      // Reset form
-      setNfForm({ tipo_comprobante: "11", receptor_nombre: "", receptor_tipo_doc: "96", receptor_nro_doc: "", receptor_domicilio: "", receptor_condicion_iva: "consumidor_final" })
-      setNfItems([{ descripcion: "", cantidad: 1, precio_unit: 0, alicuota_iva: 21 }])
-    } catch (e: any) {
-      setError(e.message)
+      const d = await r.json()
+      if (d.ok) {
+        setShowNew(false)
+        setNewForm({ tipo_comprobante: "6", concepto: "1", tipo_doc_receptor: "99", nro_doc_receptor: "", receptor_nombre: "", receptor_domicilio: "", receptor_condicion_iva: "consumidor_final", moneda: "PES" })
+        setItems([EMPTY_ITEM()])
+        loadFacturas(0); setPage(0)
+      } else {
+        setEmitError(d.error || "Error al emitir")
+      }
     } finally {
-      setEmitLoading(false)
+      setEmitting(false)
     }
   }
 
-  // ── Items helpers ──────────────────────────────────────────────────────────
+  // ── Items helpers ─────────────────────────────────────────────────────────
 
-  const updateItem = (i: number, field: keyof FacturaItem, value: any) => {
-    setNfItems(prev => prev.map((it, idx) => idx === i ? { ...it, [field]: value } : it))
+  const updateItem = (idx: number, field: keyof FacturaItem, value: any) => {
+    setItems(prev => prev.map((it, i) => i === idx ? { ...it, [field]: value } : it))
   }
 
-  const addItem = () => {
-    setNfItems(prev => [...prev, { descripcion: "", cantidad: 1, precio_unit: 0, alicuota_iva: 21 }])
-  }
+  const addItem = () => setItems(prev => [...prev, EMPTY_ITEM()])
+  const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx))
 
-  const removeItem = (i: number) => {
-    setNfItems(prev => prev.filter((_, idx) => idx !== i))
-  }
+  const calcedItems = items.map(calcItem)
+  const totales = calcedItems.reduce(
+    (acc, i) => ({
+      subtotal: acc.subtotal + i.subtotal,
+      iva:      acc.iva + i.iva,
+      total:    acc.total + i.subtotal + i.iva,
+    }),
+    { subtotal: 0, iva: 0, total: 0 }
+  )
 
-  // ── Totales preview ────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
 
-  const totalesPreview = nfItems.reduce((acc, it) => {
-    const base = it.cantidad * it.precio_unit
-    const iva  = base * (it.alicuota_iva / 100)
-    return { subtotal: acc.subtotal + base, total: acc.total + base + iva }
-  }, { subtotal: 0, total: 0 })
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
+  const totalPages = Math.ceil(total / LIMIT)
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
-
-        {/* Header */}
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Facturación Electrónica</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Emisión de comprobantes fiscales electrónicos via ARCA/AFIP
-            </p>
-          </div>
-          <Button
-            onClick={() => setShowNewModal(true)}
-            disabled={!config}
-            className="gap-2"
-          >
-            <Plus className="h-4 w-4" />
-            Nueva factura
-          </Button>
+    <div className="flex flex-col gap-6 p-6">
+      {/* Header */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground text-balance">Facturación Electrónica</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Emisión de comprobantes electrónicos via ARCA (ex-AFIP) — Webservice WSFE v1
+          </p>
         </div>
-
-        {/* Alerts */}
-        {error && (
-          <div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
-            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-        {success && (
-          <div className="flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-400">
-            <CheckCircle className="h-4 w-4 mt-0.5 shrink-0" />
-            <span>{success}</span>
-          </div>
-        )}
-
-        {/* No config warning */}
-        {!config && (
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-400">
-            <strong>Configuración ARCA pendiente</strong> — Completá los datos en la pestaña "Configuración" para poder emitir facturas.
-          </div>
-        )}
-
-        <Tabs defaultValue="facturas">
-          <TabsList className="border-b border-border bg-transparent w-full justify-start rounded-none gap-0 h-auto pb-0">
-            <TabsTrigger value="facturas" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary pb-2">
-              <FileText className="h-4 w-4 mr-2" /> Facturas
-            </TabsTrigger>
-            <TabsTrigger value="config" className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary pb-2">
-              <Settings className="h-4 w-4 mr-2" /> Configuración ARCA
-            </TabsTrigger>
-          </TabsList>
-
-          {/* ── Tab: Facturas ─────────────────────────────────────────────── */}
-          <TabsContent value="facturas" className="mt-4 space-y-4">
-
-            {/* Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {[
-                { label: "Total emitidas",  value: facturas.filter(f => f.estado === "emitida").length, color: "text-emerald-400" },
-                { label: "Total registros", value: total,                                                color: "text-foreground" },
-                { label: "Con error",       value: facturas.filter(f => f.estado === "error").length,   color: "text-red-400" },
-                { label: "Facturado",
-                  value: `$${facturas.filter(f => f.estado === "emitida").reduce((s, f) => s + f.total, 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`,
-                  color: "text-foreground" },
-              ].map(s => (
-                <div key={s.label} className="rounded-lg border border-border bg-card p-4">
-                  <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">{s.label}</p>
-                  <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Filter */}
-            <div className="flex items-center gap-3">
-              <Select value={filterEstado} onValueChange={setFilterEstado}>
-                <SelectTrigger className="w-44 h-8 text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos los estados</SelectItem>
-                  <SelectItem value="emitida">Emitidas</SelectItem>
-                  <SelectItem value="pendiente">Pendientes</SelectItem>
-                  <SelectItem value="error">Con error</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button variant="ghost" size="sm" onClick={fetchFacturas} className="gap-1.5">
-                <RefreshCw className="h-3.5 w-3.5" /> Actualizar
-              </Button>
-              <span className="ml-auto text-xs text-muted-foreground">{total} registros</span>
-            </div>
-
-            {/* Table */}
-            <div className="rounded-lg border border-border overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-border bg-card hover:bg-card">
-                    <TableHead>Tipo</TableHead>
-                    <TableHead>Número</TableHead>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Receptor</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead>CAE</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {facturas.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center text-muted-foreground py-10">
-                        No hay facturas registradas
-                      </TableCell>
-                    </TableRow>
-                  ) : facturas.map(f => (
-                    <TableRow key={f.id} className="border-border hover:bg-muted/30">
-                      <TableCell className="font-medium text-sm">{TIPO_LABELS[f.tipo_comprobante] ?? f.tipo_comprobante}</TableCell>
-                      <TableCell className="font-mono text-xs">{formatNro(f.punto_venta, f.numero)}</TableCell>
-                      <TableCell className="text-sm">{formatDate(f.fecha_emision)}</TableCell>
-                      <TableCell className="text-sm">
-                        <div className="max-w-[160px] truncate">{f.receptor_nombre}</div>
-                        {f.receptor_nro_doc && <div className="text-xs text-muted-foreground">{f.receptor_nro_doc}</div>}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        ${f.total.toLocaleString("es-AR", { minimumFractionDigits: 2 })}
-                      </TableCell>
-                      <TableCell>
-                        {f.cae
-                          ? <span className="font-mono text-xs text-muted-foreground">{f.cae}</span>
-                          : <span className="text-xs text-muted-foreground">—</span>}
-                      </TableCell>
-                      <TableCell>{estadoBadge(f.estado)}</TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost" size="icon" className="h-7 w-7"
-                          onClick={() => setSelectedFactura(f)}
-                          title="Ver detalle"
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </TabsContent>
-
-          {/* ── Tab: Config ───────────────────────────────────────────────── */}
-          <TabsContent value="config" className="mt-4">
-            <div className="max-w-2xl space-y-6">
-              <div className="rounded-lg border border-border bg-card p-6 space-y-4">
-                <h2 className="font-semibold">Datos del Emisor</h2>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="cuit">CUIT <span className="text-red-400">*</span></Label>
-                    <Input
-                      id="cuit" placeholder="20-12345678-9"
-                      value={cfgForm.cuit}
-                      onChange={e => setCfgForm(p => ({ ...p, cuit: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="punto_venta">Punto de Venta <span className="text-red-400">*</span></Label>
-                    <Input
-                      id="punto_venta" type="number" min="1" max="9999"
-                      value={cfgForm.punto_venta}
-                      onChange={e => setCfgForm(p => ({ ...p, punto_venta: e.target.value }))}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="razon_social">Razón Social <span className="text-red-400">*</span></Label>
-                  <Input
-                    id="razon_social" placeholder="Mi Empresa S.R.L."
-                    value={cfgForm.razon_social}
-                    onChange={e => setCfgForm(p => ({ ...p, razon_social: e.target.value }))}
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="domicilio_fiscal">Domicilio Fiscal</Label>
-                  <Input
-                    id="domicilio_fiscal" placeholder="Av. Siempreviva 742, Buenos Aires"
-                    value={cfgForm.domicilio_fiscal}
-                    onChange={e => setCfgForm(p => ({ ...p, domicilio_fiscal: e.target.value }))}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label>Condición IVA</Label>
-                    <Select
-                      value={cfgForm.condicion_iva}
-                      onValueChange={v => setCfgForm(p => ({ ...p, condicion_iva: v }))}
-                    >
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="responsable_inscripto">Responsable Inscripto</SelectItem>
-                        <SelectItem value="monotributo">Monotributo</SelectItem>
-                        <SelectItem value="exento">Exento</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Ambiente</Label>
-                    <Select
-                      value={cfgForm.ambiente}
-                      onValueChange={v => setCfgForm(p => ({ ...p, ambiente: v }))}
-                    >
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="homologacion">Homologación (pruebas)</SelectItem>
-                        <SelectItem value="produccion">Producción</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-border bg-card p-6 space-y-4">
-                <div>
-                  <h2 className="font-semibold">Certificado Digital ARCA</h2>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Generá el certificado en el portal de ARCA (Servicios &rarr; Administración de Certificados Digitales) y pegá el contenido acá. Solo necesitás actualizarlo cuando el certificado venza.
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="cert">Certificado (.pem)</Label>
-                  <textarea
-                    id="cert"
-                    rows={5}
-                    placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-xs font-mono resize-y min-h-[80px] focus:outline-none focus:ring-1 focus:ring-ring"
-                    value={cfgForm.certificado_pem}
-                    onChange={e => setCfgForm(p => ({ ...p, certificado_pem: e.target.value }))}
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="key">Clave Privada (.pem)</Label>
-                  <textarea
-                    id="key"
-                    rows={5}
-                    placeholder={"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"}
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-xs font-mono resize-y min-h-[80px] focus:outline-none focus:ring-1 focus:ring-ring"
-                    value={cfgForm.clave_pem}
-                    onChange={e => setCfgForm(p => ({ ...p, clave_pem: e.target.value }))}
-                  />
-                </div>
-
-                {config?.wsaa_expires_at && (
-                  <div className="text-xs text-muted-foreground">
-                    Token WSAA válido hasta: <strong>{formatDate(config.wsaa_expires_at)}</strong>
-                  </div>
-                )}
-              </div>
-
-              <Button onClick={saveConfig} disabled={configLoading} className="gap-2">
-                {configLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
-                Guardar configuración
-              </Button>
-            </div>
-          </TabsContent>
-        </Tabs>
+        <Button
+          onClick={() => { if (!config) { setActiveTab("config") } else { setShowNew(true) } }}
+          className="gap-2"
+          size="sm"
+        >
+          <Plus className="h-4 w-4" />
+          Nueva factura
+        </Button>
       </div>
 
-      {/* ── Modal: Nueva Factura ──────────────────────────────────────────── */}
-      <Dialog open={showNewModal} onOpenChange={setShowNewModal}>
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Total emitidas</p>
+          <p className="text-2xl font-bold">{total.toLocaleString("es-AR")}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Estado ARCA</p>
+          {config ? (
+            <div className="flex items-center gap-2 mt-1">
+              <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+              <span className="text-sm font-semibold text-emerald-400">
+                {config.ambiente === "produccion" ? "Producción" : "Homologación"}
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 mt-1">
+              <XCircle className="h-5 w-5 text-amber-400" />
+              <span className="text-sm font-semibold text-amber-400">Sin configurar</span>
+            </div>
+          )}
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">CUIT</p>
+          <p className="text-sm font-mono font-semibold">{config?.cuit || "—"}</p>
+        </div>
+        <div className="rounded-lg border border-border bg-card p-4">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Punto de venta</p>
+          <p className="text-2xl font-bold">{config ? String(config.punto_venta).padStart(4, "0") : "—"}</p>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="mb-4">
+          <TabsTrigger value="facturas" className="gap-2"><Receipt className="h-4 w-4" />Facturas</TabsTrigger>
+          <TabsTrigger value="config"   className="gap-2"><Settings className="h-4 w-4" />Configuración ARCA</TabsTrigger>
+        </TabsList>
+
+        {/* ── Facturas tab ── */}
+        <TabsContent value="facturas">
+          {!config && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 mb-4 flex items-center gap-3">
+              <Building2 className="h-5 w-5 text-amber-400 flex-shrink-0" />
+              <p className="text-sm text-amber-300">
+                Para emitir facturas primero completá los datos en la pestaña{" "}
+                <button onClick={() => setActiveTab("config")} className="underline font-semibold">Configuración ARCA</button>.
+              </p>
+            </div>
+          )}
+
+          {/* Filtros */}
+          <div className="flex gap-2 mb-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Buscar por receptor, CUIT, CAE..."
+                className="pl-9"
+                value={searchQ}
+                onChange={e => { setSearchQ(e.target.value); setPage(0) }}
+              />
+            </div>
+            <Select value={filterEstado} onValueChange={v => { setFilterEstado(v); setPage(0) }}>
+              <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas</SelectItem>
+                <SelectItem value="emitida">Emitidas</SelectItem>
+                <SelectItem value="pendiente">Pendientes</SelectItem>
+                <SelectItem value="error">Con error</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="icon" onClick={() => loadFacturas(page)}>
+              <RefreshCw className={`h-4 w-4 ${loadingF ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
+
+          {/* Tabla */}
+          <div className="rounded-lg border border-border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/30">
+                  <th className="p-3 text-left text-xs font-medium text-muted-foreground uppercase">Tipo</th>
+                  <th className="p-3 text-left text-xs font-medium text-muted-foreground uppercase">N° Comprobante</th>
+                  <th className="p-3 text-left text-xs font-medium text-muted-foreground uppercase">Fecha</th>
+                  <th className="p-3 text-left text-xs font-medium text-muted-foreground uppercase">Receptor</th>
+                  <th className="p-3 text-right text-xs font-medium text-muted-foreground uppercase hidden md:table-cell">Total</th>
+                  <th className="p-3 text-left text-xs font-medium text-muted-foreground uppercase">Estado</th>
+                  <th className="p-3 text-left text-xs font-medium text-muted-foreground uppercase hidden lg:table-cell">CAE</th>
+                  <th className="p-3 w-10"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {loadingF ? (
+                  <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">Cargando...</td></tr>
+                ) : facturas.length === 0 ? (
+                  <tr><td colSpan={8} className="p-12 text-center text-muted-foreground">
+                    <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                    <p>No hay facturas emitidas</p>
+                  </td></tr>
+                ) : facturas.map(f => (
+                  <tr key={f.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+                    <td className="p-3">
+                      <span className="inline-flex items-center justify-center w-7 h-7 rounded border-2 border-current font-bold text-sm font-mono">
+                        {TIPO_COMPROBANTE[f.tipo_comprobante]?.letra || "?"}
+                      </span>
+                    </td>
+                    <td className="p-3 font-mono text-xs">{nroFmt(f.punto_venta, f.numero)}</td>
+                    <td className="p-3 text-muted-foreground text-xs">{fmtFecha(f.fecha)}</td>
+                    <td className="p-3">
+                      <p className="font-medium leading-tight">{f.razon_social_receptor}</p>
+                      <p className="text-xs text-muted-foreground">{f.nro_doc_receptor}</p>
+                    </td>
+                    <td className="p-3 text-right font-mono font-semibold hidden md:table-cell">
+                      {fmtMoney(Number(f.importe_total))}
+                    </td>
+                    <td className="p-3">{estadoBadge(f.estado)}</td>
+                    <td className="p-3 font-mono text-xs text-muted-foreground hidden lg:table-cell">
+                      {f.cae || "—"}
+                    </td>
+                    <td className="p-3">
+                      {f.cae && (
+                        <Button
+                          variant="ghost" size="icon" className="h-7 w-7"
+                          title="Ver factura"
+                          onClick={() => window.open(`/api/billing/facturas/${f.id}/pdf`, "_blank")}
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Paginación */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4">
+              <span className="text-sm text-muted-foreground">
+                {total.toLocaleString("es-AR")} facturas — Página {page + 1} de {totalPages}
+              </span>
+              <div className="flex gap-1">
+                <Button variant="outline" size="icon" disabled={page === 0} onClick={() => setPage(p => p - 1)}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button variant="outline" size="icon" disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── Config tab ── */}
+        <TabsContent value="config">
+          <div className="max-w-2xl space-y-5">
+            <div className="rounded-lg border border-border bg-card p-5">
+              <h3 className="font-semibold mb-4 flex items-center gap-2"><Building2 className="h-4 w-4" />Datos del emisor</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label>CUIT (sin guiones)</Label>
+                  <Input placeholder="20123456780" value={configForm.cuit} onChange={e => setConfigForm(p => ({ ...p, cuit: e.target.value }))} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Punto de venta</Label>
+                  <Input type="number" min="1" max="9999" placeholder="1" value={configForm.punto_venta} onChange={e => setConfigForm(p => ({ ...p, punto_venta: e.target.value }))} />
+                </div>
+                <div className="col-span-2 space-y-1.5">
+                  <Label>Razón social</Label>
+                  <Input placeholder="Mi Empresa S.R.L." value={configForm.razon_social} onChange={e => setConfigForm(p => ({ ...p, razon_social: e.target.value }))} />
+                </div>
+                <div className="col-span-2 space-y-1.5">
+                  <Label>Domicilio fiscal</Label>
+                  <Input placeholder="Av. Corrientes 1234, CABA" value={configForm.domicilio_fiscal} onChange={e => setConfigForm(p => ({ ...p, domicilio_fiscal: e.target.value }))} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Condición frente al IVA</Label>
+                  <Select value={configForm.condicion_iva} onValueChange={v => setConfigForm(p => ({ ...p, condicion_iva: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {CONDICION_IVA_OPTS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Ambiente</Label>
+                  <Select value={configForm.ambiente} onValueChange={v => setConfigForm(p => ({ ...p, ambiente: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="homologacion">Homologación (pruebas)</SelectItem>
+                      <SelectItem value="produccion">Producción</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border bg-card p-5">
+              <h3 className="font-semibold mb-1 flex items-center gap-2"><FileText className="h-4 w-4" />Certificado digital</h3>
+              <p className="text-xs text-muted-foreground mb-4">
+                El certificado .pem y la clave privada se obtienen al dar de alta el servicio en el portal de ARCA.
+                Se guardan encriptados y se usan para autenticarse en el WSAA.
+              </p>
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label>Certificado (.pem)</Label>
+                  <Textarea
+                    placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
+                    className="font-mono text-xs h-28 resize-none"
+                    value={configForm.cert_pem}
+                    onChange={e => setConfigForm(p => ({ ...p, cert_pem: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Clave privada (.pem)</Label>
+                  <Textarea
+                    placeholder="-----BEGIN PRIVATE KEY-----&#10;...&#10;-----END PRIVATE KEY-----"
+                    className="font-mono text-xs h-28 resize-none"
+                    value={configForm.clave_pem}
+                    onChange={e => setConfigForm(p => ({ ...p, clave_pem: e.target.value }))}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {configMsg && (
+              <div className={`rounded-lg border p-3 text-sm flex items-center gap-2 ${configMsg.type === "ok" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : "border-red-500/30 bg-red-500/10 text-red-400"}`}>
+                {configMsg.type === "ok" ? <CheckCircle2 className="h-4 w-4 flex-shrink-0" /> : <XCircle className="h-4 w-4 flex-shrink-0" />}
+                {configMsg.text}
+              </div>
+            )}
+
+            <Button onClick={saveConfig} disabled={savingConfig} className="gap-2">
+              {savingConfig ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Settings className="h-4 w-4" />}
+              {savingConfig ? "Guardando..." : "Guardar configuración"}
+            </Button>
+          </div>
+        </TabsContent>
+      </Tabs>
+
+      {/* ── Modal nueva factura ── */}
+      <Dialog open={showNew} onOpenChange={setShowNew}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Nueva Factura Electrónica</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Receipt className="h-5 w-5" />Nueva factura electrónica</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-5 pt-2">
+          <div className="space-y-5 py-2">
             {/* Tipo comprobante */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
-                <Label>Tipo de Comprobante</Label>
-                <Select
-                  value={nfForm.tipo_comprobante}
-                  onValueChange={v => setNfForm(p => ({ ...p, tipo_comprobante: v }))}
-                >
+                <Label>Tipo de comprobante</Label>
+                <Select value={newForm.tipo_comprobante} onValueChange={v => setNewForm(p => ({ ...p, tipo_comprobante: v }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="11">Factura C (Monotributo)</SelectItem>
-                    <SelectItem value="6">Factura B (RI a CF)</SelectItem>
-                    <SelectItem value="1">Factura A (RI a RI)</SelectItem>
+                    <SelectItem value="6">Factura B</SelectItem>
+                    <SelectItem value="11">Factura C</SelectItem>
+                    <SelectItem value="1">Factura A</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Concepto</Label>
+                <Select value={newForm.concepto} onValueChange={v => setNewForm(p => ({ ...p, concepto: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">Productos</SelectItem>
+                    <SelectItem value="2">Servicios</SelectItem>
+                    <SelectItem value="3">Productos y Servicios</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
             {/* Receptor */}
-            <div className="space-y-3">
-              <h3 className="text-sm font-semibold border-b border-border pb-1">Receptor</h3>
+            <div className="rounded-lg border border-border p-4 space-y-3">
+              <h4 className="font-medium text-sm">Datos del receptor</h4>
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label>Nombre / Razón Social <span className="text-red-400">*</span></Label>
-                  <Input
-                    placeholder="Juan García"
-                    value={nfForm.receptor_nombre}
-                    onChange={e => setNfForm(p => ({ ...p, receptor_nombre: e.target.value }))}
-                  />
+                <div className="col-span-2 space-y-1.5">
+                  <Label>Nombre / Razón social</Label>
+                  <Input placeholder="Juan García" value={newForm.receptor_nombre} onChange={e => setNewForm(p => ({ ...p, receptor_nombre: e.target.value }))} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Tipo Documento</Label>
-                  <Select
-                    value={nfForm.receptor_tipo_doc}
-                    onValueChange={v => setNfForm(p => ({ ...p, receptor_tipo_doc: v }))}
-                  >
+                  <Label>Tipo documento</Label>
+                  <Select value={newForm.tipo_doc_receptor} onValueChange={v => setNewForm(p => ({ ...p, tipo_doc_receptor: v }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="96">DNI</SelectItem>
-                      <SelectItem value="80">CUIT</SelectItem>
-                      <SelectItem value="86">CUIL</SelectItem>
-                      <SelectItem value="99">Sin documento</SelectItem>
+                      {TIPO_DOC_OPTS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label>N° Documento</Label>
-                  <Input
-                    placeholder="12345678"
-                    value={nfForm.receptor_nro_doc}
-                    onChange={e => setNfForm(p => ({ ...p, receptor_nro_doc: e.target.value }))}
-                  />
+                  <Label>N° documento</Label>
+                  <Input placeholder="12345678" value={newForm.nro_doc_receptor} onChange={e => setNewForm(p => ({ ...p, nro_doc_receptor: e.target.value }))} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Condición IVA</Label>
-                  <Select
-                    value={nfForm.receptor_condicion_iva}
-                    onValueChange={v => setNfForm(p => ({ ...p, receptor_condicion_iva: v }))}
-                  >
+                  <Label>Condición frente al IVA</Label>
+                  <Select value={newForm.receptor_condicion_iva} onValueChange={v => setNewForm(p => ({ ...p, receptor_condicion_iva: v }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="consumidor_final">Consumidor Final</SelectItem>
-                      <SelectItem value="responsable_inscripto">Responsable Inscripto</SelectItem>
-                      <SelectItem value="exento">Exento</SelectItem>
+                      {CONDICION_IVA_OPTS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Domicilio</Label>
-                <Input
-                  placeholder="Opcional"
-                  value={nfForm.receptor_domicilio}
-                  onChange={e => setNfForm(p => ({ ...p, receptor_domicilio: e.target.value }))}
-                />
+                <div className="space-y-1.5">
+                  <Label>Domicilio (opcional)</Label>
+                  <Input placeholder="Av. Siempre Viva 742" value={newForm.receptor_domicilio} onChange={e => setNewForm(p => ({ ...p, receptor_domicilio: e.target.value }))} />
+                </div>
               </div>
             </div>
 
             {/* Items */}
-            <div className="space-y-3">
-              <h3 className="text-sm font-semibold border-b border-border pb-1">Ítems</h3>
-              <div className="grid grid-cols-12 gap-2 text-xs text-muted-foreground font-medium px-0.5">
-                <div className="col-span-4">Descripción</div>
-                <div className="col-span-2">Cant.</div>
-                <div className="col-span-2">Precio unit.</div>
-                <div className="col-span-2">IVA</div>
-                <div className="col-span-1 text-right">Total</div>
-                <div className="col-span-1" />
+            <div className="rounded-lg border border-border p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-medium text-sm">Ítems</h4>
+                <Button variant="outline" size="sm" onClick={addItem} className="gap-1 h-7">
+                  <Plus className="h-3 w-3" />Agregar ítem
+                </Button>
               </div>
               <div className="space-y-2">
-                {nfItems.map((item, i) => (
-                  <ItemRow
-                    key={i} item={item} index={i}
-                    onChange={updateItem} onRemove={removeItem}
-                  />
-                ))}
-              </div>
-              <Button variant="outline" size="sm" onClick={addItem} className="gap-1.5">
-                <Plus className="h-3.5 w-3.5" /> Agregar ítem
-              </Button>
-            </div>
-
-            {/* Totales */}
-            <div className="flex justify-end">
-              <div className="space-y-1 text-sm min-w-[200px]">
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Subtotal neto</span>
-                  <span>${totalesPreview.subtotal.toFixed(2)}</span>
+                {/* Header */}
+                <div className="grid grid-cols-[1fr_60px_90px_80px_80px_24px] gap-2 text-xs text-muted-foreground px-1">
+                  <span>Descripción</span><span className="text-center">Cant.</span><span className="text-right">Precio</span><span className="text-center">IVA</span><span className="text-right">Subtotal</span><span />
                 </div>
-                <div className="flex justify-between font-semibold border-t border-border pt-1">
-                  <span>Total</span>
-                  <span>${totalesPreview.total.toFixed(2)}</span>
+                {items.map((item, idx) => {
+                  const c = calcItem(item)
+                  return (
+                    <div key={idx} className="grid grid-cols-[1fr_60px_90px_80px_80px_24px] gap-2 items-center">
+                      <Input
+                        placeholder="Descripción del producto"
+                        className="h-8 text-xs"
+                        value={item.descripcion || ""}
+                        onChange={e => updateItem(idx, "descripcion", e.target.value)}
+                      />
+                      <Input
+                        type="number" min="1" className="h-8 text-xs text-center"
+                        value={item.cantidad || ""}
+                        onChange={e => updateItem(idx, "cantidad", Number(e.target.value))}
+                      />
+                      <Input
+                        type="number" min="0" step="0.01" className="h-8 text-xs text-right"
+                        value={item.precio_unitario || ""}
+                        onChange={e => updateItem(idx, "precio_unitario", Number(e.target.value))}
+                      />
+                      <Select
+                        value={String(item.alicuota_iva ?? 21)}
+                        onValueChange={v => updateItem(idx, "alicuota_iva", Number(v))}
+                      >
+                        <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {IVA_OPTS.map(o => <SelectItem key={o.value} value={String(o.value)}>{o.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      <span className="text-xs text-right font-mono">${c.subtotal.toFixed(2)}</span>
+                      <button onClick={() => removeItem(idx)} className="text-muted-foreground hover:text-red-400 transition-colors">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Totales */}
+              <div className="mt-4 pt-3 border-t border-border flex justify-end">
+                <div className="text-sm space-y-1 w-48">
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Subtotal neto</span><span className="font-mono">${totales.subtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>IVA</span><span className="font-mono">${totales.iva.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-base border-t border-border pt-1">
+                    <span>Total</span><span className="font-mono">${totales.total.toFixed(2)}</span>
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Actions */}
-            <div className="flex justify-end gap-2 pt-2 border-t border-border">
-              <Button variant="outline" onClick={() => setShowNewModal(false)}>Cancelar</Button>
-              <Button onClick={emitFactura} disabled={emitLoading || !nfForm.receptor_nombre} className="gap-2">
-                {emitLoading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                {emitLoading ? "Emitiendo..." : "Emitir factura"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Modal: Preview PDF ────────────────────────────────────────────── */}
-      <Dialog open={!!previewHtml} onOpenChange={() => setPreviewHtml(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-4 w-4" /> Vista previa de factura
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto mt-2">
-            {previewHtml && (
-              <iframe
-                srcDoc={previewHtml}
-                className="w-full border-0 rounded"
-                style={{ height: "60vh" }}
-                title="Factura"
-              />
+            {emitError && (
+              <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400 flex items-start gap-2">
+                <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                <span>{emitError}</span>
+              </div>
             )}
           </div>
-          <div className="flex justify-end gap-2 pt-3 border-t border-border">
-            <Button
-              variant="outline" size="sm"
-              onClick={() => {
-                if (!previewHtml) return
-                const blob = new Blob([previewHtml], { type: "text/html" })
-                const url  = URL.createObjectURL(blob)
-                const a    = document.createElement("a"); a.href = url; a.download = "factura.html"; a.click()
-                URL.revokeObjectURL(url)
-              }}
-              className="gap-1.5"
-            >
-              <Download className="h-3.5 w-3.5" /> Descargar HTML
-            </Button>
-            <Button size="sm" onClick={() => setPreviewHtml(null)}>Cerrar</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
-      {/* ── Modal: Detalle Factura ────────────────────────────────────────── */}
-      <Dialog open={!!selectedFactura} onOpenChange={() => setSelectedFactura(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>
-              {selectedFactura ? `${TIPO_LABELS[selectedFactura.tipo_comprobante]} ${formatNro(selectedFactura.punto_venta, selectedFactura.numero)}` : ""}
-            </DialogTitle>
-          </DialogHeader>
-          {selectedFactura && (
-            <div className="space-y-4 text-sm">
-              <div className="grid grid-cols-2 gap-3">
-                <div><p className="text-xs text-muted-foreground">Fecha</p><p>{formatDate(selectedFactura.fecha_emision)}</p></div>
-                <div><p className="text-xs text-muted-foreground">Estado</p>{estadoBadge(selectedFactura.estado)}</div>
-                <div><p className="text-xs text-muted-foreground">Receptor</p><p>{selectedFactura.receptor_nombre}</p></div>
-                <div><p className="text-xs text-muted-foreground">Doc</p><p>{selectedFactura.receptor_nro_doc ?? "—"}</p></div>
-                <div><p className="text-xs text-muted-foreground">CAE</p><p className="font-mono text-xs">{selectedFactura.cae ?? "—"}</p></div>
-                <div><p className="text-xs text-muted-foreground">Vto. CAE</p><p>{selectedFactura.cae_vto ? formatDate(selectedFactura.cae_vto) : "—"}</p></div>
-              </div>
-              <div className="border-t border-border pt-3 space-y-1">
-                <div className="flex justify-between text-muted-foreground"><span>Subtotal</span><span>${selectedFactura.subtotal.toFixed(2)}</span></div>
-                {selectedFactura.iva_105 > 0 && <div className="flex justify-between text-muted-foreground"><span>IVA 10.5%</span><span>${selectedFactura.iva_105.toFixed(2)}</span></div>}
-                {selectedFactura.iva_21  > 0 && <div className="flex justify-between text-muted-foreground"><span>IVA 21%</span><span>${selectedFactura.iva_21.toFixed(2)}</span></div>}
-                {selectedFactura.iva_27  > 0 && <div className="flex justify-between text-muted-foreground"><span>IVA 27%</span><span>${selectedFactura.iva_27.toFixed(2)}</span></div>}
-                <div className="flex justify-between font-semibold border-t border-border pt-1"><span>Total</span><span>${selectedFactura.total.toFixed(2)}</span></div>
-              </div>
-              {selectedFactura.error_msg && (
-                <div className="rounded border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-400">{selectedFactura.error_msg}</div>
-              )}
-            </div>
-          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNew(false)}>Cancelar</Button>
+            <Button onClick={emitirFactura} disabled={emitting} className="gap-2">
+              {emitting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Receipt className="h-4 w-4" />}
+              {emitting ? "Solicitando CAE..." : "Emitir factura"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
