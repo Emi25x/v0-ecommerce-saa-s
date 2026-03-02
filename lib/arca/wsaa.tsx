@@ -43,171 +43,37 @@ function buildTRA(service = "wsfe"): string {
 }
 
 /**
- * Firma el TRA con la clave privada generando un CMS/PKCS#7 SignedData
- * usando exclusivamente node:crypto — sin dependencias de binarios externos.
- *
- * ARCA requiere un CMS SignedData en DER, codificado en base64.
- * Estructura mínima que acepta el WSAA:
- *   ContentType: signedData (1.2.840.113549.1.7.2)
- *   DigestAlgorithm: sha256 (2.16.840.1.101.3.4.2.1)
- *   SignatureAlgorithm: rsaEncryption (1.2.840.113549.1.1.1)
- *   EncapsulatedContentInfo: el TRA XML como eContent
- *   SignerInfo con el certificado completo embebido
+ * Firma el TRA usando node-forge para generar un PKCS#7 SignedData correcto.
+ * node-forge produce DER compatible con el WSAA de ARCA sin depender de openssl binario.
  */
 async function signTRA(traXml: string, certPem: string, keyPem: string): Promise<string> {
-  const crypto = await import("node:crypto")
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const forge = require("node-forge")
 
-  // ── 1. Parsear clave y certificado ──────────────────────────────────────
-  const privateKey = crypto.createPrivateKey(keyPem)
-  const certDer = Buffer.from(
-    certPem.replace(/-----BEGIN CERTIFICATE-----/, "")
-           .replace(/-----END CERTIFICATE-----/, "")
-           .replace(/\s+/g, ""),
-    "base64"
-  )
+  const cert       = forge.pki.certificateFromPem(certPem)
+  const privateKey = forge.pki.privateKeyFromPem(keyPem)
 
-  // ── 2. Firmar el TRA con SHA256+RSA ─────────────────────────────────────
-  const content = Buffer.from(traXml, "utf8")
-  const sign = crypto.createSign("SHA256")
-  sign.update(content)
-  const signature = sign.sign(privateKey)
+  // Crear el objeto PKCS#7 SignedData
+  const p7 = forge.pkcs7.createSignedData()
+  p7.content = forge.util.createBuffer(traXml, "utf8")
 
-  // ── 3. Extraer issuer y serialNumber del certificado (DER) ──────────────
-  // Necesario para el SignerInfo. Parseamos el ASN.1 manualmente (estructura fija).
-  function readLength(buf: Buffer, offset: number): { len: number; nextOffset: number } {
-    if (buf[offset] < 0x80) return { len: buf[offset], nextOffset: offset + 1 }
-    const numBytes = buf[offset] & 0x7f
-    let len = 0
-    for (let i = 0; i < numBytes; i++) len = (len << 8) | buf[offset + 1 + i]
-    return { len, nextOffset: offset + 1 + numBytes }
-  }
+  p7.addCertificate(cert)
+  p7.addSigner({
+    key:         privateKey,
+    certificate: cert,
+    digestAlgorithm: forge.pki.oids.sha256,
+    authenticatedAttributes: [
+      { type: forge.pki.oids.contentType,   value: forge.pki.oids.data },
+      { type: forge.pki.oids.messageDigest },
+      { type: forge.pki.oids.signingTime,   value: new Date() },
+    ],
+  })
 
-  // Extraer TBSCertificate del certificado DER
-  // Certificate ::= SEQUENCE { tbsCertificate TBSCertificate, ... }
-  let off = 2 // skip outer SEQUENCE tag+len (simplified)
-  const outerLen = readLength(certDer, 1)
-  off = outerLen.nextOffset
-  // TBSCertificate SEQUENCE
-  const tbsTag = certDer[off] // should be 0x30
-  const tbsLen = readLength(certDer, off + 1)
-  const tbsStart = off
-  const tbsEnd   = tbsLen.nextOffset + tbsLen.len
-  const tbsCert  = certDer.slice(tbsStart, tbsEnd)
+  p7.sign()
 
-  // Dentro de TBSCertificate:
-  // version [0] EXPLICIT, serialNumber, signature AlgId, issuer, validity, subject, ...
-  let cursor = tbsLen.nextOffset
-  // Saltar version si existe [0]
-  if (certDer[cursor] === 0xa0) {
-    const vLen = readLength(certDer, cursor + 1)
-    cursor = vLen.nextOffset + vLen.len
-  }
-  // serialNumber INTEGER
-  const snTag = certDer[cursor] // 0x02
-  const snLen = readLength(certDer, cursor + 1)
-  const serialNumber = certDer.slice(snLen.nextOffset, snLen.nextOffset + snLen.len)
-  cursor = snLen.nextOffset + snLen.len
-  // signature AlgorithmIdentifier SEQUENCE
-  const algLen = readLength(certDer, cursor + 1)
-  cursor = algLen.nextOffset + algLen.len
-  // issuer Name SEQUENCE
-  const issuerStart = cursor
-  const issuerLenInfo = readLength(certDer, cursor + 1)
-  const issuerEnd = issuerLenInfo.nextOffset + issuerLenInfo.len
-  const issuerDer = certDer.slice(issuerStart, issuerEnd)
-
-  // ── 4. Construir CMS SignedData en DER (ASN.1 BER/DER manual) ──────────
-
-  function encodeLen(len: number): Buffer {
-    if (len < 0x80) return Buffer.from([len])
-    if (len < 0x100) return Buffer.from([0x81, len])
-    return Buffer.from([0x82, (len >> 8) & 0xff, len & 0xff])
-  }
-
-  function seq(content: Buffer): Buffer {
-    return Buffer.concat([Buffer.from([0x30]), encodeLen(content.length), content])
-  }
-
-  function set(content: Buffer): Buffer {
-    return Buffer.concat([Buffer.from([0x31]), encodeLen(content.length), content])
-  }
-
-  function oid(bytes: number[]): Buffer {
-    return Buffer.concat([Buffer.from([0x06, bytes.length, ...bytes])])
-  }
-
-  function integer(bytes: Buffer): Buffer {
-    // Agregar 0x00 si el bit más significativo está en 1 (para evitar número negativo)
-    const val = bytes[0] & 0x80 ? Buffer.concat([Buffer.from([0x00]), bytes]) : bytes
-    return Buffer.concat([Buffer.from([0x02]), encodeLen(val.length), val])
-  }
-
-  function octetString(bytes: Buffer): Buffer {
-    return Buffer.concat([Buffer.from([0x04]), encodeLen(bytes.length), bytes])
-  }
-
-  function contextTag(tag: number, content: Buffer, constructed = true): Buffer {
-    const t = constructed ? (0xa0 | tag) : (0x80 | tag)
-    return Buffer.concat([Buffer.from([t]), encodeLen(content.length), content])
-  }
-
-  function bitString(bytes: Buffer): Buffer {
-    const withPad = Buffer.concat([Buffer.from([0x00]), bytes])
-    return Buffer.concat([Buffer.from([0x03]), encodeLen(withPad.length), withPad])
-  }
-
-  // OIDs relevantes
-  const OID_SIGNED_DATA        = [0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x07, 0x02]
-  const OID_DATA               = [0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x07, 0x01]
-  const OID_SHA256             = [0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01]
-  const OID_RSA_ENCRYPTION     = [0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01]
-  const OID_RSA_WITH_SHA256    = [0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x0b]
-
-  // digestAlgorithms SET
-  const digestAlgId = seq(Buffer.concat([oid(OID_SHA256), Buffer.from([0x05, 0x00])]))
-  const digestAlgorithms = set(digestAlgId)
-
-  // encapContentInfo: eContentType = data, eContent = TRA XML
-  const eContent = contextTag(0, octetString(content))
-  const encapContentInfo = seq(Buffer.concat([oid(OID_DATA), eContent]))
-
-  // certificate (el cert completo embebido en [0])
-  const certificatesField = contextTag(0, certDer)
-
-  // signerInfo
-  const version        = integer(Buffer.from([0x01]))
-  const issuerAndSerial = seq(Buffer.concat([issuerDer, integer(serialNumber)]))
-  const digestAlgRef   = seq(Buffer.concat([oid(OID_SHA256), Buffer.from([0x05, 0x00])]))
-  const sigAlg         = seq(Buffer.concat([oid(OID_RSA_WITH_SHA256), Buffer.from([0x05, 0x00])]))
-  const signatureValue = octetString(signature)
-
-  const signerInfo = seq(Buffer.concat([
-    version,
-    issuerAndSerial,
-    digestAlgRef,
-    sigAlg,
-    signatureValue,
-  ]))
-
-  const signerInfos = set(signerInfo)
-
-  // SignedData
-  const sdVersion = integer(Buffer.from([0x01]))
-  const signedData = seq(Buffer.concat([
-    sdVersion,
-    digestAlgorithms,
-    encapContentInfo,
-    certificatesField,
-    signerInfos,
-  ]))
-
-  // ContentInfo wrapper
-  const contentInfo = seq(Buffer.concat([
-    oid(OID_SIGNED_DATA),
-    contextTag(0, signedData),
-  ]))
-
-  return contentInfo.toString("base64")
+  // Serializar a DER → base64
+  const der = forge.asn1.toDer(p7.toAsn1()).getBytes()
+  return forge.util.encode64(der)
 }
 
 /** Llama al WSAA y obtiene { token, sign, expiresAt } */
