@@ -139,12 +139,11 @@ export async function requestCAE(params: SolicitarCAEParams): Promise<CAERespons
 
   const importeTotal = parseFloat((importeNeto + importeExento + importeIvaTotal).toFixed(2))
 
-  const ivaXml = Array.from(ivaMap.values()).map(a => `
-          <ar:AlicIva>
-            <ar:Id>${a.id}</ar:Id>
-            <ar:BaseImp>${a.base.toFixed(2)}</ar:BaseImp>
-            <ar:Importe>${a.importe.toFixed(2)}</ar:Importe>
-          </ar:AlicIva>`).join("")
+  // <ar:Iva> solo se incluye si hay ítems gravados (sino ARCA falla con nodo vacío)
+  const ivaItems = Array.from(ivaMap.values())
+  const ivaXml = ivaItems.length > 0
+    ? `<ar:Iva>${ivaItems.map(a => `<ar:AlicIva><ar:Id>${a.id}</ar:Id><ar:BaseImp>${a.base.toFixed(2)}</ar:BaseImp><ar:Importe>${a.importe.toFixed(2)}</ar:Importe></ar:AlicIva>`).join("")}</ar:Iva>`
+    : ""
 
   // Obtener próximo número
   const lastNum = await getLastInvoiceNumber({
@@ -160,12 +159,18 @@ export async function requestCAE(params: SolicitarCAEParams): Promise<CAERespons
   // CondicionIVAReceptorId obligatorio desde RG 5616
   const condIvaId = CONDICION_IVA_RECEPTOR[params.condicion_iva_receptor] ?? 5
 
+  // DocNro debe ser numérico puro — limpiar cualquier carácter no numérico
+  const docNro = String(params.nro_doc_receptor).replace(/\D/g, "") || "0"
+
+  // Cotizacion debe ser entero para PES
+  const cotizacion = (params.moneda === "PES" || !params.moneda) ? 1 : (params.cotizacion ?? 1)
+
   const body = `
   <ar:FECAESolicitar>
     <ar:Auth>
       <ar:Token>${params.token}</ar:Token>
       <ar:Sign>${params.sign}</ar:Sign>
-      <ar:Cuit>${params.cuit}</ar:Cuit>
+      <ar:Cuit>${params.cuit.replace(/\D/g, "")}</ar:Cuit>
     </ar:Auth>
     <ar:FeCAEReq>
       <ar:FeCabReq>
@@ -177,7 +182,7 @@ export async function requestCAE(params: SolicitarCAEParams): Promise<CAERespons
         <ar:FECAEDetRequest>
           <ar:Concepto>${params.concepto}</ar:Concepto>
           <ar:DocTipo>${params.tipo_doc_receptor}</ar:DocTipo>
-          <ar:DocNro>${params.nro_doc_receptor}</ar:DocNro>
+          <ar:DocNro>${docNro}</ar:DocNro>
           <ar:CbteDesde>${nextNum}</ar:CbteDesde>
           <ar:CbteHasta>${nextNum}</ar:CbteHasta>
           <ar:CbteFch>${params.fecha}</ar:CbteFch>
@@ -188,9 +193,9 @@ export async function requestCAE(params: SolicitarCAEParams): Promise<CAERespons
           <ar:ImpIVA>${importeIvaTotal.toFixed(2)}</ar:ImpIVA>
           <ar:ImpTrib>0.00</ar:ImpTrib>
           <ar:MonId>${params.moneda || "PES"}</ar:MonId>
-          <ar:MonCotiz>${params.cotizacion ?? 1}</ar:MonCotiz>
+          <ar:MonCotiz>${cotizacion}</ar:MonCotiz>
           <ar:CondicionIVAReceptorId>${condIvaId}</ar:CondicionIVAReceptorId>
-          <ar:Iva>${ivaXml}</ar:Iva>
+          ${ivaXml}
         </ar:FECAEDetRequest>
       </ar:FeDetReq>
     </ar:FeCAEReq>
