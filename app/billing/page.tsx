@@ -138,8 +138,8 @@ function calcItem(item: Partial<FacturaItem>): FacturaItem {
   }
 }
 
-const EMPTY_ITEM = (): Partial<FacturaItem> => ({
-  descripcion: "", cantidad: 1, precio_unitario: 0, alicuota_iva: 21, subtotal: 0, iva: 0,
+const EMPTY_ITEM = (ivaDefault = 21): Partial<FacturaItem> => ({
+  descripcion: "", cantidad: 1, precio_unitario: 0, alicuota_iva: ivaDefault, subtotal: 0, iva: 0,
 })
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
@@ -159,6 +159,7 @@ export default function BillingPage() {
     // Contacto y redes
     telefono: "", email: "", web: "", instagram: "", facebook: "", whatsapp: "",
     // Contenido de la factura
+    iva_default: 21,
     nota_factura: "", datos_pago: "",
     // Logo
     logo_url: "",
@@ -198,7 +199,7 @@ export default function BillingPage() {
     receptor_condicion_iva: "consumidor_final",
     moneda: "PES",
   })
-  const [items, setItems]         = useState<Partial<FacturaItem>[]>([EMPTY_ITEM()])
+  const [items, setItems]         = useState<Partial<FacturaItem>[]>([EMPTY_ITEM(21)])
 
   // ── Data loading ──────────────────────────────────────────────────────────
 
@@ -223,6 +224,7 @@ export default function BillingPage() {
           instagram:        d.config.instagram || "",
           facebook:         d.config.facebook || "",
           whatsapp:         d.config.whatsapp || "",
+          iva_default:      d.config.iva_default ?? 21,
           nota_factura:     d.config.nota_factura || "",
           datos_pago:       d.config.datos_pago || "",
           logo_url:         d.config.logo_url || "",
@@ -286,7 +288,7 @@ export default function BillingPage() {
       if (d.ok) {
         setShowNew(false)
         setNewForm({ tipo_comprobante: "6", concepto: "1", tipo_doc_receptor: "99", nro_doc_receptor: "", receptor_nombre: "", receptor_domicilio: "", receptor_condicion_iva: "consumidor_final", moneda: "PES" })
-        setItems([EMPTY_ITEM()])
+        setItems([EMPTY_ITEM(configForm.iva_default)])
         loadFacturas(0); setPage(0)
       } else {
         setEmitError(d.error || "Error al emitir")
@@ -348,7 +350,7 @@ export default function BillingPage() {
     }
   }
 
-  const addItem = () => setItems(prev => [...prev, EMPTY_ITEM()])
+  const addItem = () => setItems(prev => [...prev, EMPTY_ITEM(configForm.iva_default)])
   const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx))
 
   const calcedItems = items.map(calcItem)
@@ -688,6 +690,26 @@ export default function BillingPage() {
             {/* ── Contenido de la factura ── */}
             <div className="rounded-lg border border-border bg-card p-5 space-y-4">
               <h3 className="font-semibold flex items-center gap-2"><Receipt className="h-4 w-4" />Contenido de la factura</h3>
+
+              {/* IVA por defecto */}
+              <div className="space-y-1.5">
+                <Label>Alícuota de IVA por defecto</Label>
+                <p className="text-xs text-muted-foreground">Se aplica automáticamente a cada ítem nuevo al crear una factura.</p>
+                <Select
+                  value={String(configForm.iva_default)}
+                  onValueChange={v => setConfigForm(p => ({ ...p, iva_default: Number(v) }))}
+                >
+                  <SelectTrigger className="w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {IVA_OPTS.map(o => (
+                      <SelectItem key={o.value} value={String(o.value)}>{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="space-y-1.5">
                 <Label>Nota opcional</Label>
                 <p className="text-xs text-muted-foreground">Aparece al pie de todas las facturas (ej: "Gracias por su compra", condiciones de devolución, etc.)</p>

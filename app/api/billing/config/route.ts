@@ -9,7 +9,7 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from("arca_config")
-      .select("id, user_id, cuit, razon_social, domicilio_fiscal, punto_venta, condicion_iva, ambiente, cert_pem, certificado_pem, clave_pem, private_key_pem, wsaa_token, wsaa_sign, wsaa_expires_at, logo_url, telefono, email, web, instagram, facebook, whatsapp, nota_factura, datos_pago, factura_opciones, created_at")
+      .select("id, user_id, cuit, razon_social, domicilio_fiscal, punto_venta, condicion_iva, ambiente, cert_pem, certificado_pem, clave_pem, private_key_pem, wsaa_token, wsaa_sign, wsaa_expires_at, logo_url, telefono, email, web, instagram, facebook, whatsapp, nota_factura, datos_pago, factura_opciones, iva_default, created_at")
       .eq("user_id", user.id)
       .single()
 
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       cuit, razon_social, domicilio_fiscal, punto_venta, condicion_iva, ambiente,
       cert_pem, clave_pem,
       telefono, email, web, instagram, facebook, whatsapp,
-      nota_factura, datos_pago, logo_url, factura_opciones,
+      nota_factura, datos_pago, logo_url, factura_opciones, iva_default,
     } = body
 
     if (!cuit || !razon_social || !punto_venta) {
@@ -74,6 +74,7 @@ export async function POST(request: Request) {
       facebook:         facebook  || null,
       whatsapp:         whatsapp  || null,
       // Contenido factura
+      iva_default:      iva_default != null ? Number(iva_default) : 21,
       nota_factura:     nota_factura || null,
       datos_pago:       datos_pago   || null,
     }
