@@ -42,9 +42,16 @@ interface Empresa {
 const ESTADO_OPTS = [
   { value: "all",       label: "Todos los estados" },
   { value: "paid",      label: "Pagadas" },
-  { value: "delivered", label: "Entregadas" },
   { value: "cancelled", label: "Canceladas" },
   { value: "pending",   label: "Pendientes" },
+]
+
+const ENVIO_OPTS = [
+  { value: "all",          label: "Todos los envíos" },
+  { value: "delivered",    label: "Entregadas" },
+  { value: "shipped",      label: "En camino" },
+  { value: "ready_to_ship", label: "Listas para enviar" },
+  { value: "not_delivered", label: "No entregadas" },
 ]
 
 const FACTURADO_OPTS = [
@@ -92,6 +99,7 @@ export default function MLBillingPage() {
 
   // Filtros
   const [filterEstado,    setFilterEstado]    = useState("all")
+  const [filterEnvio,     setFilterEnvio]     = useState("all")
   const [filterFacturado, setFilterFacturado] = useState("no")
   const [fechaDesde,      setFechaDesde]      = useState(() => {
     const d = new Date(); d.setDate(d.getDate() - 30)
@@ -158,7 +166,8 @@ export default function MLBillingPage() {
         fecha_desde:  fechaDesde ? `${fechaDesde}T00:00:00.000Z` : "",
         fecha_hasta:  fechaHasta ? `${fechaHasta}T23:59:59.000Z` : "",
       })
-      if (filterEstado !== "all") params.set("estado", filterEstado)
+      if (filterEstado !== "all") params.set("estado",       filterEstado)
+      if (filterEnvio  !== "all") params.set("estado_envio", filterEnvio)
 
       const res  = await fetch(`/api/billing/ml-ventas?${params}`)
       const data = await res.json()
@@ -167,9 +176,9 @@ export default function MLBillingPage() {
     } finally {
       setLoading(false)
     }
-  }, [activeAccount, filterEstado, filterFacturado, fechaDesde, fechaHasta])
+  }, [activeAccount, filterEstado, filterEnvio, filterFacturado, fechaDesde, fechaHasta])
 
-  useEffect(() => { if (activeAccount) { setPage(0); loadOrders(0) } }, [activeAccount, filterEstado, filterFacturado])
+  useEffect(() => { if (activeAccount) { setPage(0); loadOrders(0) } }, [activeAccount, filterEstado, filterEnvio, filterFacturado])
 
   // ── Selección ─────────────────────────────────────────────────────────────
   const toggleOrder = (id: number) => {
@@ -362,13 +371,22 @@ export default function MLBillingPage() {
           <Filter className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium">Filtros</span>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <div className="space-y-1.5">
             <Label className="text-xs">Estado de la venta</Label>
             <Select value={filterEstado} onValueChange={setFilterEstado}>
               <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {ESTADO_OPTS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Estado del envío</Label>
+            <Select value={filterEnvio} onValueChange={setFilterEnvio}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {ENVIO_OPTS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>

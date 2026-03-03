@@ -8,11 +8,12 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
 
   const { searchParams } = new URL(req.url)
-  const account_id  = searchParams.get("account_id") || ""
-  const estado      = searchParams.get("estado") || ""        // paid, cancelled, etc.
-  const facturado   = searchParams.get("facturado") || ""     // "si" | "no" | ""
-  const fecha_desde = searchParams.get("fecha_desde") || ""
-  const fecha_hasta = searchParams.get("fecha_hasta") || ""
+  const account_id    = searchParams.get("account_id") || ""
+  const estado        = searchParams.get("estado") || ""       // paid, cancelled, pending
+  const estado_envio  = searchParams.get("estado_envio") || "" // delivered, shipped, etc.
+  const facturado     = searchParams.get("facturado") || ""    // "si" | "no" | ""
+  const fecha_desde   = searchParams.get("fecha_desde") || ""
+  const fecha_hasta   = searchParams.get("fecha_hasta") || ""
   const page        = parseInt(searchParams.get("page") || "1")
   const limit       = parseInt(searchParams.get("limit") || "50")
   const offset      = (page - 1) * limit
@@ -37,9 +38,10 @@ export async function GET(req: NextRequest) {
     offset: String(offset),
     sort:   "date_desc",
   })
-  if (estado)      mlParams.set("order.status", estado)
-  if (fecha_desde) mlParams.set("order.date_created.from", fecha_desde)
-  if (fecha_hasta) mlParams.set("order.date_created.to",   fecha_hasta)
+  if (estado)       mlParams.set("order.status",          estado)
+  if (estado_envio) mlParams.set("order.shipping.status", estado_envio)
+  if (fecha_desde)  mlParams.set("order.date_created.from", fecha_desde)
+  if (fecha_hasta)  mlParams.set("order.date_created.to",   fecha_hasta)
 
   const mlRes = await fetch(
     `https://api.mercadolibre.com/orders/search?${mlParams}`,
