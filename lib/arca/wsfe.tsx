@@ -16,21 +16,24 @@ export type FacturaItem = {
 }
 
 // Condición IVA receptor — RG 5616 (obligatorio desde 2024)
-// 1=Responsable Inscripto, 2=Responsable No Inscripto, 3=No Responsable,
-// 4=Exento, 5=Consumidor Final, 6=Monotributista, 7=No Categorizado,
-// 8=Importador del Exterior, 9=Cliente del Exterior, 10=Liberado,
-// 12=Pequeño Contribuyente Eventual, 13=Monotributista Social, 14=Peq.Contribuyente Eventual Social
+// Códigos según FEParamGetCondicionIvaReceptor oficial de ARCA:
+// 1=IVA Responsable Inscripto, 4=IVA Sujeto Exento, 5=Consumidor Final,
+// 6=Responsable Monotributo, 7=Sujeto No Categorizado,
+// 8=Proveedor del Exterior, 9=Cliente del Exterior,
+// 10=IVA Liberado Ley 19640, 13=Monotributista Social,
+// 15=IVA No Alcanzado, 16=Monotributo Trabajador Independiente Promovido
 export const CONDICION_IVA_RECEPTOR: Record<string, number> = {
-  responsable_inscripto:  1,
-  responsable_no_inscripto: 2,
-  no_responsable:         3,
-  exento:                 4,
-  consumidor_final:       5,
-  monotributo:            6,
-  no_categorizado:        7,
-  importador_exterior:    8,
-  cliente_exterior:       9,
-  liberado:               10,
+  responsable_inscripto:              1,
+  exento:                             4,
+  consumidor_final:                   5,
+  monotributo:                        6,
+  no_categorizado:                    7,
+  proveedor_exterior:                 8,
+  cliente_exterior:                   9,
+  liberado:                           10,
+  monotributista_social:              13,
+  no_alcanzado:                       15,
+  monotributo_trabajador_independiente: 16,
 }
 
 export type SolicitarCAEParams = {
@@ -161,6 +164,14 @@ export async function requestCAE(params: SolicitarCAEParams): Promise<CAERespons
 
   // DocNro debe ser numérico puro — limpiar cualquier carácter no numérico
   const docNro = String(params.nro_doc_receptor).replace(/\D/g, "") || "0"
+
+  // Regla ARCA: Factura B/C con DocTipo ≠ 99 (Consumidor Final) exige DocNro > 0
+  if (params.tipo_doc_receptor !== 99 && (!docNro || docNro === "0")) {
+    throw new Error(
+      `El tipo de documento seleccionado requiere ingresar el número de documento del receptor. ` +
+      `Si no tenés el dato, seleccioná "Sin documento (Consumidor Final)" con DocTipo 99.`
+    )
+  }
 
   // Cotizacion debe ser entero para PES
   const cotizacion = (params.moneda === "PES" || !params.moneda) ? 1 : (params.cotizacion ?? 1)

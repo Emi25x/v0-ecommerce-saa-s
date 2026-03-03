@@ -64,18 +64,33 @@ const TIPO_COMPROBANTE: Record<number, { letra: string; label: string }> = {
   11: { letra: "C", label: "Factura C" },
 }
 
+// Según FEParamGetCondicionIvaReceptor de ARCA (RG 5616)
 const CONDICION_IVA_OPTS = [
-  { value: "responsable_inscripto", label: "Responsable Inscripto" },
-  { value: "monotributo",           label: "Monotributista" },
-  { value: "exento",                label: "IVA Exento" },
-  { value: "consumidor_final",      label: "Consumidor Final" },
+  { value: "consumidor_final",                    label: "Consumidor Final (5)" },
+  { value: "responsable_inscripto",               label: "Responsable Inscripto (1)" },
+  { value: "monotributo",                         label: "Responsable Monotributo (6)" },
+  { value: "exento",                              label: "IVA Sujeto Exento (4)" },
+  { value: "no_categorizado",                     label: "Sujeto No Categorizado (7)" },
+  { value: "monotributista_social",               label: "Monotributista Social (13)" },
+  { value: "no_alcanzado",                        label: "IVA No Alcanzado (15)" },
+  { value: "proveedor_exterior",                  label: "Proveedor del Exterior (8)" },
+  { value: "cliente_exterior",                    label: "Cliente del Exterior (9)" },
+  { value: "liberado",                            label: "IVA Liberado Ley 19640 (10)" },
+  { value: "monotributo_trabajador_independiente",label: "Monotributo Trab. Independiente (16)" },
 ]
 
+// Según FEParamGetTiposDoc de ARCA
 const TIPO_DOC_OPTS = [
-  { value: "99", label: "Sin documento" },
+  { value: "99", label: "Sin documento / Consumidor Final" },
   { value: "96", label: "DNI" },
   { value: "80", label: "CUIT" },
   { value: "86", label: "CUIL" },
+  { value: "87", label: "CDI" },
+  { value: "89", label: "LE" },
+  { value: "90", label: "LC" },
+  { value: "91", label: "CI Extranjera" },
+  { value: "92", label: "en trámite" },
+  { value: "95", label: "Pasaporte" },
 ]
 
 const IVA_OPTS: Array<{ value: 0 | 10.5 | 21 | 27; label: string }> = [
@@ -748,7 +763,10 @@ export default function BillingPage() {
                 </div>
                 <div className="space-y-1.5">
                   <Label>Tipo documento</Label>
-                  <Select value={newForm.tipo_doc_receptor} onValueChange={v => setNewForm(p => ({ ...p, tipo_doc_receptor: v }))}>
+                  <Select
+                    value={newForm.tipo_doc_receptor}
+                    onValueChange={v => setNewForm(p => ({ ...p, tipo_doc_receptor: v, nro_doc_receptor: v === "99" ? "" : p.nro_doc_receptor }))}
+                  >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {TIPO_DOC_OPTS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
@@ -756,8 +774,18 @@ export default function BillingPage() {
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>N° documento</Label>
-                  <Input placeholder="12345678" value={newForm.nro_doc_receptor} onChange={e => setNewForm(p => ({ ...p, nro_doc_receptor: e.target.value }))} />
+                  <Label>
+                    N° documento
+                    {newForm.tipo_doc_receptor === "99" && (
+                      <span className="text-muted-foreground font-normal ml-1">(no requerido)</span>
+                    )}
+                  </Label>
+                  <Input
+                    placeholder={newForm.tipo_doc_receptor === "99" ? "—" : "12345678"}
+                    value={newForm.nro_doc_receptor}
+                    onChange={e => setNewForm(p => ({ ...p, nro_doc_receptor: e.target.value }))}
+                    disabled={newForm.tipo_doc_receptor === "99"}
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <Label>Condición frente al IVA</Label>
