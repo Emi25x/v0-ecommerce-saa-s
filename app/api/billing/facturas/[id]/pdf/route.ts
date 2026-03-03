@@ -20,21 +20,36 @@ export async function GET(request: Request, { params }: { params: { id: string }
     const config = factura.arca_config as any
 
     const html = buildFacturaHTML({
+      // Emisor fiscal
       razon_social:          config.razon_social,
       cuit:                  config.cuit,
       domicilio_fiscal:      config.domicilio_fiscal || "",
       condicion_iva:         config.condicion_iva || config.tipo_emisor,
       punto_venta:           factura.punto_venta,
+      // Branding
+      logo_url:              config.logo_url        || undefined,
+      telefono:              config.telefono         || undefined,
+      email:                 config.email            || undefined,
+      web:                   config.web              || undefined,
+      instagram:             config.instagram        || undefined,
+      facebook:              config.facebook         || undefined,
+      whatsapp:              config.whatsapp         || undefined,
+      nota_factura:          config.nota_factura     || undefined,
+      datos_pago:            config.datos_pago       || undefined,
+      factura_opciones:      config.factura_opciones || undefined,
+      // Comprobante
       tipo_comprobante:      factura.tipo_comprobante,
       numero:                factura.numero,
       fecha_emision:         factura.fecha,
       cae:                   factura.cae,
       cae_vto:               (factura.cae_vencimiento || "").replace(/-/g, ""),
+      // Receptor
       receptor_nombre:       factura.razon_social_receptor,
       receptor_tipo_doc:     factura.tipo_doc_receptor,
       receptor_nro_doc:      factura.nro_doc_receptor,
       receptor_condicion_iva: factura.receptor_condicion_iva || "consumidor_final",
       receptor_domicilio:    factura.receptor_domicilio,
+      // Items y totales
       items:                 factura.items || [],
       subtotal:              Number(factura.importe_neto),
       iva_105:               Number(factura.importe_iva_105),

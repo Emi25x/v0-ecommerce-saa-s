@@ -11,6 +11,24 @@ export type FacturaPDFData = {
   domicilio_fiscal: string
   condicion_iva:    string
   punto_venta:      number
+  // Branding / config visual
+  logo_url?:        string
+  telefono?:        string
+  email?:           string
+  web?:             string
+  instagram?:       string
+  facebook?:        string
+  whatsapp?:        string
+  nota_factura?:    string
+  datos_pago?:      string
+  factura_opciones?: {
+    mostrar_logo?:           boolean
+    mostrar_domicilio?:      boolean
+    mostrar_datos_contacto?: boolean
+    mostrar_redes?:          boolean
+    mostrar_datos_pago?:     boolean
+    mostrar_nota?:           boolean
+  }
   // Comprobante
   tipo_comprobante: number
   numero:           number
@@ -100,12 +118,59 @@ function buildQRData(data: FacturaPDFData): string {
  * o convertir server-side con una lib como puppeteer.
  */
 export function buildFacturaHTML(data: FacturaPDFData): string {
-  const comp  = TIPO_COMPROBANTE_LABEL[data.tipo_comprobante] || { letra: "?", nombre: "Comprobante" }
-  const qrUrl = buildQRData(data)
+  const comp    = TIPO_COMPROBANTE_LABEL[data.tipo_comprobante] || { letra: "?", nombre: "Comprobante" }
+  const qrUrl   = buildQRData(data)
   const cuitFmt = data.cuit.replace(/(\d{2})(\d{8})(\d{1})/, "$1-$2-$3")
+  const nroFmt  = `${String(data.punto_venta).padStart(4, "0")}-${String(data.numero).padStart(8, "0")}`
+  const opts    = data.factura_opciones || {}
 
-  const nroFmt = `${String(data.punto_venta).padStart(4, "0")}-${String(data.numero).padStart(8, "0")}`
+  // Defaults: todo visible si no hay config
+  const showLogo     = opts.mostrar_logo           !== false
+  const showDir      = opts.mostrar_domicilio       !== false
+  const showContacto = opts.mostrar_datos_contacto  !== false
+  const showRedes    = opts.mostrar_redes            !== false
+  const showPago     = opts.mostrar_datos_pago       !== false
+  const showNota     = opts.mostrar_nota             !== false
 
+  // ── Logo ──────────────────────────────────────────────────────────────────
+  const logoHtml = (showLogo && data.logo_url)
+    ? `<img src="${data.logo_url}" alt="Logo" style="max-height:64px;max-width:160px;object-fit:contain;display:block">`
+    : ""
+
+  // ── Contacto ──────────────────────────────────────────────────────────────
+  const contactoItems: string[] = []
+  if (showContacto) {
+    if (data.telefono) contactoItems.push(`<span>Tel: ${data.telefono}</span>`)
+    if (data.whatsapp) contactoItems.push(`<span>WhatsApp: ${data.whatsapp}</span>`)
+    if (data.email)    contactoItems.push(`<span>${data.email}</span>`)
+    if (data.web)      contactoItems.push(`<span>${data.web}</span>`)
+  }
+
+  // ── Redes ─────────────────────────────────────────────────────────────────
+  const redesItems: string[] = []
+  if (showRedes) {
+    if (data.instagram) redesItems.push(`<span>Instagram: @${data.instagram}</span>`)
+    if (data.facebook)  redesItems.push(`<span>Facebook: @${data.facebook}</span>`)
+  }
+
+  const extraContactoHtml = [...contactoItems, ...redesItems].length > 0
+    ? `<div style="margin-top:6px;font-size:10px;color:#555;display:flex;flex-wrap:wrap;gap:8px">${[...contactoItems, ...redesItems].join("")}</div>`
+    : ""
+
+  // ── Datos de pago ─────────────────────────────────────────────────────────
+  const datosPagoHtml = (showPago && data.datos_pago)
+    ? `<div style="border:1px solid #c8e6c9;border-radius:4px;background:#f1f8e9;padding:10px 12px;margin-bottom:10px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#388e3c;margin-bottom:5px">Datos para realizar el pago</div>
+        <div style="font-size:11px;white-space:pre-line;color:#1a1a1a">${data.datos_pago}</div>
+       </div>`
+    : ""
+
+  // ── Nota al pie ───────────────────────────────────────────────────────────
+  const notaHtml = (showNota && data.nota_factura)
+    ? `<div style="border-top:1px dashed #ccc;margin-top:12px;padding-top:8px;font-size:10px;color:#666;text-align:center">${data.nota_factura}</div>`
+    : ""
+
+  // ── Items ─────────────────────────────────────────────────────────────────
   const itemsHTML = data.items.map(item => `
     <tr>
       <td style="padding:6px 8px;border-bottom:1px solid #eee">${item.descripcion}</td>
@@ -129,12 +194,13 @@ export function buildFacturaHTML(data: FacturaPDFData): string {
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #1a1a1a; background: #fff; }
-    .page { width: 210mm; min-height: 297mm; padding: 12mm; margin: 0 auto; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #1a1a1a; padding-bottom: 12px; margin-bottom: 12px; }
-    .letra-box { width: 64px; height: 64px; border: 3px solid #1a1a1a; display: flex; align-items: center; justify-content: center; font-size: 36px; font-weight: 900; flex-shrink: 0; }
+    .page { width: 210mm; min-height: 297mm; padding: 12mm; margin: 0 auto; display: flex; flex-direction: column; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #1a1a1a; padding-bottom: 12px; margin-bottom: 12px; gap: 12px; }
+    .emisor { flex: 1; }
     .emisor h1 { font-size: 16px; font-weight: 700; }
     .emisor p  { font-size: 11px; color: #444; margin-top: 2px; }
-    .comp-info { text-align: right; }
+    .letra-box { width: 64px; height: 64px; border: 3px solid #1a1a1a; display: flex; align-items: center; justify-content: center; font-size: 36px; font-weight: 900; flex-shrink: 0; }
+    .comp-info { text-align: right; min-width: 160px; }
     .comp-info h2 { font-size: 14px; font-weight: 700; }
     .comp-info p  { font-size: 11px; color: #444; margin-top: 2px; }
     .section { border: 1px solid #ccc; border-radius: 4px; padding: 10px 12px; margin-bottom: 10px; }
@@ -147,7 +213,7 @@ export function buildFacturaHTML(data: FacturaPDFData): string {
     table.items th { background: #f0f0f0; padding: 6px 8px; text-align: left; font-size: 11px; border-bottom: 2px solid #ccc; }
     table.items th:nth-child(n+2) { text-align: center; }
     table.items th:last-child { text-align: right; }
-    .totals-row { display: flex; justify-content: flex-end; }
+    .totals-row { display: flex; justify-content: flex-end; margin-bottom: 10px; }
     .totals { width: 240px; }
     .totals table { width: 100%; font-size: 12px; }
     .totals td { padding: 3px 6px; }
@@ -155,21 +221,24 @@ export function buildFacturaHTML(data: FacturaPDFData): string {
     .total-final { font-weight: 700; font-size: 14px; border-top: 2px solid #1a1a1a; }
     .footer { display: flex; justify-content: space-between; align-items: flex-end; border-top: 2px solid #1a1a1a; padding-top: 12px; margin-top: auto; }
     .cae-info p { font-size: 11px; margin-bottom: 3px; }
-    .qr-placeholder { width: 80px; height: 80px; display: flex; flex-direction: column; align-items: center; }
-    .qr-placeholder img { width: 80px; height: 80px; }
+    .qr-wrap { display: flex; flex-direction: column; align-items: center; }
+    .qr-wrap img { width: 80px; height: 80px; }
     .qr-label { font-size: 9px; color: #666; margin-top: 3px; text-align: center; }
     @media print { .page { padding: 8mm; } }
   </style>
 </head>
 <body>
 <div class="page">
-  <!-- Header -->
+
+  <!-- HEADER: logo + datos emisor | letra | datos comprobante -->
   <div class="header">
     <div class="emisor">
-      <h1>${data.razon_social}</h1>
+      ${logoHtml}
+      <h1 style="${logoHtml ? "margin-top:8px" : ""}">${data.razon_social}</h1>
       <p>CUIT: ${cuitFmt}</p>
-      <p>${data.domicilio_fiscal || ""}</p>
+      ${showDir && data.domicilio_fiscal ? `<p>${data.domicilio_fiscal}</p>` : ""}
       <p>IVA: ${CONDICION_IVA_LABEL[data.condicion_iva] || data.condicion_iva}</p>
+      ${extraContactoHtml}
     </div>
     <div class="letra-box">${comp.letra}</div>
     <div class="comp-info">
@@ -179,34 +248,37 @@ export function buildFacturaHTML(data: FacturaPDFData): string {
     </div>
   </div>
 
-  <!-- Receptor -->
+  <!-- RECEPTOR -->
   <div class="section two-col">
     <div>
       <div class="section-title">Datos del receptor</div>
-      <div class="field"><label>Razón Social / Nombre</label><span>${data.receptor_nombre}</span></div>
+      <div class="field"><label>Razón Social / Nombre</label><span>${data.receptor_nombre || "Consumidor Final"}</span></div>
       <div class="field"><label>${TIPO_DOC_LABEL[data.receptor_tipo_doc] || "Documento"}</label><span>${data.receptor_nro_doc || "—"}</span></div>
       ${data.receptor_domicilio ? `<div class="field"><label>Domicilio</label><span>${data.receptor_domicilio}</span></div>` : ""}
     </div>
     <div>
-      <div class="field" style="margin-top:16px"><label>Condición frente al IVA</label><span>${CONDICION_IVA_LABEL[data.receptor_condicion_iva] || data.receptor_condicion_iva}</span></div>
+      <div class="field" style="margin-top:16px">
+        <label>Condición frente al IVA</label>
+        <span>${CONDICION_IVA_LABEL[data.receptor_condicion_iva] || data.receptor_condicion_iva}</span>
+      </div>
     </div>
   </div>
 
-  <!-- Items -->
+  <!-- ITEMS -->
   <table class="items">
     <thead>
       <tr>
         <th>Descripción</th>
-        <th>Cantidad</th>
-        <th>Precio Unit.</th>
-        <th>IVA %</th>
-        <th>Subtotal</th>
+        <th style="text-align:center">Cant.</th>
+        <th style="text-align:right">Precio Unit.</th>
+        <th style="text-align:center">IVA %</th>
+        <th style="text-align:right">Subtotal</th>
       </tr>
     </thead>
     <tbody>${itemsHTML}</tbody>
   </table>
 
-  <!-- Totales -->
+  <!-- TOTALES -->
   <div class="totals-row">
     <div class="totals">
       <table>
@@ -217,18 +289,25 @@ export function buildFacturaHTML(data: FacturaPDFData): string {
     </div>
   </div>
 
-  <!-- Footer con CAE y QR -->
+  <!-- DATOS DE PAGO -->
+  ${datosPagoHtml}
+
+  <!-- FOOTER: CAE + QR -->
   <div class="footer">
     <div class="cae-info">
       <p><strong>CAE:</strong> ${data.cae}</p>
       <p><strong>Vencimiento CAE:</strong> ${fmtFecha(data.cae_vto)}</p>
-      <p style="font-size:10px;color:#666;margin-top:4px">Comprobante emitido via ARCA (ex-AFIP) — Servicio web WSFE v1</p>
+      <p style="font-size:10px;color:#888;margin-top:4px">Comprobante emitido via ARCA — WSFE v1</p>
     </div>
-    <div class="qr-placeholder">
+    <div class="qr-wrap">
       <img src="https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(qrUrl)}" alt="QR ARCA" />
       <span class="qr-label">QR ARCA</span>
     </div>
   </div>
+
+  <!-- NOTA AL PIE -->
+  ${notaHtml}
+
 </div>
 </body>
 </html>`
