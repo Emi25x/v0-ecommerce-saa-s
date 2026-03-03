@@ -91,34 +91,45 @@ export async function GET(req: NextRequest) {
     }))
   }
 
-  // Obtener datos de facturación del comprador desde /orders/{id}/billing_info
-  // Este endpoint devuelve DNI/CUIT, nombre, dirección, etc. del comprador para cada venta
+  // Obtener datos del comprador:
+  // 1. /orders/{id}         → buyer.first_name, last_name, phone
+  // 2. /orders/{id}/billing_info → doc_type (DNI/CUIT), doc_number, dirección fiscal
+  // La API de ML devuelve buyer: { id } en /orders/search sin nombre ni DNI.
   const orderBillingMap = new Map<string, {
     doc_type: string; doc_number: string
     first_name: string; last_name: string
     address: string; city: string; state: string; zip: string
   }>()
+
   await Promise.all(orders.slice(0, 30).map(async (o: any) => {
     try {
-      const br = await fetch(
-        `https://api.mercadolibre.com/orders/${o.id}/billing_info`,
-        { headers: { Authorization: `Bearer ${mlAccount.access_token}` } }
-      )
-      if (br.ok) {
-        const bd = await br.json()
-        // billing_info devuelve: doc_type, doc_number, first_name, last_name, address, city, state, zip
-        const buyer = bd.buyer || {}
-        orderBillingMap.set(String(o.id), {
-          doc_type:   buyer.doc_type   || bd.doc_type   || "",
-          doc_number: buyer.doc_number || bd.doc_number || "",
-          first_name: buyer.first_name || bd.first_name || o.buyer?.first_name || "",
-          last_name:  buyer.last_name  || bd.last_name  || o.buyer?.last_name  || "",
-          address:    buyer.address    || bd.address    || "",
-          city:       buyer.city       || bd.city       || "",
-          state:      buyer.state      || bd.state      || "",
-          zip:        buyer.zip        || bd.zip        || "",
-        })
-      }
+      // Llamada 1: detalle completo de la orden (tiene buyer con nombre)
+      const [orderRes, billingRes] = await Promise.all([
+        fetch(`https://api.mercadolibre.com/orders/${o.id}`,
+          { headers: { Authorization: `Bearer ${mlAccount.access_token}` } }),
+        fetch(`https://api.mercadolibre.com/orders/${o.id}/billing_info`,
+          { headers: { Authorization: `Bearer ${mlAccount.access_token}` } }),
+      ])
+
+      const orderDetail  = orderRes.ok  ? await orderRes.json()   : null
+      const billingData  = billingRes.ok ? await billingRes.json() : null
+
+      // buyer con nombre viene del detalle de la orden
+      const buyerDetail = orderDetail?.buyer || {}
+      // billing_info puede venir como objeto plano o con sub-objeto buyer/payer
+      const billing     = billingData?.buyer || billingData?.payer || billingData || {}
+
+      orderBillingMap.set(String(o.id), {
+        first_name: buyerDetail.first_name || billing.first_name || "",
+        last_name:  buyerDetail.last_name  || billing.last_name  || "",
+        // DNI/CUIT: puede estar en identification del detalle o en billing_info
+        doc_type:   billing.doc_type   || buyerDetail.identification?.type   || "",
+        doc_number: billing.doc_number || buyerDetail.identification?.number || "",
+        address:    billing.address    || billing.street_name || "",
+        city:       billing.city       || billing.city_name   || "",
+        state:      billing.state      || billing.state_name  || "",
+        zip:        billing.zip        || billing.zip_code    || "",
+      })
     } catch { /* ignorar */ }
   }))
 

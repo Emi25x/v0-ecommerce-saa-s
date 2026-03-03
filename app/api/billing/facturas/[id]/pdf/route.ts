@@ -36,7 +36,22 @@ function buildPDFResponse(factura: any) {
     receptor_nro_doc:       factura.nro_doc_receptor,
     receptor_condicion_iva: factura.receptor_condicion_iva || "consumidor_final",
     receptor_domicilio:     factura.receptor_domicilio,
-    items:                  factura.items                || [],
+    // Normalizar items: asegurar que tengan subtotal e iva calculados
+    items: (factura.items || []).map((it: any) => {
+      const qty      = Number(it.cantidad        || 1)
+      const price    = Number(it.precio_unitario || it.precio || 0)
+      const alicuota = Number(it.alicuota_iva    || 0)
+      const subtotal = it.subtotal != null ? Number(it.subtotal) : qty * price
+      const iva      = it.iva      != null ? Number(it.iva)      : Math.round(subtotal * (alicuota / 100) * 100) / 100
+      return {
+        descripcion:     it.descripcion || it.titulo || "",
+        cantidad:        qty,
+        precio_unitario: price,
+        alicuota_iva:    alicuota,
+        subtotal,
+        iva,
+      }
+    }),
     subtotal:               Number(factura.importe_neto),
     iva_105:                Number(factura.importe_iva_105),
     iva_21:                 Number(factura.importe_iva_21),
@@ -59,38 +74,52 @@ export async function GET(request: Request, { params }: { params: { id: string }
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-    // Dos FK apuntan a arca_config desde facturas (arca_config_id y empresa_id).
-    // Supabase no puede inferir el join sin el hint explícito de la FK.
-    const SELECT = "*, arca_config!facturas_arca_config_id_fkey(*)"
-
-    const { data: factura } = await supabase
+    // 1. Buscar la factura
+    const { data: factura, error: facturaError } = await supabase
       .from("facturas")
-      .select(SELECT)
-      .eq("id", params.id)
-      .eq("user_id", user.id)
-      .maybeSingle()
-
-    if (factura) return buildPDFResponse(factura)
-
-    // Fallback: la factura puede existir con user_id diferente (multiempresa/legacy)
-    // Se verifica que la arca_config pertenezca al usuario autenticado
-    const { data: facturaAny, error } = await supabase
-      .from("facturas")
-      .select(SELECT)
+      .select("*")
       .eq("id", params.id)
       .maybeSingle()
 
-    if (error || !facturaAny) {
+    if (facturaError || !factura) {
+      console.log("[v0] PDF - Factura not found, id:", params.id, "error:", facturaError?.message)
       return NextResponse.json({ error: "Factura no encontrada" }, { status: 404 })
     }
 
-    const config = facturaAny.arca_config as any
-    if (config?.user_id && config.user_id !== user.id) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 })
+    // Autorización: debe ser del usuario o de una config que pertenece al usuario
+    if (factura.user_id && factura.user_id !== user.id) {
+      // Verificar si la arca_config pertenece al usuario
+      const configId = factura.arca_config_id || factura.empresa_id
+      const { data: configCheck } = await supabase
+        .from("arca_config")
+        .select("user_id")
+        .eq("id", configId)
+        .single()
+      if (configCheck?.user_id !== user.id) {
+        return NextResponse.json({ error: "No autorizado" }, { status: 403 })
+      }
     }
 
-    return buildPDFResponse(facturaAny)
+    // 2. Buscar la arca_config asociada (join manual para evitar ambigüedad de FK)
+    const configId = factura.arca_config_id || factura.empresa_id
+    if (!configId) {
+      return NextResponse.json({ error: "Factura sin configuración ARCA asociada" }, { status: 404 })
+    }
+
+    const { data: config, error: configError } = await supabase
+      .from("arca_config")
+      .select("*")
+      .eq("id", configId)
+      .single()
+
+    if (configError || !config) {
+      console.log("[v0] PDF - arca_config not found, configId:", configId, "error:", configError?.message)
+      return NextResponse.json({ error: "Configuración ARCA no encontrada" }, { status: 404 })
+    }
+
+    return buildPDFResponse({ ...factura, arca_config: config })
   } catch (e: any) {
+    console.log("[v0] PDF - Unexpected error:", e.message)
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }
