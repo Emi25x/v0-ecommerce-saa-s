@@ -9,7 +9,7 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from("arca_config")
-      .select("id, user_id, cuit, razon_social, domicilio_fiscal, punto_venta, condicion_iva, ambiente, cert_pem, certificado_pem, clave_pem, private_key_pem, wsaa_token, wsaa_sign, wsaa_expires_at, created_at")
+      .select("id, user_id, cuit, razon_social, domicilio_fiscal, punto_venta, condicion_iva, ambiente, cert_pem, certificado_pem, clave_pem, private_key_pem, wsaa_token, wsaa_sign, wsaa_expires_at, logo_url, telefono, email, web, instagram, facebook, whatsapp, nota_factura, datos_pago, factura_opciones, created_at")
       .eq("user_id", user.id)
       .single()
 
@@ -27,29 +27,45 @@ export async function POST(request: Request) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const body = await request.json()
-    const { cuit, razon_social, domicilio_fiscal, punto_venta, condicion_iva, ambiente, cert_pem, clave_pem } = body
+    const {
+      cuit, razon_social, domicilio_fiscal, punto_venta, condicion_iva, ambiente,
+      cert_pem, clave_pem,
+      telefono, email, web, instagram, facebook, whatsapp,
+      nota_factura, datos_pago, logo_url, factura_opciones,
+    } = body
 
     if (!cuit || !razon_social || !punto_venta) {
       return NextResponse.json({ error: "CUIT, razón social y punto de venta son requeridos" }, { status: 400 })
     }
 
     const payload: any = {
-      user_id:         user.id,
-      cuit:            cuit.replace(/-/g, ""),
+      user_id:          user.id,
+      cuit:             cuit.replace(/-/g, ""),
       razon_social,
       domicilio_fiscal: domicilio_fiscal || null,
-      punto_venta:     parseInt(punto_venta),
-      condicion_iva:   condicion_iva || "responsable_inscripto",
-      tipo_emisor:     condicion_iva || "responsable_inscripto",
-      ambiente:        ambiente || "homologacion",
-      modo:            ambiente || "homologacion",
-      updated_at:      new Date().toISOString(),
-      // Limpiar token al cambiar config
-      wsaa_token:      null,
-      wsaa_sign:       null,
-      wsaa_expires_at: null,
+      punto_venta:      parseInt(punto_venta),
+      condicion_iva:    condicion_iva || "responsable_inscripto",
+      tipo_emisor:      condicion_iva || "responsable_inscripto",
+      ambiente:         ambiente || "homologacion",
+      modo:             ambiente || "homologacion",
+      updated_at:       new Date().toISOString(),
+      wsaa_token:       null,
+      wsaa_sign:        null,
+      wsaa_expires_at:  null,
+      // Contacto / redes
+      telefono:         telefono  || null,
+      email:            email     || null,
+      web:              web       || null,
+      instagram:        instagram || null,
+      facebook:         facebook  || null,
+      whatsapp:         whatsapp  || null,
+      // Contenido factura
+      nota_factura:     nota_factura || null,
+      datos_pago:       datos_pago   || null,
     }
 
+    if (logo_url)          payload.logo_url         = logo_url
+    if (factura_opciones)  payload.factura_opciones  = factura_opciones
     if (cert_pem)  { payload.cert_pem = cert_pem; payload.certificado_pem = cert_pem }
     if (clave_pem) { payload.clave_pem = clave_pem; payload.private_key_pem = clave_pem }
 

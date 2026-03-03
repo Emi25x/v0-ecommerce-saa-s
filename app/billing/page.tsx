@@ -152,10 +152,27 @@ export default function BillingPage() {
   const [loadingConfig, setLoadingConfig] = useState(true)
   const [savingConfig, setSavingConfig]   = useState(false)
   const [configForm, setConfigForm]   = useState({
+    // ARCA
     cuit: "", razon_social: "", domicilio_fiscal: "", punto_venta: "1",
     condicion_iva: "responsable_inscripto", ambiente: "homologacion",
     cert_pem: "", clave_pem: "",
+    // Contacto y redes
+    telefono: "", email: "", web: "", instagram: "", facebook: "", whatsapp: "",
+    // Contenido de la factura
+    nota_factura: "", datos_pago: "",
+    // Logo
+    logo_url: "",
+    // Visibilidad
+    factura_opciones: {
+      mostrar_logo:            true,
+      mostrar_datos_contacto:  true,
+      mostrar_redes:           true,
+      mostrar_nota:            true,
+      mostrar_datos_pago:      true,
+      mostrar_domicilio:       true,
+    },
   })
+  const [uploadingLogo, setUploadingLogo] = useState(false)
   const [configMsg, setConfigMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null)
 
   // Facturas
@@ -200,6 +217,16 @@ export default function BillingPage() {
           punto_venta:      String(d.config.punto_venta || "1"),
           condicion_iva:    d.config.condicion_iva || "responsable_inscripto",
           ambiente:         d.config.ambiente || "homologacion",
+          telefono:         d.config.telefono || "",
+          email:            d.config.email || "",
+          web:              d.config.web || "",
+          instagram:        d.config.instagram || "",
+          facebook:         d.config.facebook || "",
+          whatsapp:         d.config.whatsapp || "",
+          nota_factura:     d.config.nota_factura || "",
+          datos_pago:       d.config.datos_pago || "",
+          logo_url:         d.config.logo_url || "",
+          factura_opciones: d.config.factura_opciones || prev.factura_opciones,
         }))
       }
     } finally {
@@ -516,8 +543,72 @@ export default function BillingPage() {
         {/* ── Config tab ── */}
         <TabsContent value="config">
           <div className="max-w-2xl space-y-5">
-            <div className="rounded-lg border border-border bg-card p-5">
-              <h3 className="font-semibold mb-4 flex items-center gap-2"><Building2 className="h-4 w-4" />Datos del emisor</h3>
+
+            {/* ── Identidad visual ── */}
+            <div className="rounded-lg border border-border bg-card p-5 space-y-4">
+              <h3 className="font-semibold flex items-center gap-2"><Building2 className="h-4 w-4" />Identidad visual</h3>
+
+              {/* Logo upload */}
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0">
+                  {configForm.logo_url ? (
+                    <div className="relative group">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={configForm.logo_url}
+                        alt="Logo"
+                        className="h-20 w-40 object-contain rounded-md border border-border bg-muted/30"
+                      />
+                      <button
+                        onClick={() => setConfigForm(p => ({ ...p, logo_url: "" }))}
+                        className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="h-20 w-40 rounded-md border-2 border-dashed border-border bg-muted/20 flex flex-col items-center justify-center gap-1 text-muted-foreground">
+                      <Building2 className="h-6 w-6 opacity-40" />
+                      <span className="text-xs">Sin logo</span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 space-y-2">
+                  <Label>Logo de la empresa</Label>
+                  <p className="text-xs text-muted-foreground">PNG o JPG, máx. 2MB. Se mostrará en el encabezado de cada factura.</p>
+                  <label className="cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0]
+                        if (!file) return
+                        setUploadingLogo(true)
+                        try {
+                          const fd = new FormData()
+                          fd.append("file", file)
+                          const r = await fetch("/api/billing/logo", { method: "POST", body: fd })
+                          const d = await r.json()
+                          if (d.ok) setConfigForm(p => ({ ...p, logo_url: d.url }))
+                          else alert(d.error)
+                        } finally {
+                          setUploadingLogo(false)
+                        }
+                      }}
+                    />
+                    <span className={`inline-flex items-center gap-2 rounded-md border border-border bg-muted/30 px-3 py-1.5 text-xs font-medium hover:bg-muted/60 transition-colors ${uploadingLogo ? "opacity-60 pointer-events-none" : ""}`}>
+                      {uploadingLogo ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3 rotate-180" />}
+                      {uploadingLogo ? "Subiendo..." : "Subir logo"}
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Datos del emisor (ARCA) ── */}
+            <div className="rounded-lg border border-border bg-card p-5 space-y-4">
+              <h3 className="font-semibold flex items-center gap-2"><FileText className="h-4 w-4" />Datos fiscales ARCA</h3>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label>CUIT (sin guiones)</Label>
@@ -557,17 +648,80 @@ export default function BillingPage() {
               </div>
             </div>
 
-            <div className="rounded-lg border border-border bg-card p-5">
-              <h3 className="font-semibold mb-1 flex items-center gap-2"><FileText className="h-4 w-4" />Certificado digital</h3>
-              <p className="text-xs text-muted-foreground mb-4">
+            {/* ── Contacto y redes ── */}
+            <div className="rounded-lg border border-border bg-card p-5 space-y-4">
+              <h3 className="font-semibold flex items-center gap-2"><Globe className="h-4 w-4" />Contacto y redes sociales</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label>Teléfono</Label>
+                  <Input placeholder="+54 11 1234-5678" value={configForm.telefono} onChange={e => setConfigForm(p => ({ ...p, telefono: e.target.value }))} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>WhatsApp</Label>
+                  <Input placeholder="+54 9 11 1234-5678" value={configForm.whatsapp} onChange={e => setConfigForm(p => ({ ...p, whatsapp: e.target.value }))} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Email</Label>
+                  <Input type="email" placeholder="info@empresa.com" value={configForm.email} onChange={e => setConfigForm(p => ({ ...p, email: e.target.value }))} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Sitio web</Label>
+                  <Input placeholder="www.empresa.com" value={configForm.web} onChange={e => setConfigForm(p => ({ ...p, web: e.target.value }))} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Instagram</Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">@</span>
+                    <Input className="pl-7" placeholder="miempresa" value={configForm.instagram} onChange={e => setConfigForm(p => ({ ...p, instagram: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Facebook</Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">@</span>
+                    <Input className="pl-7" placeholder="miempresa" value={configForm.facebook} onChange={e => setConfigForm(p => ({ ...p, facebook: e.target.value }))} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Contenido de la factura ── */}
+            <div className="rounded-lg border border-border bg-card p-5 space-y-4">
+              <h3 className="font-semibold flex items-center gap-2"><Receipt className="h-4 w-4" />Contenido de la factura</h3>
+              <div className="space-y-1.5">
+                <Label>Nota opcional</Label>
+                <p className="text-xs text-muted-foreground">Aparece al pie de todas las facturas (ej: "Gracias por su compra", condiciones de devolución, etc.)</p>
+                <Textarea
+                  placeholder="Gracias por su compra. Ante cualquier consulta contactenos a info@empresa.com"
+                  className="resize-none h-20 text-sm"
+                  value={configForm.nota_factura}
+                  onChange={e => setConfigForm(p => ({ ...p, nota_factura: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Datos para realizar pagos</Label>
+                <p className="text-xs text-muted-foreground">CBU, alias, Mercado Pago, etc. Se muestra como sección destacada en la factura.</p>
+                <Textarea
+                  placeholder={"CBU: 0000000000000000000000\nAlias: EMPRESA.PAGO\nMercado Pago: @miempresa"}
+                  className="resize-none h-24 text-sm font-mono"
+                  value={configForm.datos_pago}
+                  onChange={e => setConfigForm(p => ({ ...p, datos_pago: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            {/* ── Certificado digital ── */}
+            <div className="rounded-lg border border-border bg-card p-5 space-y-4">
+              <h3 className="font-semibold flex items-center gap-2"><Key className="h-4 w-4" />Certificado digital</h3>
+              <p className="text-xs text-muted-foreground">
                 El certificado .pem y la clave privada se obtienen al dar de alta el servicio en el portal de ARCA.
-                Se guardan encriptados y se usan para autenticarse en el WSAA.
+                Consultá la pestaña "Cómo tramitar el certificado" para instrucciones detalladas.
               </p>
               <div className="space-y-4">
                 <div className="space-y-1.5">
                   <Label>Certificado (.pem)</Label>
                   <Textarea
-                    placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
+                    placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
                     className="font-mono text-xs h-28 resize-none"
                     value={configForm.cert_pem}
                     onChange={e => setConfigForm(p => ({ ...p, cert_pem: e.target.value }))}
@@ -576,12 +730,49 @@ export default function BillingPage() {
                 <div className="space-y-1.5">
                   <Label>Clave privada (.pem)</Label>
                   <Textarea
-                    placeholder="-----BEGIN PRIVATE KEY-----&#10;...&#10;-----END PRIVATE KEY-----"
+                    placeholder={"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"}
                     className="font-mono text-xs h-28 resize-none"
                     value={configForm.clave_pem}
                     onChange={e => setConfigForm(p => ({ ...p, clave_pem: e.target.value }))}
                   />
                 </div>
+              </div>
+            </div>
+
+            {/* ── Opciones de visualización ── */}
+            <div className="rounded-lg border border-border bg-card p-5 space-y-4">
+              <div>
+                <h3 className="font-semibold flex items-center gap-2"><Settings className="h-4 w-4" />Opciones de visualización</h3>
+                <p className="text-xs text-muted-foreground mt-1">Elegí qué secciones aparecen en el PDF de cada factura por defecto.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {([
+                  { key: "mostrar_logo",           label: "Logo de la empresa" },
+                  { key: "mostrar_domicilio",       label: "Domicilio fiscal" },
+                  { key: "mostrar_datos_contacto",  label: "Teléfono y email" },
+                  { key: "mostrar_redes",           label: "Redes sociales" },
+                  { key: "mostrar_datos_pago",      label: "Datos de pago" },
+                  { key: "mostrar_nota",            label: "Nota al pie" },
+                ] as { key: keyof typeof configForm.factura_opciones; label: string }[]).map(({ key, label }) => (
+                  <label key={key} className="flex items-center gap-3 cursor-pointer group">
+                    <button
+                      role="checkbox"
+                      aria-checked={configForm.factura_opciones[key]}
+                      onClick={() => setConfigForm(p => ({
+                        ...p,
+                        factura_opciones: { ...p.factura_opciones, [key]: !p.factura_opciones[key] }
+                      }))}
+                      className={`h-5 w-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                        configForm.factura_opciones[key]
+                          ? "border-emerald-500 bg-emerald-500"
+                          : "border-border bg-transparent group-hover:border-muted-foreground"
+                      }`}
+                    >
+                      {configForm.factura_opciones[key] && <CheckCircle2 className="h-3 w-3 text-white" />}
+                    </button>
+                    <span className="text-sm">{label}</span>
+                  </label>
+                ))}
               </div>
             </div>
 
@@ -597,7 +788,7 @@ export default function BillingPage() {
               {savingConfig ? "Guardando..." : "Guardar configuración"}
             </Button>
           </div>
-  </TabsContent>
+        </TabsContent>
 
   {/* ── Ayuda tab ── */}
   <TabsContent value="ayuda">
