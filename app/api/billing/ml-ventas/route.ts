@@ -67,20 +67,52 @@ export async function GET(req: NextRequest) {
     (facturadas || []).map((f: any) => [f.ml_order_id, f])
   )
 
-  // Enriquecer órdenes con estado de facturación
+  // Obtener estado de envíos en batch (ML devuelve solo shipment.id en orders/search)
+  // ML permite hasta 20 ids por request con /shipments?ids=id1,id2,...
+  const shipmentStatusMap = new Map<string, string>()
+  const shipmentIds = orders
+    .map((o: any) => o.shipping?.id)
+    .filter(Boolean)
+    .map(String)
+
+  if (shipmentIds.length > 0) {
+    // Procesar en chunks de 20 (límite de ML)
+    const chunks: string[][] = []
+    for (let i = 0; i < shipmentIds.length; i += 20) {
+      chunks.push(shipmentIds.slice(i, i + 20))
+    }
+    await Promise.all(chunks.map(async (chunk) => {
+      try {
+        const sr = await fetch(
+          `https://api.mercadolibre.com/shipments?ids=${chunk.join(",")}`,
+          { headers: { Authorization: `Bearer ${mlAccount.access_token}` } }
+        )
+        if (sr.ok) {
+          const sData = await sr.json()
+          // La respuesta es un array de objetos shipment
+          const arr = Array.isArray(sData) ? sData : (sData.results || [])
+          for (const s of arr) {
+            if (s?.id) shipmentStatusMap.set(String(s.id), s.status || "")
+          }
+        }
+      } catch { /* ignorar errores de envío individual */ }
+    }))
+  }
+
+  // Enriquecer órdenes con estado de facturación y envío
   let enriched = orders.map((o: any) => ({
     id:            o.id,
     fecha:         o.date_created,
     estado:        o.status,
-    envio_status:  o.shipping?.status || null,   // estado del envío (delivered, shipped, etc.)
+    envio_status:  shipmentStatusMap.get(String(o.shipping?.id)) || null,
     total:         o.total_amount,
     moneda:        o.currency_id,
     comprador:     o.buyer ? `${o.buyer.first_name || ""} ${o.buyer.last_name || ""}`.trim() : "—",
-    comprador_doc: o.buyer?.identification?.number || null,   // DNI/CUIT del comprador si ML lo provee
+    comprador_doc: o.buyer?.identification?.number || null,
     items:         (o.order_items || []).map((i: any) => ({
       titulo:   i.item?.title || "",
       cantidad: i.quantity,
-      precio:   Math.round(i.unit_price * 100) / 100,  // redondear a 2 decimales
+      precio:   Math.round(i.unit_price * 100) / 100,
     })),
     facturada:    facturadaMap.has(String(o.id)),
     factura_info: facturadaMap.get(String(o.id)) || null,
