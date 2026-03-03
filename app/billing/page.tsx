@@ -22,11 +22,25 @@ interface ArcaConfig {
   id: string
   cuit: string
   razon_social: string
+  nombre_empresa: string | null
   domicilio_fiscal: string
   punto_venta: number
   condicion_iva: string
   ambiente: string
   wsaa_expires_at: string | null
+  logo_url?: string | null
+  telefono?: string | null
+  email?: string | null
+  web?: string | null
+  instagram?: string | null
+  facebook?: string | null
+  whatsapp?: string | null
+  nota_factura?: string | null
+  datos_pago?: string | null
+  factura_opciones?: any
+  iva_default?: number
+  cert_pem?: string | null
+  clave_pem?: string | null
 }
 
 interface FacturaItem {
@@ -147,13 +161,19 @@ const EMPTY_ITEM = (ivaDefault = 21): Partial<FacturaItem> => ({
 export default function BillingPage() {
   const [activeTab, setActiveTab] = useState("facturas")
 
-  // Config
-  const [config, setConfig]           = useState<ArcaConfig | null>(null)
-  const [loadingConfig, setLoadingConfig] = useState(true)
-  const [savingConfig, setSavingConfig]   = useState(false)
-  const [configForm, setConfigForm]   = useState({
+  // ── Multi-empresa ──────────────────────────────────────────────────────────
+  const [empresas, setEmpresas]               = useState<ArcaConfig[]>([])
+  const [empresaActivaId, setEmpresaActivaId] = useState<string | null>(null)
+  const [loadingConfig, setLoadingConfig]     = useState(true)
+  const [savingConfig, setSavingConfig]       = useState(false)
+  const [deletingEmpresa, setDeletingEmpresa] = useState(false)
+  // empresa activa derivada
+  const config = empresas.find(e => e.id === empresaActivaId) ?? empresas[0] ?? null
+
+  const EMPTY_CONFIG_FORM = () => ({
+    id: "",
     // ARCA
-    cuit: "", razon_social: "", domicilio_fiscal: "", punto_venta: "1",
+    cuit: "", razon_social: "", nombre_empresa: "", domicilio_fiscal: "", punto_venta: "1",
     condicion_iva: "responsable_inscripto", ambiente: "homologacion",
     cert_pem: "", clave_pem: "",
     // Contacto y redes
@@ -173,7 +193,10 @@ export default function BillingPage() {
       mostrar_domicilio:       true,
     },
   })
+
+  const [configForm, setConfigForm]   = useState(EMPTY_CONFIG_FORM())
   const [uploadingLogo, setUploadingLogo] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   // ── Padrón lookup ─────────────────────────────────────────────────────────
   const [padronStatus, setPadronStatus] = useState<"idle"|"loading"|"found"|"error">("idle")
@@ -420,7 +443,15 @@ export default function BillingPage() {
           </p>
         </div>
         <Button
-          onClick={() => { if (!config) { setActiveTab("config") } else { setShowNew(true) } }}
+          onClick={() => {
+            if (!config) { setActiveTab("config") }
+            else {
+              setItems([EMPTY_ITEM(configForm.iva_default)])
+              setSkuInput([""]); setSkuStatus(["idle"])
+              setPadronStatus("idle"); setPadronMsg("")
+              setShowNew(true)
+            }
+          }}
           className="gap-2"
           size="sm"
         >
@@ -1059,7 +1090,14 @@ export default function BillingPage() {
   </Tabs>
 
       {/* ── Modal nueva factura ── */}
-      <Dialog open={showNew} onOpenChange={setShowNew}>
+      <Dialog open={showNew} onOpenChange={(open) => {
+        if (open) {
+          setItems([EMPTY_ITEM(configForm.iva_default)])
+          setSkuInput([""]); setSkuStatus(["idle"])
+          setPadronStatus("idle"); setPadronMsg("")
+        }
+        setShowNew(open)
+      }}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Receipt className="h-5 w-5" />Nueva factura electrónica</DialogTitle>

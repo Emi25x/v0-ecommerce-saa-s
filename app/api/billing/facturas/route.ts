@@ -12,17 +12,19 @@ export async function GET(request: Request) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const { searchParams } = new URL(request.url)
-    const page   = parseInt(searchParams.get("page") || "1")
-    const limit  = parseInt(searchParams.get("limit") || "20")
-    const estado = searchParams.get("estado") || ""
-    const q      = searchParams.get("q") || ""
-    const offset = (page - 1) * limit
+    const page       = parseInt(searchParams.get("page") || "1")
+    const limit      = parseInt(searchParams.get("limit") || "20")
+    const estado     = searchParams.get("estado") || ""
+    const q          = searchParams.get("q") || ""
+    const empresa_id = searchParams.get("empresa_id") || ""
+    const offset     = (page - 1) * limit
 
     let query = supabase
       .from("facturas")
       .select("*", { count: "exact" })
       .eq("user_id", user.id)
 
+    if (empresa_id) query = query.eq("empresa_id", empresa_id)
     if (estado) query = query.eq("estado", estado)
     if (q) query = query.or(`razon_social_receptor.ilike.%${q}%,nro_doc_receptor.ilike.%${q}%,cae.ilike.%${q}%`)
 
@@ -54,12 +56,15 @@ export async function POST(request: Request) {
     if (!items?.length) return NextResponse.json({ error: "La factura debe tener al menos un ítem" }, { status: 400 })
     if (!receptor_nombre) return NextResponse.json({ error: "Nombre del receptor requerido" }, { status: 400 })
 
+    // empresa_id puede venir en el body o tomamos la primera del usuario
+    const empresa_id = body.empresa_id
+
     // Obtener configuración ARCA del usuario
-    const { data: config, error: cfgErr } = await supabase
-      .from("arca_config")
-      .select("*")
-      .eq("user_id", user.id)
-      .single()
+    let cfgQuery = supabase.from("arca_config").select("*").eq("user_id", user.id)
+    if (empresa_id) cfgQuery = cfgQuery.eq("id", empresa_id)
+    else cfgQuery = cfgQuery.order("created_at", { ascending: true })
+
+    const { data: config, error: cfgErr } = await cfgQuery.limit(1).single()
 
     if (cfgErr || !config) {
       return NextResponse.json({ error: "Configuración ARCA no encontrada. Completá los datos en Facturación > Configuración." }, { status: 400 })
@@ -103,6 +108,7 @@ export async function POST(request: Request) {
       .from("facturas")
       .insert({
         user_id:               user.id,
+        empresa_id:            config.id,
         arca_config_id:        config.id,
         punto_venta:           config.punto_venta,
         tipo_comprobante:      parseInt(tipo_comprobante),
