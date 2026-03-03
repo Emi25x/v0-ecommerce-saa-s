@@ -9,18 +9,12 @@ export async function GET(request: NextRequest) {
     const error = searchParams.get("error")
 
     if (error) {
-      console.error("[v0] ML Callback - Error from ML:", error)
-      const errorDescription = searchParams.get("error_description")
-      console.error("[v0] ML Callback - Error description:", errorDescription)
-      return NextResponse.redirect(`${request.nextUrl.origin}/integrations?error=ml_error&message=${error}`)
+      return NextResponse.redirect(`${request.nextUrl.origin}/integrations?error=ml_error&message=${encodeURIComponent(error)}`)
     }
 
     if (!code) {
-      console.error("[v0] ML Callback - No code received")
       return NextResponse.redirect(`${request.nextUrl.origin}/integrations?error=no_code`)
     }
-
-    console.log("[v0] ML Callback - Code received:", code.substring(0, 10) + "...")
 
     // El state puede contener token=<uuid> (verifier en BD) o from=billing (origen)
     const stateRaw   = request.nextUrl.searchParams.get("state") || ""
@@ -56,7 +50,6 @@ export async function GET(request: NextRequest) {
     }
 
     const redirectUri = `${request.nextUrl.origin}/api/mercadolibre/callback`
-    console.log("[v0] ML Callback - Using redirect URI:", redirectUri)
 
     const tokens = await exchangeCodeForToken(code, redirectUri, codeVerifier)
 
