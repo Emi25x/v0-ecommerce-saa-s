@@ -12,7 +12,8 @@ import { Textarea } from "@/components/ui/textarea"
 import {
   FileText, Plus, Settings, RefreshCw, Download, Search,
   CheckCircle2, XCircle, Clock, Trash2, ChevronLeft, ChevronRight, Building2, Receipt,
-  HelpCircle, ExternalLink, ChevronDown, ChevronUp, ShieldCheck, Key, Globe, Terminal
+  HelpCircle, ExternalLink, ChevronDown, ChevronUp, ShieldCheck, Key, Globe, Terminal,
+  Barcode, Loader2, X
 } from "lucide-react"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -268,10 +269,56 @@ export default function BillingPage() {
     }
   }
 
+  // ── SKU/EAN lookup per item ────────────────────────────────────────────────
+
+  // skuInput[idx] = texto del campo SKU/EAN del ítem
+  // skuStatus[idx] = "idle" | "loading" | "found" | "notfound"
+  const [skuInput,  setSkuInput]  = useState<string[]>([""])
+  const [skuStatus, setSkuStatus] = useState<("idle"|"loading"|"found"|"notfound")[]>(["idle"])
+
+  const lookupProduct = useCallback(async (idx: number, query: string) => {
+    if (!query.trim()) return
+    setSkuStatus(prev => { const n = [...prev]; n[idx] = "loading"; return n })
+    try {
+      const res = await fetch(`/api/billing/product-lookup?q=${encodeURIComponent(query.trim())}`)
+      const data = await res.json()
+      if (data.products?.length > 0) {
+        const p = data.products[0]
+        setItems(prev => prev.map((it, i) => i === idx
+          ? { ...it, descripcion: p.title, precio_unitario: p.price ?? it.precio_unitario }
+          : it
+        ))
+        setSkuStatus(prev => { const n = [...prev]; n[idx] = "found"; return n })
+      } else {
+        setSkuStatus(prev => { const n = [...prev]; n[idx] = "notfound"; return n })
+      }
+    } catch {
+      setSkuStatus(prev => { const n = [...prev]; n[idx] = "notfound"; return n })
+    }
+  }, [])
+
+  // Sincronizar tamaño de arrays de lookup con items
+  useEffect(() => {
+    setSkuInput(prev => {
+      const arr = [...prev]
+      while (arr.length < items.length) arr.push("")
+      return arr.slice(0, items.length)
+    })
+    setSkuStatus(prev => {
+      const arr = [...prev]
+      while (arr.length < items.length) arr.push("idle")
+      return arr.slice(0, items.length)
+    })
+  }, [items.length])
+
   // ── Items helpers ─────────────────────────────────────────────────────────
 
   const updateItem = (idx: number, field: keyof FacturaItem, value: any) => {
     setItems(prev => prev.map((it, i) => i === idx ? { ...it, [field]: value } : it))
+    // Resetear estado lookup si cambia la descripción manualmente
+    if (field === "descripcion") {
+      setSkuStatus(prev => { const n = [...prev]; n[idx] = "idle"; return n })
+    }
   }
 
   const addItem = () => setItems(prev => [...prev, EMPTY_ITEM()])
@@ -811,44 +858,88 @@ export default function BillingPage() {
                   <Plus className="h-3 w-3" />Agregar ítem
                 </Button>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {/* Header */}
-                <div className="grid grid-cols-[1fr_60px_90px_80px_80px_24px] gap-2 text-xs text-muted-foreground px-1">
-                  <span>Descripción</span><span className="text-center">Cant.</span><span className="text-right">Precio</span><span className="text-center">IVA</span><span className="text-right">Subtotal</span><span />
+                <div className="grid grid-cols-[110px_1fr_60px_90px_80px_80px_24px] gap-2 text-xs text-muted-foreground px-1">
+                  <span className="flex items-center gap-1"><Barcode className="h-3 w-3" />SKU / EAN</span>
+                  <span>Descripción</span>
+                  <span className="text-center">Cant.</span>
+                  <span className="text-right">Precio</span>
+                  <span className="text-center">IVA</span>
+                  <span className="text-right">Subtotal</span>
+                  <span />
                 </div>
                 {items.map((item, idx) => {
                   const c = calcItem(item)
+                  const status = skuStatus[idx] ?? "idle"
                   return (
-                    <div key={idx} className="grid grid-cols-[1fr_60px_90px_80px_80px_24px] gap-2 items-center">
-                      <Input
-                        placeholder="Descripción del producto"
-                        className="h-8 text-xs"
-                        value={item.descripcion || ""}
-                        onChange={e => updateItem(idx, "descripcion", e.target.value)}
-                      />
-                      <Input
-                        type="number" min="1" className="h-8 text-xs text-center"
-                        value={item.cantidad || ""}
-                        onChange={e => updateItem(idx, "cantidad", Number(e.target.value))}
-                      />
-                      <Input
-                        type="number" min="0" step="0.01" className="h-8 text-xs text-right"
-                        value={item.precio_unitario || ""}
-                        onChange={e => updateItem(idx, "precio_unitario", Number(e.target.value))}
-                      />
-                      <Select
-                        value={String(item.alicuota_iva ?? 21)}
-                        onValueChange={v => updateItem(idx, "alicuota_iva", Number(v))}
-                      >
-                        <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {IVA_OPTS.map(o => <SelectItem key={o.value} value={String(o.value)}>{o.label}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                      <span className="text-xs text-right font-mono">${c.subtotal.toFixed(2)}</span>
-                      <button onClick={() => removeItem(idx)} className="text-muted-foreground hover:text-red-400 transition-colors">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                    <div key={idx} className="space-y-1">
+                      <div className="grid grid-cols-[110px_1fr_60px_90px_80px_80px_24px] gap-2 items-center">
+                        {/* SKU / EAN lookup */}
+                        <div className="relative">
+                          <Input
+                            placeholder="SKU o EAN"
+                            className={`h-8 text-xs pr-7 font-mono ${
+                              status === "found"    ? "border-emerald-500/50 bg-emerald-500/5" :
+                              status === "notfound" ? "border-amber-500/50" : ""
+                            }`}
+                            value={skuInput[idx] ?? ""}
+                            onChange={e => {
+                              const val = e.target.value
+                              setSkuInput(prev => { const n = [...prev]; n[idx] = val; return n })
+                              setSkuStatus(prev => { const n = [...prev]; n[idx] = "idle"; return n })
+                            }}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") {
+                                e.preventDefault()
+                                lookupProduct(idx, skuInput[idx] ?? "")
+                              }
+                            }}
+                            onBlur={() => {
+                              if ((skuInput[idx] ?? "").trim()) lookupProduct(idx, skuInput[idx] ?? "")
+                            }}
+                          />
+                          <span className="absolute right-2 top-1/2 -translate-y-1/2">
+                            {status === "loading"  && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                            {status === "found"    && <CheckCircle2 className="h-3 w-3 text-emerald-400" />}
+                            {status === "notfound" && <X className="h-3 w-3 text-amber-400" />}
+                          </span>
+                        </div>
+                        <Input
+                          placeholder="Descripción del producto"
+                          className="h-8 text-xs"
+                          value={item.descripcion || ""}
+                          onChange={e => updateItem(idx, "descripcion", e.target.value)}
+                        />
+                        <Input
+                          type="number" min="1" className="h-8 text-xs text-center"
+                          value={item.cantidad || ""}
+                          onChange={e => updateItem(idx, "cantidad", Number(e.target.value))}
+                        />
+                        <Input
+                          type="number" min="0" step="0.01" className="h-8 text-xs text-right"
+                          value={item.precio_unitario || ""}
+                          onChange={e => updateItem(idx, "precio_unitario", Number(e.target.value))}
+                        />
+                        <Select
+                          value={String(item.alicuota_iva ?? 21)}
+                          onValueChange={v => updateItem(idx, "alicuota_iva", Number(v))}
+                        >
+                          <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {IVA_OPTS.map(o => <SelectItem key={o.value} value={String(o.value)}>{o.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        <span className="text-xs text-right font-mono">${c.subtotal.toFixed(2)}</span>
+                        <button onClick={() => removeItem(idx)} className="text-muted-foreground hover:text-red-400 transition-colors">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      {status === "notfound" && (skuInput[idx] ?? "").trim() && (
+                        <p className="text-xs text-amber-400 pl-[118px]">
+                          No se encontró "{skuInput[idx]}" en la base de productos. Podés escribir la descripción manualmente.
+                        </p>
+                      )}
                     </div>
                   )
                 })}
