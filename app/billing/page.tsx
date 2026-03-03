@@ -737,12 +737,49 @@ export default function BillingPage() {
         </div>
       </div>
 
+      {/* Normativa vigente */}
+      <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 overflow-hidden">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-amber-500/20">
+          <ShieldCheck className="h-5 w-5 text-amber-400 flex-shrink-0" />
+          <h3 className="font-semibold">Normativa vigente — ¿cuándo identificar al receptor?</h3>
+        </div>
+        <div className="px-5 py-4 space-y-4 text-sm text-muted-foreground leading-relaxed">
+
+          <div className="rounded-md border border-border bg-card p-4 space-y-2">
+            <p className="font-semibold text-foreground">Régimen General (Responsable Inscripto / Factura B)</p>
+            <p>Según la <strong className="text-amber-400">RG ARCA 5700/2025</strong> (vigente desde el 29 de mayo de 2025), la identificación del Consumidor Final es obligatoria cuando el total del comprobante supera:</p>
+            <div className="rounded bg-black/30 p-3 font-mono text-xs space-y-1">
+              <p><span className="text-emerald-400">{'>'} $10.000.000</span> → <span className="text-foreground">Identificación OBLIGATORIA (CUIT / CUIL / CDI / DNI)</span></p>
+              <p><span className="text-blue-400">≤ $10.000.000</span> → <span className="text-foreground">Sin identificación (DocTipo 99, DocNro 0)</span></p>
+            </div>
+            <p>Al superar el límite, solo es necesario el número de documento. Ya <strong className="text-foreground">no es obligatorio</strong> incluir nombre ni domicilio.</p>
+          </div>
+
+          <div className="rounded-md border border-border bg-card p-4 space-y-2">
+            <p className="font-semibold text-foreground">Monotributistas (Factura C)</p>
+            <p>El límite para no identificar al receptor en Factura C es <strong className="text-foreground">$10.000.000</strong> (mismo criterio desde RG 5700/2025).</p>
+            <p>Para usar la herramienta "Facturador" de ARCA el tope es <strong className="text-foreground">$500.000</strong> (no aplica a integraciones por webservice como esta app).</p>
+          </div>
+
+          <div className="rounded-md border border-border bg-card p-4 space-y-2">
+            <p className="font-semibold text-foreground">Responsable Inscripto a Responsable Inscripto (Factura A)</p>
+            <p>La Factura A siempre requiere el <strong className="text-foreground">CUIT del receptor</strong> (DocTipo 80) sin excepción. No existe límite de monto ni opción de emitir sin identificar.</p>
+          </div>
+
+          <div className="rounded-md border border-blue-500/20 bg-blue-500/5 p-3 text-blue-300 text-xs">
+            Los montos se actualizan cada semestre (enero y julio) tomando el Índice de Precios al Consumidor (IPC) del INDEC. Esta app mostrará una advertencia automática cuando el total de la factura supere el umbral vigente.
+          </div>
+        </div>
+      </div>
+
       {/* Links útiles */}
       <div className="rounded-lg border border-border bg-card p-5">
         <h3 className="font-semibold mb-3 flex items-center gap-2"><ExternalLink className="h-4 w-4 text-muted-foreground" />Links oficiales</h3>
         <div className="space-y-2 text-sm">
           {[
             { label: "Portal ARCA (Clave Fiscal)", href: "https://auth.afip.gob.ar/contribuyente_/login.xhtml" },
+            { label: "RG ARCA 5700/2025 — Identificación Consumidor Final", href: "https://biblioteca.afip.gob.ar/search/query/norma.aspx?p=t%3ARAG%7Cn%3A5700" },
+            { label: "RG ARCA 5616 — CondicionIVAReceptor (obligatoria)", href: "https://biblioteca.afip.gob.ar/search/query/norma.aspx?p=t%3ARAG%7Cn%3A5616" },
             { label: "Manual WSFE v1 — ARCA", href: "https://www.afip.gob.ar/ws/documentacion/manual_desarrollador_wsfev1.pdf" },
             { label: "OpenSSL para Windows", href: "https://slproweb.com/products/Win32OpenSSL.html" },
             { label: "Guía de Factura Electrónica ARCA", href: "https://www.afip.gob.ar/fe/ayuda/documentos/manual-factura-electronica.pdf" },
@@ -960,6 +997,33 @@ export default function BillingPage() {
                 </div>
               </div>
             </div>
+
+            {/* Advertencia RG 5700/2025 — identificación obligatoria */}
+            {(() => {
+              const total = totales.total
+              const docTipo = newForm.tipo_doc_receptor
+              const docNro  = newForm.nro_doc_receptor?.replace(/\D/g, "")
+              if (total >= 10_000_000 && (docTipo === "99" || !docNro)) {
+                return (
+                  <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-400 flex items-start gap-2">
+                    <ShieldCheck className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <p className="font-semibold">Identificación obligatoria (RG ARCA 5700/2025)</p>
+                      <p>El total supera <strong>$10.000.000</strong>. Es obligatorio identificar al receptor con CUIT, CUIL, CDI o DNI. Seleccioná el tipo de documento e ingresá el número.</p>
+                    </div>
+                  </div>
+                )
+              }
+              if (total >= 208_644 && total < 10_000_000 && docTipo === "99") {
+                return (
+                  <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-3 text-sm text-blue-400 flex items-start gap-2">
+                    <ShieldCheck className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                    <p>Podés emitir sin identificar al receptor hasta <strong>$10.000.000</strong> (RG 5700/2025). El monto actual es ${total.toLocaleString("es-AR")}.</p>
+                  </div>
+                )
+              }
+              return null
+            })()}
 
             {emitError && (
               <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400 flex items-start gap-2">
