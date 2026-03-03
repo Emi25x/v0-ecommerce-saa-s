@@ -13,8 +13,7 @@ import {
   FileText, Plus, Settings, RefreshCw, Download, Search,
   CheckCircle2, XCircle, Clock, Trash2, ChevronLeft, ChevronRight, Building2, Receipt,
   HelpCircle, ExternalLink, ChevronDown, ChevronUp, ShieldCheck, Key, Globe, Terminal,
-  Barcode, Loader2, X
-  Tag, Trash2,
+  Barcode, Loader2, X, Tag,
 } from "lucide-react"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
