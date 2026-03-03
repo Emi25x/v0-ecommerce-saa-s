@@ -87,7 +87,8 @@ import { useEffect, useState } from "react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { LibralConfigDialog } from "@/components/integrations/libral-config-dialog"
 import { WebhookStatusCard } from "@/components/webhook-status-card"
-import { MLAccountCard } from "@/components/ml-account-card"
+import { MLAccountCard }       from "@/components/ml-account-card"
+import { MLListingsHealth }    from "@/components/integrations/ml-listings-health"
 
 
 export default function IntegrationsPage() {
@@ -106,6 +107,8 @@ export default function IntegrationsPage() {
   const [loadingAccounts, setLoadingAccounts] = useState(true)
   const [runningMigration, setRunningMigration] = useState(false)
   const [migrationMessage, setMigrationMessage] = useState<string | null>(null)
+  const [generatingLink, setGeneratingLink] = useState(false)
+  const [shareableLink, setShareableLink] = useState<string | null>(null)
 
   useEffect(() => {
     testShopifyConnection()
@@ -179,6 +182,49 @@ export default function IntegrationsPage() {
     } catch (error) {
       console.error("[v0] Failed to check Libral connection:", error)
       setLibralConnected(false)
+    }
+  }
+
+  // Generar link de autorización dinámico con PKCE en BD
+  const handleConnectML = async () => {
+    setGeneratingLink(true)
+    try {
+      const res = await fetch("/api/mercadolibre/generate-link", { method: "POST" })
+      const data = await res.json()
+      if (res.ok && data.url) {
+        // Abrir el link de ML OAuth en la ventana top (salir del iframe si aplica)
+        const target = window.top || window
+        target.location.href = data.url
+      } else {
+        toast({ title: "Error", description: "No se pudo generar el link de autorización", variant: "destructive" })
+      }
+    } catch {
+      toast({ title: "Error", description: "Error al conectar con el servidor", variant: "destructive" })
+    } finally {
+      setGeneratingLink(false)
+    }
+  }
+
+  // Generar link "copiable" que puede abrirse en cualquier browser
+  const generateShareableLink = async () => {
+    setGeneratingLink(true)
+    try {
+      const res = await fetch("/api/mercadolibre/generate-link", { method: "POST" })
+      const data = await res.json()
+      if (res.ok && data.url) {
+        setShareableLink(data.url)
+        navigator.clipboard.writeText(data.url)
+        toast({
+          title: "Link generado y copiado",
+          description: "El link de autorización fue copiado al portapapeles. Es válido por 30 minutos.",
+        })
+      } else {
+        toast({ title: "Error", description: "No se pudo generar el link", variant: "destructive" })
+      }
+    } catch {
+      toast({ title: "Error", description: "Error al generar el link", variant: "destructive" })
+    } finally {
+      setGeneratingLink(false)
     }
   }
 
@@ -419,8 +465,8 @@ export default function IntegrationsPage() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <Button asChild className="flex-1">
-                  <a href="/api/mercadolibre/auth">{mlConnected ? "Reconectar" : "Conectar"}</a>
+                <Button className="flex-1" disabled={generatingLink} onClick={handleConnectML}>
+                  {generatingLink ? "Generando..." : mlConnected ? "Reconectar" : "Conectar"}
                 </Button>
                 <Button variant="outline" size="icon" asChild>
                   <a href="https://developers.mercadolibre.com.ar" target="_blank" rel="noopener noreferrer">
@@ -478,29 +524,26 @@ export default function IntegrationsPage() {
               {/* Link de autorización para copiar */}
               <div className="pt-3 border-t">
                 <label className="text-xs font-medium text-muted-foreground mb-2 block">
-                  Link de autorización (para conectar cualquier cuenta)
+                  Link de autorización (válido por 30 minutos)
                 </label>
                 <div className="flex items-center gap-2">
                   <Input 
-                    value={typeof window !== 'undefined' ? `${window.location.origin}/api/mercadolibre/auth` : '/api/mercadolibre/auth'}
+                    value={shareableLink || "Genera un link para compartir..."}
                     readOnly
                     className="font-mono text-xs"
                   />
                   <Button 
                     variant="outline" 
                     size="sm"
-                    onClick={() => {
-                      const url = `${window.location.origin}/api/mercadolibre/auth`
-                      navigator.clipboard.writeText(url)
-                      toast({
-                        title: "Link copiado",
-                        description: "El link de autorización fue copiado al portapapeles",
-                      })
-                    }}
+                    disabled={generatingLink}
+                    onClick={generateShareableLink}
                   >
-                    <Copy className="h-4 w-4" />
+                    {generatingLink ? "..." : <Copy className="h-4 w-4" />}
                   </Button>
                 </div>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Genera un link de un solo uso para conectar cualquier cuenta de ML desde cualquier dispositivo
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -579,23 +622,12 @@ export default function IntegrationsPage() {
               <p className="text-sm text-muted-foreground">Gestiona múltiples cuentas de Mercado Libre</p>
             </div>
             <div className="flex gap-2">
-              <Button onClick={runMigration} disabled={runningMigration} variant="outline">
-                {runningMigration ? "Ejecutando..." : "Actualizar BD"}
-              </Button>
-              <Button asChild>
-                <a href="/api/mercadolibre/auth">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Agregar Cuenta
-                </a>
+              <Button onClick={handleConnectML} disabled={generatingLink}>
+                <Plus className="mr-2 h-4 w-4" />
+                {generatingLink ? "Generando..." : "Agregar Cuenta"}
               </Button>
             </div>
           </div>
-
-          {migrationMessage && (
-            <Alert className="mb-4">
-              <AlertDescription>{migrationMessage}</AlertDescription>
-            </Alert>
-          )}
 
           {loadingAccounts ? (
             <div className="text-center py-8 text-muted-foreground">Cargando cuentas...</div>
@@ -603,11 +635,9 @@ export default function IntegrationsPage() {
             <Card>
               <CardContent className="py-8 text-center">
                 <p className="text-muted-foreground mb-4">No hay cuentas de Mercado Libre conectadas</p>
-                <Button asChild>
-                  <a href="/api/mercadolibre/auth">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Conectar Primera Cuenta
-                  </a>
+                <Button onClick={handleConnectML} disabled={generatingLink}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  {generatingLink ? "Generando..." : "Conectar Primera Cuenta"}
                 </Button>
               </CardContent>
             </Card>
@@ -624,6 +654,15 @@ export default function IntegrationsPage() {
             </div>
           )}
         </div>
+
+        {/* Sección de publicaciones con alertas */}
+        {mlAccounts.length > 0 && (
+          <div className="mt-8 rounded-lg border border-border bg-card p-6">
+            <MLListingsHealth
+              accounts={mlAccounts.map((a: any) => ({ id: a.id, nickname: a.nickname }))}
+            />
+          </div>
+        )}
 
         <div className="mt-6">
           <h3 className="mb-4 text-xl font-semibold">Notificaciones en Tiempo Real</h3>

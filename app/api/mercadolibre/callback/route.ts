@@ -22,14 +22,38 @@ export async function GET(request: NextRequest) {
 
     console.log("[v0] ML Callback - Code received:", code.substring(0, 10) + "...")
 
-    const codeVerifier = request.cookies.get("ml_code_verifier")?.value
+    // El state puede contener token=<uuid> (verifier en BD) o from=billing (origen)
+    const stateRaw   = request.nextUrl.searchParams.get("state") || ""
+    const stateParam = decodeURIComponent(stateRaw)
+    const tokenMatch = stateParam.match(/token=([0-9a-f-]{36})/)
+    const tokenId    = tokenMatch?.[1] || null
 
-    if (!codeVerifier) {
-      console.error("[v0] ML Callback - No code verifier found in cookies")
-      return NextResponse.redirect(`${request.nextUrl.origin}/integrations?error=no_verifier`)
+    let codeVerifier: string | undefined
+
+    if (tokenId) {
+      // Flujo "link copiable": recuperar verifier de la BD
+      const supabaseForToken = await createClient()
+      const { data: tokenRow } = await supabaseForToken
+        .from("ml_auth_tokens")
+        .select("code_verifier, used, expires_at")
+        .eq("id", tokenId)
+        .single()
+
+      if (!tokenRow || tokenRow.used || new Date(tokenRow.expires_at) < new Date()) {
+        return NextResponse.redirect(`${request.nextUrl.origin}/integrations?error=token_expired`)
+      }
+
+      // Marcar como usado (un solo uso)
+      await supabaseForToken.from("ml_auth_tokens").update({ used: true }).eq("id", tokenId)
+      codeVerifier = tokenRow.code_verifier
+    } else {
+      // Flujo normal: verifier en cookie
+      codeVerifier = request.cookies.get("ml_code_verifier")?.value
     }
 
-    console.log("[v0] ML Callback - Code verifier retrieved from cookie")
+    if (!codeVerifier) {
+      return NextResponse.redirect(`${request.nextUrl.origin}/integrations?error=no_verifier`)
+    }
 
     const redirectUri = `${request.nextUrl.origin}/api/mercadolibre/callback`
     console.log("[v0] ML Callback - Using redirect URI:", redirectUri)
@@ -97,10 +121,7 @@ export async function GET(request: NextRequest) {
       // No bloqueamos el redirect si falla el sync
     }
 
-    // Si el state indica que viene desde billing, volver ahí
-    // ML puede devolver el state URL-encoded, hay que decodificarlo
-    const stateRaw    = request.nextUrl.searchParams.get("state") || ""
-    const stateParam  = decodeURIComponent(stateRaw)
+    // stateParam ya fue parseado arriba — determinar redirección de retorno
     const fromBilling = stateParam.includes("from=billing")
     const redirectTarget = fromBilling
       ? `${request.nextUrl.origin}/billing/mercadolibre?ml_connected=true`

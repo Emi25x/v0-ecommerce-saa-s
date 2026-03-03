@@ -148,11 +148,15 @@ export default function MLBillingPage() {
   const [batchResult,   setBatchResult]   = useState<{ ok: number; err: number; errors: string[] } | null>(null)
 
   // ── Conectar nueva cuenta ML ───────────────────────────────────────────────
-  const conectarML = () => {
-    // Pasa from=billing para que el callback redirija de vuelta aquí
-    // window.top para salir del iframe del preview si aplica
-    const target = window.top || window
-    target.location.href = "/api/mercadolibre/auth?from=billing"
+  const conectarML = async () => {
+    try {
+      const res  = await fetch("/api/mercadolibre/generate-link", { method: "POST" })
+      const data = await res.json()
+      if (res.ok && data.url) {
+        const target = window.top || window
+        target.location.href = data.url
+      }
+    } catch { /* ignorar */ }
   }
 
   // ── Cargar cuentas ML y empresas ARCA ─────────────────────────────────────
