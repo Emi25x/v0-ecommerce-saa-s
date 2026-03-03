@@ -32,9 +32,34 @@ export async function GET(request: NextRequest) {
     let total = 0
 
     if (mode === "forewarning") {
-      // Endpoint oficial para publicaciones que deben migrar al catálogo o serán pausadas
-      // Documentación: https://developers.mercadolibre.com.ar/devsite/listing-required
-      const url = `https://api.mercadolibre.com/marketplace/items/catalog-forewarning?limit=${limit}&offset=${offset}`
+      // Publicaciones propias que deben migrar al catálogo o serán pausadas.
+      // El endpoint requiere seller_id explícito — sin él devuelve 403 "Invalid caller.id".
+      const url = `https://api.mercadolibre.com/users/${sellerId}/items/catalog-forewarning?limit=${limit}&offset=${offset}`
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+
+      if (!res.ok) {
+        // Fallback: /items/search con tag catalog_forewarning
+        const url2 = `https://api.mercadolibre.com/users/${sellerId}/items/search?tags=catalog_forewarning&limit=${limit}&offset=${offset}`
+        const res2 = await fetch(url2, { headers: { Authorization: `Bearer ${token}` } })
+        if (!res2.ok) {
+          const err = await res2.text()
+          return NextResponse.json({ error: `ML API ${res2.status}: ${err}` }, { status: res2.status })
+        }
+        const data2 = await res2.json()
+        itemIds = data2.results || []
+        total   = data2.paging?.total || itemIds.length
+      } else {
+        const data = await res.json()
+        // catalog-forewarning puede devolver array directo o { results: [...] }
+        itemIds = Array.isArray(data) ? data : (data.results || [])
+        total   = data.paging?.total || itemIds.length
+      }
+
+    } else if (mode === "under_review") {
+      // Publicaciones bajo revisión esperando publicación en catálogo.
+      // Filtro extraído del panel ML: task=UNDER_REVIEW_WAITING_FOR_PATCH_MARKETPLACE
+      // Equivalente en API: /items/search con tag catalog_required + status active/paused
+      const url = `https://api.mercadolibre.com/users/${sellerId}/items/search?tags=catalog_required&limit=${limit}&offset=${offset}`
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
 
       if (!res.ok) {
@@ -43,29 +68,8 @@ export async function GET(request: NextRequest) {
       }
       const data = await res.json()
       itemIds = data.results || []
-      total   = data.paging?.total || 0
+      total   = data.paging?.total || itemIds.length
 
-    } else if (mode === "under_review") {
-      // Publicaciones bajo revisión que requieren publicación de catálogo
-      const url = `https://api.mercadolibre.com/users/${sellerId}/items/search?status=under_review&tags=catalog_required&limit=${limit}&offset=${offset}`
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-
-      if (!res.ok) {
-        // Fallback: buscar todos los under_review si el tag no es soportado
-        const url2 = `https://api.mercadolibre.com/users/${sellerId}/items/search?status=under_review&limit=${limit}&offset=${offset}`
-        const res2 = await fetch(url2, { headers: { Authorization: `Bearer ${token}` } })
-        if (!res2.ok) {
-          const err = await res2.text()
-          return NextResponse.json({ error: `ML API ${res2.status}: ${err}` }, { status: res2.status })
-        }
-        const data2 = await res2.json()
-        itemIds = data2.results || []
-        total   = data2.paging?.total || 0
-      } else {
-        const data = await res.json()
-        itemIds = data.results || []
-        total   = data.paging?.total || 0
-      }
     } else {
       return NextResponse.json({ error: "mode inválido. Usar: forewarning | under_review" }, { status: 400 })
     }
