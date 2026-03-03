@@ -32,16 +32,16 @@ export async function GET(req: NextRequest) {
   const mlUserId = mlAccount.ml_user_id
 
   // Construir query a ML API — las órdenes se buscan con el seller id numérico
+  // Nota: order.shipping.status no funciona bien en la API ML, se filtra client-side
   const mlParams = new URLSearchParams({
     seller: mlUserId,
     limit:  String(limit),
     offset: String(offset),
     sort:   "date_desc",
   })
-  if (estado)       mlParams.set("order.status",          estado)
-  if (estado_envio) mlParams.set("order.shipping.status", estado_envio)
-  if (fecha_desde)  mlParams.set("order.date_created.from", fecha_desde)
-  if (fecha_hasta)  mlParams.set("order.date_created.to",   fecha_hasta)
+  if (estado)      mlParams.set("order.status",            estado)
+  if (fecha_desde) mlParams.set("order.date_created.from", fecha_desde)
+  if (fecha_hasta) mlParams.set("order.date_created.to",   fecha_hasta)
 
   const mlRes = await fetch(
     `https://api.mercadolibre.com/orders/search?${mlParams}`,
@@ -67,59 +67,84 @@ export async function GET(req: NextRequest) {
     (facturadas || []).map((f: any) => [f.ml_order_id, f])
   )
 
-  // Obtener estado de envíos en batch (ML devuelve solo shipment.id en orders/search)
-  // ML permite hasta 20 ids por request con /shipments?ids=id1,id2,...
-  const shipmentStatusMap = new Map<string, string>()
-  const shipmentIds = orders
-    .map((o: any) => o.shipping?.id)
-    .filter(Boolean)
-    .map(String)
-
-  // Log para ver qué trae shipping en la primera orden
-  if (orders.length > 0) {
-    console.log("[v0] primera orden shipping raw:", JSON.stringify(orders[0].shipping))
-    console.log("[v0] shipmentIds encontrados:", shipmentIds.slice(0, 5))
-  }
+  // Obtener estado de envíos — ML devuelve solo shipment.id en orders/search
+  // Se consulta /shipments/{id} en paralelo (chunks de 20 para no saturar)
+  const shipmentStatusMap = new Map<string, { status: string; substatus: string | null }>()
+  const shipmentIds = orders.map((o: any) => o.shipping?.id).filter(Boolean).map(String)
 
   if (shipmentIds.length > 0) {
-    // Procesar de a uno — /shipments/{id} es el endpoint correcto de ML
-    await Promise.all(shipmentIds.slice(0, 20).map(async (sid) => {
-      try {
-        const sr = await fetch(
-          `https://api.mercadolibre.com/shipments/${sid}`,
-          { headers: { Authorization: `Bearer ${mlAccount.access_token}` } }
-        )
-        if (sr.ok) {
-          const sData = await sr.json()
-          console.log("[v0] shipment", sid, "status:", sData.status, "substatus:", sData.substatus)
-          if (sData?.id) shipmentStatusMap.set(String(sData.id), sData.status || "")
-        } else {
-          console.log("[v0] shipment", sid, "error:", sr.status)
-        }
-      } catch (e) { console.log("[v0] shipment fetch error:", e) }
+    const chunks: string[][] = []
+    for (let i = 0; i < shipmentIds.length; i += 20) chunks.push(shipmentIds.slice(i, i + 20))
+    await Promise.all(chunks.map(async (chunk) => {
+      await Promise.all(chunk.map(async (sid) => {
+        try {
+          const sr = await fetch(
+            `https://api.mercadolibre.com/shipments/${sid}`,
+            { headers: { Authorization: `Bearer ${mlAccount.access_token}` } }
+          )
+          if (sr.ok) {
+            const s = await sr.json()
+            if (s?.id) shipmentStatusMap.set(String(s.id), { status: s.status || "", substatus: s.substatus || null })
+          }
+        } catch { /* ignorar */ }
+      }))
     }))
   }
 
-  // Enriquecer órdenes con estado de facturación y envío
-  let enriched = orders.map((o: any) => ({
-    id:            o.id,
-    fecha:         o.date_created,
-    estado:        o.status,
-    envio_status:  shipmentStatusMap.get(String(o.shipping?.id)) || null,
-    total:         o.total_amount,
-    moneda:        o.currency_id,
-    comprador:     o.buyer ? `${o.buyer.first_name || ""} ${o.buyer.last_name || ""}`.trim() : "—",
-    comprador_doc: o.buyer?.identification?.number || null,
-    items:         (o.order_items || []).map((i: any) => ({
-      titulo:   i.item?.title || "",
-      cantidad: i.quantity,
-      precio:   Math.round(i.unit_price * 100) / 100,
-    })),
-    facturada:    facturadaMap.has(String(o.id)),
-    factura_info: facturadaMap.get(String(o.id)) || null,
+  // Obtener datos de facturación del comprador desde ML Users API
+  // ML provee el DNI/CUIT del comprador en /users/{buyer_id}/billing_info
+  const buyerBillingMap = new Map<string, { doc_type: string; doc_number: string; name: string }>()
+  const buyerIds = [...new Set(orders.map((o: any) => o.buyer?.id).filter(Boolean).map(String))]
+  await Promise.all(buyerIds.slice(0, 20).map(async (bid) => {
+    try {
+      const br = await fetch(
+        `https://api.mercadolibre.com/users/${bid}/billing_info`,
+        { headers: { Authorization: `Bearer ${mlAccount.access_token}` } }
+      )
+      if (br.ok) {
+        const bd = await br.json()
+        // billing_info devuelve doc_type (DNI/CUIT), doc_number, first_name, last_name
+        buyerBillingMap.set(bid, {
+          doc_type:   bd.doc_type   || "",
+          doc_number: bd.doc_number || "",
+          name:       [bd.first_name, bd.last_name].filter(Boolean).join(" ") || "",
+        })
+      }
+    } catch { /* ignorar */ }
   }))
 
-  // Filtro de facturado client-side (ML no lo soporta nativamente)
+  // Enriquecer órdenes con estado de facturación, envío y datos del comprador
+  let enriched = orders.map((o: any) => {
+    const shipment  = shipmentStatusMap.get(String(o.shipping?.id))
+    const buyerId   = String(o.buyer?.id || "")
+    const billing   = buyerBillingMap.get(buyerId)
+    const buyerName = billing?.name || (o.buyer ? `${o.buyer.first_name || ""} ${o.buyer.last_name || ""}`.trim() : "")
+
+    return {
+      id:             o.id,
+      fecha:          o.date_created,
+      estado:         o.status,
+      envio_status:   shipment?.status    || null,
+      envio_substatus: shipment?.substatus || null,
+      total:          o.total_amount,
+      moneda:         o.currency_id,
+      comprador:      buyerName || "Consumidor Final",
+      comprador_doc:  billing?.doc_number || o.buyer?.identification?.number || null,
+      comprador_doc_tipo: billing?.doc_type || null,  // "DNI", "CUIT", etc.
+      buyer_id:       buyerId,
+      items:          (o.order_items || []).map((i: any) => ({
+        titulo:   i.item?.title || "",
+        ean:      i.item?.attributes?.find((a: any) => a.id === "EAN")?.value_name || null,
+        cantidad: i.quantity,
+        precio:   Math.round(i.unit_price * 100) / 100,
+      })),
+      facturada:    facturadaMap.has(String(o.id)),
+      factura_info: facturadaMap.get(String(o.id)) || null,
+    }
+  })
+
+  // Filtros client-side (ML no soporta estos nativamente o falla)
+  if (estado_envio && estado_envio !== "all") enriched = enriched.filter(o => o.envio_status === estado_envio)
   if (facturado === "si") enriched = enriched.filter(o => o.facturada)
   if (facturado === "no") enriched = enriched.filter(o => !o.facturada)
 

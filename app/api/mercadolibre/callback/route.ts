@@ -54,31 +54,30 @@ export async function GET(request: NextRequest) {
       .eq("ml_user_id", user.id.toString())
       .single()
 
+    // Obtener el user_id de Supabase para asociar la cuenta ML al usuario autenticado
+    const { data: { user: authUser } } = await supabase.auth.getUser()
+
     if (existingAccount) {
-      // Update existing account
       await supabase
         .from("ml_accounts")
         .update({
-          access_token: tokens.access_token,
-          refresh_token: tokens.refresh_token,
+          access_token:     tokens.access_token,
+          refresh_token:    tokens.refresh_token,
           token_expires_at: tokenExpiresAt,
-          nickname: user.nickname,
-          updated_at: new Date().toISOString(),
+          nickname:         user.nickname,
+          user_id:          authUser?.id || null,
+          updated_at:       new Date().toISOString(),
         })
         .eq("id", existingAccount.id)
-
-      console.log("[v0] ML Account updated in database:", user.nickname)
     } else {
-      // Insert new account
       await supabase.from("ml_accounts").insert({
-        ml_user_id: user.id.toString(),
-        nickname: user.nickname,
-        access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token,
+        ml_user_id:       user.id.toString(),
+        nickname:         user.nickname,
+        access_token:     tokens.access_token,
+        refresh_token:    tokens.refresh_token,
         token_expires_at: tokenExpiresAt,
+        user_id:          authUser?.id || null,
       })
-
-      console.log("[v0] ML Account created in database:", user.nickname)
     }
 
     // Disparar sincronización inicial en background
@@ -98,9 +97,16 @@ export async function GET(request: NextRequest) {
       // No bloqueamos el redirect si falla el sync
     }
 
-    const response = NextResponse.redirect(
-      `${request.nextUrl.origin}/integrations?ml_connected=true&ml_user=${user.nickname}`,
-    )
+    // Si el state indica que viene desde billing, volver ahí
+    // ML puede devolver el state URL-encoded, hay que decodificarlo
+    const stateRaw    = request.nextUrl.searchParams.get("state") || ""
+    const stateParam  = decodeURIComponent(stateRaw)
+    const fromBilling = stateParam.includes("from=billing")
+    const redirectTarget = fromBilling
+      ? `${request.nextUrl.origin}/billing/mercadolibre?ml_connected=true`
+      : `${request.nextUrl.origin}/integrations?ml_connected=true&ml_user=${encodeURIComponent(user.nickname)}`
+
+    const response = NextResponse.redirect(redirectTarget)
 
     // Delete the code verifier
     response.cookies.delete("ml_code_verifier")

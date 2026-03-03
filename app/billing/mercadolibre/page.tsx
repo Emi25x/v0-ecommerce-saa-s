@@ -144,8 +144,10 @@ export default function MLBillingPage() {
 
   // ── Conectar nueva cuenta ML ───────────────────────────────────────────────
   const conectarML = () => {
-    // /api/mercadolibre/auth genera el PKCE, setea la cookie y redirige a ML OAuth
-    window.location.href = "/api/mercadolibre/auth"
+    // Pasa from=billing para que el callback redirija de vuelta aquí
+    // window.top para salir del iframe del preview si aplica
+    const target = window.top || window
+    target.location.href = "/api/mercadolibre/auth?from=billing"
   }
 
   // ── Cargar cuentas ML y empresas ARCA ─────────────────────────────────────
@@ -232,10 +234,14 @@ export default function MLBillingPage() {
         // Los importes se redondean a 2 decimales máx (ARCA rechaza más)
         const round2 = (n: number) => Math.round(n * 100) / 100
 
-        // Usar DNI del comprador si ML lo provee; sino Consumidor Final (96=DNI, 99=sin doc)
-        const docNum   = (order as any).comprador_doc
-        const tipoDoc  = docNum ? 96 : 99   // 96 = DNI, 99 = sin identificar
-        const nroDoc   = docNum ? String(docNum).replace(/\D/g, "") : "0"
+        // Mapear tipo de doc ML → código ARCA
+        // ML devuelve doc_type: "DNI" → 96, "CUIT"/"CUIL" → 80, otros → 99
+        const docNum  = (order as any).comprador_doc
+        const docTipo = (order as any).comprador_doc_tipo || ""
+        const tipoDoc = docNum
+          ? (["CUIT","CUIL"].includes(docTipo) ? 80 : 96)
+          : 99
+        const nroDoc  = docNum ? String(docNum).replace(/\D/g, "") : "0"
 
         const facRes = await fetch("/api/billing/facturas", {
           method: "POST",
@@ -573,12 +579,20 @@ export default function MLBillingPage() {
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-muted-foreground">#{order.id}</td>
                     <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{fmtFecha(order.fecha)}</td>
-                    <td className="px-4 py-3 font-medium">{order.comprador}</td>
-                    <td className="px-4 py-3 max-w-xs">
-                      {order.items.slice(0, 2).map((item, i) => (
-                        <p key={i} className="text-xs text-muted-foreground truncate">
-                          {item.cantidad > 1 ? `${item.cantidad}x ` : ""}{item.titulo}
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-sm leading-tight">{order.comprador || "—"}</p>
+                      {(order as any).comprador_doc && (
+                        <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
+                          {(order as any).comprador_doc_tipo || "Doc"}: {(order as any).comprador_doc}
                         </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 max-w-xs">
+                      {order.items.slice(0, 2).map((item: any, i: number) => (
+                        <div key={i} className="text-xs text-muted-foreground truncate">
+                          <span>{item.cantidad > 1 ? `${item.cantidad}x ` : ""}{item.titulo}</span>
+                          {item.ean && <span className="ml-1 text-[10px] text-muted-foreground/50 font-mono">[{item.ean}]</span>}
+                        </div>
                       ))}
                       {order.items.length > 2 && (
                         <p className="text-xs text-muted-foreground/60">+{order.items.length - 2} más</p>

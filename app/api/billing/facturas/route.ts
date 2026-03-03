@@ -73,16 +73,33 @@ export async function POST(request: Request) {
     // Obtener ticket WSAA (con caché)
     const { token, sign } = await getWSAATicket(config)
 
-    // Calcular totales
-    const typedItems: FacturaItem[] = items
+    // Calcular subtotal e iva si no vienen precalculados (ej: desde ML)
+    const r2 = (n: number) => Math.round(n * 100) / 100
+    const typedItems: FacturaItem[] = items.map((item: any) => {
+      const qty   = Number(item.cantidad) || 1
+      const price = r2(Number(item.precio_unitario) || 0)
+      const aliq  = Number(item.alicuota_iva) || 0
+      const base  = r2(qty * price)
+      const iva   = r2(base * aliq / 100)
+      return {
+        descripcion:     item.descripcion || "",
+        cantidad:        qty,
+        precio_unitario: price,
+        alicuota_iva:    aliq as 0 | 10.5 | 21 | 27,
+        subtotal:        base,
+        iva:             iva,
+      } satisfies FacturaItem
+    })
+
     let subtotal = 0, iva_105 = 0, iva_21 = 0, iva_27 = 0
     for (const item of typedItems) {
       subtotal += item.subtotal
       if (item.alicuota_iva === 10.5) iva_105 += item.iva
-      else if (item.alicuota_iva === 21)  iva_21  += item.iva
-      else if (item.alicuota_iva === 27)  iva_27  += item.iva
+      else if (item.alicuota_iva === 21) iva_21 += item.iva
+      else if (item.alicuota_iva === 27) iva_27 += item.iva
     }
-    const total = parseFloat((subtotal + iva_105 + iva_21 + iva_27).toFixed(2))
+    subtotal = r2(subtotal)
+    const total = r2(subtotal + iva_105 + iva_21 + iva_27)
 
     const fecha = new Date().toISOString().slice(0, 10).replace(/-/g, "")
 
