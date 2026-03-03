@@ -17,6 +17,7 @@ type ArcaConfig = {
   cuit: string
   ambiente: string
   cert_pem: string | null
+  private_key_pem: string | null
   clave_pem: string | null
   certificado_pem: string | null
   wsaa_token: string | null
@@ -26,22 +27,21 @@ type ArcaConfig = {
 
 /** Genera el XML TRA (Ticket de Requerimiento de Acceso) */
 function buildTRA(service = "wsfe"): string {
-  const now = new Date()
-  const from = new Date(now.getTime() - 60_000)
-  const to   = new Date(now.getTime() + 43_200_000) // +12hs
+  const now  = new Date()
+  // generationTime: 10 minutos ANTES para tolerar desfase de reloj
+  const from = new Date(now.getTime() - 600_000)
+  // expirationTime: 12 horas después
+  const to   = new Date(now.getTime() + 43_200_000)
 
-  const fmt = (d: Date) =>
-    d.toISOString().replace(/\.\d{3}Z$/, "-03:00")
+  // ARCA requiere formato ISO8601 con offset, sin milisegundos
+  const fmt = (d: Date) => {
+    const iso = d.toISOString().replace(/\.\d{3}Z$/, "")
+    return iso + "-03:00"
+  }
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<loginTicketRequest version="1.0">
-  <header>
-    <uniqueId>${Math.floor(now.getTime() / 1000)}</uniqueId>
-    <generationTime>${fmt(from)}</generationTime>
-    <expirationTime>${fmt(to)}</expirationTime>
-  </header>
-  <service>${service}</service>
-</loginTicketRequest>`
+  const uniqueId = Math.floor(now.getTime() / 1000)
+
+  return `<?xml version="1.0" encoding="UTF-8"?><loginTicketRequest version="1.0"><header><uniqueId>${uniqueId}</uniqueId><generationTime>${fmt(from)}</generationTime><expirationTime>${fmt(to)}</expirationTime></header><service>${service}</service></loginTicketRequest>`
 }
 
 /**
@@ -76,38 +76,40 @@ async function signTRA(traXml: string, certPem: string, keyPem: string): Promise
 }
 
 /** Llama al WSAA y obtiene { token, sign, expiresAt } */
-async function callWSAA(cmsCms: string, ambiente: string): Promise<{ token: string; sign: string; expiresAt: Date }> {
+async function callWSAA(cms: string, ambiente: string): Promise<{ token: string; sign: string; expiresAt: Date }> {
   const url = ambiente === "produccion" ? WSAA_PROD : WSAA_HOMO
 
-  const body = `<?xml version="1.0" encoding="UTF-8"?>
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-                  xmlns:wsaa="http://wsaa.view.sua.dvadac.desein.afip.gov.ar">
-  <soapenv:Header/>
-  <soapenv:Body>
-    <wsaa:loginCms>
-      <wsaa:in0>${cmsCms}</wsaa:in0>
-    </wsaa:loginCms>
-  </soapenv:Body>
-</soapenv:Envelope>`
+  const soapBody = `<?xml version="1.0" encoding="UTF-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:wsaa="http://wsaa.view.sua.dvadac.desein.afip.gov.ar"><soapenv:Header/><soapenv:Body><wsaa:loginCms><wsaa:in0>${cms}</wsaa:in0></wsaa:loginCms></soapenv:Body></soapenv:Envelope>`
+
+  console.log("[v0] WSAA URL:", url)
+  console.log("[v0] CMS length:", cms.length)
 
   const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "text/xml; charset=utf-8",
-      "SOAPAction": "",
+      "SOAPAction": "LoginCms",
     },
-    body,
+    body: soapBody,
   })
 
-  if (!res.ok) throw new Error(`WSAA HTTP ${res.status}`)
-
   const xml = await res.text()
+  console.log("[v0] WSAA response status:", res.status)
+  console.log("[v0] WSAA response body:", xml.substring(0, 1000))
 
-  const token = xml.match(/<token>([\s\S]*?)<\/token>/)?.[1]
-  const sign  = xml.match(/<sign>([\s\S]*?)<\/sign>/)?.[1]
+  if (!res.ok) {
+    const faultString = xml.match(/<faultstring>([\s\S]*?)<\/faultstring>/)?.[1] || xml.substring(0, 300)
+    throw new Error(`WSAA HTTP ${res.status}: ${faultString}`)
+  }
+
+  const token  = xml.match(/<token>([\s\S]*?)<\/token>/)?.[1]
+  const sign   = xml.match(/<sign>([\s\S]*?)<\/sign>/)?.[1]
   const expStr = xml.match(/<expirationTime>([\s\S]*?)<\/expirationTime>/)?.[1]
 
-  if (!token || !sign) throw new Error(`WSAA: no token/sign en respuesta:\n${xml.substring(0, 500)}`)
+  if (!token || !sign) {
+    const fault = xml.match(/<faultstring>([\s\S]*?)<\/faultstring>/)?.[1]
+    throw new Error(`WSAA: no token/sign. ${fault ? `Fault: ${fault}` : xml.substring(0, 400)}`)
+  }
 
   const expiresAt = expStr ? new Date(expStr) : new Date(Date.now() + 43_200_000)
   return { token, sign, expiresAt }
@@ -127,7 +129,9 @@ export async function getWSAATicket(config: ArcaConfig): Promise<{ token: string
   }
 
   const certPem = config.cert_pem || config.certificado_pem
-  const keyPem  = config.clave_pem
+  const keyPem  = config.private_key_pem || config.clave_pem
+
+  console.log("[v0] WSAA getTicket - certPem:", !!certPem, "keyPem:", !!keyPem, "ambiente:", config.ambiente)
 
   if (!certPem || !keyPem) {
     throw new Error("Faltan certificado o clave privada en la configuración ARCA. Completá los datos en Configuración.")

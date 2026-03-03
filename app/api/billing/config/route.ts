@@ -9,7 +9,7 @@ export async function GET() {
 
     const { data, error } = await supabase
       .from("arca_config")
-      .select("id, cuit, razon_social, domicilio_fiscal, punto_venta, condicion_iva, ambiente, tipo_emisor, modo, wsaa_expires_at, created_at")
+      .select("id, user_id, cuit, razon_social, domicilio_fiscal, punto_venta, condicion_iva, ambiente, cert_pem, certificado_pem, clave_pem, private_key_pem, wsaa_token, wsaa_sign, wsaa_expires_at, created_at")
       .eq("user_id", user.id)
       .single()
 
@@ -50,8 +50,8 @@ export async function POST(request: Request) {
       wsaa_expires_at: null,
     }
 
-    if (cert_pem) { payload.cert_pem = cert_pem; payload.certificado_pem = cert_pem }
-    if (clave_pem) { payload.clave_pem = clave_pem }
+    if (cert_pem)  { payload.cert_pem = cert_pem; payload.certificado_pem = cert_pem }
+    if (clave_pem) { payload.clave_pem = clave_pem; payload.private_key_pem = clave_pem }
 
     const { data, error } = await supabase
       .from("arca_config")
