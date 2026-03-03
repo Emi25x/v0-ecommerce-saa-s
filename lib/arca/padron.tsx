@@ -1,173 +1,215 @@
-"use server"
 /**
- * ARCA ws_sr_padron_a4 — Consulta de Padrón Alcance 4
- * Documentación oficial: https://www.afip.gob.ar/ws/ws_sr_padron_a4/manual_ws_sr_padron_a4_v1.3.pdf
+ * lib/arca/padron.ts
+ * Consulta al padrón de contribuyentes ARCA usando ws_sr_padron_a4
  *
- * Servicio WSAA:  ws_sr_padron_a4
- * URL Homo:       https://awshomo.afip.gov.ar/sr-padron/webservices/personaServiceA4
- * URL Prod:       https://aws.afip.gov.ar/sr-padron/webservices/personaServiceA4
- * Namespace:      http://a4.soap.ws.server.puc.sr/
- * Método:         getPersona(token, sign, cuitRepresentada, idPersona)
+ * Servicio correcto según documentación oficial AFIP:
+ *   - Nombre en WSAA:  ws_sr_padron_a4
+ *   - WSDL homo:       https://awshomo.afip.gov.ar/sr-padron/webservices/personaServiceA4?WSDL
+ *   - WSDL prod:       https://aws.afip.gov.ar/sr-padron/webservices/personaServiceA4?WSDL
+ *   - Método principal: getPersona(token, sign, cuitRepresentada, idPersona)
+ *
+ * Alcance A4: datos del contribuyente: razón social, domicilio fiscal,
+ * actividades, impuestos (IVA, Ganancias, Monotributo, etc.), categorías.
  */
 
-import { createClient }            from "@/lib/supabase/server"
+import { createClient } from "@/lib/supabase/server"
 import { buildTRA, signTRA, callWSAA } from "./wsaa"
 
 const PADRON_HOMO = "https://awshomo.afip.gov.ar/sr-padron/webservices/personaServiceA4"
 const PADRON_PROD = "https://aws.afip.gov.ar/sr-padron/webservices/personaServiceA4"
 
-export type PadronPersona = {
-  idPersona:        string
-  estadoClave:      string   // ACTIVO | INACTIVO
-  tipoPersona:      string   // FISICA | JURIDICA
-  nombre?:          string
-  apellido?:        string
-  razonSocial?:     string
-  domicilioFiscal?: string
-  codigoPostal?:    string
-  provincia?:       string
-  localidad?:       string
-  actividad?:       string
-  impuestos:        { id: number; descripcion: string; estado: string }[]
-}
+// ── Token cache del padrón (independiente del WSFE) ──────────────────────────
 
-/** Obtiene el ticket WSAA para el padrón, cacheado en arca_config (columnas padron_*) */
-async function getPadronTicket(config: {
-  id: string
-  cuit: string
-  ambiente: string
-  cert_pem: string
-  private_key_pem: string
-  padron_token?: string | null
-  padron_sign?: string | null
-  padron_expires_at?: string | null
-}): Promise<{ token: string; sign: string }> {
-  // Reutilizar si el ticket sigue vigente (5 min de margen)
+async function getPadronTicket(config: any): Promise<{ token: string; sign: string }> {
+  // Verificar caché en DB
   if (config.padron_token && config.padron_sign && config.padron_expires_at) {
-    const exp = new Date(config.padron_expires_at).getTime()
-    if (exp - Date.now() > 5 * 60 * 1000) {
+    const exp = new Date(config.padron_expires_at)
+    if (exp > new Date(Date.now() + 5 * 60 * 1000)) {
       return { token: config.padron_token, sign: config.padron_sign }
     }
   }
 
-  // Generar nuevo ticket con service = ws_sr_padron_a4
+  const certPem = config.cert_pem || config.certificado_pem
+  const keyPem  = config.clave_pem || config.private_key_pem
+
+  if (!certPem || !keyPem) throw new Error("Certificado o clave privada no configurados")
+
+  // El TRA para el padrón usa "ws_sr_padron_a4" como service
   const tra = buildTRA("ws_sr_padron_a4")
-  const cms = await signTRA(tra, config.cert_pem, config.private_key_pem)
+  const cms = await signTRA(tra, certPem, keyPem)
 
   let token: string, sign: string, expiresAt: Date
 
   try {
     ;({ token, sign, expiresAt } = await callWSAA(cms, config.ambiente))
   } catch (err: any) {
-    // Si el TA sigue vigente en ARCA pero fue borrado de la DB, releer
-    if (String(err.message).includes("ya posee un TA") || String(err.message).includes("TA valido")) {
+    const msg: string = err.message || ""
+    if (msg.includes("ya posee un TA") || msg.includes("TA valido")) {
+      // El ticket sigue vivo en ARCA — releer DB
       const supabase = await createClient()
       const { data: fresh } = await supabase
         .from("arca_config")
         .select("padron_token, padron_sign")
         .eq("id", config.id)
         .single()
-      if (fresh?.padron_token && fresh?.padron_sign)
+      if (fresh?.padron_token && fresh?.padron_sign) {
         return { token: fresh.padron_token, sign: fresh.padron_sign }
+      }
     }
     throw err
   }
 
-  // Cachear en DB
+  // Cachear
   const supabase = await createClient()
-  await supabase
-    .from("arca_config")
-    .update({
-      padron_token:      token,
-      padron_sign:       sign,
-      padron_expires_at: expiresAt.toISOString(),
-    })
-    .eq("id", config.id)
+  await supabase.from("arca_config").update({
+    padron_token:      token,
+    padron_sign:       sign,
+    padron_expires_at: expiresAt.toISOString(),
+    updated_at:        new Date().toISOString(),
+  }).eq("id", config.id)
 
   return { token, sign }
 }
 
-/** Consulta los datos de un contribuyente por CUIT (11 dígitos) o DNI */
-export async function consultarPadron(idPersona: string): Promise<PadronPersona> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error("No autenticado")
+// ── SOAP call al padrón ───────────────────────────────────────────────────────
 
-  const { data: config, error } = await supabase
-    .from("arca_config")
-    .select("id, cuit, ambiente, cert_pem, certificado_pem, private_key_pem, clave_pem, padron_token, padron_sign, padron_expires_at")
-    .eq("user_id", user.id)
-    .single()
-
-  if (error || !config) throw new Error("No hay configuración ARCA. Completá los datos en la pestaña Configuración.")
-
-  const certPem = config.cert_pem || config.certificado_pem
-  const keyPem  = config.private_key_pem || config.clave_pem
-  if (!certPem || !keyPem) throw new Error("Falta el certificado o la clave privada en la configuración ARCA.")
-
-  const { token, sign } = await getPadronTicket({
-    ...config,
-    cert_pem:        certPem,
-    private_key_pem: keyPem,
-  })
-
-  const url         = config.ambiente === "produccion" ? PADRON_PROD : PADRON_HOMO
-  const cuitEmisor  = config.cuit.replace(/\D/g, "")
-  const idConsulta  = idPersona.replace(/\D/g, "")
-
-  const soapBody = `<?xml version="1.0" encoding="UTF-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:a4="http://a4.soap.ws.server.puc.sr/"><soapenv:Header/><soapenv:Body><a4:getPersona><token>${token}</token><sign>${sign}</sign><cuitRepresentada>${cuitEmisor}</cuitRepresentada><idPersona>${idConsulta}</idPersona></a4:getPersona></soapenv:Body></soapenv:Envelope>`
+async function callPadron(url: string, token: string, sign: string, cuitRepresentada: string, idPersona: string) {
+  const soapBody = `<?xml version="1.0" encoding="utf-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:per="http://a4.soap.ws.server.puc.sr/">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <per:getPersona>
+      <token>${token}</token>
+      <sign>${sign}</sign>
+      <cuitRepresentada>${cuitRepresentada}</cuitRepresentada>
+      <idPersona>${idPersona}</idPersona>
+    </per:getPersona>
+  </soapenv:Body>
+</soapenv:Envelope>`
 
   const res = await fetch(url, {
-    method:  "POST",
-    headers: { "Content-Type": "text/xml; charset=utf-8", "SOAPAction": "" },
-    body:    soapBody,
+    method: "POST",
+    headers: {
+      "Content-Type": "text/xml; charset=utf-8",
+      "SOAPAction":   "",
+    },
+    body: soapBody,
   })
 
   const xml = await res.text()
 
   if (!res.ok) {
-    const fault = xml.match(/<faultstring>([\s\S]*?)<\/faultstring>/)?.[1]
-    throw new Error(`Padrón HTTP ${res.status}: ${fault || xml.substring(0, 200)}`)
+    const fault = xml.match(/<faultstring>([\s\S]*?)<\/faultstring>/)?.[1] || xml.substring(0, 300)
+    throw new Error(`Padrón SOAP error: ${fault}`)
   }
 
-  // Helper para extraer un tag simple
-  const get = (tag: string) =>
-    xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`))?.[1]?.trim()
+  return xml
+}
 
-  // Impuestos
-  const impuestos: PadronPersona["impuestos"] = []
-  for (const m of xml.matchAll(/<impuesto>([\s\S]*?)<\/impuesto>/g)) {
-    const b    = m[1]
-    const id   = b.match(/<idImpuesto>(\d+)<\/idImpuesto>/)?.[1]
-    const desc = b.match(/<descripcionImpuesto>([\s\S]*?)<\/descripcionImpuesto>/)?.[1]?.trim()
-    const est  = b.match(/<estado>([\s\S]*?)<\/estado>/)?.[1]?.trim()
-    if (id && desc) impuestos.push({ id: Number(id), descripcion: desc, estado: est || "" })
-  }
+// ── Parser de la respuesta ────────────────────────────────────────────────────
+
+function parsePersona(xml: string) {
+  const get   = (tag: string) => xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`))?.[1]?.trim() ?? null
+  const getAll= (tag: string) => [...xml.matchAll(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "g"))].map(m => m[1].trim())
+
+  // Datos básicos
+  const idPersona  = get("idPersona")
+  const tipoPersona= get("tipoPersona")           // "F" = física, "J" = jurídica
+  const razonSocial= get("razonSocial")
+  const nombre     = get("nombre")
+  const apellido   = get("apellido")
 
   // Domicilio fiscal
-  const domFiscalBlock = xml.match(/<domicilio>[\s\S]*?FISCAL[\s\S]*?<\/domicilio>/)?.[0] || ""
-  const dir   = domFiscalBlock.match(/<direccion>([\s\S]*?)<\/direccion>/)?.[1]?.trim()
-  const cp    = domFiscalBlock.match(/<codPostal>(\d+)<\/codPostal>/)?.[1]
-  const prov  = domFiscalBlock.match(/<descripcionProvincia>([\s\S]*?)<\/descripcionProvincia>/)?.[1]?.trim()
-  const loc   = domFiscalBlock.match(/<localidad>([\s\S]*?)<\/localidad>/)?.[1]?.trim()
+  const domFiscal  = xml.match(/<domicilioFiscal>([\s\S]*?)<\/domicilioFiscal>/)?.[1] ?? ""
+  const direccion  = domFiscal.match(/<direccion>([\s\S]*?)<\/direccion>/)?.[1]?.trim() ?? null
+  const localidad  = domFiscal.match(/<localidad>([\s\S]*?)<\/localidad>/)?.[1]?.trim() ?? null
+  const provincia  = domFiscal.match(/<descripcionProvincia>([\s\S]*?)<\/descripcionProvincia>/)?.[1]?.trim() ?? null
+  const cp         = domFiscal.match(/<codPostal>([\s\S]*?)<\/codPostal>/)?.[1]?.trim() ?? null
 
-  // Actividad principal (orden 1)
-  const actBlock = [...xml.matchAll(/<actividad>([\s\S]*?)<\/actividad>/g)]
-    .find(m => m[1].includes("<orden>1</orden>"))?.[1] || ""
-  const actividad = actBlock.match(/<descripcionActividad>([\s\S]*?)<\/descripcionActividad>/)?.[1]?.trim()
+  // Impuestos activos — para inferir condición IVA
+  const impuestoNodes = [...xml.matchAll(/<impuesto>([\s\S]*?)<\/impuesto>/g)].map(m => m[1])
+  const impuestos = impuestoNodes.map(n => ({
+    id:          parseInt(n.match(/<id>([\s\S]*?)<\/id>/)?.[1] ?? "0"),
+    descripcion: n.match(/<descripcion>([\s\S]*?)<\/descripcion>/)?.[1]?.trim() ?? "",
+    estado:      n.match(/<estado>([\s\S]*?)<\/estado>/)?.[1]?.trim() ?? "",
+    periodo:     n.match(/<periodo>([\s\S]*?)<\/periodo>/)?.[1]?.trim() ?? "",
+  }))
+
+  // Actividades
+  const actividadNodes = [...xml.matchAll(/<actividad>([\s\S]*?)<\/actividad>/g)].map(m => m[1])
+  const actividades = actividadNodes.map(n => ({
+    id:          n.match(/<id>([\s\S]*?)<\/id>/)?.[1]?.trim() ?? "",
+    descripcion: n.match(/<descripcion>([\s\S]*?)<\/descripcion>/)?.[1]?.trim() ?? "",
+    orden:       n.match(/<orden>([\s\S]*?)<\/orden>/)?.[1]?.trim() ?? "",
+    desde:       n.match(/<periodo>([\s\S]*?)<\/periodo>/)?.[1]?.trim() ?? "",
+    principal:   n.match(/<orden>([\s\S]*?)<\/orden>/)?.[1]?.trim() === "1",
+  }))
+
+  // Inferir condición IVA a partir de impuestos activos
+  // id 30 = IVA (Responsable Inscripto)
+  // id 32 = IVA Exento
+  // id 20 = Monotributo (Cat. A-K)
+  // id 21 = Monotributo Social
+  const activos = impuestos.filter(i => i.estado === "ACTIVO").map(i => i.id)
+  let condicionIva = "consumidor_final"
+  if (activos.includes(30))       condicionIva = "responsable_inscripto"
+  else if (activos.includes(32))  condicionIva = "exento"
+  else if (activos.includes(20) || activos.includes(21)) condicionIva = "monotributo"
 
   return {
-    idPersona:        get("idPersona") || idPersona,
-    estadoClave:      get("estadoClave") || "",
-    tipoPersona:      get("tipoPersona") || "",
-    nombre:           get("nombre"),
-    apellido:         get("apellido"),
-    razonSocial:      get("razonSocial"),
-    domicilioFiscal:  dir,
-    codigoPostal:     cp,
-    provincia:        prov,
-    localidad:        loc,
-    actividad,
+    idPersona,
+    tipoPersona,
+    razonSocial,
+    nombre,
+    apellido,
+    displayName: razonSocial || [apellido, nombre].filter(Boolean).join(", "),
+    domicilioFiscal: {
+      direccion,
+      localidad,
+      provincia,
+      codigoPostal: cp,
+      completo: [direccion, localidad, provincia, cp ? `(${cp})` : ""].filter(Boolean).join(", "),
+    },
+    condicionIva,
     impuestos,
+    actividades,
+  }
+}
+
+// ── Función principal exportada ───────────────────────────────────────────────
+
+export async function consultarPersona(idPersona: string): Promise<{
+  ok: boolean
+  persona?: ReturnType<typeof parsePersona>
+  error?: string
+}> {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { ok: false, error: "No autenticado" }
+
+    const { data: config, error: cfgErr } = await supabase
+      .from("arca_config")
+      .select("*")
+      .eq("user_id", user.id)
+      .single()
+
+    if (cfgErr || !config) return { ok: false, error: "Configuración ARCA no encontrada" }
+
+    const { token, sign } = await getPadronTicket(config)
+    const url = (config.ambiente === "produccion") ? PADRON_PROD : PADRON_HOMO
+    const xml = await callPadron(url, token, sign, config.cuit, idPersona.replace(/\D/g, ""))
+
+    // Verificar error de ARCA en la respuesta
+    const errorCode = xml.match(/<codigoError>([\s\S]*?)<\/codigoError>/)?.[1]
+    const errorMsg  = xml.match(/<descripcionError>([\s\S]*?)<\/descripcionError>/)?.[1]
+    if (errorCode && errorCode !== "0") {
+      return { ok: false, error: errorMsg || `Error código ${errorCode}` }
+    }
+
+    const persona = parsePersona(xml)
+    return { ok: true, persona }
+  } catch (err: any) {
+    return { ok: false, error: err.message || "Error desconocido consultando padrón" }
   }
 }
