@@ -1,4 +1,3 @@
-"use server"
 /**
  * ARCA WSAA — Autenticación y Autorización
  * Genera el Ticket de Requerimiento de Acceso (TRA), lo firma con la clave privada
