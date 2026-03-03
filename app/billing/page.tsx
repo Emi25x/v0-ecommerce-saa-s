@@ -174,6 +174,47 @@ export default function BillingPage() {
     },
   })
   const [uploadingLogo, setUploadingLogo] = useState(false)
+
+  // ── Padrón lookup ─────────────────────────────────────────────────────────
+  const [padronStatus, setPadronStatus] = useState<"idle"|"loading"|"found"|"error">("idle")
+  const [padronMsg,    setPadronMsg]    = useState<string>("")
+
+  const lookupPadron = useCallback(async (doc: string, tipo: string) => {
+    const limpio = doc.replace(/\D/g, "")
+    if (!limpio || tipo === "99") return
+    setPadronStatus("loading")
+    setPadronMsg("")
+    try {
+      const res  = await fetch(`/api/billing/padron?cuit=${limpio}`)
+      const data = await res.json()
+      if (!res.ok || !data.ok) {
+        setPadronStatus("error")
+        setPadronMsg(data.error || "No se encontró el contribuyente en el padrón ARCA")
+        return
+      }
+      const p = data.persona
+      // Nombre/razón social
+      const nombre = p.razonSocial || [p.apellido, p.nombre].filter(Boolean).join(", ")
+      // Domicilio completo
+      const domicilio = [p.domicilioFiscal, p.localidad, p.provincia, p.codigoPostal ? `(${p.codigoPostal})` : ""].filter(Boolean).join(", ")
+      // Condición IVA — mapear desde los impuestos activos
+      const tieneIvaRI  = p.impuestos.some((i: any) => i.id === 30  && i.estado === "ACTIVO")
+      const tieneMonotrib = p.impuestos.some((i: any) => (i.id === 20 || i.id === 21) && i.estado === "ACTIVO")
+      const condIva = tieneIvaRI ? "responsable_inscripto" : tieneMonotrib ? "monotributo" : "consumidor_final"
+
+      setNewForm(prev => ({
+        ...prev,
+        receptor_nombre:       nombre || prev.receptor_nombre,
+        receptor_domicilio:    domicilio || prev.receptor_domicilio,
+        receptor_condicion_iva: condIva,
+      }))
+      setPadronStatus("found")
+      setPadronMsg(nombre || "Contribuyente encontrado")
+    } catch {
+      setPadronStatus("error")
+      setPadronMsg("Error consultando el padrón. Verificá la configuración ARCA.")
+    }
+  }, [])
   const [configMsg, setConfigMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null)
 
   // Facturas
@@ -289,6 +330,7 @@ export default function BillingPage() {
         setShowNew(false)
         setNewForm({ tipo_comprobante: "6", concepto: "1", tipo_doc_receptor: "99", nro_doc_receptor: "", receptor_nombre: "", receptor_domicilio: "", receptor_condicion_iva: "consumidor_final", moneda: "PES" })
         setItems([EMPTY_ITEM(configForm.iva_default)])
+        setPadronStatus("idle"); setPadronMsg("")
         loadFacturas(0); setPage(0)
       } else {
         setEmitError(d.error || "Error al emitir")
@@ -1073,16 +1115,46 @@ export default function BillingPage() {
                 <div className="space-y-1.5">
                   <Label>
                     N° documento
-                    {newForm.tipo_doc_receptor === "99" && (
-                      <span className="text-muted-foreground font-normal ml-1">(no requerido)</span>
-                    )}
+                    {newForm.tipo_doc_receptor === "99"
+                      ? <span className="text-muted-foreground font-normal ml-1">(no requerido)</span>
+                      : <span className="text-muted-foreground font-normal ml-1 text-xs">— Enter para buscar en padrón ARCA</span>
+                    }
                   </Label>
-                  <Input
-                    placeholder={newForm.tipo_doc_receptor === "99" ? "—" : "12345678"}
-                    value={newForm.nro_doc_receptor}
-                    onChange={e => setNewForm(p => ({ ...p, nro_doc_receptor: e.target.value }))}
-                    disabled={newForm.tipo_doc_receptor === "99"}
-                  />
+                  <div className="relative">
+                    <Input
+                      placeholder={newForm.tipo_doc_receptor === "99" ? "—" : "12345678"}
+                      value={newForm.nro_doc_receptor}
+                      onChange={e => {
+                        setNewForm(p => ({ ...p, nro_doc_receptor: e.target.value }))
+                        setPadronStatus("idle")
+                        setPadronMsg("")
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") {
+                          e.preventDefault()
+                          lookupPadron(newForm.nro_doc_receptor, newForm.tipo_doc_receptor)
+                        }
+                      }}
+                      onBlur={() => lookupPadron(newForm.nro_doc_receptor, newForm.tipo_doc_receptor)}
+                      disabled={newForm.tipo_doc_receptor === "99"}
+                      className={`pr-8 ${padronStatus === "found" ? "border-emerald-500/50" : padronStatus === "error" ? "border-amber-500/50" : ""}`}
+                    />
+                    <span className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                      {padronStatus === "loading" && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                      {padronStatus === "found"   && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />}
+                      {padronStatus === "error"   && <X className="h-3.5 w-3.5 text-amber-400" />}
+                    </span>
+                  </div>
+                  {padronStatus === "found" && (
+                    <p className="text-xs text-emerald-400 flex items-center gap-1">
+                      <CheckCircle2 className="h-3 w-3" />{padronMsg}
+                    </p>
+                  )}
+                  {padronStatus === "error" && (
+                    <p className="text-xs text-amber-400 flex items-center gap-1">
+                      <X className="h-3 w-3" />{padronMsg}
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <Label>Condición frente al IVA</Label>

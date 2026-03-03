@@ -26,7 +26,7 @@ type ArcaConfig = {
 }
 
 /** Genera el XML TRA (Ticket de Requerimiento de Acceso) */
-function buildTRA(service = "wsfe"): string {
+export function buildTRA(service = "wsfe"): string {
   const now  = new Date()
   // generationTime: 10 minutos ANTES para tolerar desfase de reloj
   const from = new Date(now.getTime() - 600_000)
@@ -47,7 +47,7 @@ function buildTRA(service = "wsfe"): string {
  * Firma el TRA usando node-forge para generar un PKCS#7 SignedData correcto.
  * node-forge produce DER compatible con el WSAA de ARCA sin depender de openssl binario.
  */
-async function signTRA(traXml: string, certPem: string, keyPem: string): Promise<string> {
+export async function signTRA(traXml: string, certPem: string, keyPem: string): Promise<string> {
   const cert       = forge.pki.certificateFromPem(certPem)
   const privateKey = forge.pki.privateKeyFromPem(keyPem)
 
@@ -75,7 +75,7 @@ async function signTRA(traXml: string, certPem: string, keyPem: string): Promise
 }
 
 /** Llama al WSAA y obtiene { token, sign, expiresAt } */
-async function callWSAA(cms: string, ambiente: string): Promise<{ token: string; sign: string; expiresAt: Date }> {
+export async function callWSAA(cms: string, ambiente: string): Promise<{ token: string; sign: string; expiresAt: Date }> {
   const url = ambiente === "produccion" ? WSAA_PROD : WSAA_HOMO
 
   const soapBody = `<?xml version="1.0" encoding="UTF-8"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:wsaa="http://wsaa.view.sua.dvadac.desein.afip.gov.ar"><soapenv:Header/><soapenv:Body><wsaa:loginCms><wsaa:in0>${cms}</wsaa:in0></wsaa:loginCms></soapenv:Body></soapenv:Envelope>`
