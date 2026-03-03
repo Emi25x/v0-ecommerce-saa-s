@@ -33,11 +33,10 @@ function buildTRA(service = "wsfe"): string {
   // expirationTime: 12 horas después
   const to   = new Date(now.getTime() + 43_200_000)
 
-  // ARCA requiere formato ISO8601 con offset, sin milisegundos
-  const fmt = (d: Date) => {
-    const iso = d.toISOString().replace(/\.\d{3}Z$/, "")
-    return iso + "-03:00"
-  }
+  // ARCA acepta ISO8601 en UTC (Z) — NO hacer conversión a -03:00 porque
+  // el servidor corre en UTC y agregar -03:00 a un timestamp UTC genera una
+  // fecha 3 horas en el futuro desde la perspectiva de ARCA.
+  const fmt = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "Z")
 
   const uniqueId = Math.floor(now.getTime() / 1000)
 
