@@ -75,27 +75,28 @@ export async function GET(req: NextRequest) {
     .filter(Boolean)
     .map(String)
 
+  // Log para ver qué trae shipping en la primera orden
+  if (orders.length > 0) {
+    console.log("[v0] primera orden shipping raw:", JSON.stringify(orders[0].shipping))
+    console.log("[v0] shipmentIds encontrados:", shipmentIds.slice(0, 5))
+  }
+
   if (shipmentIds.length > 0) {
-    // Procesar en chunks de 20 (límite de ML)
-    const chunks: string[][] = []
-    for (let i = 0; i < shipmentIds.length; i += 20) {
-      chunks.push(shipmentIds.slice(i, i + 20))
-    }
-    await Promise.all(chunks.map(async (chunk) => {
+    // Procesar de a uno — /shipments/{id} es el endpoint correcto de ML
+    await Promise.all(shipmentIds.slice(0, 20).map(async (sid) => {
       try {
         const sr = await fetch(
-          `https://api.mercadolibre.com/shipments?ids=${chunk.join(",")}`,
+          `https://api.mercadolibre.com/shipments/${sid}`,
           { headers: { Authorization: `Bearer ${mlAccount.access_token}` } }
         )
         if (sr.ok) {
           const sData = await sr.json()
-          // La respuesta es un array de objetos shipment
-          const arr = Array.isArray(sData) ? sData : (sData.results || [])
-          for (const s of arr) {
-            if (s?.id) shipmentStatusMap.set(String(s.id), s.status || "")
-          }
+          console.log("[v0] shipment", sid, "status:", sData.status, "substatus:", sData.substatus)
+          if (sData?.id) shipmentStatusMap.set(String(sData.id), sData.status || "")
+        } else {
+          console.log("[v0] shipment", sid, "error:", sr.status)
         }
-      } catch { /* ignorar errores de envío individual */ }
+      } catch (e) { console.log("[v0] shipment fetch error:", e) }
     }))
   }
 
