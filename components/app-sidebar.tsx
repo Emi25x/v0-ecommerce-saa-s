@@ -705,7 +705,7 @@ export function AppSidebar() {
           <a
             href="/billing"
             className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${
-              pathname?.startsWith("/billing")
+              isActive("/billing")
                 ? "bg-sidebar-accent text-sidebar-accent-foreground"
                 : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             }`}
@@ -713,6 +713,21 @@ export function AppSidebar() {
             <Receipt className="h-5 w-5" />
             <span className="font-medium">Facturación</span>
           </a>
+          <div className="ml-8 mt-1 flex flex-col gap-1">
+            <a
+              href="/billing/mercadolibre"
+              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                pathname?.startsWith("/billing/mercadolibre")
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              }`}
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M14.867 5.166l-4.24 13.668h3.155l4.24-13.668h-3.155zm-6.84 0L3.787 18.834h3.155l4.24-13.668H8.027z" />
+              </svg>
+              <span>Ventas ML</span>
+            </a>
+          </div>
         </div>
 
       </nav>

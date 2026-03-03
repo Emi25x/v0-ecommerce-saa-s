@@ -14,6 +14,7 @@ import {
   CheckCircle2, XCircle, Clock, Trash2, ChevronLeft, ChevronRight, Building2, Receipt,
   HelpCircle, ExternalLink, ChevronDown, ChevronUp, ShieldCheck, Key, Globe, Terminal,
   Barcode, Loader2, X
+  Tag, Trash2,
 } from "lucide-react"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -267,44 +268,70 @@ export default function BillingPage() {
 
   // ── Data loading ──────────────────────────────────────────────────────────
 
+  const populateForm = (e: ArcaConfig) => {
+    setConfigForm({
+      id:               e.id || "",
+      nombre_empresa:   e.nombre_empresa || "",
+      cuit:             e.cuit || "",
+      razon_social:     e.razon_social || "",
+      domicilio_fiscal: e.domicilio_fiscal || "",
+      punto_venta:      String(e.punto_venta || "1"),
+      condicion_iva:    e.condicion_iva || "responsable_inscripto",
+      ambiente:         e.ambiente || "homologacion",
+      cert_pem:         (e as any).cert_pem || "",
+      clave_pem:        (e as any).clave_pem || (e as any).private_key_pem || "",
+      telefono:         e.telefono || "",
+      email:            e.email || "",
+      web:              e.web || "",
+      instagram:        e.instagram || "",
+      facebook:         e.facebook || "",
+      whatsapp:         e.whatsapp || "",
+      iva_default:      e.iva_default ?? 21,
+      nota_factura:     e.nota_factura || "",
+      datos_pago:       e.datos_pago || "",
+      logo_url:         e.logo_url || "",
+      factura_opciones: e.factura_opciones || {
+        mostrar_logo: true, mostrar_datos_contacto: true, mostrar_redes: true,
+        mostrar_nota: true, mostrar_datos_pago: true, mostrar_domicilio: true,
+      },
+    })
+  }
+
   const loadConfig = useCallback(async () => {
     setLoadingConfig(true)
     try {
       const r = await fetch("/api/billing/config")
       const d = await r.json()
-      if (d.config) {
-        setConfig(d.config)
-        setConfigForm(prev => ({
-          ...prev,
-          cuit:             d.config.cuit || "",
-          razon_social:     d.config.razon_social || "",
-          domicilio_fiscal: d.config.domicilio_fiscal || "",
-          punto_venta:      String(d.config.punto_venta || "1"),
-          condicion_iva:    d.config.condicion_iva || "responsable_inscripto",
-          ambiente:         d.config.ambiente || "homologacion",
-          telefono:         d.config.telefono || "",
-          email:            d.config.email || "",
-          web:              d.config.web || "",
-          instagram:        d.config.instagram || "",
-          facebook:         d.config.facebook || "",
-          whatsapp:         d.config.whatsapp || "",
-          iva_default:      d.config.iva_default ?? 21,
-          nota_factura:     d.config.nota_factura || "",
-          datos_pago:       d.config.datos_pago || "",
-          logo_url:         d.config.logo_url || "",
-          factura_opciones: d.config.factura_opciones || prev.factura_opciones,
-        }))
+      if (d.empresas?.length) {
+        setEmpresas(d.empresas)
+        // restaurar empresa activa desde localStorage si existe
+        const saved = typeof window !== "undefined" ? localStorage.getItem("billing_empresa_activa") : null
+        const matchSaved = saved ? d.empresas.find((e: ArcaConfig) => e.id === saved) : null
+        const activa = matchSaved || d.empresas[0]
+        setEmpresaActivaId(activa.id)
+        populateForm(activa)
       }
     } finally {
       setLoadingConfig(false)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const switchEmpresa = (id: string) => {
+    setEmpresaActivaId(id)
+    if (typeof window !== "undefined") localStorage.setItem("billing_empresa_activa", id)
+    const emp = empresas.find(e => e.id === id)
+    if (emp) populateForm(emp)
+    setFacturas([]); setPage(0)
+  }
+
   const loadFacturas = useCallback(async (p = 0) => {
+    if (!empresaActivaId) return
     setLoadingF(true)
     try {
       const params = new URLSearchParams({
         page: String(p + 1), limit: String(LIMIT),
+        empresa_id: empresaActivaId,
         ...(filterEstado !== "all" && { estado: filterEstado }),
         ...(searchQ && { q: searchQ }),
       })
@@ -314,7 +341,7 @@ export default function BillingPage() {
     } finally {
       setLoadingF(false)
     }
-  }, [filterEstado, searchQ])
+  }, [filterEstado, searchQ, empresaActivaId])
 
   useEffect(() => { loadConfig() }, [loadConfig])
   useEffect(() => { loadFacturas(page) }, [loadFacturas, page])
@@ -326,13 +353,47 @@ export default function BillingPage() {
     try {
       const r = await fetch("/api/billing/config", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(configForm),
+        body: JSON.stringify({ ...configForm, id: configForm.id || undefined }),
       })
       const d = await r.json()
-      if (d.ok) { setConfigMsg({ type: "ok", text: "Configuración guardada correctamente." }); loadConfig() }
-      else setConfigMsg({ type: "err", text: d.error || "Error al guardar" })
+      if (d.ok) {
+        setConfigMsg({ type: "ok", text: "Empresa guardada correctamente." })
+        // Recargar lista y mantener empresa activa
+        const r2 = await fetch("/api/billing/config")
+        const d2 = await r2.json()
+        if (d2.empresas?.length) {
+          setEmpresas(d2.empresas)
+          const newId = d.config?.id || configForm.id || d2.empresas[0].id
+          setEmpresaActivaId(newId)
+          if (typeof window !== "undefined") localStorage.setItem("billing_empresa_activa", newId)
+        }
+      } else {
+        setConfigMsg({ type: "err", text: d.error || "Error al guardar" })
+      }
     } finally {
       setSavingConfig(false)
+    }
+  }
+
+  const deleteEmpresa = async (id: string) => {
+    if (!id) return
+    setDeletingEmpresa(true)
+    try {
+      const r = await fetch(`/api/billing/config?id=${id}`, { method: "DELETE" })
+      const d = await r.json()
+      if (d.ok) {
+        const remaining = empresas.filter(e => e.id !== id)
+        setEmpresas(remaining)
+        const next = remaining[0] ?? null
+        setEmpresaActivaId(next?.id ?? null)
+        if (next) { populateForm(next); localStorage.setItem("billing_empresa_activa", next.id) }
+        else setConfigForm(EMPTY_CONFIG_FORM())
+        setConfirmDelete(false)
+      } else {
+        setConfigMsg({ type: "err", text: d.error || "Error al eliminar" })
+      }
+    } finally {
+      setDeletingEmpresa(false)
     }
   }
 
@@ -346,7 +407,7 @@ export default function BillingPage() {
 
       const r = await fetch("/api/billing/facturas", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...newForm, items: typedItems }),
+        body: JSON.stringify({ ...newForm, items: typedItems, empresa_id: empresaActivaId }),
       })
       const d = await r.json()
       if (d.ok) {
@@ -460,7 +521,50 @@ export default function BillingPage() {
         </Button>
       </div>
 
-      {/* Stats */}
+      {/* Selector de empresa */}
+      {!loadingConfig && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {empresas.map(emp => {
+            const isActive = emp.id === empresaActivaId
+            const nombre   = emp.nombre_empresa || emp.razon_social
+            return (
+              <button
+                key={emp.id}
+                onClick={() => switchEmpresa(emp.id)}
+                className={`flex items-center gap-2.5 rounded-lg border px-3.5 py-2 text-sm font-medium transition-all ${
+                  isActive
+                    ? "border-emerald-500/60 bg-emerald-500/10 text-emerald-300 shadow-[0_0_0_1px_rgba(52,211,153,0.3)]"
+                    : "border-border bg-card text-muted-foreground hover:border-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Building2 className="h-3.5 w-3.5 flex-shrink-0" />
+                <span>{nombre}</span>
+                {isActive && (
+                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-sm ${
+                    emp.ambiente === "produccion"
+                      ? "bg-emerald-500/20 text-emerald-400"
+                      : "bg-amber-500/20 text-amber-400"
+                  }`}>
+                    {emp.ambiente === "produccion" ? "PROD" : "HOMO"}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+          <button
+            onClick={() => {
+              setConfigForm(EMPTY_CONFIG_FORM())
+              setActiveTab("config")
+            }}
+            className="flex items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:border-muted-foreground transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Nueva empresa
+          </button>
+        </div>
+      )}
+
+      {/* Stats empresa activa */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Total emitidas</p>
@@ -484,7 +588,7 @@ export default function BillingPage() {
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">CUIT</p>
-          <p className="text-sm font-mono font-semibold">{config?.cuit || "—"}</p>
+          <p className="text-sm font-mono font-semibold">{config?.cuit?.replace(/(\d{2})(\d{8})(\d)/, "$1-$2-$3") || "—"}</p>
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Punto de venta</p>
@@ -618,6 +722,72 @@ export default function BillingPage() {
         {/* ── Config tab ── */}
         <TabsContent value="config">
           <div className="max-w-2xl space-y-5">
+
+            {/* ── Empresa selector dentro del tab ── */}
+            <div className="rounded-lg border border-border bg-card p-4">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex-1 space-y-1.5">
+                  <Label>Empresa a configurar</Label>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {empresas.map(emp => (
+                      <button
+                        key={emp.id}
+                        onClick={() => { setEmpresaActivaId(emp.id); populateForm(emp) }}
+                        className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                          configForm.id === emp.id
+                            ? "border-primary/60 bg-primary/10 text-primary"
+                            : "border-border text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {emp.nombre_empresa || emp.razon_social}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setConfigForm(EMPTY_CONFIG_FORM())}
+                      className="rounded-md border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+                    >
+                      <Plus className="h-3 w-3" /> Nueva
+                    </button>
+                  </div>
+                </div>
+                {configForm.id && (
+                  <div className="flex-shrink-0">
+                    {!confirmDelete ? (
+                      <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-300 hover:bg-red-500/10 gap-1.5"
+                        onClick={() => setConfirmDelete(true)}>
+                        <Trash2 className="h-3.5 w-3.5" />Eliminar empresa
+                      </Button>
+                    ) : (
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="text-red-400">¿Eliminar?</span>
+                        <Button size="sm" variant="destructive" onClick={() => deleteEmpresa(configForm.id)}
+                          disabled={deletingEmpresa} className="h-7 text-xs gap-1">
+                          {deletingEmpresa ? <RefreshCw className="h-3 w-3 animate-spin" /> : null}
+                          Confirmar
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setConfirmDelete(false)}>
+                          Cancelar
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── Nombre interno ── */}
+            <div className="rounded-lg border border-border bg-card p-5 space-y-3">
+              <h3 className="font-semibold flex items-center gap-2 text-sm"><Tag className="h-4 w-4" />Nombre interno</h3>
+              <div className="space-y-1.5">
+                <Label>Nombre para identificar la empresa en el sistema</Label>
+                <p className="text-xs text-muted-foreground">Solo visible internamente — no aparece en las facturas.</p>
+                <Input
+                  placeholder="Ej: Mi Tienda ML, Empresa A, Emprendimiento Personal..."
+                  value={configForm.nombre_empresa}
+                  onChange={e => setConfigForm(p => ({ ...p, nombre_empresa: e.target.value }))}
+                />
+              </div>
+            </div>
 
             {/* ── Identidad visual ── */}
             <div className="rounded-lg border border-border bg-card p-5 space-y-4">
