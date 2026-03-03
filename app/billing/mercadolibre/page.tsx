@@ -42,6 +42,7 @@ interface Empresa {
 const ESTADO_OPTS = [
   { value: "all",       label: "Todos los estados" },
   { value: "paid",      label: "Pagadas" },
+  { value: "delivered", label: "Entregadas" },
   { value: "cancelled", label: "Canceladas" },
   { value: "pending",   label: "Pendientes" },
 ]
@@ -55,11 +56,12 @@ const FACTURADO_OPTS = [
 function EstadoBadge({ estado }: { estado: string }) {
   const map: Record<string, string> = {
     paid:      "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+    delivered: "bg-blue-500/15 text-blue-400 border-blue-500/30",
     cancelled: "bg-red-500/15 text-red-400 border-red-500/30",
     pending:   "bg-amber-500/15 text-amber-400 border-amber-500/30",
   }
   const labels: Record<string, string> = {
-    paid: "Pagada", cancelled: "Cancelada", pending: "Pendiente",
+    paid: "Pagada", delivered: "Entregada", cancelled: "Cancelada", pending: "Pendiente",
   }
   return (
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${map[estado] ?? "bg-muted/30 text-muted-foreground border-border"}`}>
@@ -109,6 +111,12 @@ export default function MLBillingPage() {
   const [selected,      setSelected]      = useState<Set<number>>(new Set())
   const [emittingBatch, setEmittingBatch] = useState(false)
   const [batchResult,   setBatchResult]   = useState<{ ok: number; err: number; errors: string[] } | null>(null)
+
+  // ── Conectar nueva cuenta ML ───────────────────────────────────────────────
+  const conectarML = () => {
+    // /api/mercadolibre/auth genera el PKCE, setea la cookie y redirige a ML OAuth
+    window.location.href = "/api/mercadolibre/auth"
+  }
 
   // ── Cargar cuentas ML y empresas ARCA ─────────────────────────────────────
   useEffect(() => {
@@ -248,15 +256,24 @@ export default function MLBillingPage() {
 
   if (!accounts.length) {
     return (
-      <div className="p-8 max-w-2xl mx-auto">
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-6 flex gap-4 items-start">
-          <AlertTriangle className="h-5 w-5 text-amber-400 flex-shrink-0 mt-0.5" />
+      <div className="p-8 max-w-xl mx-auto space-y-4">
+        <h1 className="text-2xl font-bold tracking-tight">Ventas MercadoLibre</h1>
+        <div className="rounded-lg border border-border bg-card p-8 flex flex-col items-center text-center gap-4">
+          <div className="h-12 w-12 rounded-full bg-yellow-500/10 flex items-center justify-center">
+            <svg className="h-6 w-6 text-yellow-400" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M14.867 5.166l-4.24 13.668h3.155l4.24-13.668h-3.155zm-6.84 0L3.787 18.834h3.155l4.24-13.668H8.027z" />
+            </svg>
+          </div>
           <div>
-            <p className="font-semibold text-amber-300">No hay cuentas de MercadoLibre conectadas</p>
+            <p className="font-semibold">No hay cuentas de MercadoLibre conectadas</p>
             <p className="text-sm text-muted-foreground mt-1">
-              Conectá al menos una cuenta desde la sección de Integraciones de MercadoLibre para poder ver y facturar tus ventas.
+              Conectá tu cuenta para ver las ventas y facturarlas directamente a ARCA.
             </p>
           </div>
+          <Button onClick={conectarML} className="gap-2 bg-yellow-500 hover:bg-yellow-400 text-black font-semibold">
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M14.867 5.166l-4.24 13.668h3.155l4.24-13.668h-3.155zm-6.84 0L3.787 18.834h3.155l4.24-13.668H8.027z" /></svg>
+            Conectar cuenta MercadoLibre
+          </Button>
         </div>
       </div>
     )
@@ -301,6 +318,13 @@ export default function MLBillingPage() {
                 {acc.nickname}
               </button>
             ))}
+            <button
+              onClick={conectarML}
+              className="flex items-center gap-1.5 rounded-lg border border-dashed border-yellow-500/40 px-3 py-2 text-xs text-yellow-400/70 hover:text-yellow-300 hover:border-yellow-500/70 transition-colors"
+            >
+              <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 4v16m8-8H4" /></svg>
+              Conectar otra cuenta
+            </button>
           </div>
         </div>
 

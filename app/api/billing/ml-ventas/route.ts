@@ -17,11 +17,10 @@ export async function GET(req: NextRequest) {
   const limit       = parseInt(searchParams.get("limit") || "50")
   const offset      = (page - 1) * limit
 
-  // Obtener token ML de la cuenta (la tabla usa ml_user_id, no seller_id)
+  // Buscar solo por id (uuid) — user_id puede estar vacío en cuentas conectadas previamente
   const { data: mlAccount } = await supabase
     .from("ml_accounts")
     .select("access_token, ml_user_id, nickname")
-    .eq("user_id", user.id)
     .eq("id", account_id)
     .single()
 
