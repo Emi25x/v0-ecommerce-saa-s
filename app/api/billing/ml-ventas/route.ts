@@ -91,55 +91,69 @@ export async function GET(req: NextRequest) {
     }))
   }
 
-  // Obtener datos del comprador:
-  // 1. /orders/{id}         → buyer.first_name, last_name, phone
-  // 2. /orders/{id}/billing_info → doc_type (DNI/CUIT), doc_number, dirección fiscal
-  // La API de ML devuelve buyer: { id } en /orders/search sin nombre ni DNI.
+  // Obtener datos del comprador combinando dos endpoints de ML:
+  // • GET /orders/{id}              → buyer.first_name, last_name, identification
+  // • GET /orders/{id}/billing_info → buyer.identification (doc_type/number), dirección fiscal
+  //
+  // IMPORTANTE: se procesan en lotes de 5 en serie para evitar timeout en Vercel.
+  // billing_info estructura real: { buyer: { first_name, last_name, identification: { type, number }, ... } }
   const orderBillingMap = new Map<string, {
     doc_type: string; doc_number: string
     first_name: string; last_name: string
     address: string; city: string; state: string; zip: string
   }>()
 
-  await Promise.all(orders.slice(0, 30).map(async (o: any) => {
-    try {
-      // Llamada 1: detalle completo de la orden (tiene buyer con nombre)
-      const [orderRes, billingRes] = await Promise.all([
-        fetch(`https://api.mercadolibre.com/orders/${o.id}`,
-          { headers: { Authorization: `Bearer ${mlAccount.access_token}` } }),
-        fetch(`https://api.mercadolibre.com/orders/${o.id}/billing_info`,
-          { headers: { Authorization: `Bearer ${mlAccount.access_token}` } }),
-      ])
+  const ordersToFetch = orders.slice(0, 20)
+  const CHUNK = 5
+  for (let i = 0; i < ordersToFetch.length; i += CHUNK) {
+    const chunk = ordersToFetch.slice(i, i + CHUNK)
+    await Promise.all(chunk.map(async (o: any) => {
+      try {
+        const headers = { Authorization: `Bearer ${mlAccount.access_token}` }
+        // Timeout de 5s por llamada para no colgar el handler en Vercel
+        const signal  = AbortSignal.timeout(5000)
 
-      const orderDetail  = orderRes.ok  ? await orderRes.json()   : null
-      const billingData  = billingRes.ok ? await billingRes.json() : null
+        // billing_info trae nombre + doc del comprador
+        const billingRes = await fetch(
+          `https://api.mercadolibre.com/orders/${o.id}/billing_info`,
+          { headers, signal }
+        )
 
-      // buyer con nombre viene del detalle de la orden
-      const buyerDetail = orderDetail?.buyer || {}
-      // billing_info puede venir como objeto plano o con sub-objeto buyer/payer
-      const billing     = billingData?.buyer || billingData?.payer || billingData || {}
+        if (!billingRes.ok) return
 
-      orderBillingMap.set(String(o.id), {
-        first_name: buyerDetail.first_name || billing.first_name || "",
-        last_name:  buyerDetail.last_name  || billing.last_name  || "",
-        // DNI/CUIT: puede estar en identification del detalle o en billing_info
-        doc_type:   billing.doc_type   || buyerDetail.identification?.type   || "",
-        doc_number: billing.doc_number || buyerDetail.identification?.number || "",
-        address:    billing.address    || billing.street_name || "",
-        city:       billing.city       || billing.city_name   || "",
-        state:      billing.state      || billing.state_name  || "",
-        zip:        billing.zip        || billing.zip_code    || "",
-      })
-    } catch { /* ignorar */ }
-  }))
+        const bd = await billingRes.json()
+
+        // Estructura real de ML billing_info:
+        // { buyer: { first_name, last_name, identification: { type: "DNI"|"CUIT", number: "..." }, ... } }
+        const buyer  = bd.buyer  || bd.payer  || {}
+        const seller = bd.seller || {}
+        const ident  = buyer.identification || buyer.doc || {}
+
+        // Dirección: puede estar en billing_address o en address
+        const addr   = bd.billing_address || buyer.address || {}
+
+        orderBillingMap.set(String(o.id), {
+          first_name: buyer.first_name || "",
+          last_name:  buyer.last_name  || "",
+          doc_type:   ident.type       || "",
+          doc_number: ident.number     || "",
+          address:    addr.street_name ? `${addr.street_name} ${addr.street_number || ""}`.trim() : "",
+          city:       addr.city?.name  || addr.city || "",
+          state:      addr.state?.name || addr.state || "",
+          zip:        addr.zip_code    || "",
+        })
+      } catch { /* ignorar errores individuales */ }
+    }))
+  }
 
   // Enriquecer órdenes con estado de facturación, envío y datos del comprador
   let enriched = orders.map((o: any) => {
     const shipment  = shipmentStatusMap.get(String(o.shipping?.id))
     const billing   = orderBillingMap.get(String(o.id))
-    const firstName = billing?.first_name || o.buyer?.first_name || ""
-    const lastName  = billing?.last_name  || o.buyer?.last_name  || ""
-    const buyerName = [firstName, lastName].filter(Boolean).join(" ").trim()
+    // billing_info trae nombre completo; fallback a lo que venga en la orden
+    const firstName = billing?.first_name || ""
+    const lastName  = billing?.last_name  || ""
+    const buyerName = [firstName, lastName].filter(Boolean).join(" ").trim() || "Consumidor Final"
 
     return {
       id:                  o.id,
