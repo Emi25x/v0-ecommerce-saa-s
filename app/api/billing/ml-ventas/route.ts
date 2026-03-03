@@ -17,21 +17,23 @@ export async function GET(req: NextRequest) {
   const limit       = parseInt(searchParams.get("limit") || "50")
   const offset      = (page - 1) * limit
 
-  // Obtener token ML de la cuenta
+  // Obtener token ML de la cuenta (la tabla usa ml_user_id, no seller_id)
   const { data: mlAccount } = await supabase
     .from("ml_accounts")
-    .select("access_token, seller_id, nickname")
+    .select("access_token, ml_user_id, nickname")
     .eq("user_id", user.id)
-    .eq("seller_id", account_id)
+    .eq("id", account_id)
     .single()
 
   if (!mlAccount?.access_token) {
     return NextResponse.json({ ok: false, error: "Cuenta de MercadoLibre no encontrada o sin token" }, { status: 404 })
   }
 
-  // Construir query a ML API
+  const mlUserId = mlAccount.ml_user_id
+
+  // Construir query a ML API — las órdenes se buscan con el seller id numérico
   const mlParams = new URLSearchParams({
-    seller: mlAccount.seller_id,
+    seller: mlUserId,
     limit:  String(limit),
     offset: String(offset),
     sort:   "date_desc",
@@ -52,12 +54,12 @@ export async function GET(req: NextRequest) {
   const orders: any[] = mlData.results || []
 
   // Obtener cuáles ya fueron facturadas
-  const orderIds = orders.map((o: any) => o.id)
+  const orderIds = orders.map((o: any) => String(o.id))
   const { data: facturadas } = await supabase
     .from("ml_order_facturas")
-    .select("ml_order_id, factura_id, empresa_id, facturado_at, facturas(numero, tipo_comprobante, cae)")
+    .select("ml_order_id, factura_id, empresa_id, facturado_at")
     .eq("user_id",       user.id)
-    .eq("ml_account_id", String(mlAccount.seller_id))
+    .eq("ml_account_id", account_id)
     .in("ml_order_id",   orderIds)
 
   const facturadaMap = new Map(
@@ -66,30 +68,30 @@ export async function GET(req: NextRequest) {
 
   // Enriquecer órdenes con estado de facturación
   let enriched = orders.map((o: any) => ({
-    id:            o.id,
-    fecha:         o.date_created,
-    estado:        o.status,
-    total:         o.total_amount,
-    moneda:        o.currency_id,
-    comprador:     o.buyer ? `${o.buyer.first_name || ""} ${o.buyer.last_name || ""}`.trim() : "—",
-    items:         (o.order_items || []).map((i: any) => ({
-      titulo:    i.item?.title || "",
-      cantidad:  i.quantity,
-      precio:    i.unit_price,
+    id:           o.id,
+    fecha:        o.date_created,
+    estado:       o.status,
+    total:        o.total_amount,
+    moneda:       o.currency_id,
+    comprador:    o.buyer ? `${o.buyer.first_name || ""} ${o.buyer.last_name || ""}`.trim() : "—",
+    items:        (o.order_items || []).map((i: any) => ({
+      titulo:   i.item?.title || "",
+      cantidad: i.quantity,
+      precio:   i.unit_price,
     })),
-    facturada:      facturadaMap.has(o.id),
-    factura_info:   facturadaMap.get(o.id) || null,
+    facturada:    facturadaMap.has(String(o.id)),
+    factura_info: facturadaMap.get(String(o.id)) || null,
   }))
 
-  // Filtro de facturado client-side (ML no lo soporta)
-  if (facturado === "si")  enriched = enriched.filter(o => o.facturada)
-  if (facturado === "no")  enriched = enriched.filter(o => !o.facturada)
+  // Filtro de facturado client-side (ML no lo soporta nativamente)
+  if (facturado === "si") enriched = enriched.filter(o => o.facturada)
+  if (facturado === "no") enriched = enriched.filter(o => !o.facturada)
 
   return NextResponse.json({
     ok:      true,
     orders:  enriched,
     total:   mlData.paging?.total || enriched.length,
-    account: { seller_id: mlAccount.seller_id, nickname: mlAccount.nickname },
+    account: { id: account_id, ml_user_id: mlUserId, nickname: mlAccount.nickname },
   })
 }
 
@@ -106,10 +108,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Parámetros incompletos" }, { status: 400 })
   }
 
-  const rows = ml_order_ids.map((oid: number) => ({
+  const rows = ml_order_ids.map((oid: number | string) => ({
     user_id:        user.id,
-    ml_order_id:    oid,
-    ml_account_id:  String(ml_account_id),
+    ml_order_id:    String(oid),
+    ml_account_id:  String(ml_account_id),  // uuid de la fila en ml_accounts
     factura_id:     factura_id || null,
     empresa_id:     empresa_id || null,
   }))
