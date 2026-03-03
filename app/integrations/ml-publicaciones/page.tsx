@@ -12,19 +12,25 @@ import Image from "next/image"
 // Modos de búsqueda con sus endpoints correctos de ML
 const MODES = [
   {
+    value:       "eligible",
+    label:       "Elegibles para catálogo",
+    description: "Publicaciones activas con competencia en catálogo — podés hacer opt-in para competir directamente",
+    color:       "text-emerald-400",
+    bg:          "bg-emerald-500/10 border-emerald-500/20",
+    badgeClass:  "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  },
+  {
     value:       "forewarning",
     label:       "Próximas a pausarse",
     description: "Publicaciones que ML detectó que deben migrar al catálogo o serán pausadas",
-    endpoint:    "GET /marketplace/items/catalog-forewarning",
     color:       "text-amber-400",
     bg:          "bg-amber-500/10 border-amber-500/20",
     badgeClass:  "bg-amber-500/15 text-amber-300 border-amber-500/30",
   },
   {
     value:       "under_review",
-    label:       "Bajo revisión / Esperando catálogo",
-    description: "Publicaciones pausadas bajo revisión que requieren publicación de catálogo para reactivarse",
-    endpoint:    "GET /users/{id}/items/search?status=under_review&tags=catalog_required",
+    label:       "Bajo revisión",
+    description: "Publicaciones pausadas esperando publicación de catálogo para reactivarse",
     color:       "text-red-400",
     bg:          "bg-red-500/10 border-red-500/20",
     badgeClass:  "bg-red-500/15 text-red-300 border-red-500/30",

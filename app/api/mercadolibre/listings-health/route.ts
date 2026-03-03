@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
 // Modos de búsqueda:
-// "forewarning"  → GET /marketplace/items/catalog-forewarning
-//                  Publicaciones propias que deben migrar al catálogo o serán pausadas
-// "under_review" → GET /users/{id}/items/search?status=under_review&tags=catalog_required
+// "forewarning"  → GET /users/{id}/items/catalog-forewarning
+//                  Publicaciones que deben migrar al catálogo o serán pausadas
+// "eligible"     → GET /users/{id}/items/search?tags=catalog_listing_eligible
+//                  Publicaciones activas elegibles para optin al catálogo (BUYBOX_STATUS_COMPETING)
+// "under_review" → GET /users/{id}/items/search?tags=catalog_required
 //                  Publicaciones bajo revisión esperando publicación de catálogo
 
 export async function GET(request: NextRequest) {
@@ -55,10 +57,24 @@ export async function GET(request: NextRequest) {
         total   = data.paging?.total || itemIds.length
       }
 
+    } else if (mode === "eligible") {
+      // Publicaciones activas elegibles para optin al catálogo.
+      // Equivalente al filtro del panel ML: task=BUYBOX_STATUS_COMPETING_MARKETPLACE
+      // Tag de API: catalog_listing_eligible → ítems que pueden hacer opt-in
+      const url = `https://api.mercadolibre.com/users/${sellerId}/items/search?tags=catalog_listing_eligible&limit=${limit}&offset=${offset}`
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+
+      if (!res.ok) {
+        const err = await res.text()
+        return NextResponse.json({ error: `ML API ${res.status}: ${err}` }, { status: res.status })
+      }
+      const data = await res.json()
+      itemIds = data.results || []
+      total   = data.paging?.total || itemIds.length
+
     } else if (mode === "under_review") {
       // Publicaciones bajo revisión esperando publicación en catálogo.
-      // Filtro extraído del panel ML: task=UNDER_REVIEW_WAITING_FOR_PATCH_MARKETPLACE
-      // Equivalente en API: /items/search con tag catalog_required + status active/paused
+      // Equivalente al filtro: task=UNDER_REVIEW_WAITING_FOR_PATCH_MARKETPLACE
       const url = `https://api.mercadolibre.com/users/${sellerId}/items/search?tags=catalog_required&limit=${limit}&offset=${offset}`
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
 
@@ -71,7 +87,7 @@ export async function GET(request: NextRequest) {
       total   = data.paging?.total || itemIds.length
 
     } else {
-      return NextResponse.json({ error: "mode inválido. Usar: forewarning | under_review" }, { status: 400 })
+      return NextResponse.json({ error: "mode inválido. Usar: forewarning | eligible | under_review" }, { status: 400 })
     }
 
     if (!itemIds.length) {
