@@ -69,16 +69,18 @@ export async function GET(req: NextRequest) {
 
   // Enriquecer órdenes con estado de facturación
   let enriched = orders.map((o: any) => ({
-    id:           o.id,
-    fecha:        o.date_created,
-    estado:       o.status,
-    total:        o.total_amount,
-    moneda:       o.currency_id,
-    comprador:    o.buyer ? `${o.buyer.first_name || ""} ${o.buyer.last_name || ""}`.trim() : "—",
-    items:        (o.order_items || []).map((i: any) => ({
+    id:            o.id,
+    fecha:         o.date_created,
+    estado:        o.status,
+    envio_status:  o.shipping?.status || null,   // estado del envío (delivered, shipped, etc.)
+    total:         o.total_amount,
+    moneda:        o.currency_id,
+    comprador:     o.buyer ? `${o.buyer.first_name || ""} ${o.buyer.last_name || ""}`.trim() : "—",
+    comprador_doc: o.buyer?.identification?.number || null,   // DNI/CUIT del comprador si ML lo provee
+    items:         (o.order_items || []).map((i: any) => ({
       titulo:   i.item?.title || "",
       cantidad: i.quantity,
-      precio:   i.unit_price,
+      precio:   Math.round(i.unit_price * 100) / 100,  // redondear a 2 decimales
     })),
     facturada:    facturadaMap.has(String(o.id)),
     factura_info: facturadaMap.get(String(o.id)) || null,

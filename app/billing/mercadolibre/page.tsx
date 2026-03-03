@@ -60,6 +60,28 @@ const FACTURADO_OPTS = [
   { value: "si",  label: "Ya facturadas" },
 ]
 
+function EnvioBadge({ estado }: { estado?: string }) {
+  if (!estado) return <span className="text-xs text-muted-foreground/40">—</span>
+  const map: Record<string, string> = {
+    delivered:      "bg-blue-500/15 text-blue-400 border-blue-500/30",
+    shipped:        "bg-indigo-500/15 text-indigo-400 border-indigo-500/30",
+    ready_to_ship:  "bg-cyan-500/15 text-cyan-400 border-cyan-500/30",
+    not_delivered:  "bg-red-500/15 text-red-400 border-red-500/30",
+    cancelled:      "bg-red-500/15 text-red-400 border-red-500/30",
+    pending:        "bg-amber-500/15 text-amber-400 border-amber-500/30",
+  }
+  const labels: Record<string, string> = {
+    delivered: "Entregada", shipped: "En camino", ready_to_ship: "Lista enviar",
+    not_delivered: "No entregada", cancelled: "Cancelado", pending: "Pendiente",
+  }
+  const cls = map[estado] || "bg-muted text-muted-foreground border-border"
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${cls}`}>
+      {labels[estado] || estado}
+    </span>
+  )
+}
+
 function EstadoBadge({ estado }: { estado: string }) {
   const map: Record<string, string> = {
     paid:      "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
@@ -205,22 +227,32 @@ export default function MLBillingPage() {
     for (const order of selOrders) {
       try {
         // Emitir factura para esta orden
+        // Para Factura C: IVA = 0, precio_unitario es el precio final (IVA incluido)
+        // ARCA exige: ImpIVA = 0, ImpNeto = ImpTotal, no informar objeto IVA
+        // Los importes se redondean a 2 decimales máx (ARCA rechaza más)
+        const round2 = (n: number) => Math.round(n * 100) / 100
+
+        // Usar DNI del comprador si ML lo provee; sino Consumidor Final (96=DNI, 99=sin doc)
+        const docNum   = (order as any).comprador_doc
+        const tipoDoc  = docNum ? 96 : 99   // 96 = DNI, 99 = sin identificar
+        const nroDoc   = docNum ? String(docNum).replace(/\D/g, "") : "0"
+
         const facRes = await fetch("/api/billing/facturas", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             empresa_id:             activeEmpresa,
-            tipo_comprobante:       11,  // Factura C (más común para ML)
+            tipo_comprobante:       11,  // Factura C
             concepto:               1,
-            tipo_doc_receptor:      99,  // Consumidor final por defecto
-            nro_doc_receptor:       "0",
+            tipo_doc_receptor:      tipoDoc,
+            nro_doc_receptor:       nroDoc,
             receptor_nombre:        order.comprador || "Consumidor Final",
             receptor_condicion_iva: "consumidor_final",
             items: order.items.map(i => ({
-              descripcion:     i.titulo,
+              descripcion:     i.titulo || "Venta ML",
               cantidad:        i.cantidad,
-              precio_unitario: i.precio,
-              alicuota_iva:    21,
+              precio_unitario: round2(i.precio),
+              alicuota_iva:    0,   // Factura C: IVA = 0, no se informa objeto IVA
             })),
           }),
         })
@@ -516,7 +548,8 @@ export default function MLBillingPage() {
                   <th className="px-4 py-2.5 text-left text-xs font-medium text-muted-foreground uppercase tracking-wide">Artículos</th>
                   <th className="px-4 py-2.5 text-right text-xs font-medium text-muted-foreground uppercase tracking-wide">Total</th>
                   <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground uppercase tracking-wide">Estado venta</th>
-                  <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground uppercase tracking-wide">Facturada</th>
+                  <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground uppercase tracking-wide">Envío</th>
+                  <th className="px-4 py-2.5 text-center text-xs font-medium text-muted-foreground uppercase tracking-wide">Factura</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -553,15 +586,28 @@ export default function MLBillingPage() {
                     </td>
                     <td className="px-4 py-3 text-right font-semibold tabular-nums">{fmtARS(order.total)}</td>
                     <td className="px-4 py-3 text-center"><EstadoBadge estado={order.estado} /></td>
+                    <td className="px-4 py-3 text-center"><EnvioBadge estado={order.envio_status} /></td>
                     <td className="px-4 py-3 text-center">
                       {order.facturada ? (
-                        <span className="inline-flex items-center gap-1 text-xs text-emerald-400">
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          {order.factura_info?.facturado_at
-                            ? new Date(order.factura_info.facturado_at).toLocaleDateString("es-AR")
-                            : "Sí"
-                          }
-                        </span>
+                        <div className="inline-flex flex-col items-center gap-0.5">
+                          <span className="inline-flex items-center gap-1 text-xs text-emerald-400">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            {order.factura_info?.facturado_at
+                              ? new Date(order.factura_info.facturado_at).toLocaleDateString("es-AR")
+                              : "Sí"
+                            }
+                          </span>
+                          {order.factura_info?.factura_id && (
+                            <a
+                              href={`/api/billing/facturas/${order.factura_info.factura_id}/pdf`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-[10px] text-primary/70 hover:text-primary transition-colors"
+                            >
+                              <Download className="h-3 w-3" />PDF
+                            </a>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>
                       )}

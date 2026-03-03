@@ -115,36 +115,52 @@ export async function getLastInvoiceNumber(params: {
 export async function requestCAE(params: SolicitarCAEParams): Promise<CAEResponse> {
   const url = wsfeUrl(params.ambiente)
 
-  // Calcular importes agrupados por alícuota
-  const ivaMap = new Map<number, { base: number; importe: number; id: number }>()
-  // IDs de alícuota ARCA: 3=0%, 4=10.5%, 5=21%, 6=27%
-  const alicuotaId: Record<number, number> = { 0: 3, 10.5: 4, 21: 5, 27: 6 }
+  // Comprobantes tipo C (11=FC, 12=ND C, 13=NC C):
+  // ARCA exige ImpNeto = ImpTotal, ImpIVA = 0, ImpOpEx = 0, sin nodo <Iva>
+  // El precio_unitario enviado ya incluye IVA (precio de venta final al consumidor)
+  const esTipoC = [11, 12, 13].includes(params.tipo_comprobante)
 
-  let importeNeto = 0
-  let importeExento = 0
+  let importeNeto    = 0
+  let importeExento  = 0
   let importeIvaTotal = 0
 
-  for (const item of params.items) {
-    if (item.alicuota_iva === 0) {
-      importeExento += item.subtotal
-    } else {
+  // IDs de alícuota ARCA: 3=0%, 4=10.5%, 5=21%, 6=27%
+  const alicuotaId: Record<number, number> = { 0: 3, 10.5: 4, 21: 5, 27: 6 }
+  const ivaMap = new Map<number, { base: number; importe: number; id: number }>()
+
+  if (esTipoC) {
+    // Para tipo C: todo el importe va a ImpNeto, IVA = 0, sin objeto Iva
+    for (const item of params.items) {
       importeNeto += item.subtotal
-      importeIvaTotal += item.iva
-      const id = alicuotaId[item.alicuota_iva]
-      const prev = ivaMap.get(id) || { base: 0, importe: 0, id }
-      ivaMap.set(id, {
-        id,
-        base:    parseFloat((prev.base + item.subtotal).toFixed(2)),
-        importe: parseFloat((prev.importe + item.iva).toFixed(2)),
-      })
+    }
+  } else {
+    for (const item of params.items) {
+      if (item.alicuota_iva === 0) {
+        importeExento += item.subtotal
+      } else {
+        importeNeto += item.subtotal
+        importeIvaTotal += item.iva
+        const id = alicuotaId[item.alicuota_iva]
+        const prev = ivaMap.get(id) || { base: 0, importe: 0, id }
+        ivaMap.set(id, {
+          id,
+          base:    parseFloat((prev.base + item.subtotal).toFixed(2)),
+          importe: parseFloat((prev.importe + item.iva).toFixed(2)),
+        })
+      }
     }
   }
 
+  // Redondear a 2 decimales (ARCA rechaza más de 2 decimales en la parte decimal)
+  importeNeto     = parseFloat(importeNeto.toFixed(2))
+  importeExento   = parseFloat(importeExento.toFixed(2))
+  importeIvaTotal = parseFloat(importeIvaTotal.toFixed(2))
+
   const importeTotal = parseFloat((importeNeto + importeExento + importeIvaTotal).toFixed(2))
 
-  // <ar:Iva> solo se incluye si hay ítems gravados (sino ARCA falla con nodo vacío)
+  // <ar:Iva> solo si hay ítems gravados y NO es tipo C (sino ARCA rechaza el nodo)
   const ivaItems = Array.from(ivaMap.values())
-  const ivaXml = ivaItems.length > 0
+  const ivaXml = (!esTipoC && ivaItems.length > 0)
     ? `<ar:Iva>${ivaItems.map(a => `<ar:AlicIva><ar:Id>${a.id}</ar:Id><ar:BaseImp>${a.base.toFixed(2)}</ar:BaseImp><ar:Importe>${a.importe.toFixed(2)}</ar:Importe></ar:AlicIva>`).join("")}</ar:Iva>`
     : ""
 
