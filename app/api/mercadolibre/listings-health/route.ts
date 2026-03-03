@@ -1,15 +1,28 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
-// Obtiene publicaciones con problemas de salud:
-// - "soon_to_be_paused": próximas a pausarse por no tener catálogo
-// - "catalog_not_listed": elegibles para opt-in a catálogo
-// Ref: GET /users/{seller_id}/items/search?health=soon_to_be_paused
+// Filtros extraídos de las URLs del panel de ML:
+// - BUYBOX_STATUS_COMPETING_MARKETPLACE  → "Elegibles para competir" (tienen buybox pero no catálogo)
+// - UNDER_REVIEW_WAITING_FOR_PATCH_MARKETPLACE → "Bajo revisión / necesitan publicación de catálogo"
+// Ambas usan: GET /users/{id}/items/search?task={TASK}&channel=marketplace&sort=DEFAULT
+const TASK_MAP: Record<string, { label: string; description: string }> = {
+  BUYBOX_STATUS_COMPETING_MARKETPLACE: {
+    label: "Elegibles para competir",
+    description: "Publicaciones que compiten en el buybox y pueden asociarse al catálogo",
+  },
+  UNDER_REVIEW_WAITING_FOR_PATCH_MARKETPLACE: {
+    label: "Esperando publicación de catálogo",
+    description: "Publicaciones bajo revisión que necesitan crear o asociar una publicación de catálogo",
+  },
+}
+
 export async function GET(request: NextRequest) {
   try {
-    const supabase    = await createClient()
-    const accountId   = request.nextUrl.searchParams.get("account_id") || ""
-    const healthFilter = request.nextUrl.searchParams.get("health") || "soon_to_be_paused"
+    const supabase   = await createClient()
+    const accountId  = request.nextUrl.searchParams.get("account_id") || ""
+    const task       = request.nextUrl.searchParams.get("task") || "BUYBOX_STATUS_COMPETING_MARKETPLACE"
+    const offset     = Number(request.nextUrl.searchParams.get("offset") || "0")
+    const limit      = Math.min(Number(request.nextUrl.searchParams.get("limit") || "50"), 50)
 
     if (!accountId) return NextResponse.json({ error: "account_id requerido" }, { status: 400 })
 
@@ -24,32 +37,42 @@ export async function GET(request: NextRequest) {
     const mlUserId = mlAccount.ml_user_id
     const token    = mlAccount.access_token
 
-    // Buscar items con problemas de salud
-    const healthUrl = `https://api.mercadolibre.com/users/${mlUserId}/items/search?health=${healthFilter}&limit=50`
-    const healthRes = await fetch(healthUrl, {
+    // API correcta: task-based search (mismo filtro que usa el panel de ML)
+    const searchUrl = new URL(`https://api.mercadolibre.com/users/${mlUserId}/items/search`)
+    searchUrl.searchParams.set("task",    task)
+    searchUrl.searchParams.set("channel", "marketplace")
+    searchUrl.searchParams.set("sort",    "DEFAULT")
+    searchUrl.searchParams.set("limit",   String(limit))
+    searchUrl.searchParams.set("offset",  String(offset))
+
+    const searchRes = await fetch(searchUrl.toString(), {
       headers: { Authorization: `Bearer ${token}` },
     })
 
-    if (!healthRes.ok) {
-      const errText = await healthRes.text()
-      return NextResponse.json({ error: `ML API error: ${healthRes.status} ${errText}` }, { status: healthRes.status })
+    if (!searchRes.ok) {
+      const errText = await searchRes.text()
+      return NextResponse.json(
+        { error: `ML API error ${searchRes.status}: ${errText}` },
+        { status: searchRes.status }
+      )
     }
 
-    const healthData = await healthRes.json()
-    const itemIds: string[] = healthData.results || []
+    const searchData = await searchRes.json()
+    const itemIds: string[] = searchData.results || []
+    const totalCount = searchData.paging?.total || 0
 
     if (!itemIds.length) {
       return NextResponse.json({ ok: true, items: [], total: 0 })
     }
 
-    // Obtener detalles de los items en batch (ML permite hasta 20 ids por request)
+    // Obtener detalles en batch — ML admite hasta 20 ids por request con /items?ids=
     const chunks: string[][] = []
     for (let i = 0; i < itemIds.length; i += 20) chunks.push(itemIds.slice(i, i + 20))
 
     const allItems: any[] = []
     await Promise.all(chunks.map(async (chunk) => {
       const detailRes = await fetch(
-        `https://api.mercadolibre.com/items?ids=${chunk.join(",")}&attributes=id,title,price,status,health,thumbnail,category_id,catalog_product_id,catalog_listing,permalink`,
+        `https://api.mercadolibre.com/items?ids=${chunk.join(",")}&attributes=id,title,price,status,health,thumbnail,category_id,catalog_product_id,catalog_listing,permalink,buying_mode,listing_type_id`,
         { headers: { Authorization: `Bearer ${token}` } }
       )
       if (detailRes.ok) {
@@ -60,48 +83,22 @@ export async function GET(request: NextRequest) {
       }
     }))
 
-    // Para cada item, verificar si es elegible para catálogo
-    const enriched = await Promise.all(allItems.map(async (item) => {
-      let catalog_optin_eligible = false
-      let catalog_product_id     = item.catalog_product_id || null
-
-      // Buscar el producto de catálogo por EAN o categoría si no tiene catalog_product_id
-      if (!catalog_product_id && item.category_id) {
-        try {
-          const prodRes = await fetch(
-            `https://api.mercadolibre.com/items/${item.id}/product_identifiers`,
-            { headers: { Authorization: `Bearer ${token}` } }
-          )
-          if (prodRes.ok) {
-            const prodData = await prodRes.json()
-            catalog_product_id = prodData?.catalog_product_id || null
-            catalog_optin_eligible = !!catalog_product_id
-          }
-        } catch { /* ignorar */ }
-      } else {
-        catalog_optin_eligible = !!catalog_product_id
-      }
-
-      return {
-        id:                    item.id,
-        title:                 item.title,
-        price:                 item.price,
-        status:                item.status,
-        health:                item.health,
-        thumbnail:             item.thumbnail,
-        category_id:           item.category_id,
-        catalog_product_id,
-        catalog_listing:       item.catalog_listing || false,
-        catalog_optin_eligible,
-        permalink:             item.permalink,
-      }
+    const items = allItems.map((item) => ({
+      id:                 item.id,
+      title:              item.title,
+      price:              item.price,
+      status:             item.status,
+      health:             item.health,
+      thumbnail:          item.thumbnail,
+      category_id:        item.category_id,
+      catalog_product_id: item.catalog_product_id || null,
+      catalog_listing:    item.catalog_listing || false,
+      listing_type_id:    item.listing_type_id,
+      permalink:          item.permalink,
     }))
 
-    return NextResponse.json({
-      ok:    true,
-      items: enriched,
-      total: healthData.paging?.total || enriched.length,
-    })
+    return NextResponse.json({ ok: true, items, total: totalCount })
+
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

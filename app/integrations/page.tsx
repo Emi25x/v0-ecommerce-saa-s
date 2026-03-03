@@ -67,16 +67,21 @@ const XCircle = ({ className }: { className?: string }) => (
 )
 
 const Plus = ({ className }: { className?: string }) => (
-  <svg
-    className={className}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M5 12h14M12 5v14" />
+  </svg>
+)
+
+const AlertTriangle = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+    <path d="M12 9v4M12 17h.01"/>
+  </svg>
+)
+
+const ChevronRight = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m9 18 6-6-6-6"/>
   </svg>
 )
 
@@ -88,7 +93,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { LibralConfigDialog } from "@/components/integrations/libral-config-dialog"
 import { WebhookStatusCard } from "@/components/webhook-status-card"
 import { MLAccountCard }       from "@/components/ml-account-card"
-import { MLListingsHealth }    from "@/components/integrations/ml-listings-health"
+
 
 
 export default function IntegrationsPage() {
@@ -655,13 +660,23 @@ export default function IntegrationsPage() {
           )}
         </div>
 
-        {/* Sección de publicaciones con alertas */}
+        {/* Acceso rápido a publicaciones con alertas */}
         {mlAccounts.length > 0 && (
-          <div className="mt-8 rounded-lg border border-border bg-card p-6">
-            <MLListingsHealth
-              accounts={mlAccounts.map((a: any) => ({ id: a.id, nickname: a.nickname }))}
-            />
-          </div>
+          <a
+            href="/integrations/ml-publicaciones"
+            className="mt-6 flex items-center justify-between rounded-lg border border-amber-500/20 bg-amber-500/5 px-5 py-4 transition-colors hover:bg-amber-500/10 group"
+          >
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-400" />
+              <div>
+                <p className="font-medium text-sm">Publicaciones con alertas</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Elegibles para competir y publicaciones esperando catálogo
+                </p>
+              </div>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+          </a>
         )}
 
         <div className="mt-6">
