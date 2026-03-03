@@ -126,10 +126,16 @@ export default function MLPublicacionesPage() {
       const data = await res.json()
       if (res.ok && data.ok) {
         setOptinStates(s => ({ ...s, [item.id]: "done" }))
-        setOptinMessages(m => ({ ...m, [item.id]: "Opt-in solicitado correctamente" }))
+        setOptinMessages(m => ({ ...m, [item.id]: "Opt-in solicitado. La publicación será revisada por ML." }))
+        // Refrescar listado después de 2s para que el ítem desaparezca
+        setTimeout(() => loadItems(), 2000)
       } else {
         setOptinStates(s => ({ ...s, [item.id]: "error" }))
-        setOptinMessages(m => ({ ...m, [item.id]: data.error || "Error al hacer opt-in" }))
+        // Mostrar el estado de elegibilidad real si está disponible
+        const msg = data.status
+          ? `No elegible (${data.status}): ${data.error}`
+          : (data.error || "Error al hacer opt-in")
+        setOptinMessages(m => ({ ...m, [item.id]: msg }))
       }
     } catch (e: any) {
       setOptinStates(s => ({ ...s, [item.id]: "error" }))

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
-// Ejecuta el opt-in al catálogo de ML para un item existente
-// Asocia la publicación tradicional al producto de catálogo y crea la publicación de catálogo
-// Ref: POST /items/{item_id}/catalog_listing_opt_in
+// Flujo correcto de opt-in al catálogo ML:
+// 1. Verificar elegibilidad: GET /items/{id}/catalog_listing_eligibility
+// 2. Si READY_FOR_OPTIN y tiene catalog_product_id → POST /items/{id}/catalog_listing_opt_in
+// 3. Si no tiene catalog_product_id → buscar producto en catálogo por título/EAN y luego optin
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
@@ -22,34 +23,54 @@ export async function POST(request: NextRequest) {
 
     if (!mlAccount) return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
 
-    const token = mlAccount.access_token
+    const token   = mlAccount.access_token
+    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
 
-    // Opción 1: opt-in con catalog_product_id conocido
-    // Opción 2: opt-in automático (ML busca el producto por el ítem)
-    const payload: any = {}
-    if (catalog_product_id) {
-      payload.catalog_product_id = catalog_product_id
+    // Paso 1: verificar elegibilidad del ítem
+    const eligRes  = await fetch(`https://api.mercadolibre.com/items/${item_id}/catalog_listing_eligibility`, { headers })
+    const eligData = eligRes.ok ? await eligRes.json() : null
+
+    const status = eligData?.status
+    // Para ítems sin variaciones el status está en el primer nivel;
+    // para ítems con variaciones está en cada variación
+    const hasVariations = (eligData?.variations?.length ?? 0) > 0
+
+    if (eligData && status !== "READY_FOR_OPTIN" && !hasVariations) {
+      return NextResponse.json({
+        ok:     false,
+        error:  `El ítem no está listo para opt-in. Estado: ${status || "desconocido"}`,
+        status: status,
+        details: eligData,
+      }, { status: 422 })
     }
 
-    const optinRes = await fetch(
-      `https://api.mercadolibre.com/items/${item_id}/catalog_listing_opt_in`,
-      {
-        method:  "POST",
-        headers: {
-          Authorization:  `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      }
-    )
+    // Paso 2: determinar catalog_product_id
+    // Si el ítem ya tiene uno asignado por ML, usarlo
+    let productId = catalog_product_id
 
+    if (!productId) {
+      // Obtener catalog_product_id del ítem directamente
+      const itemRes  = await fetch(`https://api.mercadolibre.com/items/${item_id}?attributes=catalog_product_id,title`, { headers })
+      const itemData = itemRes.ok ? await itemRes.json() : null
+      productId      = itemData?.catalog_product_id
+    }
+
+    // Paso 3: hacer el opt-in
+    const optinBody: any = {}
+    if (productId) optinBody.catalog_product_id = productId
+
+    const optinRes  = await fetch(
+      `https://api.mercadolibre.com/items/${item_id}/catalog_listing_opt_in`,
+      { method: "POST", headers, body: JSON.stringify(optinBody) }
+    )
     const optinData = await optinRes.json()
 
     if (!optinRes.ok) {
       return NextResponse.json({
-        ok:    false,
-        error: optinData.message || optinData.error || `Error ${optinRes.status}`,
+        ok:      false,
+        error:   optinData?.message || optinData?.error || `Error ML ${optinRes.status}`,
         details: optinData,
+        eligibility: eligData,
       }, { status: optinRes.status })
     }
 

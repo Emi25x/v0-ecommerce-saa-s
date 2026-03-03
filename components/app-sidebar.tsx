@@ -367,6 +367,21 @@ export function AppSidebar() {
                 <Target className="h-4 w-4" />
                 <span>Competencia</span>
               </a>
+              <a
+                href="/integrations/ml-publicaciones"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/integrations/ml-publicaciones")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                  <path d="M2 17l10 5 10-5"/>
+                  <path d="M2 12l10 5 10-5"/>
+                </svg>
+                <span>Publicaciones alertas</span>
+              </a>
               <div className="my-2 border-t border-sidebar-border" />
               <a
                 href="/ml/importer"
@@ -684,21 +699,6 @@ export function AppSidebar() {
               >
                 <FeatherUpload className="h-4 w-4" />
                 <span>Publicar en ML</span>
-              </a>
-              <a
-                href="/integrations/ml-publicaciones"
-                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  pathname?.startsWith("/integrations/ml-publicaciones")
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                }`}
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
-                  <rect x="9" y="3" width="6" height="4" rx="1" />
-                  <path d="M9 12h6M9 16h4" />
-                </svg>
-                <span>Publicaciones ML</span>
               </a>
               <a
                 href="/settings/reports"
