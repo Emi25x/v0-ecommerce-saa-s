@@ -24,7 +24,7 @@ export async function GET(request: Request) {
       .eq("user_id", user.id)
 
     if (estado) query = query.eq("estado", estado)
-    if (q) query = query.or(`receptor_nombre.ilike.%${q}%,nro_doc_receptor.ilike.%${q}%,cae.ilike.%${q}%`)
+    if (q) query = query.or(`razon_social_receptor.ilike.%${q}%,nro_doc_receptor.ilike.%${q}%,cae.ilike.%${q}%`)
 
     const { data, count, error } = await query
       .order("created_at", { ascending: false })
