@@ -15,6 +15,24 @@ export type FacturaItem = {
   iva: number
 }
 
+// Condición IVA receptor — RG 5616 (obligatorio desde 2024)
+// 1=Responsable Inscripto, 2=Responsable No Inscripto, 3=No Responsable,
+// 4=Exento, 5=Consumidor Final, 6=Monotributista, 7=No Categorizado,
+// 8=Importador del Exterior, 9=Cliente del Exterior, 10=Liberado,
+// 12=Pequeño Contribuyente Eventual, 13=Monotributista Social, 14=Peq.Contribuyente Eventual Social
+export const CONDICION_IVA_RECEPTOR: Record<string, number> = {
+  responsable_inscripto:  1,
+  responsable_no_inscripto: 2,
+  no_responsable:         3,
+  exento:                 4,
+  consumidor_final:       5,
+  monotributo:            6,
+  no_categorizado:        7,
+  importador_exterior:    8,
+  cliente_exterior:       9,
+  liberado:               10,
+}
+
 export type SolicitarCAEParams = {
   cuit: string
   punto_venta: number
@@ -22,6 +40,7 @@ export type SolicitarCAEParams = {
   concepto: 1 | 2 | 3              // 1=Productos, 2=Servicios, 3=Ambos
   tipo_doc_receptor: number         // 96=DNI, 80=CUIT, 99=Sin doc
   nro_doc_receptor: string
+  condicion_iva_receptor: string    // "consumidor_final", "responsable_inscripto", etc.
   fecha: string                     // YYYYMMDD
   items: FacturaItem[]
   moneda?: string
@@ -138,6 +157,9 @@ export async function requestCAE(params: SolicitarCAEParams): Promise<CAERespons
   })
   const nextNum = lastNum + 1
 
+  // CondicionIVAReceptorId obligatorio desde RG 5616
+  const condIvaId = CONDICION_IVA_RECEPTOR[params.condicion_iva_receptor] ?? 5
+
   const body = `
   <ar:FECAESolicitar>
     <ar:Auth>
@@ -167,6 +189,7 @@ export async function requestCAE(params: SolicitarCAEParams): Promise<CAERespons
           <ar:ImpTrib>0.00</ar:ImpTrib>
           <ar:MonId>${params.moneda || "PES"}</ar:MonId>
           <ar:MonCotiz>${params.cotizacion ?? 1}</ar:MonCotiz>
+          <ar:CondicionIVAReceptorId>${condIvaId}</ar:CondicionIVAReceptorId>
           <ar:Iva>${ivaXml}</ar:Iva>
         </ar:FECAEDetRequest>
       </ar:FeDetReq>
@@ -175,13 +198,26 @@ export async function requestCAE(params: SolicitarCAEParams): Promise<CAERespons
 
   const xml = await soapCall(url, "FECAESolicitar", body)
 
-  // Verificar errores ARCA
-  const errMatch = xml.match(/<ErrMsg>([\s\S]*?)<\/ErrMsg>/)
-  const obsMatch = xml.match(/<Obs>([\s\S]*?)<\/Obs>/)
-  const result   = xml.match(/<Resultado>([A-Z]+)<\/Resultado>/)?.[1]
+  // Verificar errores ARCA — los errores vienen en <Err><Code>X</Code><Msg>Y</Msg></Err>
+  const result = xml.match(/<Resultado>([A-Z]+)<\/Resultado>/)?.[1]
 
   if (result === "R") {
-    const errMsg = errMatch?.[1] || obsMatch?.[1] || "ARCA rechazó la factura"
+    // Extraer todos los <Err> del response
+    const errMsgs: string[] = []
+    const errRegex = /<Err>[\s\S]*?<Code>(\d+)<\/Code>[\s\S]*?<Msg>([\s\S]*?)<\/Msg>[\s\S]*?<\/Err>/g
+    let m
+    while ((m = errRegex.exec(xml)) !== null) {
+      errMsgs.push(`<Code>${m[1]}</Code><Msg>${m[2]}</Msg>`)
+    }
+    // También capturar observaciones
+    const obsMsgs: string[] = []
+    const obsRegex = /<Obs>[\s\S]*?<Code>(\d+)<\/Code>[\s\S]*?<Msg>([\s\S]*?)<\/Msg>[\s\S]*?<\/Obs>/g
+    while ((m = obsRegex.exec(xml)) !== null) {
+      obsMsgs.push(m[2])
+    }
+    const errMsg = errMsgs.length > 0
+      ? errMsgs.join(" | ")
+      : (obsMsgs.join(" | ") || "ARCA rechazó la factura sin detalle")
     throw new Error(`ARCA rechazo: ${errMsg}`)
   }
 

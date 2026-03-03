@@ -89,6 +89,7 @@ export async function POST(request: Request) {
       concepto:         concepto || 1,
       tipo_doc_receptor: parseInt(tipo_doc_receptor || "99"),
       nro_doc_receptor: nro_doc_receptor || "0",
+      condicion_iva_receptor: receptor_condicion_iva || "consumidor_final",
       fecha,
       items:    typedItems,
       moneda:   moneda || "PES",
