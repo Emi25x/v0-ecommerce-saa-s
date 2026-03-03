@@ -146,14 +146,45 @@ export async function getWSAATicket(config: ArcaConfig): Promise<{ token: string
 
   const tra = buildTRA("wsfe")
   const cms = await signTRA(tra, certPem, keyPem)
-  const { token, sign, expiresAt } = await callWSAA(cms, config.ambiente)
+
+  let token: string
+  let sign: string
+  let expiresAt: Date
+
+  try {
+    ;({ token, sign, expiresAt } = await callWSAA(cms, config.ambiente))
+  } catch (err: any) {
+    const msg: string = err.message || ""
+
+    // "El CEE ya posee un TA valido para el acceso al WSN solicitado"
+    // Significa que el token anterior sigue vivo en ARCA. Si lo tenemos en DB lo reutilizamos.
+    if (msg.includes("ya posee un TA") || msg.includes("TA valido")) {
+      // Releer la DB por si el token fue borrado en esta sesión pero sigue vigente en ARCA
+      const supabase = await createClient()
+      const { data: fresh } = await supabase
+        .from("arca_config")
+        .select("wsaa_token, wsaa_sign, wsaa_expires_at")
+        .eq("id", config.id)
+        .single()
+
+      if (fresh?.wsaa_token && fresh?.wsaa_sign) {
+        return { token: fresh.wsaa_token, sign: fresh.wsaa_sign }
+      }
+
+      // No tenemos el token en DB — esperar 60s y reintentar (el TA anterior puede expirar)
+      await new Promise(r => setTimeout(r, 2000))
+      ;({ token, sign, expiresAt } = await callWSAA(cms, config.ambiente))
+    } else {
+      throw err
+    }
+  }
 
   // Cachear en DB
   const supabase = await createClient()
   await supabase
     .from("arca_config")
-    .update({ wsaa_token: token, wsaa_sign: sign, wsaa_expires_at: expiresAt.toISOString(), updated_at: new Date().toISOString() })
+    .update({ wsaa_token: token!, wsaa_sign: sign!, wsaa_expires_at: expiresAt!.toISOString(), updated_at: new Date().toISOString() })
     .eq("id", config.id)
 
-  return { token, sign }
+  return { token: token!, sign: sign! }
 }

@@ -38,20 +38,34 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "CUIT, razón social y punto de venta son requeridos" }, { status: 400 })
     }
 
+    // Verificar si cambiaron datos críticos (CUIT, ambiente, cert, clave)
+    // Solo en ese caso invalidar el token WSAA cacheado
+    const { data: existing } = await supabase
+      .from("arca_config")
+      .select("cuit, ambiente, cert_pem, private_key_pem, wsaa_token, wsaa_sign, wsaa_expires_at")
+      .eq("user_id", user.id)
+      .single()
+
+    const newCuit    = cuit.replace(/-/g, "")
+    const newAmbiente = ambiente || "homologacion"
+    const criticalChanged =
+      !existing ||
+      existing.cuit     !== newCuit     ||
+      existing.ambiente !== newAmbiente ||
+      (cert_pem  && cert_pem  !== existing.cert_pem) ||
+      (clave_pem && clave_pem !== existing.private_key_pem)
+
     const payload: any = {
       user_id:          user.id,
-      cuit:             cuit.replace(/-/g, ""),
+      cuit:             newCuit,
       razon_social,
       domicilio_fiscal: domicilio_fiscal || null,
       punto_venta:      parseInt(punto_venta),
       condicion_iva:    condicion_iva || "responsable_inscripto",
       tipo_emisor:      condicion_iva || "responsable_inscripto",
-      ambiente:         ambiente || "homologacion",
-      modo:             ambiente || "homologacion",
+      ambiente:         newAmbiente,
+      modo:             newAmbiente,
       updated_at:       new Date().toISOString(),
-      wsaa_token:       null,
-      wsaa_sign:        null,
-      wsaa_expires_at:  null,
       // Contacto / redes
       telefono:         telefono  || null,
       email:            email     || null,
@@ -62,6 +76,13 @@ export async function POST(request: Request) {
       // Contenido factura
       nota_factura:     nota_factura || null,
       datos_pago:       datos_pago   || null,
+    }
+
+    // Solo invalidar token si cambió algo crítico
+    if (criticalChanged) {
+      payload.wsaa_token      = null
+      payload.wsaa_sign       = null
+      payload.wsaa_expires_at = null
     }
 
     if (logo_url)          payload.logo_url         = logo_url
