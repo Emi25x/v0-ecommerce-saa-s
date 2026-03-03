@@ -91,23 +91,32 @@ export async function GET(req: NextRequest) {
     }))
   }
 
-  // Obtener datos de facturación del comprador desde ML Users API
-  // ML provee el DNI/CUIT del comprador en /users/{buyer_id}/billing_info
-  const buyerBillingMap = new Map<string, { doc_type: string; doc_number: string; name: string }>()
-  const buyerIds = [...new Set(orders.map((o: any) => o.buyer?.id).filter(Boolean).map(String))]
-  await Promise.all(buyerIds.slice(0, 20).map(async (bid) => {
+  // Obtener datos de facturación del comprador desde /orders/{id}/billing_info
+  // Este endpoint devuelve DNI/CUIT, nombre, dirección, etc. del comprador para cada venta
+  const orderBillingMap = new Map<string, {
+    doc_type: string; doc_number: string
+    first_name: string; last_name: string
+    address: string; city: string; state: string; zip: string
+  }>()
+  await Promise.all(orders.slice(0, 30).map(async (o: any) => {
     try {
       const br = await fetch(
-        `https://api.mercadolibre.com/users/${bid}/billing_info`,
+        `https://api.mercadolibre.com/orders/${o.id}/billing_info`,
         { headers: { Authorization: `Bearer ${mlAccount.access_token}` } }
       )
       if (br.ok) {
         const bd = await br.json()
-        // billing_info devuelve doc_type (DNI/CUIT), doc_number, first_name, last_name
-        buyerBillingMap.set(bid, {
-          doc_type:   bd.doc_type   || "",
-          doc_number: bd.doc_number || "",
-          name:       [bd.first_name, bd.last_name].filter(Boolean).join(" ") || "",
+        // billing_info devuelve: doc_type, doc_number, first_name, last_name, address, city, state, zip
+        const buyer = bd.buyer || {}
+        orderBillingMap.set(String(o.id), {
+          doc_type:   buyer.doc_type   || bd.doc_type   || "",
+          doc_number: buyer.doc_number || bd.doc_number || "",
+          first_name: buyer.first_name || bd.first_name || o.buyer?.first_name || "",
+          last_name:  buyer.last_name  || bd.last_name  || o.buyer?.last_name  || "",
+          address:    buyer.address    || bd.address    || "",
+          city:       buyer.city       || bd.city       || "",
+          state:      buyer.state      || bd.state      || "",
+          zip:        buyer.zip        || bd.zip        || "",
         })
       }
     } catch { /* ignorar */ }
@@ -116,23 +125,28 @@ export async function GET(req: NextRequest) {
   // Enriquecer órdenes con estado de facturación, envío y datos del comprador
   let enriched = orders.map((o: any) => {
     const shipment  = shipmentStatusMap.get(String(o.shipping?.id))
-    const buyerId   = String(o.buyer?.id || "")
-    const billing   = buyerBillingMap.get(buyerId)
-    const buyerName = billing?.name || (o.buyer ? `${o.buyer.first_name || ""} ${o.buyer.last_name || ""}`.trim() : "")
+    const billing   = orderBillingMap.get(String(o.id))
+    const firstName = billing?.first_name || o.buyer?.first_name || ""
+    const lastName  = billing?.last_name  || o.buyer?.last_name  || ""
+    const buyerName = [firstName, lastName].filter(Boolean).join(" ").trim()
 
     return {
-      id:             o.id,
-      fecha:          o.date_created,
-      estado:         o.status,
-      envio_status:   shipment?.status    || null,
-      envio_substatus: shipment?.substatus || null,
-      total:          o.total_amount,
-      moneda:         o.currency_id,
-      comprador:      buyerName || "Consumidor Final",
-      comprador_doc:  billing?.doc_number || o.buyer?.identification?.number || null,
-      comprador_doc_tipo: billing?.doc_type || null,  // "DNI", "CUIT", etc.
-      buyer_id:       buyerId,
-      items:          (o.order_items || []).map((i: any) => ({
+      id:                  o.id,
+      fecha:               o.date_created,
+      estado:              o.status,
+      envio_status:        shipment?.status    || null,
+      envio_substatus:     shipment?.substatus || null,
+      total:               o.total_amount,
+      moneda:              o.currency_id,
+      comprador:           buyerName || "Consumidor Final",
+      comprador_doc:       billing?.doc_number || o.buyer?.identification?.number || null,
+      comprador_doc_tipo:  billing?.doc_type   || null,
+      comprador_address:   billing?.address    || null,
+      comprador_city:      billing?.city       || null,
+      comprador_state:     billing?.state      || null,
+      comprador_zip:       billing?.zip        || null,
+      buyer_id:            String(o.buyer?.id || ""),
+      items:               (o.order_items || []).map((i: any) => ({
         titulo:   i.item?.title || "",
         ean:      i.item?.attributes?.find((a: any) => a.id === "EAN")?.value_name || null,
         cantidad: i.quantity,

@@ -9,20 +9,25 @@ import { Badge }    from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   Receipt, RefreshCw, CheckCircle2, XCircle, ChevronLeft, ChevronRight,
-  FileText, Zap, Filter, Building2, AlertTriangle, ShoppingCart, Info,
+  FileText, Zap, Filter, Building2, AlertTriangle, ShoppingCart, Info, Download,
 } from "lucide-react"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface MLOrder {
-  id:           number
-  fecha:        string
-  estado:       string
-  total:        number
-  moneda:       string
-  comprador:    string
-  items:        { titulo: string; cantidad: number; precio: number }[]
-  facturada:    boolean
-  factura_info: any
+  id:                  number
+  fecha:               string
+  estado:              string
+  envio_status:        string | null
+  envio_substatus:     string | null
+  total:               number
+  moneda:              string
+  comprador:           string
+  comprador_doc:       string | null
+  comprador_doc_tipo:  string | null
+  buyer_id:            string
+  items:               { titulo: string; ean: string | null; cantidad: number; precio: number }[]
+  facturada:           boolean
+  factura_info:        any
 }
 
 interface MLAccount {
