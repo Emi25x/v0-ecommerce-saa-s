@@ -14,20 +14,20 @@ import {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface MLOrder {
-  id:                  number
-  fecha:               string
-  estado:              string
-  envio_status:        string | null
-  envio_substatus:     string | null
-  total:               number
-  moneda:              string
-  comprador:           string
-  comprador_doc:       string | null
-  comprador_doc_tipo:  string | null
-  buyer_id:            string
-  items:               { titulo: string; ean: string | null; cantidad: number; precio: number }[]
-  facturada:           boolean
-  factura_info:        any
+  id:                 number
+  fecha:              string
+  estado:             string
+  envio_status:       string | null
+  envio_substatus:    string | null
+  total:              number
+  moneda:             string
+  comprador:          string
+  comprador_doc:      string | null
+  comprador_doc_tipo: string | null
+  buyer_id:           string
+  items:              { titulo: string; ean: string | null; cantidad: number; precio: number }[]
+  facturada:          boolean
+  factura_info:       any
 }
 
 interface MLAccount {
@@ -245,10 +245,11 @@ export default function MLBillingPage() {
 
         // Mapear tipo de doc ML → código ARCA
         // ML devuelve doc_type: "DNI" → 96, "CUIT"/"CUIL" → 80, otros → 99
-        const docNum  = (order as any).comprador_doc
-        const docTipo = (order as any).comprador_doc_tipo || ""
+        const docNum  = order.comprador_doc
+        const docTipo = order.comprador_doc_tipo || ""
+        // DNI → 96, CUIT/CUIL → 80, sin doc → 99
         const tipoDoc = docNum
-          ? (["CUIT","CUIL"].includes(docTipo) ? 80 : 96)
+          ? (["CUIT","CUIL"].includes(docTipo.toUpperCase()) ? 80 : 96)
           : 99
         const nroDoc  = docNum ? String(docNum).replace(/\D/g, "") : "0"
 
@@ -261,13 +262,8 @@ export default function MLBillingPage() {
             concepto:               1,
             tipo_doc_receptor:      tipoDoc,
             nro_doc_receptor:       nroDoc,
-            receptor_nombre:        order.comprador || order.buyer_id || "Consumidor Final",
+            receptor_nombre:        order.comprador || "Consumidor Final",
             receptor_condicion_iva: "consumidor_final",
-            receptor_domicilio:     [
-              (order as any).comprador_address,
-              (order as any).comprador_city,
-              (order as any).comprador_state,
-            ].filter(Boolean).join(", ") || undefined,
             items: order.items.map(i => ({
               descripcion:     i.titulo || "Venta ML",
               cantidad:        i.cantidad,
@@ -595,21 +591,12 @@ export default function MLBillingPage() {
                     <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{fmtFecha(order.fecha)}</td>
                     <td className="px-4 py-3">
                       <p className="font-medium text-sm leading-tight">{order.comprador || "—"}</p>
-                      {(order as any).comprador_doc ? (
+                      {order.comprador_doc ? (
                         <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
-                          {(order as any).comprador_doc_tipo || "Doc"}: {(order as any).comprador_doc}
+                          {order.comprador_doc_tipo || "Doc"}: {order.comprador_doc}
                         </p>
                       ) : (
-                        <button
-                          className="text-[10px] text-blue-400 hover:underline mt-0.5"
-                          onClick={async () => {
-                            const r = await fetch(`/api/mercadolibre/debug-order?account_id=${activeAccount}&order_id=${order.id}`)
-                            const d = await r.json()
-                            alert(JSON.stringify(d, null, 2))
-                          }}
-                        >
-                          [ver datos ML]
-                        </button>
+                        <p className="text-[10px] text-muted-foreground/50 mt-0.5">Sin documento</p>
                       )}
                     </td>
                     <td className="px-4 py-3 max-w-xs">
