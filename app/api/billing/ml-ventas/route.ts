@@ -113,18 +113,22 @@ export async function GET(req: NextRequest) {
           `https://api.mercadolibre.com/orders/${o.id}`,
           { headers: { Authorization: auth }, signal: AbortSignal.timeout(6000) }
         )
-        if (!orderRes.ok) return
-        const orderDetail     = await orderRes.json()
-        const billingInfoId   = orderDetail?.buyer?.billing_info?.id
-        if (!billingInfoId) return
+        const orderDetail   = orderRes.ok ? await orderRes.json() : null
+        const billingInfoId = orderDetail?.buyer?.billing_info?.id
+        console.log(`[v0] ORDER ${o.id} status=${orderRes.status} buyer=`, JSON.stringify(orderDetail?.buyer))
+        if (!billingInfoId) {
+          console.log(`[v0] ORDER ${o.id} - NO billing_info.id encontrado`)
+          return
+        }
 
         // Paso 2: obtener datos fiscales con el billing_info.id
         const billingRes = await fetch(
           `https://api.mercadolibre.com/orders/billing-info/MLA/${billingInfoId}`,
           { headers: { Authorization: auth }, signal: AbortSignal.timeout(6000) }
         )
-        if (!billingRes.ok) return
-        const bd = await billingRes.json()
+        const bd = billingRes.ok ? await billingRes.json() : null
+        console.log(`[v0] BILLING ${billingInfoId} status=${billingRes.status} data=`, JSON.stringify(bd))
+        if (!bd) return
 
         // Estructura de billing-info: { first_name, last_name, identification: { type, number }, address: { street_name, street_number, city, state, zip_code } }
         const ident = bd.identification || {}
