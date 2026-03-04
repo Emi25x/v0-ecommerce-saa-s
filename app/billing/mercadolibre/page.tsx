@@ -24,6 +24,10 @@ interface MLOrder {
   comprador:          string
   comprador_doc:      string | null
   comprador_doc_tipo: string | null
+  comprador_address:  string | null
+  comprador_city:     string | null
+  comprador_state:    string | null
+  comprador_zip:      string | null
   buyer_id:           string
   items:              { titulo: string; ean: string | null; cantidad: number; precio: number }[]
   facturada:          boolean
@@ -246,24 +250,35 @@ export default function MLBillingPage() {
         // Mapear tipo de doc ML → código ARCA
         // ML devuelve doc_type: "DNI" → 96, "CUIT"/"CUIL" → 80, otros → 99
         const docNum  = order.comprador_doc
-        const docTipo = order.comprador_doc_tipo || ""
-        // DNI → 96, CUIT/CUIL → 80, sin doc → 99
+        const docTipo = (order.comprador_doc_tipo || "").toUpperCase()
+        // Mapeo doc_type ML → código AFIP/ARCA:
+        //   CUIT / CUIL → 80
+        //   DNI          → 96
+        //   sin doc      → 99 (consumidor final)
         const tipoDoc = docNum
-          ? (["CUIT","CUIL"].includes(docTipo.toUpperCase()) ? 80 : 96)
+          ? (["CUIT","CUIL"].includes(docTipo) ? 80 : 96)
           : 99
-        const nroDoc  = docNum ? String(docNum).replace(/\D/g, "") : "0"
+        const nroDoc = docNum ? String(docNum).replace(/\D/g, "") : "0"
+
+        const domicilio = [
+          order.comprador_address,
+          order.comprador_city,
+          order.comprador_state,
+          order.comprador_zip,
+        ].filter(Boolean).join(", ")
 
         const facRes = await fetch("/api/billing/facturas", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             empresa_id:             activeEmpresa,
-            tipo_comprobante:       11,  // Factura C
+            tipo_comprobante:       11,
             concepto:               1,
             tipo_doc_receptor:      tipoDoc,
             nro_doc_receptor:       nroDoc,
             receptor_nombre:        order.comprador || "Consumidor Final",
-            receptor_condicion_iva: "consumidor_final",
+            receptor_condicion_iva: tipoDoc === 80 ? "responsable_inscripto" : "consumidor_final",
+            receptor_domicilio:     domicilio || undefined,
             items: order.items.map(i => ({
               descripcion:     i.titulo || "Venta ML",
               cantidad:        i.cantidad,
@@ -596,7 +611,10 @@ export default function MLBillingPage() {
                           {order.comprador_doc_tipo || "Doc"}: {order.comprador_doc}
                         </p>
                       ) : (
-                        <p className="text-[10px] text-muted-foreground/50 mt-0.5">Sin documento</p>
+                        <p className="text-[10px] text-muted-foreground/40 mt-0.5 italic">Sin doc fiscal</p>
+                      )}
+                      {order.comprador_city && (
+                        <p className="text-[10px] text-muted-foreground/50 mt-0.5">{order.comprador_city}</p>
                       )}
                     </td>
                     <td className="px-4 py-3 max-w-xs">

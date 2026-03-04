@@ -95,36 +95,73 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Datos fiscales del comprador:
-  // GET /orders/{id} devuelve buyer.billing_info con nombre, apellido e identification.
-  // Estructura confirmada por debug:
-  //   buyer.billing_info.name           → primer nombre
-  //   buyer.billing_info.last_name      → apellido
-  //   buyer.billing_info.identification → { type: "DNI", number: "26044763" }
-  // No existe buyer.billing_info.id — los datos están directamente en billing_info.
+  // ── Datos fiscales del comprador ──────────────────────────────────────────
+  // Flujo robusto de 2 pasos según doc oficial ML:
+  //
+  // Paso 1: GET /orders/{id}
+  //   → buyer.billing_info puede tener DOS formas:
+  //     A) Datos directos: { doc_type, doc_number, name } → usar directo
+  //     B) Solo ID:        { id: "677487519924852462" }   → hacer paso 2
+  //
+  // Paso 2 (solo si billing_info solo tiene id):
+  //   GET /orders/billing-info/MLA/{billing_info_id}
+  //   → { doc_type, doc_number, business_name, name, last_name, address: {...} }
   const orderBillingMap = new Map<string, {
-    first_name: string; last_name: string
-    doc_type: string;   doc_number: string
+    name: string; last_name: string
+    doc_type: string; doc_number: string
+    address: string; city: string; state: string; zip: string
   }>()
 
   for (let i = 0; i < orders.length; i += CHUNK) {
     const chunk = orders.slice(i, i + CHUNK)
     await Promise.all(chunk.map(async (o: any) => {
       try {
-        const auth     = `Bearer ${mlAccount.access_token}`
+        const auth = `Bearer ${mlAccount.access_token}`
+
+        // Paso 1: GET /orders/{id} — leer buyer.billing_info
         const orderRes = await fetch(
           `https://api.mercadolibre.com/orders/${o.id}`,
-          { headers: { Authorization: auth }, signal: AbortSignal.timeout(6000) }
+          { headers: { Authorization: auth }, signal: AbortSignal.timeout(7000) }
         )
         if (!orderRes.ok) return
-        const detail = await orderRes.json()
-        const bi     = detail?.buyer?.billing_info || {}
-        const ident  = bi.identification || {}
+        const orderDetail = await orderRes.json()
+        const bi = orderDetail?.buyer?.billing_info || {}
+
+        // Caso A: billing_info trae los datos directamente
+        if (bi.doc_number || bi.doc_type) {
+          orderBillingMap.set(String(o.id), {
+            name:       bi.name      || bi.business_name || bi.first_name || "",
+            last_name:  bi.last_name || "",
+            doc_type:   bi.doc_type  || "",
+            doc_number: bi.doc_number || "",
+            address: "", city: "", state: "", zip: "",
+          })
+          return
+        }
+
+        // Caso B: billing_info solo tiene id → hacer segundo llamado
+        const billingId = bi.id
+        if (!billingId) return
+
+        const billingRes = await fetch(
+          `https://api.mercadolibre.com/orders/billing-info/MLA/${billingId}`,
+          { headers: { Authorization: auth }, signal: AbortSignal.timeout(7000) }
+        )
+        if (!billingRes.ok) return
+        const bd   = await billingRes.json()
+        const addr = bd.address || {}
+
         orderBillingMap.set(String(o.id), {
-          first_name: bi.name      || bi.first_name || "",
-          last_name:  bi.last_name || "",
-          doc_type:   ident.type   || "",
-          doc_number: ident.number || "",
+          name:       bd.name       || bd.business_name || bd.first_name || "",
+          last_name:  bd.last_name  || "",
+          doc_type:   bd.doc_type   || "",
+          doc_number: bd.doc_number || "",
+          address: addr.street_name
+            ? `${addr.street_name} ${addr.street_number || ""}`.trim()
+            : "",
+          city:  addr.city?.name  || addr.city  || "",
+          state: addr.state?.name || addr.state || "",
+          zip:   addr.zip_code    || "",
         })
       } catch { /* ignorar */ }
     }))
@@ -134,10 +171,9 @@ export async function GET(req: NextRequest) {
   let enriched = orders.map((o: any) => {
     const shipment  = shipmentStatusMap.get(String(o.shipping?.id))
     const billing   = orderBillingMap.get(String(o.id))
-    // buyer.billing_info.name = primer nombre, buyer.billing_info.last_name = apellido
-    // Nombre: billing_info.name + billing_info.last_name
-    // Fallback: nickname del buyer (siempre presente en /orders/search)
-    const buyerName = [billing?.first_name, billing?.last_name].filter(Boolean).join(" ").trim()
+    // Nombre completo: name + last_name del billing_info
+    // Fallback al nickname si no hay datos fiscales
+    const buyerName = [billing?.name, billing?.last_name].filter(Boolean).join(" ").trim()
       || o.buyer?.nickname
       || ""
 
@@ -152,6 +188,10 @@ export async function GET(req: NextRequest) {
       comprador:          buyerName,
       comprador_doc:      billing?.doc_number || null,
       comprador_doc_tipo: billing?.doc_type   || null,
+      comprador_address:  billing?.address    || null,
+      comprador_city:     billing?.city       || null,
+      comprador_state:    billing?.state      || null,
+      comprador_zip:      billing?.zip        || null,
       buyer_id:           String(o.buyer?.id || ""),
       items:               (o.order_items || []).map((i: any) => ({
         titulo:   i.item?.title || "",
