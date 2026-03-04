@@ -1,24 +1,23 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
-// GET: listar órdenes ML con estado de facturación
+// GET: listar órdenes ML con datos de facturación del comprador
 export async function GET(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
 
   const { searchParams } = new URL(req.url)
-  const account_id    = searchParams.get("account_id") || ""
-  const estado        = searchParams.get("estado") || ""       // paid, cancelled, pending
-  const estado_envio  = searchParams.get("estado_envio") || "" // delivered, shipped, etc.
-  const facturado     = searchParams.get("facturado") || ""    // "si" | "no" | ""
-  const fecha_desde   = searchParams.get("fecha_desde") || ""
-  const fecha_hasta   = searchParams.get("fecha_hasta") || ""
-  const page        = parseInt(searchParams.get("page") || "1")
-  const limit       = parseInt(searchParams.get("limit") || "50")
-  const offset      = (page - 1) * limit
+  const account_id   = searchParams.get("account_id") || ""
+  const estado       = searchParams.get("estado") || ""
+  const estado_envio = searchParams.get("estado_envio") || ""
+  const facturado    = searchParams.get("facturado") || ""
+  const fecha_desde  = searchParams.get("fecha_desde") || ""
+  const fecha_hasta  = searchParams.get("fecha_hasta") || ""
+  const page         = parseInt(searchParams.get("page") || "1")
+  const limit        = parseInt(searchParams.get("limit") || "50")
+  const offset       = (page - 1) * limit
 
-  // Buscar solo por id (uuid) — user_id puede estar vacío en cuentas conectadas previamente
   const { data: mlAccount } = await supabase
     .from("ml_accounts")
     .select("access_token, ml_user_id, nickname")
@@ -29,10 +28,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Cuenta de MercadoLibre no encontrada o sin token" }, { status: 404 })
   }
 
+  const auth     = `Bearer ${mlAccount.access_token}`
   const mlUserId = mlAccount.ml_user_id
 
-  // Construir query a ML API — las órdenes se buscan con el seller id numérico
-  // Nota: order.shipping.status no funciona bien en la API ML, se filtra client-side
+  // Paso 1: buscar órdenes con /orders/search
   const mlParams = new URLSearchParams({
     seller: mlUserId,
     limit:  String(limit),
@@ -45,7 +44,7 @@ export async function GET(req: NextRequest) {
 
   const mlRes = await fetch(
     `https://api.mercadolibre.com/orders/search?${mlParams}`,
-    { headers: { Authorization: `Bearer ${mlAccount.access_token}` } }
+    { headers: { Authorization: auth } }
   )
   if (!mlRes.ok) {
     const err = await mlRes.json()
@@ -54,7 +53,7 @@ export async function GET(req: NextRequest) {
   const mlData = await mlRes.json()
   const orders: any[] = mlData.results || []
 
-  // Obtener cuáles ya fueron facturadas
+  // Paso 2: marcar cuáles ya fueron facturadas en nuestra BD
   const orderIds = orders.map((o: any) => String(o.id))
   const { data: facturadas } = await supabase
     .from("ml_order_facturas")
@@ -67,113 +66,61 @@ export async function GET(req: NextRequest) {
     (facturadas || []).map((f: any) => [f.ml_order_id, f])
   )
 
-  // FLUJO CORRECTO para datos fiscales del comprador (doc oficial ML):
-  // Paso 1: GET /orders/{id}  →  leer buyer.billing_info.id
-  // Paso 2: GET /orders/billing-info/MLA/{billing_info_id}  →  nombre, DNI/CUIT, dirección fiscal
-  //
-  // Además se consulta /shipments/{id} solo para el estado del envío.
-
+  // Paso 3: GET /orders/{id} para cada orden → datos fiscales del comprador
+  // La API de MercadoLibre devuelve en buyer.billing_info:
+  //   { name, last_name, identification: { type, number } }
+  // Estos son los únicos datos fiscales que expone ML al vendedor.
+  // También obtenemos shipment status del mismo llamado (order.shipping.status).
   const CHUNK = 5
-
-  // Estado de envíos
-  const shipmentStatusMap = new Map<string, { status: string; substatus: string | null }>()
-  const shipmentIds = orders.map((o: any) => o.shipping?.id).filter(Boolean).map(String)
-  if (shipmentIds.length > 0) {
-    for (let i = 0; i < shipmentIds.length; i += CHUNK) {
-      const chunk = shipmentIds.slice(i, i + CHUNK)
-      await Promise.all(chunk.map(async (sid) => {
-        try {
-          const sr = await fetch(
-            `https://api.mercadolibre.com/shipments/${sid}`,
-            { headers: { Authorization: `Bearer ${mlAccount.access_token}` }, signal: AbortSignal.timeout(6000) }
-          )
-          if (!sr.ok) return
-          const s = await sr.json()
-          shipmentStatusMap.set(String(s.id), { status: s.status || "", substatus: s.substatus || null })
-        } catch { /* ignorar */ }
-      }))
-    }
-  }
-
-  // ── Datos fiscales del comprador ──────────────────────────────────────────
-  // Flujo robusto de 2 pasos según doc oficial ML:
-  //
-  // Paso 1: GET /orders/{id}
-  //   → buyer.billing_info puede tener DOS formas:
-  //     A) Datos directos: { doc_type, doc_number, name } → usar directo
-  //     B) Solo ID:        { id: "677487519924852462" }   → hacer paso 2
-  //
-  // Paso 2 (solo si billing_info solo tiene id):
-  //   GET /orders/billing-info/MLA/{billing_info_id}
-  //   → { doc_type, doc_number, business_name, name, last_name, address: {...} }
-  const orderBillingMap = new Map<string, {
-    name: string; last_name: string
-    doc_type: string; doc_number: string
-    address: string; city: string; state: string; zip: string
-  }>()
+  const orderDetailMap = new Map<string, any>()
 
   for (let i = 0; i < orders.length; i += CHUNK) {
     const chunk = orders.slice(i, i + CHUNK)
     await Promise.all(chunk.map(async (o: any) => {
       try {
-        const auth = `Bearer ${mlAccount.access_token}`
-
-        // Paso 1: GET /orders/{id} — leer buyer.billing_info
-        const orderRes = await fetch(
+        const res = await fetch(
           `https://api.mercadolibre.com/orders/${o.id}`,
-          { headers: { Authorization: auth }, signal: AbortSignal.timeout(7000) }
+          { headers: { Authorization: auth }, signal: AbortSignal.timeout(8000) }
         )
-        if (!orderRes.ok) return
-        const orderDetail = await orderRes.json()
-        const bi = orderDetail?.buyer?.billing_info || {}
+        if (!res.ok) return
+        const detail = await res.json()
+        orderDetailMap.set(String(o.id), detail)
+      } catch { /* timeout o error de red — ignorar, la orden igual se muestra */ }
+    }))
+  }
 
-        // Caso A: billing_info trae los datos directamente
-        if (bi.doc_number || bi.doc_type) {
-          orderBillingMap.set(String(o.id), {
-            name:       bi.name      || bi.business_name || bi.first_name || "",
-            last_name:  bi.last_name || "",
-            doc_type:   bi.doc_type  || "",
-            doc_number: bi.doc_number || "",
-            address: "", city: "", state: "", zip: "",
-          })
-          return
-        }
+  // Paso 4: estado de envío desde /shipments/{id}
+  // Solo para las órdenes donde el detalle no trajo el estado de envío actualizado
+  const shipmentStatusMap = new Map<string, { status: string; substatus: string | null }>()
+  const shipmentIds = orders.map((o: any) => o.shipping?.id).filter(Boolean).map(String)
 
-        // Caso B: billing_info solo tiene id → hacer segundo llamado
-        const billingId = bi.id
-        if (!billingId) return
-
-        const billingRes = await fetch(
-          `https://api.mercadolibre.com/orders/billing-info/MLA/${billingId}`,
-          { headers: { Authorization: auth }, signal: AbortSignal.timeout(7000) }
+  for (let i = 0; i < shipmentIds.length; i += CHUNK) {
+    const chunk = shipmentIds.slice(i, i + CHUNK)
+    await Promise.all(chunk.map(async (sid) => {
+      try {
+        const sr = await fetch(
+          `https://api.mercadolibre.com/shipments/${sid}`,
+          { headers: { Authorization: auth }, signal: AbortSignal.timeout(6000) }
         )
-        if (!billingRes.ok) return
-        const bd   = await billingRes.json()
-        const addr = bd.address || {}
-
-        orderBillingMap.set(String(o.id), {
-          name:       bd.name       || bd.business_name || bd.first_name || "",
-          last_name:  bd.last_name  || "",
-          doc_type:   bd.doc_type   || "",
-          doc_number: bd.doc_number || "",
-          address: addr.street_name
-            ? `${addr.street_name} ${addr.street_number || ""}`.trim()
-            : "",
-          city:  addr.city?.name  || addr.city  || "",
-          state: addr.state?.name || addr.state || "",
-          zip:   addr.zip_code    || "",
-        })
+        if (!sr.ok) return
+        const s = await sr.json()
+        shipmentStatusMap.set(String(s.id), { status: s.status || "", substatus: s.substatus || null })
       } catch { /* ignorar */ }
     }))
   }
 
-  // Enriquecer órdenes con estado de facturación, envío y datos del comprador
+  // Paso 5: armar respuesta enriquecida
   let enriched = orders.map((o: any) => {
-    const shipment  = shipmentStatusMap.get(String(o.shipping?.id))
-    const billing   = orderBillingMap.get(String(o.id))
-    // Nombre completo: name + last_name del billing_info
-    // Fallback al nickname si no hay datos fiscales
-    const buyerName = [billing?.name, billing?.last_name].filter(Boolean).join(" ").trim()
+    const detail   = orderDetailMap.get(String(o.id))
+    const shipment = shipmentStatusMap.get(String(o.shipping?.id))
+
+    // buyer.billing_info es el objeto con los datos fiscales del comprador
+    const bi    = detail?.buyer?.billing_info || {}
+    const ident = bi.identification || {}
+
+    // Nombre: billing_info.name + billing_info.last_name
+    // Fallback: nickname (siempre disponible en /orders/search)
+    const nombre = [bi.name, bi.last_name].filter(Boolean).join(" ").trim()
       || o.buyer?.nickname
       || ""
 
@@ -181,19 +128,16 @@ export async function GET(req: NextRequest) {
       id:                 o.id,
       fecha:              o.date_created,
       estado:             o.status,
-      envio_status:       shipment?.status    || null,
-      envio_substatus:    shipment?.substatus || null,
+      envio_status:       shipment?.status    ?? detail?.shipping?.status ?? null,
+      envio_substatus:    shipment?.substatus ?? null,
       total:              o.total_amount,
       moneda:             o.currency_id,
-      comprador:          buyerName,
-      comprador_doc:      billing?.doc_number || null,
-      comprador_doc_tipo: billing?.doc_type   || null,
-      comprador_address:  billing?.address    || null,
-      comprador_city:     billing?.city       || null,
-      comprador_state:    billing?.state      || null,
-      comprador_zip:      billing?.zip        || null,
+      // Datos del comprador para facturar
+      comprador:          nombre,
+      comprador_doc:      ident.number || null,
+      comprador_doc_tipo: ident.type   || null,
       buyer_id:           String(o.buyer?.id || ""),
-      items:               (o.order_items || []).map((i: any) => ({
+      items: (o.order_items || []).map((i: any) => ({
         titulo:   i.item?.title || "",
         ean:      i.item?.attributes?.find((a: any) => a.id === "EAN")?.value_name || null,
         cantidad: i.quantity,
@@ -204,7 +148,7 @@ export async function GET(req: NextRequest) {
     }
   })
 
-  // Filtros client-side (ML no soporta estos nativamente o falla)
+  // Filtros client-side
   if (estado_envio && estado_envio !== "all") enriched = enriched.filter(o => o.envio_status === estado_envio)
   if (facturado === "si") enriched = enriched.filter(o => o.facturada)
   if (facturado === "no") enriched = enriched.filter(o => !o.facturada)
@@ -217,7 +161,7 @@ export async function GET(req: NextRequest) {
   })
 }
 
-// POST: marcar una o varias órdenes como facturadas (después de emitir)
+// POST: marcar órdenes como facturadas
 export async function POST(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -231,11 +175,11 @@ export async function POST(req: NextRequest) {
   }
 
   const rows = ml_order_ids.map((oid: number | string) => ({
-    user_id:        user.id,
-    ml_order_id:    String(oid),
-    ml_account_id:  String(ml_account_id),  // uuid de la fila en ml_accounts
-    factura_id:     factura_id || null,
-    empresa_id:     empresa_id || null,
+    user_id:       user.id,
+    ml_order_id:   String(oid),
+    ml_account_id: String(ml_account_id),
+    factura_id:    factura_id || null,
+    empresa_id:    empresa_id || null,
   }))
 
   const { error } = await supabase
