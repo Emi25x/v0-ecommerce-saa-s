@@ -66,47 +66,50 @@ export async function GET(req: NextRequest) {
     (facturadas || []).map((f: any) => [f.ml_order_id, f])
   )
 
-  // Paso 3: GET /orders/{id} para cada orden → datos fiscales del comprador
-  // La API de MercadoLibre devuelve en buyer.billing_info:
-  //   { name, last_name, identification: { type, number } }
-  // Estos son los únicos datos fiscales que expone ML al vendedor.
-  // También obtenemos shipment status del mismo llamado (order.shipping.status).
-  const CHUNK = 5
+  // Paso 3: GET /orders/{id} para obtener buyer.billing_info (datos fiscales)
+  // y estado de envío actualizado. Se hace en chunks de 10 en paralelo.
+  // buyer.billing_info = { name, last_name, identification: { type, number } }
+  const CHUNK = 10
   const orderDetailMap = new Map<string, any>()
+  const shipmentStatusMap = new Map<string, { status: string; substatus: string | null }>()
 
   for (let i = 0; i < orders.length; i += CHUNK) {
     const chunk = orders.slice(i, i + CHUNK)
-    await Promise.all(chunk.map(async (o: any) => {
-      try {
-        const res = await fetch(
+    const results = await Promise.allSettled(
+      chunk.map((o: any) =>
+        fetch(
           `https://api.mercadolibre.com/orders/${o.id}`,
           { headers: { Authorization: auth }, signal: AbortSignal.timeout(8000) }
-        )
-        if (!res.ok) return
-        const detail = await res.json()
-        orderDetailMap.set(String(o.id), detail)
-      } catch { /* timeout o error de red — ignorar, la orden igual se muestra */ }
-    }))
+        ).then(r => r.ok ? r.json() : null).catch(() => null)
+      )
+    )
+    chunk.forEach((o: any, idx: number) => {
+      const r = results[idx]
+      if (r.status === "fulfilled" && r.value) {
+        orderDetailMap.set(String(o.id), r.value)
+      }
+    })
   }
 
   // Paso 4: estado de envío desde /shipments/{id}
-  // Solo para las órdenes donde el detalle no trajo el estado de envío actualizado
-  const shipmentStatusMap = new Map<string, { status: string; substatus: string | null }>()
   const shipmentIds = orders.map((o: any) => o.shipping?.id).filter(Boolean).map(String)
-
   for (let i = 0; i < shipmentIds.length; i += CHUNK) {
     const chunk = shipmentIds.slice(i, i + CHUNK)
-    await Promise.all(chunk.map(async (sid) => {
-      try {
-        const sr = await fetch(
+    const results = await Promise.allSettled(
+      chunk.map(sid =>
+        fetch(
           `https://api.mercadolibre.com/shipments/${sid}`,
           { headers: { Authorization: auth }, signal: AbortSignal.timeout(6000) }
-        )
-        if (!sr.ok) return
-        const s = await sr.json()
+        ).then(r => r.ok ? r.json() : null).catch(() => null)
+      )
+    )
+    chunk.forEach((_sid, idx) => {
+      const r = results[idx]
+      if (r.status === "fulfilled" && r.value) {
+        const s = r.value
         shipmentStatusMap.set(String(s.id), { status: s.status || "", substatus: s.substatus || null })
-      } catch { /* ignorar */ }
-    }))
+      }
+    })
   }
 
   // Paso 5: armar respuesta enriquecida
@@ -117,6 +120,7 @@ export async function GET(req: NextRequest) {
     // buyer.billing_info es el objeto con los datos fiscales del comprador
     const bi    = detail?.buyer?.billing_info || {}
     const ident = bi.identification || {}
+    if (o === orders[0]) console.log("[v0] buyer completo orden 0:", JSON.stringify(detail?.buyer))
 
     // Nombre: billing_info.name + billing_info.last_name
     // Fallback: nickname (siempre disponible en /orders/search)
