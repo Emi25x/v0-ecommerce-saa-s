@@ -263,6 +263,11 @@ export default function MLBillingPage() {
             nro_doc_receptor:       nroDoc,
             receptor_nombre:        order.comprador || order.buyer_id || "Consumidor Final",
             receptor_condicion_iva: "consumidor_final",
+            receptor_domicilio:     [
+              (order as any).comprador_address,
+              (order as any).comprador_city,
+              (order as any).comprador_state,
+            ].filter(Boolean).join(", ") || undefined,
             items: order.items.map(i => ({
               descripcion:     i.titulo || "Venta ML",
               cantidad:        i.cantidad,
