@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
-import { RefreshCw, Play, Pause, RotateCcw, Loader2, ChevronDown, ChevronUp, AlertCircle } from "lucide-react"
+import { RefreshCw, Play, Pause, RotateCcw, Loader2, ChevronDown, ChevronUp, AlertCircle, ListTodo, Zap } from "lucide-react"
 
 export default function MLImporterPage() {
   const [accounts, setAccounts] = useState<any[]>([])
@@ -25,6 +25,13 @@ export default function MLImporterPage() {
   const [executionLog, setExecutionLog] = useState<any[]>([])
   const [accountDebug, setAccountDebug] = useState<any>(null)
   const [loadingAccountDebug, setLoadingAccountDebug] = useState(false)
+
+  // Cola de jobs
+  const [queueJobs, setQueueJobs]       = useState<any[]>([])
+  const [enqueueing, setEnqueueing]     = useState(false)
+  const [runningWorker, setRunningWorker] = useState(false)
+  const [workerResult, setWorkerResult] = useState<any>(null)
+  const [loadingQueue, setLoadingQueue] = useState(false)
 
   // Cargar cuentas ML
   useEffect(() => {
@@ -230,6 +237,67 @@ export default function MLImporterPage() {
       alert(`Error de red o timeout:\n${error.message}\n\nEsto suele ser temporal. El auto-mode reintentará automáticamente.`)
     } finally {
       setRunning(false)
+    }
+  }
+
+  const loadQueue = async () => {
+    if (!selectedAccountId) return
+    setLoadingQueue(true)
+    try {
+      const res = await fetch(`/api/ml/jobs/list?account_id=${selectedAccountId}&limit=20`)
+      const data = await res.json()
+      if (data.ok) setQueueJobs(data.jobs || [])
+    } catch { /* ignorar */ }
+    finally { setLoadingQueue(false) }
+  }
+
+  const handleEnqueue = async () => {
+    if (!selectedAccountId) return
+    setEnqueueing(true)
+    try {
+      const res = await fetch("/api/ml/jobs/enqueue", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_id: selectedAccountId,
+          type:       "import_publications",
+          payload:    { max_seconds: 50, detail_batch: 50, concurrency: 2 },
+        }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        await loadQueue()
+      } else {
+        alert(`Error al encolar: ${data.error}`)
+      }
+    } catch (err: any) {
+      alert(`Error: ${err.message}`)
+    } finally {
+      setEnqueueing(false)
+    }
+  }
+
+  const handleRunWorker = async () => {
+    if (!selectedAccountId) return
+    setRunningWorker(true)
+    setWorkerResult(null)
+    try {
+      const res = await fetch("/api/ml/jobs/run", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: selectedAccountId, limit: 1 }),
+      })
+      const data = await res.json()
+      setWorkerResult(data)
+      // Recargar progreso y cola
+      await loadQueue()
+      const statusRes = await fetch(`/api/ml/import-pro/status?account_id=${selectedAccountId}`)
+      const statusData = await statusRes.json()
+      if (statusData.ok) setProgress(statusData.progress)
+    } catch (err: any) {
+      setWorkerResult({ ok: false, error: err.message })
+    } finally {
+      setRunningWorker(false)
     }
   }
 
@@ -693,6 +761,102 @@ export default function MLImporterPage() {
           </div>
         </Card>
       )}
+
+      {/* Card Cola de Jobs */}
+      <Card className="p-5 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <ListTodo className="h-5 w-5 text-muted-foreground" />
+            <h3 className="font-semibold">Cola de Jobs (sin timeout)</h3>
+          </div>
+          <button
+            onClick={loadQueue}
+            disabled={loadingQueue}
+            className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+          >
+            <RefreshCw className={`h-3 w-3 ${loadingQueue ? "animate-spin" : ""}`} />
+            Actualizar
+          </button>
+        </div>
+
+        <p className="text-sm text-muted-foreground mb-4">
+          Alternativa al modo automático. Los jobs se ejecutan en el servidor y se pueden disparar desde un cron,
+          sin depender de que la página esté abierta.
+        </p>
+
+        <div className="flex gap-3 mb-4">
+          <Button
+            onClick={handleEnqueue}
+            disabled={enqueueing || !selectedAccountId}
+            variant="outline"
+            size="sm"
+            className="bg-transparent"
+          >
+            {enqueueing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ListTodo className="mr-2 h-4 w-4" />}
+            Encolar importación
+          </Button>
+          <Button
+            onClick={handleRunWorker}
+            disabled={runningWorker || !selectedAccountId}
+            size="sm"
+          >
+            {runningWorker ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
+            Run worker (1 tick)
+          </Button>
+        </div>
+
+        {/* Resultado del worker */}
+        {workerResult && (
+          <div className={`mb-4 p-3 rounded-md border text-sm ${workerResult.ok ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"}`}>
+            {workerResult.ok ? (
+              <div>
+                <p className="font-medium text-green-800">Worker ejecutado — {workerResult.processed} job(s) procesados</p>
+                {workerResult.results?.map((r: any, i: number) => (
+                  <div key={i} className="mt-1 text-xs text-green-700">
+                    Job {r.job_id?.slice(0, 8)} ({r.type}): {r.status}
+                    {r.imported_count != null && ` — ${r.imported_count} items importados`}
+                    {r.error && ` — Error: ${r.error}`}
+                  </div>
+                ))}
+                {workerResult.message && <p className="text-xs text-green-600 mt-1">{workerResult.message}</p>}
+              </div>
+            ) : (
+              <p className="text-red-700">{workerResult.error}</p>
+            )}
+          </div>
+        )}
+
+        {/* Lista de jobs en cola */}
+        {queueJobs.length > 0 ? (
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Jobs recientes</p>
+            {queueJobs.map((job: any) => (
+              <div key={job.id} className="flex items-center justify-between p-2 bg-muted/30 rounded-md text-sm">
+                <div className="flex items-center gap-3">
+                  <Badge
+                    variant={job.status === "success" ? "default" : job.status === "error" ? "destructive" : "secondary"}
+                    className="font-normal text-xs"
+                  >
+                    {job.status}
+                  </Badge>
+                  <span className="font-mono text-xs text-muted-foreground">{job.type}</span>
+                  {job.attempts > 0 && (
+                    <span className="text-xs text-muted-foreground">intento {job.attempts}</span>
+                  )}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {new Date(job.created_at).toLocaleTimeString()}
+                  {job.last_error && <span className="ml-2 text-red-500 truncate max-w-[200px]">{job.last_error}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground italic">
+            No hay jobs. Hacé click en "Actualizar" o encola una importación.
+          </p>
+        )}
+      </Card>
 
       {/* Botón diagnóstico */}
       <div className="flex justify-end">
