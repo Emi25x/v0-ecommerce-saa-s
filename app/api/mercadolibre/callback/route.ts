@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${request.nextUrl.origin}/integrations?error=no_verifier`)
     }
 
-    const redirectUri = `${request.nextUrl.origin}/api/mercadolibre/callback`
+    const redirectUri = `${process.env.APP_URL || request.nextUrl.origin}/api/mercadolibre/callback`
 
     const tokens = await exchangeCodeForToken(code, redirectUri, codeVerifier)
 

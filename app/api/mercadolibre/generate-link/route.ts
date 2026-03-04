@@ -7,8 +7,8 @@ import { generateCodeVerifier, generateCodeChallenge, getMercadoLibreAuthUrl } f
 export async function POST(request: NextRequest) {
   try {
     const supabase   = await createClient()
-    const origin     = request.nextUrl.origin
-    const redirectUri = `${origin}/api/mercadolibre/callback`
+    const baseUrl     = process.env.APP_URL || request.nextUrl.origin
+    const redirectUri = `${baseUrl}/api/mercadolibre/callback`
 
     const codeVerifier  = generateCodeVerifier()
     const codeChallenge = await generateCodeChallenge(codeVerifier)
