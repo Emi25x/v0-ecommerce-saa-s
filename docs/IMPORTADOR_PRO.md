@@ -69,7 +69,7 @@ El bucket `imports` debe crearse manualmente desde el dashboard de Supabase:
 
 4. Crear políticas de acceso (Storage Policies):
 
-```sql
+\`\`\`sql
 -- Permitir uploads autenticados
 CREATE POLICY "Allow authenticated uploads to imports"
 ON storage.objects FOR INSERT
@@ -87,23 +87,23 @@ CREATE POLICY "Allow authenticated deletes from imports"
 ON storage.objects FOR DELETE
 TO authenticated
 USING (bucket_id = 'imports');
-```
+\`\`\`
 
 ### 2. Verificar Migración
 
 Las tablas `import_runs` e `import_run_chunks` se crean automáticamente con el script:
 
-```bash
+\`\`\`bash
 # El script ya fue ejecutado:
 scripts/038_create_import_runs.sql
-```
+\`\`\`
 
 Verificar que las tablas existen:
 
-```sql
+\`\`\`sql
 SELECT * FROM import_runs LIMIT 1;
 SELECT * FROM import_run_chunks LIMIT 1;
-```
+\`\`\`
 
 ## Uso
 
@@ -118,7 +118,7 @@ SELECT * FROM import_run_chunks LIMIT 1;
 
 ### Programático
 
-```typescript
+\`\`\`typescript
 // 1. Iniciar
 const startRes = await fetch('/api/inventory/import/run/start', {
   method: 'POST',
@@ -146,7 +146,7 @@ while (continueProcessing) {
   // Esperar 2s antes del siguiente chunk
   await new Promise(resolve => setTimeout(resolve, 2000))
 }
-```
+\`\`\`
 
 ## Auto-Detección de Columnas
 
