@@ -14,26 +14,24 @@ import {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface MLOrder {
-  id:                 number
-  fecha:              string
-  estado:             string
-  envio_status:       string | null
-  envio_substatus:    string | null
-  total:              number
-  moneda:             string
-  comprador:          string          // name + last_name de buyer.billing_info
-  comprador_doc:      string | null   // identification.number
-  comprador_doc_tipo: string | null   // identification.type (DNI, CUIT, CUIL)
-  buyer_id:           string
-  items:              { titulo: string; ean: string | null; cantidad: number; precio: number }[]
-  facturada:          boolean
-  factura_info:       any
+  id:              number
+  fecha:           string
+  estado:          string
+  envio_status:    string | null
+  envio_substatus: string | null
+  total:           number
+  moneda:          string
+  comprador:       string   // nickname del buyer (siempre disponible en /orders/search)
+  buyer_id:        string
+  items:           { titulo: string; ean: string | null; cantidad: number; precio: number }[]
+  facturada:       boolean
+  factura_info:    any
 }
 
 interface MLAccount {
-  id:          string
-  ml_user_id:  string
-  nickname:    string
+  id:         string
+  ml_user_id: string
+  nickname:   string
 }
 
 interface Empresa {
@@ -52,9 +50,9 @@ const ESTADO_OPTS = [
 ]
 
 const ENVIO_OPTS = [
-  { value: "all",          label: "Todos los envíos" },
-  { value: "delivered",    label: "Entregadas" },
-  { value: "shipped",      label: "En camino" },
+  { value: "all",           label: "Todos los envíos" },
+  { value: "delivered",     label: "Entregadas" },
+  { value: "shipped",       label: "En camino" },
   { value: "ready_to_ship", label: "Listas para enviar" },
   { value: "not_delivered", label: "No entregadas" },
 ]
@@ -65,7 +63,7 @@ const FACTURADO_OPTS = [
   { value: "si",  label: "Ya facturadas" },
 ]
 
-function EnvioBadge({ estado }: { estado?: string }) {
+function EnvioBadge({ estado }: { estado?: string | null }) {
   if (!estado) return <span className="text-xs text-muted-foreground/40">—</span>
   const map: Record<string, string> = {
     delivered:      "bg-blue-500/15 text-blue-400 border-blue-500/30",
@@ -117,14 +115,13 @@ function fmtFecha(iso: string) {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function MLBillingPage() {
-  // Cuentas ML y empresas ARCA
   const [accounts,      setAccounts]      = useState<MLAccount[]>([])
   const [empresas,      setEmpresas]      = useState<Empresa[]>([])
   const [activeAccount, setActiveAccount] = useState<string>("")
   const [activeEmpresa, setActiveEmpresa] = useState<string>("")
   const [loadingSetup,  setLoadingSetup]  = useState(true)
 
-  // Filtros — por defecto: pagadas, entregadas, sin facturar
+  // Filtros
   const [filterEstado,    setFilterEstado]    = useState("paid")
   const [filterEnvio,     setFilterEnvio]     = useState("delivered")
   const [filterFacturado, setFilterFacturado] = useState("no")
@@ -147,7 +144,7 @@ export default function MLBillingPage() {
   const [emittingBatch, setEmittingBatch] = useState(false)
   const [batchResult,   setBatchResult]   = useState<{ ok: number; err: number; errors: string[] } | null>(null)
 
-  // ── Conectar nueva cuenta ML ───────────────────────────────────────────────
+  // ── Conectar cuenta ML ────────────────────────────────────────────────────
   const conectarML = async () => {
     try {
       const res  = await fetch("/api/mercadolibre/generate-link", { method: "POST" })
@@ -159,7 +156,7 @@ export default function MLBillingPage() {
     } catch { /* ignorar */ }
   }
 
-  // ── Cargar cuentas ML y empresas ARCA ─────────────────────────────────────
+  // ── Cargar cuentas ML y empresas ARCA ────────────────────────────────────
   useEffect(() => {
     const loadSetup = async () => {
       setLoadingSetup(true)
@@ -187,17 +184,17 @@ export default function MLBillingPage() {
   }, [])
 
   // ── Cargar órdenes ────────────────────────────────────────────────────────
-  const loadOrders = useCallback(async (p = 0) => {
+  const loadOrders = useCallback(async (p: number) => {
     if (!activeAccount) return
     setLoading(true); setError(null); setSelected(new Set())
     try {
       const params = new URLSearchParams({
-        account_id:   activeAccount,
-        page:         String(p + 1),
-        limit:        String(LIMIT),
-        facturado:    filterFacturado === "all" ? "" : filterFacturado,
-        fecha_desde:  fechaDesde ? `${fechaDesde}T00:00:00.000Z` : "",
-        fecha_hasta:  fechaHasta ? `${fechaHasta}T23:59:59.000Z` : "",
+        account_id:  activeAccount,
+        page:        String(p + 1),
+        limit:       String(LIMIT),
+        facturado:   filterFacturado === "all" ? "" : filterFacturado,
+        fecha_desde: fechaDesde ? `${fechaDesde}T00:00:00.000Z` : "",
+        fecha_hasta: fechaHasta ? `${fechaHasta}T23:59:59.000Z` : "",
       })
       if (filterEstado !== "all") params.set("estado",       filterEstado)
       if (filterEnvio  !== "all") params.set("estado_envio", filterEnvio)
@@ -205,20 +202,21 @@ export default function MLBillingPage() {
       const res  = await fetch(`/api/billing/ml-ventas?${params}`)
       const data = await res.json()
       if (!res.ok || !data.ok) { setError(data.error || "Error cargando órdenes"); return }
-      setOrders(data.orders); setTotal(data.total)
+      setOrders(data.orders)
+      setTotal(data.total)
     } finally {
       setLoading(false)
     }
   }, [activeAccount, filterEstado, filterEnvio, filterFacturado, fechaDesde, fechaHasta])
 
-  useEffect(() => { if (activeAccount) { setPage(0); loadOrders(0) } }, [activeAccount, filterEstado, filterEnvio, filterFacturado])
+  useEffect(() => {
+    if (activeAccount) { setPage(0); loadOrders(0) }
+  }, [activeAccount, filterEstado, filterEnvio, filterFacturado])
 
   // ── Selección ─────────────────────────────────────────────────────────────
   const toggleOrder = (id: number) => {
     setSelected(prev => {
-      const n = new Set(prev)
-      n.has(id) ? n.delete(id) : n.add(id)
-      return n
+      const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
     })
   }
   const toggleAll = () => {
@@ -234,56 +232,59 @@ export default function MLBillingPage() {
 
     const selOrders = orders.filter(o => selected.has(o.id))
     let ok = 0; let err = 0; const errs: string[] = []
+    const round2 = (n: number) => Math.round(n * 100) / 100
 
     for (const order of selOrders) {
       try {
-        // Emitir factura para esta orden
-        // Para Factura C: IVA = 0, precio_unitario es el precio final (IVA incluido)
-        // ARCA exige: ImpIVA = 0, ImpNeto = ImpTotal, no informar objeto IVA
-        // Los importes se redondean a 2 decimales máx (ARCA rechaza más)
-        const round2 = (n: number) => Math.round(n * 100) / 100
+        // Paso 1: obtener datos fiscales del comprador desde GET /orders/{id}
+        // buyer.billing_info = { name, last_name, identification: { type, number } }
+        const billingRes  = await fetch(
+          `/api/billing/ml-order-billing?account_id=${activeAccount}&order_id=${order.id}`
+        )
+        const billingData = billingRes.ok ? await billingRes.json() : null
 
-        // Mapear tipo de doc ML → código ARCA
-        // ML devuelve doc_type: "DNI" → 96, "CUIT"/"CUIL" → 80, otros → 99
-        // Datos fiscales del comprador desde buyer.billing_info de ML
-        const docNum  = order.comprador_doc
-        const docTipo = (order.comprador_doc_tipo || "").toUpperCase()
-        // DNI → 96, CUIT/CUIL → 80, sin doc → 99
-        const tipoDoc = docNum
+        const nombre   = billingData?.nombre   || order.comprador || "Consumidor Final"
+        const docNumRaw = billingData?.doc_numero || null
+        const docTipo  = (billingData?.doc_tipo  || "").toUpperCase()
+
+        // Mapeo ML → AFIP: CUIT/CUIL → 80, DNI → 96, sin doc → 99
+        const tipoDoc = docNumRaw
           ? (["CUIT", "CUIL"].includes(docTipo) ? 80 : 96)
           : 99
-        const nroDoc  = docNum ? String(docNum).replace(/\D/g, "") : "0"
+        const nroDoc = docNumRaw ? String(docNumRaw).replace(/\D/g, "") : "0"
 
+        // Paso 2: emitir la factura
         const facRes = await fetch("/api/billing/facturas", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             empresa_id:             activeEmpresa,
-            tipo_comprobante:       11,
+            tipo_comprobante:       11,  // Factura C
             concepto:               1,
             tipo_doc_receptor:      tipoDoc,
             nro_doc_receptor:       nroDoc,
-            receptor_nombre:        order.comprador || "Consumidor Final",
+            receptor_nombre:        nombre,
             receptor_condicion_iva: tipoDoc === 80 ? "responsable_inscripto" : "consumidor_final",
             items: order.items.map(i => ({
               descripcion:     i.titulo || "Venta ML",
               cantidad:        i.cantidad,
               precio_unitario: round2(i.precio),
-              alicuota_iva:    0,   // Factura C: IVA = 0, no se informa objeto IVA
+              alicuota_iva:    0,
             })),
           }),
         })
         const facData = await facRes.json()
+
         if (facData.ok) {
-          // Registrar la orden como facturada
+          // Paso 3: registrar como facturada
           await fetch("/api/billing/ml-ventas", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              ml_order_ids:   [order.id],
-              ml_account_id:  activeAccount,
-              factura_id:     facData.factura?.id,
-              empresa_id:     activeEmpresa,
+              ml_order_ids:  [order.id],
+              ml_account_id: activeAccount,
+              factura_id:    facData.factura?.id,
+              empresa_id:    activeEmpresa,
             }),
           })
           ok++
@@ -300,8 +301,7 @@ export default function MLBillingPage() {
     loadOrders(page)
   }
 
-  // ── Búsqueda con Enter ────────────────────────────────────────────────────
-  const handleBuscar = () => { setPage(0); loadOrders(0) }   // page=0 → API page=1
+  const handleBuscar = () => { setPage(0); loadOrders(0) }
 
   // ── Render ────────────────────────────────────────────────────────────────
   if (loadingSetup) {
@@ -329,7 +329,6 @@ export default function MLBillingPage() {
             </p>
           </div>
           <Button onClick={conectarML} className="gap-2 bg-yellow-500 hover:bg-yellow-400 text-black font-semibold">
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><path d="M14.867 5.166l-4.24 13.668h3.155l4.24-13.668h-3.155zm-6.84 0L3.787 18.834h3.155l4.24-13.668H8.027z" /></svg>
             Conectar cuenta MercadoLibre
           </Button>
         </div>
@@ -337,9 +336,10 @@ export default function MLBillingPage() {
     )
   }
 
-  const unfacturadas = orders.filter(o => !o.facturada)
-  const allSelected  = unfacturadas.length > 0 && selected.size === unfacturadas.length
+  const unfacturadas  = orders.filter(o => !o.facturada)
+  const allSelected   = unfacturadas.length > 0 && selected.size === unfacturadas.length
   const totalSelected = orders.filter(o => selected.has(o.id)).reduce((s, o) => s + o.total, 0)
+  const totalPages    = Math.ceil(total / LIMIT)
 
   return (
     <div className="space-y-5 p-1">
@@ -475,13 +475,9 @@ export default function MLBillingPage() {
           <div className="flex items-center gap-2">
             <div className="text-xs text-muted-foreground flex items-center gap-1">
               <Info className="h-3.5 w-3.5" />
-              Se emitirá Factura C — Consumidor Final por cada venta
+              Se emitirá Factura C por cada venta con datos fiscales del comprador
             </div>
-            <Button
-              onClick={emitirMasivo}
-              disabled={emittingBatch || !activeEmpresa}
-              className="gap-2"
-            >
+            <Button onClick={emitirMasivo} disabled={emittingBatch || !activeEmpresa} className="gap-2">
               {emittingBatch
                 ? <><RefreshCw className="h-4 w-4 animate-spin" />Facturando...</>
                 : <><FileText className="h-4 w-4" />Facturar {selected.size} ventas</>
@@ -494,9 +490,7 @@ export default function MLBillingPage() {
       {/* Resultado batch */}
       {batchResult && (
         <div className={`rounded-lg border p-4 flex items-start gap-3 ${
-          batchResult.err === 0
-            ? "border-emerald-500/30 bg-emerald-500/5"
-            : "border-amber-500/30 bg-amber-500/5"
+          batchResult.err === 0 ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/30 bg-amber-500/5"
         }`}>
           {batchResult.err === 0
             ? <CheckCircle2 className="h-5 w-5 text-emerald-400 flex-shrink-0 mt-0.5" />
@@ -535,10 +529,7 @@ export default function MLBillingPage() {
             <Badge variant="secondary" className="text-xs">{total.toLocaleString("es-AR")}</Badge>
           </div>
           {unfacturadas.length > 0 && (
-            <button
-              onClick={toggleAll}
-              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
+            <button onClick={toggleAll} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
               {allSelected ? "Deseleccionar todas" : `Seleccionar ${unfacturadas.length} sin facturar`}
             </button>
           )}
@@ -573,11 +564,7 @@ export default function MLBillingPage() {
                 {orders.map(order => (
                   <tr
                     key={order.id}
-                    className={`transition-colors ${
-                      selected.has(order.id)
-                        ? "bg-primary/5"
-                        : "hover:bg-muted/20"
-                    } ${order.facturada ? "opacity-60" : ""}`}
+                    className={`transition-colors ${selected.has(order.id) ? "bg-primary/5" : "hover:bg-muted/20"} ${order.facturada ? "opacity-60" : ""}`}
                   >
                     <td className="px-4 py-3">
                       {!order.facturada && (
@@ -592,20 +579,13 @@ export default function MLBillingPage() {
                     <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{fmtFecha(order.fecha)}</td>
                     <td className="px-4 py-3">
                       <p className="font-medium text-sm leading-tight">{order.comprador || "—"}</p>
-                      {order.comprador_doc ? (
-                        <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
-                          {order.comprador_doc_tipo || "Doc"}: {order.comprador_doc}
-                        </p>
-                      ) : (
-                        <p className="text-[10px] text-muted-foreground/40 mt-0.5 italic">Sin doc fiscal</p>
-                      )}
-
+                      <p className="text-[10px] text-muted-foreground/40 mt-0.5 italic">Doc. se obtiene al facturar</p>
                     </td>
                     <td className="px-4 py-3 max-w-xs">
-                      {order.items.slice(0, 2).map((item: any, i: number) => (
+                      {order.items.slice(0, 2).map((item, i) => (
                         <div key={i} className="text-xs text-muted-foreground truncate">
-                          <span>{item.cantidad > 1 ? `${item.cantidad}x ` : ""}{item.titulo}</span>
-                          {item.ean && <span className="ml-1 text-[10px] text-muted-foreground/50 font-mono">[{item.ean}]</span>}
+                          {item.cantidad > 1 ? `${item.cantidad}x ` : ""}{item.titulo}
+                          {item.ean && <span className="ml-1 text-[10px] opacity-50 font-mono">[{item.ean}]</span>}
                         </div>
                       ))}
                       {order.items.length > 2 && (
@@ -648,19 +628,25 @@ export default function MLBillingPage() {
         )}
 
         {/* Paginación */}
-        {total > LIMIT && (
+        {totalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-border">
             <p className="text-xs text-muted-foreground">
-              Mostrando {page * LIMIT + 1}–{Math.min((page + 1) * LIMIT, total)} de {total}
+              Mostrando {page * LIMIT + 1}–{Math.min((page + 1) * LIMIT, total)} de {total.toLocaleString("es-AR")}
             </p>
             <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" className="h-7 w-7 p-0"
-                onClick={() => { setPage(p => p - 1); loadOrders(page - 1) }} disabled={page === 0 || loading}>
+              <Button
+                size="sm" variant="outline" className="h-7 w-7 p-0"
+                onClick={() => { const p = page - 1; setPage(p); loadOrders(p) }}
+                disabled={page === 0 || loading}
+              >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <span className="text-xs text-muted-foreground">{page + 1} / {Math.ceil(total / LIMIT)}</span>
-              <Button size="sm" variant="outline" className="h-7 w-7 p-0"
-                onClick={() => { setPage(p => p + 1); loadOrders(page + 1) }} disabled={(page + 1) * LIMIT >= total || loading}>
+              <span className="text-xs text-muted-foreground">{page + 1} / {totalPages}</span>
+              <Button
+                size="sm" variant="outline" className="h-7 w-7 p-0"
+                onClick={() => { const p = page + 1; setPage(p); loadOrders(p) }}
+                disabled={page + 1 >= totalPages || loading}
+              >
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
