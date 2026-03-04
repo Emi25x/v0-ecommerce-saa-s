@@ -67,122 +67,78 @@ export async function GET(req: NextRequest) {
     (facturadas || []).map((f: any) => [f.ml_order_id, f])
   )
 
-  // Obtener estado de envíos — ML devuelve solo shipment.id en orders/search
-  // Se consulta /shipments/{id} en paralelo (chunks de 20 para no saturar)
-  const shipmentStatusMap = new Map<string, { status: string; substatus: string | null }>()
+  // Obtener estado de envíos Y datos del comprador desde /shipments/{id}
+  // El shipment tiene:
+  //   - status / substatus     → estado del envío
+  //   - receiver_address       → nombre, calle, ciudad, estado, CP del destinatario
+  // ML NO expone nombre/DNI del comprador en /orders ni en /users/{buyer_id} (son privados).
+  // El único lugar donde están nombre y dirección es en el shipment (datos de entrega).
+  // Para el DNI usamos /orders/{id}/billing_info que a veces lo tiene.
+  const shipmentStatusMap = new Map<string, {
+    status: string
+    substatus: string | null
+    receiver_name:    string
+    receiver_address: string
+    receiver_city:    string
+    receiver_state:   string
+    receiver_zip:     string
+  }>()
+
   const shipmentIds = orders.map((o: any) => o.shipping?.id).filter(Boolean).map(String)
+  const CHUNK = 5
 
   if (shipmentIds.length > 0) {
-    const chunks: string[][] = []
-    for (let i = 0; i < shipmentIds.length; i += 20) chunks.push(shipmentIds.slice(i, i + 20))
-    await Promise.all(chunks.map(async (chunk) => {
+    for (let i = 0; i < shipmentIds.length; i += CHUNK) {
+      const chunk = shipmentIds.slice(i, i + CHUNK)
       await Promise.all(chunk.map(async (sid) => {
         try {
           const sr = await fetch(
             `https://api.mercadolibre.com/shipments/${sid}`,
-            { headers: { Authorization: `Bearer ${mlAccount.access_token}` } }
+            { headers: { Authorization: `Bearer ${mlAccount.access_token}` }, signal: AbortSignal.timeout(7000) }
           )
-          if (sr.ok) {
-            const s = await sr.json()
-            if (s?.id) shipmentStatusMap.set(String(s.id), { status: s.status || "", substatus: s.substatus || null })
-          }
+          if (!sr.ok) return
+          const s = await sr.json()
+          // receiver_address estructura:
+          // { receiver_name, street_name, street_number, city: { name }, state: { name }, zip_code }
+          const ra = s.receiver_address || {}
+          shipmentStatusMap.set(String(s.id), {
+            status:           s.status    || "",
+            substatus:        s.substatus || null,
+            receiver_name:    ra.receiver_name    || "",
+            receiver_address: ra.street_name
+              ? `${ra.street_name} ${ra.street_number || ""}`.trim()
+              : "",
+            receiver_city:  ra.city?.name  || ra.city_name  || "",
+            receiver_state: ra.state?.name || ra.state_name || "",
+            receiver_zip:   ra.zip_code    || "",
+          })
         } catch { /* ignorar */ }
       }))
-    }))
+    }
   }
 
-  // Obtener datos del comprador:
-  // /orders/search solo devuelve buyer: { id } — sin nombre ni DNI.
-  // Hay que llamar a GET /orders/{id} individualmente para obtener:
-  //   buyer.first_name, buyer.last_name, buyer.identification (tipo/número)
-  // Y GET /orders/{id}/billing_info para dirección fiscal.
-  // Se procesan en lotes de 5 en serie para no hacer timeout.
-  const orderBillingMap = new Map<string, {
-    doc_type: string; doc_number: string
-    first_name: string; last_name: string
-    address: string; city: string; state: string; zip: string
-  }>()
-
-  // IMPORTANTE (doc oficial ML):
-  // GET /orders/{id} y /orders/search solo devuelven buyer: { id } — SIN nombre ni DNI.
-  // Para obtener nombre, apellido e identification hay que llamar a:
-  //   GET /users/{buyer_id}  → first_name, last_name, identification.type/number
-  // Para dirección fiscal:
-  //   GET /orders/{id}/billing_info → billing_address con calle, ciudad, etc.
-  // Se deduplican buyers (mismo buyer puede aparecer en varias órdenes).
-  const ordersToFetch = orders.slice(0, 20)
-
-  // Deduplicar buyer_ids para no llamar múltiples veces por el mismo comprador
-  const buyerIdToOrders = new Map<string, string[]>()
-  for (const o of ordersToFetch) {
-    const bid = String(o.buyer?.id || "")
-    if (!bid) continue
-    if (!buyerIdToOrders.has(bid)) buyerIdToOrders.set(bid, [])
-    buyerIdToOrders.get(bid)!.push(String(o.id))
-  }
-
-  // Mapa buyer_id → datos del comprador
-  const buyerDataMap = new Map<string, { first_name: string; last_name: string; doc_type: string; doc_number: string }>()
-
-  const buyerIds = [...buyerIdToOrders.keys()]
-  const CHUNK = 5
-  for (let i = 0; i < buyerIds.length; i += CHUNK) {
-    const chunk = buyerIds.slice(i, i + CHUNK)
-    await Promise.all(chunk.map(async (buyerId) => {
-      try {
-        const auth = `Bearer ${mlAccount.access_token}`
-        // GET /users/{buyer_id} — devuelve perfil público con nombre e identification
-        const userRes = await fetch(
-          `https://api.mercadolibre.com/users/${buyerId}`,
-          { headers: { Authorization: auth }, signal: AbortSignal.timeout(7000) }
-        )
-        if (!userRes.ok) return
-        const userData = await userRes.json()
-        // identification puede estar en userData.identification o userData.identification.type/number
-        const ident = userData.identification || {}
-        buyerDataMap.set(buyerId, {
-          first_name: userData.first_name || "",
-          last_name:  userData.last_name  || "",
-          doc_type:   ident.type   || "",
-          doc_number: ident.number || "",
-        })
-      } catch { /* ignorar */ }
-    }))
-  }
-
-  // Dirección fiscal: GET /orders/{id}/billing_info por cada orden
-  const billingAddressMap = new Map<string, { address: string; city: string; state: string; zip: string }>()
-  for (let i = 0; i < ordersToFetch.length; i += CHUNK) {
-    const chunk = ordersToFetch.slice(i, i + CHUNK)
+  // Para el DNI/CUIT intentar billing_info (puede estar vacío si el comprador no lo completó)
+  const orderBillingMap = new Map<string, { doc_type: string; doc_number: string }>()
+  for (let i = 0; i < orders.length; i += CHUNK) {
+    const chunk = orders.slice(i, i + CHUNK)
     await Promise.all(chunk.map(async (o: any) => {
       try {
-        const auth = `Bearer ${mlAccount.access_token}`
-        const billingRes = await fetch(
+        const br = await fetch(
           `https://api.mercadolibre.com/orders/${o.id}/billing_info`,
-          { headers: { Authorization: auth }, signal: AbortSignal.timeout(7000) }
+          { headers: { Authorization: `Bearer ${mlAccount.access_token}` }, signal: AbortSignal.timeout(5000) }
         )
-        if (!billingRes.ok) return
-        const bd = await billingRes.json()
-        // billing_info devuelve billing_address con la dirección fiscal del comprador
-        const addr = bd.billing_address || bd.buyer?.address || {}
-        billingAddressMap.set(String(o.id), {
-          address: addr.street_name
-            ? `${addr.street_name} ${addr.street_number || ""}`.trim()
-            : "",
-          city:  addr.city?.name  || (typeof addr.city  === "string" ? addr.city  : "") || "",
-          state: addr.state?.name || (typeof addr.state === "string" ? addr.state : "") || "",
-          zip:   addr.zip_code || "",
-        })
+        if (!br.ok) return
+        const bd = await br.json()
+        const buyer = bd.buyer || bd.payer || bd || {}
+        const ident = buyer.identification || {}
+        if (ident.number) {
+          orderBillingMap.set(String(o.id), {
+            doc_type:   ident.type   || "DNI",
+            doc_number: ident.number || "",
+          })
+        }
       } catch { /* ignorar */ }
     }))
-  }
-
-  // Combinar en el mapa final por order_id
-  for (const o of ordersToFetch) {
-    const buyerId   = String(o.buyer?.id || "")
-    const buyerData = buyerDataMap.get(buyerId) || { first_name: "", last_name: "", doc_type: "", doc_number: "" }
-    const addrData  = billingAddressMap.get(String(o.id)) || { address: "", city: "", state: "", zip: "" }
-    orderBillingMap.set(String(o.id), { ...buyerData, ...addrData })
   }
 
   // Enriquecer órdenes con estado de facturación, envío y datos del comprador
