@@ -3,11 +3,9 @@ import { getMercadoLibreAuthUrl, generateCodeVerifier, generateCodeChallenge } f
 
 export async function GET(request: NextRequest) {
   try {
-    // APP_URL debe ser el dominio de producción registrado en ML (ej: https://libroide.ar)
-    // Si no está seteado cae al origin del request (solo funciona si ese dominio está registrado en ML)
-    const baseUrl     = process.env.APP_URL || request.nextUrl.origin
+    const origin      = request.nextUrl.origin
     const from        = request.nextUrl.searchParams.get("from") || ""
-    const redirectUri = `${baseUrl}/api/mercadolibre/callback`
+    const redirectUri = `${origin}/api/mercadolibre/callback`
 
     const codeVerifier  = generateCodeVerifier()
     const codeChallenge = await generateCodeChallenge(codeVerifier)
