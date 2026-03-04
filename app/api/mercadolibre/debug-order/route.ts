@@ -25,27 +25,29 @@ export async function GET(request: NextRequest) {
 
   const auth = `Bearer ${ml.access_token}`
 
-  // Paso 1: obtener la orden para sacar el buyer.id
+  // Paso 1: GET /orders/{id} → leer buyer.billing_info.id
   const orderRes  = await fetch(`https://api.mercadolibre.com/orders/${orderId}`, { headers: { Authorization: auth } })
   const orderData = await orderRes.json()
-  const buyerId   = orderData.buyer?.id
+  const billingInfoId = orderData?.buyer?.billing_info?.id
 
-  // Paso 2: GET /users/{buyer_id} → nombre, apellido, identification
-  const userRes  = buyerId
-    ? await fetch(`https://api.mercadolibre.com/users/${buyerId}`, { headers: { Authorization: auth } })
-    : null
-  const userData = userRes?.ok ? await userRes.json() : null
-
-  // Paso 3: billing_info → dirección fiscal
-  const billingRes  = await fetch(`https://api.mercadolibre.com/orders/${orderId}/billing_info`, { headers: { Authorization: auth } })
-  const billingData = billingRes.ok ? await billingRes.json() : { status: billingRes.status }
+  // Paso 2: GET /orders/billing-info/MLA/{billing_info_id} → datos fiscales reales
+  let billingData = null
+  let billingStatus = null
+  if (billingInfoId) {
+    const billingRes = await fetch(
+      `https://api.mercadolibre.com/orders/billing-info/MLA/${billingInfoId}`,
+      { headers: { Authorization: auth } }
+    )
+    billingStatus = billingRes.status
+    billingData   = billingRes.ok ? await billingRes.json() : await billingRes.text()
+  }
 
   return NextResponse.json({
-    order_buyer_id:   buyerId,
     order_status:     orderRes.status,
-    // GET /users/{buyer_id} → aquí están first_name, last_name, identification
-    user_data:        userData,
-    billing_status:   billingRes.status,
-    billing_info:     billingData,
+    order_buyer:      orderData?.buyer,
+    billing_info_id:  billingInfoId,
+    billing_status:   billingStatus,
+    // Aquí deben estar: first_name, last_name, identification.type/number, address
+    billing_data:     billingData,
   })
 }
