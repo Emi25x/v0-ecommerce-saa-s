@@ -1,330 +1,374 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import Papa from "papaparse"
+import { fetchWithAuth } from "@/lib/import/fetch-with-auth"
+import { normalizeEan } from "@/lib/ean-utils"
+import { inflateRawSync } from "node:zlib"
 
-const BATCH_SIZE = 1000 // Procesar 1000 productos por request (reducido para evitar timeouts)
+export const maxDuration = 300
 
-export const maxDuration = 60 // Máximo tiempo permitido en Vercel
+const BATCH_SIZE_INITIAL = 500
+const BATCH_SIZE_MIN = 50
+const BATCH_SIZE_MAX = 1000
+const UPSERT_CHUNK = 100 // filas por upsert call dentro de cada batch
 
-// Cache global para el archivo CSV parseado (evita re-descarga en cada request)
-const csvCache: Map<string, { data: Record<string, string>[], timestamp: number }> = new Map()
-const CACHE_TTL = 10 * 60 * 1000 // 10 minutos
+function normalizeHeader(header: string): string {
+  return header
+    .replace(/^\uFEFF/, "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, "_")
+}
+
+function detectDelimiter(firstLine: string): string {
+  const candidates = ["|", ";", "\t", ","]
+  const counts = candidates.map(d => ({
+    delimiter: d,
+    count: (firstLine.match(new RegExp(`\\${d === "\t" ? "t" : d}`, "g")) || []).length
+  }))
+  const best = counts.reduce((max, curr) => curr.count > max.count ? curr : max)
+  return best.count > 0 ? best.delimiter : ","
+}
+
+function isTimeoutError(msg: string): boolean {
+  return msg.toLowerCase().includes("statement timeout") ||
+    msg.toLowerCase().includes("canceling statement") ||
+    msg.toLowerCase().includes("query_timeout")
+}
 
 export async function POST(request: NextRequest) {
+  const startTime = Date.now()
+
   try {
-    const { sourceId, offset = 0, mode = "update", forceReload = false } = await request.json()
+    const body = await request.json()
+    const {
+      sourceId,
+      offset = 0,
+      mode = "upsert",
+      historyId = null,
+      batch_size = BATCH_SIZE_INITIAL,
+    } = body
 
     if (!sourceId) {
       return NextResponse.json({ error: "sourceId es requerido" }, { status: 400 })
     }
-    
-    // Limpiar TODO el cache si se fuerza recarga (primera llamada de una importación)
-    if (forceReload) {
-      console.log(`[v0] Batch import: Limpiando TODO el cache`)
-      csvCache.clear()
-    }
 
-    console.log(`[v0] Batch import: sourceId = ${sourceId}, Modo = ${mode}, Offset = ${offset}`)
+    const effectiveBatchSize = Math.min(BATCH_SIZE_MAX, Math.max(BATCH_SIZE_MIN, Number(batch_size) || BATCH_SIZE_INITIAL))
 
     const supabase = await createClient()
 
-    // Obtener la fuente
+    // 1. Obtener source
     const { data: source, error: sourceError } = await supabase
       .from("import_sources")
       .select("*")
       .eq("id", sourceId)
       .single()
 
-    console.log(`[v0] Batch import: source =`, source?.name, "error =", sourceError?.message)
-
     if (sourceError || !source) {
-      return NextResponse.json({ error: `Fuente no encontrada: ${sourceId}` }, { status: 404 })
+      return NextResponse.json({ error: "Fuente no encontrada" }, { status: 404 })
     }
 
-    const fileUrl = source.url_template
-    if (!fileUrl) {
-      return NextResponse.json({ error: "URL no configurada" }, { status: 400 })
-    }
+    // 2. Descargar CSV completo
+    const fileResponse = await fetchWithAuth({
+      url_template: source.url_template,
+      auth_type: source.auth_type,
+      credentials: source.credentials
+    })
 
-    // Verificar si tenemos el CSV en cache
-    let data: Record<string, string>[]
-    const cached = csvCache.get(sourceId)
-    
-    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-      console.log(`[v0] Batch import: Usando CSV desde cache`)
-      data = cached.data
-    } else {
-      console.log(`[v0] Batch import: Descargando archivo desde ${fileUrl}`)
-
-      // Descargar el archivo CSV
-      const fileResponse = await fetch(fileUrl)
-      if (!fileResponse.ok) {
-        return NextResponse.json({ error: `Error descargando: ${fileResponse.status}` }, { status: 500 })
-      }
-
-      const csvText = await fileResponse.text()
-      console.log(`[v0] Batch import: Archivo descargado, ${csvText.length} caracteres`)
-
-      // Parsear CSV
-      const parseResult = Papa.parse(csvText, {
-        header: true,
-        skipEmptyLines: true,
-        delimiter: "|",
-      })
-
-      data = parseResult.data as Record<string, string>[]
-      
-      // Guardar en cache
-      csvCache.set(sourceId, { data, timestamp: Date.now() })
-      console.log(`[v0] Batch import: CSV guardado en cache`)
-    }
-
-    const totalRows = data.length
-    
-    // Log de las columnas del CSV para verificar que es el archivo correcto
-    if (offset === 0 && data.length > 0) {
-      const columns = Object.keys(data[0])
-      console.log(`[v0] Batch import: Columnas del CSV: ${columns.join(", ")}`)
-    }
-
-    console.log(`[v0] Batch import: ${totalRows} filas totales, procesando desde offset ${offset}`)
-
-    // Si el offset es mayor que el total, ya terminamos
-    if (offset >= totalRows) {
+    if (!fileResponse.ok) {
       return NextResponse.json({
-        success: true,
-        done: true,
-        total: totalRows,
-        processed: totalRows,
-      })
+        error: `Error ${fileResponse.status}: ${fileResponse.statusText}`
+      }, { status: fileResponse.status })
     }
 
-    // Obtener el lote actual
-    const batch = data.slice(offset, offset + BATCH_SIZE)
-    const mapping = source.column_mapping || {}
+    const fileBuffer = Buffer.from(await fileResponse.arrayBuffer())
+    const isZip = fileBuffer.length >= 4 && fileBuffer[0] === 0x50 && fileBuffer[1] === 0x4B
 
-    let updatedCount = 0
-    let createdCount = 0
-    let failedCount = 0
+    let csvText: string
 
-    const now = new Date().toISOString()
-
-    // LÓGICA ESPECIAL PARA FEEDS TIPO STOCK_PRICE
-    // Solo actualiza stock y precio por EAN, no crea productos nuevos
-    if (source.feed_type === "stock_price") {
-      // Recopilar los EANs del batch para buscar productos existentes
-      const batchEans: string[] = []
-      const stockMap = new Map<string, { stock: number; price: number }>()
-      
-      for (const row of batch) {
-        const ean = row[mapping.ean || "EAN"]?.trim()
-        const stock = parseInt(row[mapping.stock] || "0", 10)
-        const price = parseFloat(row[mapping.price || "PRECIO"]?.replace(",", ".") || "0")
-        
-        if (!ean) continue
-        batchEans.push(ean)
-        stockMap.set(ean, { stock, price })
-      }
-      
-      // Preparar array para update masivo via RPC
-      const stockUpdates = batchEans.map(ean => {
-        const stockData = stockMap.get(ean)!
-        return { ean, stock: stockData.stock, price: stockData.price }
-      })
-      
-      // Llamar función RPC para update masivo
-      const { data: rpcResult, error: rpcError } = await supabase.rpc('update_stock_batch', {
-        stock_updates: stockUpdates
-      })
-      
-      if (!rpcError && rpcResult) {
-        updatedCount = rpcResult.updated || 0
-      } else {
-        console.log(`[v0] RPC error:`, rpcError)
-        failedCount = batchEans.length
-      }
-      
-      const newOffset = offset + batch.length
-      const done = newOffset >= totalRows
-      const progress = Math.round((newOffset / totalRows) * 100)
-      
-      // Si terminamos, poner stock=0 en TODOS los productos que no están en el archivo
-      let zeroStockCount = 0
-      if (done) {
-        console.log(`[v0] Stock import: Poniendo stock=0 en productos que no están en el archivo...`)
-        
-        // Recopilar todos los EANs del archivo
-        const eansInFile = data
-          .map(row => row[mapping.ean || "EAN"]?.trim())
-          .filter(Boolean)
-        
-        console.log(`[v0] Stock import: ${eansInFile.length} EANs en el archivo de stock`)
-        
-        // Usar función SQL para poner stock=0 a los que NO están en la lista
-        // Esto es más robusto que cargar todos los productos en memoria
-        const { data: rpcResult, error: rpcError } = await supabase.rpc('zero_stock_not_in_list', {
-          ean_list: eansInFile
-        })
-        
-        if (!rpcError && rpcResult) {
-          zeroStockCount = rpcResult.zeroed || 0
-          console.log(`[v0] Stock import: ${zeroStockCount} productos puestos a stock=0`)
-        } else {
-          console.error(`[v0] Stock import: Error al poner stock=0:`, rpcError)
+    if (isZip) {
+      let offset_zip = 0
+      let found = false
+      while (offset_zip < fileBuffer.length - 30 && !found) {
+        if (fileBuffer.readUInt32LE(offset_zip) === 0x04034b50) {
+          const compressionMethod = fileBuffer.readUInt16LE(offset_zip + 8)
+          const compressedSize = fileBuffer.readUInt32LE(offset_zip + 18)
+          const fileNameLength = fileBuffer.readUInt16LE(offset_zip + 26)
+          const extraFieldLength = fileBuffer.readUInt16LE(offset_zip + 28)
+          const fileName = fileBuffer.toString("utf-8", offset_zip + 30, offset_zip + 30 + fileNameLength)
+          if (fileName.toLowerCase().endsWith(".csv")) {
+            const dataStart = offset_zip + 30 + fileNameLength + extraFieldLength
+            const compressedData = fileBuffer.subarray(dataStart, dataStart + compressedSize)
+            const raw = compressionMethod === 8 ? inflateRawSync(compressedData) : compressedData
+            const chunks: string[] = []
+            for (let i = 0; i < raw.length; i += 50 * 1024 * 1024) {
+              chunks.push(raw.subarray(i, i + 50 * 1024 * 1024).toString("latin1"))
+            }
+            csvText = chunks.join("")
+            found = true
+          }
         }
+        offset_zip++
       }
-      
-      return NextResponse.json({
-        success: true,
-        done,
-        total: totalRows,
-        processed: newOffset,
-        created: 0,
-        updated: updatedCount,
-        failed: failedCount,
-        zeroStock: zeroStockCount,
-        nextOffset: done ? null : newOffset,
-        progress,
-      })
+      if (!found) throw new Error("No CSV file found in ZIP")
+    } else {
+      csvText = fileBuffer.toString("utf-8")
     }
 
-    // LÓGICA NORMAL PARA CATÁLOGO COMPLETO
-    const productsToInsert: Array<Record<string, any>> = []
+    // 3. Auto-detect delimiter
+    let delimiter = source.delimiter || ""
+    if (!delimiter) {
+      delimiter = detectDelimiter(csvText.split("\n")[0] || "")
+    }
 
-    for (const row of batch) {
-      const sku = row[mapping.sku || "SKU"]?.trim()
-      const ean = row[mapping.ean || "EAN"]?.trim()
-      const title = row[mapping.title || "TITULO"]?.trim()
-      const price = parseFloat(row[mapping.price || "PRECIO"]?.replace(",", ".") || "0")
-      const description = row[mapping.description]?.trim() || null
-      const brand = row[mapping.brand]?.trim() || null
-      const category = row[mapping.category]?.trim() || null
-      const stock = parseInt(row[mapping.stock] || "0", 10)
-      const internalCode = row[mapping.internal_code]?.trim() || null
-      const imageUrl = row[mapping.image_url]?.trim() || null
-      const author = row[mapping.author]?.trim() || null
-      const language = row[mapping.language]?.trim() || null
-      const yearEdition = row[mapping.year_edition]?.trim() || null
-      const subject = row[mapping.subject]?.trim() || null
-      const course = row[mapping.course]?.trim() || null
-      const binding = row[mapping.binding]?.trim() || null
-      const pages = parseInt(row[mapping.pages] || "0", 10) || null
-      const height = parseFloat(row[mapping.height]?.replace(",", ".") || "0") || null
-      const width = parseFloat(row[mapping.width]?.replace(",", ".") || "0") || null
-      const thickness = parseFloat(row[mapping.thickness]?.replace(",", ".") || "0") || null
-      const costPrice = parseFloat(row[mapping.cost_price]?.replace(",", ".") || "0") || null
-      const vat = parseFloat(row[mapping.vat]?.replace(",", ".") || "0") || null
-      const editionDate = row[mapping.edition_date]?.trim() || null
-      const ibicSubjects = row[mapping.ibic_subjects]?.trim() || null
+    // 4. Parse CSV
+    const parsed = Papa.parse(csvText, {
+      delimiter,
+      header: true,
+      skipEmptyLines: true,
+    })
 
-      if (!sku) continue
+    const headers = parsed.meta.fields || []
+    const headersNormalized = headers.map(normalizeHeader)
+    const headerMap = new Map<string, string>()
+    headers.forEach((orig, idx) => { headerMap.set(orig, headersNormalized[idx]) })
+
+    const allRows = (parsed.data as Array<Record<string, any>>).map(row => {
+      const normalized: Record<string, string> = {}
+      Object.entries(row).forEach(([key, value]) => {
+        normalized[headerMap.get(key) || normalizeHeader(key)] = value as string
+      })
+      return normalized
+    })
+
+    const totalRows = allRows.length
+    const batchRows = allRows.slice(offset, offset + effectiveBatchSize)
+    const rows_seen = batchRows.length
+    const done = rows_seen === 0 || (offset + rows_seen >= totalRows)
+
+    if (offset === 0) {
+      console.log(`[BATCH] source="${source.name}" delimiter="${delimiter}" totalRows=${totalRows} batchSize=${effectiveBatchSize}`)
+      console.log(`[BATCH] headers: ${headersNormalized.slice(0, 10).join(", ")}`)
+    }
+
+    // 5. Mapear productos
+    const productsToInsert: Record<string, any>[] = []
+    let missing_ean = 0
+    let invalid_ean = 0
+
+    const isStockImport = source.name.toLowerCase().includes("stock")
+
+    for (const row of batchRows) {
+      const eanRaw = row["ean"] || row["ean13"] || row["gtin"] || row["codigo_de_barras"]
+      const isbnRaw = row["isbn"] || row["isbn13"]
+      const ean = normalizeEan(eanRaw || isbnRaw)
+
+      if (!ean) { missing_ean++; continue }
+      if (ean.length !== 13) { invalid_ean++; continue }
+
+      const priceRaw = row["pvp"] || row["precio_sin_iva"] || row["precio"] || row["price"] || null
+      const cost_price = priceRaw ? parseFloat(String(priceRaw).replace(",", ".").replace(/[^\d.]/g, "")) || null : null
+      const stockRaw = row["stock"] || row["cantidad"] || null
+      const stock = stockRaw !== null ? parseInt(String(stockRaw).replace(/\D/g, ""), 10) || 0 : null
+
+      const descKey = Object.keys(row).find(k => k.includes("sinopsis"))
+      const yearKey = Object.keys(row).find(k => k.includes("ano_edicion") || k.includes("ano_edici"))
 
       productsToInsert.push({
-        sku,
-        ean: ean || null,
-        title: title || sku,
-        price: price || 0,
-        description,
-        brand,
-        category,
+        ean,
+        isbn: isbnRaw || null,
+        title: row["titulo"] || row["title"] || null,
+        author: row["autor"] || row["author"] || null,
+        cost_price,
+        image_url: row["url"] || row["portada"] || row["imagen"] || row["image"] || null,
         stock,
-        internal_code: internalCode,
-        image_url: imageUrl,
-        author,
-        language,
-        year_edition: yearEdition,
-        subject,
-        course,
-        binding,
-        pages,
-        height,
-        width,
-        thickness,
-        cost_price: costPrice,
-        vat,
-        edition_date: editionDate,
-        ibic_subjects: ibicSubjects,
-        source: [sourceId],
-        created_at: now,
-        updated_at: now,
+        brand: row["editorial"] || row["marca"] || row["brand"] || null,
+        category: row["categoria"] || row["category"] || null,
+        description: (descKey ? row[descKey] : null) || row["descripcion"] || row["description"] || null,
+        language: row["idioma"] || row["language"] || null,
+        year_edition: (yearKey ? row[yearKey] : null) || row["year_edition"] || null,
+        internal_code: row["codigo_interno"] || row["internal_code"] || null,
       })
     }
 
-    // Inserción masiva en chunks de 500
-    const CHUNK_SIZE = 500
-    for (let i = 0; i < productsToInsert.length; i += CHUNK_SIZE) {
-      const chunk = productsToInsert.slice(i, i + CHUNK_SIZE)
-      
-      if (mode === "create" || mode === "upsert") {
-        // Filtrar productos sin EAN para el upsert por EAN
-        const chunkWithEan = chunk.filter(p => p.ean)
-        
-        if (chunkWithEan.length > 0) {
-          // En modo "create", contar cuántos EANs ya existen para calcular los realmente nuevos
-          let existingCount = 0
-          if (mode === "create") {
-            const eans = chunkWithEan.map(p => p.ean)
-            const { count } = await supabase
-              .from("products")
-              .select("ean", { count: "exact", head: true })
-              .in("ean", eans)
-            existingCount = count || 0
-          }
-          
-          const { error } = await supabase
-            .from("products")
-            .upsert(chunkWithEan, { onConflict: "ean", ignoreDuplicates: mode === "create" })
-          
-          if (error) {
-            console.error("[v0] Error insertando chunk:", error.message)
-            failedCount += chunkWithEan.length
-          } else {
-            if (mode === "create") {
-              // Solo contar los que realmente se crearon (no existían antes)
-              createdCount += chunkWithEan.length - existingCount
+    const rows_processed = productsToInsert.length
+
+    // 6. Upsert / update con retry y contadores correctos
+    let created = 0
+    let updated = 0
+    let failed_rows = 0
+    let timeout_count = 0
+    let last_error: string | null = null
+    let last_reason: string | null = null
+
+    if (productsToInsert.length > 0) {
+      // Deduplicar por EAN (último gana)
+      const dedupMap = new Map<string, any>()
+      for (const p of productsToInsert) dedupMap.set(p.ean, p)
+      const deduped = Array.from(dedupMap.values())
+
+      if (isStockImport) {
+        // Stock: usar RPC bulk con retry
+        const STOCK_CHUNK = 200
+        for (let i = 0; i < deduped.length; i += STOCK_CHUNK) {
+          const chunk = deduped.slice(i, i + STOCK_CHUNK)
+          const eans = chunk.map(p => String(p.ean))
+          const stocks = chunk.map(p => {
+            const n = parseInt(String(p.stock ?? 0), 10)
+            return isNaN(n) ? 0 : n
+          })
+          const prices = chunk.map(p => {
+            if (p.cost_price === null || p.cost_price === undefined) return null
+            const n = parseFloat(String(p.cost_price).replace(",", "."))
+            return isNaN(n) ? null : n
+          })
+
+          let retryCount = 0
+          let chunkDone = false
+          while (!chunkDone && retryCount <= 2) {
+            const { error: rpcError, data: rpcData } = await supabase.rpc("bulk_update_stock_price", {
+              p_eans: eans,
+              p_stocks: stocks,
+              p_prices: prices,
+            })
+
+            if (rpcError) {
+              if (isTimeoutError(rpcError.message) && retryCount < 2) {
+                timeout_count++
+                retryCount++
+                console.log(`[BATCH][STOCK] Timeout en chunk, retry ${retryCount}/2`)
+                await new Promise(r => setTimeout(r, 1000 * retryCount))
+                continue
+              }
+              last_error = rpcError.message
+              last_reason = isTimeoutError(rpcError.message) ? "statement_timeout" : "update_failed"
+              failed_rows += chunk.length
+              chunkDone = true
             } else {
-              createdCount += chunkWithEan.length
+              updated += typeof rpcData === "number" ? rpcData : (rpcData ?? 0)
+              chunkDone = true
             }
           }
         }
-      } else if (mode === "update") {
-        // Para update, usamos upsert que actualiza si existe (por EAN)
-        const chunkWithEan = chunk.filter(p => p.ean)
-        
-        if (chunkWithEan.length > 0) {
-          const { error } = await supabase
-            .from("products")
-            .upsert(chunkWithEan, { onConflict: "ean", ignoreDuplicates: false })
-          
-          if (error) {
-            console.error("[v0] Error actualizando chunk:", error.message)
-            failedCount += chunkWithEan.length
-          } else {
-            updatedCount += chunkWithEan.length
+      } else {
+        // Catálogo: upsert con select previo para separar created/updated
+        const eans = deduped.map(p => p.ean)
+        const { data: existingRows } = await supabase
+          .from("products")
+          .select("ean, sku")
+          .in("ean", eans)
+        const eanToSku = new Map<string, string>()
+        existingRows?.forEach((r: any) => eanToSku.set(r.ean, r.sku))
+
+        const toUpsert = deduped.map(p => ({
+          ...p,
+          sku: eanToSku.get(p.ean) || p.ean,
+        }))
+
+        // Upsert en chunks de UPSERT_CHUNK
+        for (let i = 0; i < toUpsert.length; i += UPSERT_CHUNK) {
+          const chunk = toUpsert.slice(i, i + UPSERT_CHUNK)
+          let retryCount = 0
+          let chunkDone = false
+
+          while (!chunkDone && retryCount <= 2) {
+            const { error: chunkError } = await supabase
+              .from("products")
+              .upsert(chunk, { onConflict: "ean" })
+
+            if (chunkError) {
+              if (isTimeoutError(chunkError.message) && retryCount < 2) {
+                timeout_count++
+                retryCount++
+                console.log(`[BATCH][CATALOG] Timeout en chunk offset=${i}, retry ${retryCount}/2`)
+                await new Promise(r => setTimeout(r, 1000 * retryCount))
+                continue
+              }
+              last_error = chunkError.message
+              last_reason = isTimeoutError(chunkError.message) ? "statement_timeout" : "upsert_failed"
+              failed_rows += chunk.length
+              chunkDone = true
+            } else {
+              // Contar created vs updated basado en si existía antes
+              for (const p of chunk) {
+                if (eanToSku.has(p.ean)) { updated++ } else { created++ }
+              }
+              chunkDone = true
+            }
           }
         }
       }
+
+      // Validar: created+updated nunca puede superar rows_processed
+      if (created + updated > rows_processed) {
+        console.log(`[BATCH] INCONSISTENCIA: created=${created}+updated=${updated} > rows_processed=${rows_processed}. Corrigiendo.`)
+        const total_ok = rows_processed - failed_rows
+        updated = isStockImport ? total_ok : Math.min(updated, total_ok)
+        created = isStockImport ? 0 : Math.min(created, total_ok - updated)
+      }
+
+      if (!last_error) last_reason = "success"
+    } else {
+      last_reason = rows_seen === 0 ? "no_rows_in_batch" : "all_filtered"
     }
 
-    const newOffset = offset + batch.length
-    const done = newOffset >= totalRows
-    const progress = Math.round((newOffset / totalRows) * 100)
+    const duration_ms = Date.now() - startTime
+    const next_offset = done ? null : offset + rows_seen
 
-    console.log(`[v0] Batch import: Lote procesado. Creados: ${createdCount}, Actualizados: ${updatedCount}, Fallidos: ${failedCount}, Progreso: ${progress}%`)
+    console.log(`[BATCH] done=${done} offset=${offset} seen=${rows_seen} processed=${rows_processed} created=${created} updated=${updated} failed=${failed_rows} timeouts=${timeout_count} duration=${duration_ms}ms reason=${last_reason}`)
+
+    // Actualizar import_history si existe
+    if (historyId) {
+      const { data: history } = await supabase.from("import_history").select("*").eq("id", historyId).single()
+      if (history) {
+        await supabase.from("import_history").update({
+          status: done ? "completed" : "running",
+          processed_rows: (history.processed_rows || 0) + rows_processed,
+          created_count: (history.created_count || 0) + created,
+          updated_count: (history.updated_count || 0) + updated,
+          skipped_count: (history.skipped_count || 0) + missing_ean + invalid_ean,
+          error_count: last_error ? (history.error_count || 0) + 1 : history.error_count,
+          current_offset: next_offset,
+          last_message: done ? `Completado: ${(history.processed_rows || 0) + rows_processed} procesadas` : `Procesando offset ${offset}`,
+          completed_at: done ? new Date().toISOString() : null
+        }).eq("id", historyId)
+      }
+    }
 
     return NextResponse.json({
-      success: true,
+      ok: true,
+      offset,
+      batch_size: effectiveBatchSize,
+      rows_seen,
+      rows_processed,
+      created,
+      updated,
+      failed_rows,
+      timeout_count,
+      missing_ean,
+      invalid_ean,
       done,
-      total: totalRows,
-      processed: newOffset,
-      created: createdCount,
-      updated: updatedCount,
-      failed: failedCount,
-      nextOffset: done ? null : newOffset,
-      progress,
+      next_offset,
+      last_reason,
+      last_error,
+      duration_ms,
+      suggested_next_batch_size: timeout_count > 0
+        ? Math.max(BATCH_SIZE_MIN, Math.floor(effectiveBatchSize / 2))
+        : duration_ms < 5000 && effectiveBatchSize < BATCH_SIZE_MAX
+          ? Math.min(BATCH_SIZE_MAX, Math.floor(effectiveBatchSize * 1.5))
+          : effectiveBatchSize,
+      debug: offset === 0 ? {
+        delimiter,
+        headers_normalized: headersNormalized.slice(0, 20),
+        sample_ean: batchRows[0]?.["ean"] || batchRows[0]?.["ean13"] || "(no encontrado)",
+        total_rows_in_file: totalRows,
+      } : undefined,
     })
-  } catch (error) {
-    console.error("[v0] Error en batch import:", error)
-    return NextResponse.json({ error: "Error interno" }, { status: 500 })
+
+  } catch (error: any) {
+    console.error("[BATCH] Fatal error:", error)
+    return NextResponse.json({ error: error.message || "Error interno" }, { status: 500 })
   }
 }

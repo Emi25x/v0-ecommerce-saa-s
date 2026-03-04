@@ -1,0 +1,187 @@
+{
+  "version": "1.0",
+  "exported_at": "2026-02-24T00:00:00.000Z",
+  "sources": [
+    {
+      "id": "0477aa50-1c71-40b2-9530-9c794eb32793",
+      "name": "Arnoia",
+      "description": "",
+      "url_template": "https://elastic-rest.arnoia.com/feeds/getFeeds?customerCode=27401&pass=tale2740&typeFeed=DCSVCL",
+      "auth_type": "none",
+      "credentials": {},
+      "feed_type": "catalog",
+      "delimiter": "|",
+      "is_active": true,
+      "column_mapping": {
+        "ean": "EAN",
+        "sku": "Codigo interno",
+        "vat": "IVA",
+        "brand": "Editorial",
+        "pages": "Paginas",
+        "price": "PVP",
+        "stock": "Stock",
+        "title": "Titulo",
+        "width": "Ancho",
+        "author": "Autor",
+        "course": "Curso",
+        "height": "Altura",
+        "binding": "Encuadernación",
+        "subject": "Materia",
+        "category": "Familia",
+        "language": "Idioma",
+        "image_url": "URL",
+        "thickness": "Espesor",
+        "cost_price": "Precio Coste",
+        "description": "Sinopsis(HTML)",
+        "edition_date": "Fecha de edición",
+        "year_edition": "Año de Edición",
+        "ibic_subjects": "Materias IBIC"
+      }
+    },
+    {
+      "id": "285b1b8b-2709-444a-806b-e4cb9e06d837",
+      "name": "Arnoia Act",
+      "description": "Actualización",
+      "url_template": "https://elastic-rest.arnoia.com/feeds/getFeeds?customerCode=27401&pass=tale2740&typeFeed=S7CSVCL",
+      "auth_type": "none",
+      "credentials": {},
+      "feed_type": "catalog",
+      "delimiter": "|",
+      "is_active": true,
+      "column_mapping": {
+        "ean": "EAN",
+        "sku": "Codigo interno",
+        "brand": "Editorial",
+        "price": "PVP",
+        "stock": "Stock",
+        "title": "Titulo",
+        "author": "Autor",
+        "category": "Familia",
+        "image_url": "URL",
+        "description": "Sinopsis(HTML)"
+      }
+    },
+    {
+      "id": "0dad63ed-6935-4a5d-93fb-22c0f4ee109d",
+      "name": "Arnoia Stock",
+      "description": "",
+      "url_template": "https://elastic-rest.arnoia.com/feeds/getFeeds?customerCode=27401&pass=tale2740&typeFeed=DCSVDL",
+      "auth_type": "none",
+      "credentials": {},
+      "feed_type": "stock_price",
+      "delimiter": "|",
+      "is_active": true,
+      "column_mapping": {
+        "ean": "EAN",
+        "price": "Precio Sin IVA",
+        "stock": "Stock",
+        "match_field": "ean"
+      }
+    },
+    {
+      "id": "d1b89f4a-5c64-4856-b8cf-e9f9e7a72e2c",
+      "name": "Azeta Parcial",
+      "description": null,
+      "url_template": "https://www.azetadistribuciones.es/servicios_web/csv_parcial.php?user=680899&password=badajoz24",
+      "auth_type": "none",
+      "credentials": {},
+      "feed_type": "catalog",
+      "delimiter": "|",
+      "is_active": true,
+      "column_mapping": {
+        "ean": "Ean",
+        "isbn": "Isbn",
+        "pages": "Num Pag",
+        "price": "Precio",
+        "title": "Titulo",
+        "width": "Ancho",
+        "author": "Autor",
+        "height": "Alto",
+        "weight": "Peso",
+        "binding": "Encuadernacion",
+        "language": "Idioma",
+        "publisher": "Editorial",
+        "publication_date": "Fecha de Edicion"
+      }
+    },
+    {
+      "id": "669f4409-83f2-4713-9ca7-75dac41ac880",
+      "name": "Azeta Stock",
+      "description": null,
+      "url_template": "http://www.azetadistribuciones.es/servicios_web/stock.php?fr_usuario=680899&fr_clave=badajoz24",
+      "auth_type": "none",
+      "credentials": {},
+      "feed_type": "stock_price",
+      "delimiter": ";",
+      "is_active": true,
+      "column_mapping": {
+        "ean": "EAN",
+        "stock": "Stock"
+      }
+    },
+    {
+      "id": "e7819a39-4840-437a-871e-464634bd6de2",
+      "name": "Azeta Total",
+      "description": null,
+      "url_template": "https://www.azetadistribuciones.es/servicios_web/csv.php?user=680899&password=badajoz24",
+      "auth_type": "none",
+      "credentials": {},
+      "feed_type": "catalog",
+      "delimiter": "|",
+      "is_active": true,
+      "column_mapping": {
+        "ean": "Ean",
+        "isbn": "Isbn",
+        "pages": "Num Pag",
+        "price": "Precio",
+        "title": "Titulo",
+        "width": "Ancho",
+        "author": "Autor",
+        "height": "Alto",
+        "weight": "Peso",
+        "binding": "Encuadernacion",
+        "language": "Idioma",
+        "publisher": "Editorial",
+        "publication_date": "Fecha de Edicion"
+      }
+    },
+    {
+      "id": "ae0aea6b-99c0-4bb4-879a-f30dc09a28b0",
+      "name": "Libral",
+      "description": "ERP Libral - Gestión de libros y stock",
+      "url_template": "https://libral.core.abazal.com/api/libroes/LibrosLIBRAL?db=LIBRAL",
+      "auth_type": "jwt",
+      "credentials": {
+        "database": "LIBRAL",
+        "password": "",
+        "username": "SHOPIFY",
+        "login_url": "https://libral.core.abazal.com/api/auth/login?db=LIBRAL"
+      },
+      "feed_type": "api",
+      "delimiter": null,
+      "is_active": true,
+      "column_mapping": {
+        "sku": "ean",
+        "brand": "nombreeditorial",
+        "price": "precioventa",
+        "stock": "stockdisponibletotal",
+        "title": "titulo",
+        "image_url": "urlfotografia",
+        "description": "sinopsis",
+        "custom_fields": {
+          "alto": "alto",
+          "isbn": "ean",
+          "peso": "peso",
+          "ancho": "ancho",
+          "autor": "autores",
+          "grosor": "grosor",
+          "idioma": "id_idioma",
+          "paginas": "numeropaginas",
+          "editorial": "nombreeditorial",
+          "encuadernacion": "nombreencuadernacion"
+        },
+        "internal_code": "id"
+      }
+    }
+  ]
+}

@@ -3,21 +3,16 @@ import { getMercadoLibreAuthUrl, generateCodeVerifier, generateCodeChallenge } f
 
 export async function GET(request: NextRequest) {
   try {
-    const redirectUri = `${request.nextUrl.origin}/api/mercadolibre/callback`
+    const origin      = request.nextUrl.origin
+    const from        = request.nextUrl.searchParams.get("from") || ""
+    const redirectUri = `${origin}/api/mercadolibre/callback`
 
-    console.log("[v0] ML Auth - Starting authentication flow")
-    console.log("[v0] ML Auth - Origin:", request.nextUrl.origin)
-    console.log("[v0] ML Auth - Redirect URI:", redirectUri)
-    console.log("[v0] ML Auth - CLIENT_ID configured:", !!process.env.MERCADOLIBRE_CLIENT_ID)
-    console.log("[v0] ML Auth - CLIENT_SECRET configured:", !!process.env.MERCADOLIBRE_CLIENT_SECRET)
-
-    const codeVerifier = generateCodeVerifier()
+    const codeVerifier  = generateCodeVerifier()
     const codeChallenge = await generateCodeChallenge(codeVerifier)
 
-    console.log("[v0] ML Auth - Code verifier generated")
-    console.log("[v0] ML Auth - Code challenge generated")
-
-    const authUrl = getMercadoLibreAuthUrl(redirectUri, codeChallenge)
+    // Construir authUrl con state para saber el origen del flujo
+    const state   = from ? encodeURIComponent(`from=${from}`) : ""
+    const authUrl = getMercadoLibreAuthUrl(redirectUri, codeChallenge, state)
 
     const response = NextResponse.redirect(authUrl)
     response.cookies.set("ml_code_verifier", codeVerifier, {

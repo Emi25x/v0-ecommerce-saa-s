@@ -7,6 +7,34 @@ const BATCH_SIZE = 200 // Reducido para evitar timeout en Supabase
 const csvCache: Map<string, { data: Record<string, string>[], timestamp: number }> = new Map()
 const CACHE_TTL = 10 * 60 * 1000 // 10 minutos
 
+/**
+ * Normaliza column_mapping para soportar formatos viejos y nuevos
+ * Formato viejo: { sku: "SKU", ean: "EAN", ... }
+ * Formato nuevo: { delimiter: ";", has_header: true, mappings: { sku: "SKU", ... } }
+ */
+function normalizeColumnMapping(columnMapping: any): {
+  delimiter: string
+  mappings: Record<string, string>
+} {
+  if (!columnMapping) {
+    return { delimiter: "|", mappings: {} }
+  }
+  
+  // Si tiene la estructura nueva con "mappings"
+  if (columnMapping.mappings) {
+    return {
+      delimiter: columnMapping.delimiter || "|",
+      mappings: columnMapping.mappings
+    }
+  }
+  
+  // Formato viejo: todo el objeto ES el mapping
+  return {
+    delimiter: "|",
+    mappings: columnMapping
+  }
+}
+
 export interface BatchImportResult {
   success: boolean
   done: boolean
@@ -86,7 +114,31 @@ export async function executeBatchImport(
   } else {
     console.log(`[v0] Batch import: Descargando archivo desde ${fileUrl}`)
 
-    const fileResponse = await fetch(fileUrl)
+    // Construir headers y URL según tipo de autenticación
+    let fetchUrl = fileUrl
+    const fetchHeaders: HeadersInit = {
+      'User-Agent': 'Ecommerce-Manager/1.0'
+    }
+
+    const authType = source.auth_type
+    const credentials = source.credentials
+
+    if (authType === "basic_auth" && credentials?.username && credentials?.password) {
+      const auth = Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')
+      fetchHeaders['Authorization'] = `Basic ${auth}`
+    } else if (authType === "bearer_token" && credentials?.token) {
+      fetchHeaders['Authorization'] = `Bearer ${credentials.token}`
+    } else if (authType === "query_params" && credentials?.type === "query_params" && credentials?.params) {
+      // Agregar query params a la URL
+      const url = new URL(fetchUrl)
+      Object.keys(credentials.params).forEach(key => {
+        url.searchParams.set(key, credentials.params[key])
+      })
+      fetchUrl = url.toString()
+    }
+    // Si authType === "none" o null, no se agrega autenticación
+
+    const fileResponse = await fetch(fetchUrl, { headers: fetchHeaders })
     if (!fileResponse.ok) {
       return {
         success: false,
@@ -105,10 +157,14 @@ export async function executeBatchImport(
     const csvText = await fileResponse.text()
     console.log(`[v0] Batch import: Archivo descargado, ${csvText.length} caracteres`)
 
+    // Normalizar column_mapping para obtener delimiter y mappings
+    const { delimiter, mappings } = normalizeColumnMapping(source.column_mapping)
+    console.log(`[v0] Batch import: Usando delimiter "${delimiter}"`)
+
     const parseResult = Papa.parse(csvText, {
       header: true,
       skipEmptyLines: true,
-      delimiter: "|",
+      delimiter: delimiter,
     })
 
     data = parseResult.data as Record<string, string>[]
@@ -132,7 +188,8 @@ export async function executeBatchImport(
   }
 
   const batch = data.slice(offset, offset + BATCH_SIZE)
-  const mapping = source.column_mapping || {}
+  // Usar mappings ya normalizado
+  const { mappings: mapping } = normalizeColumnMapping(source.column_mapping)
 
   let updatedCount = 0
   let createdCount = 0

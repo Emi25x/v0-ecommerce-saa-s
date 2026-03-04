@@ -665,6 +665,7 @@ export default function InventoryPage() {
                     </TableHead>
                     <TableHead className="border-r-2 border-border w-16">Imagen</TableHead>
                     <TableHead className="border-r-2 border-border">SKU</TableHead>
+                    <TableHead className="border-r-2 border-border">EAN</TableHead>
                     <TableHead className="border-r-2 border-border">Título</TableHead>
                     <TableHead className="border-r-2 border-border">
                       <Button
@@ -757,13 +758,14 @@ export default function InventoryPage() {
                           )}
                         </TableCell>
                         <TableCell className="border-r-2 border-border font-mono text-sm">{product.sku}</TableCell>
+                        <TableCell className="border-r-2 border-border font-mono text-xs text-muted-foreground">{product.ean || "—"}</TableCell>
                         <TableCell className="border-r-2 border-border max-w-xs truncate">{product.title}</TableCell>
                         <TableCell className="border-r-2 border-border font-mono">
                           ${product.price != null ? product.price.toFixed(2) : "N/A"}
                         </TableCell>
                         <TableCell className="border-r-2 border-border">{product.stock ?? "N/A"}</TableCell>
                         <TableCell className="border-r-2 border-border">
-                          {product.source && Array.isArray(product.source) && product.source.length > 0 ? (
+                          {Array.isArray(product.source) && product.source.length > 0 ? (
                             <div className="flex flex-wrap gap-1">
                               {product.source.slice(0, 2).map((src: string, idx: number) => (
                                 <Badge key={idx} variant="secondary" className="text-xs">

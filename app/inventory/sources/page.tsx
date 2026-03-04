@@ -1,11 +1,12 @@
 "use client"
 
 import { useCallback, useEffect, useState, useRef } from "react" // Importar useRef
+import { useRouter } from "next/navigation"
 import { createBrowserClient } from "@supabase/ssr"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Calendar, Clock, FileText, Play, Settings, Trash2, Upload, History, CheckCircle2, ChevronDown, ChevronUp, StopCircle, Hourglass, X, Loader2, RefreshCw, Database, ExternalLink, ArrowRight, Copy, AlertTriangle, Search } from 'lucide-react' // Importar AlertTriangle y DollarSign
+import { Calendar, Clock, FileText, Play, Settings, Trash2, Upload, History, CheckCircle2, ChevronDown, ChevronUp, StopCircle, Hourglass, X, Loader2, RefreshCw, Database, ExternalLink, ArrowRight, Copy, AlertTriangle, Search, Download, RotateCcw } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -21,10 +22,10 @@ import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
 import Link from "next/link"
 import Papa from "papaparse" // Importar PapaParse
-import { useRouter } from 'next/navigation' // Importar useRouter
 
 // Mover los hooks de estado al nivel superior del componente
 const App = () => {
+  const router = useRouter()
   // Envolver la lógica del componente en una función principal
   const [showDiagnosticDialog, setShowDiagnosticDialog] = useState(false)
   const [diagnosticData, setDiagnosticData] = useState<any>(null)
@@ -160,9 +161,6 @@ const App = () => {
     }
   }
 
-  // Asegurarse de que useRouter se llame dentro del componente
-  const router = useRouter()
-
   const [sources, setSources] = useState<SourceWithSchedule[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedSource, setSelectedSource] = useState<SourceWithSchedule | null>(null)
@@ -172,7 +170,6 @@ const App = () => {
   const [showScheduleDialog, setShowScheduleDialog] = useState(false)
   const [schedulesTableExists, setSchedulesTableExists] = useState(false)
   const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set())
-  const [showImportConfirmDialog, setShowImportConfirmDialog] = useState(false)
   const [sourceToImport, setSourceToImport] = useState<SourceWithSchedule | null>(null)
   const [showProgressDialog, setShowProgressDialog] = useState(false)
   const [backgroundImports, setBackgroundImports] = useState<Map<string, ImportProgressState>>(new Map())
@@ -201,8 +198,59 @@ const App = () => {
   })
 
   const [importMode, setImportMode] = useState<"update" | "overwrite" | "skip">("update")
+  const [exportingConfig, setExportingConfig] = useState(false)
+  const [restoringConfig, setRestoringConfig] = useState(false)
 
-  const isExecutingRef = useRef(false) // Renamed from executingRef
+  const isExecutingRef = useRef(false)
+
+  async function handleExportConfig() {
+    setExportingConfig(true)
+    try {
+      const res = await fetch("/api/inventory/sources/export-config")
+      if (!res.ok) throw new Error(`Error ${res.status}`)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `import_sources_${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast({ title: "Configuración exportada", description: "El archivo JSON fue descargado." })
+    } catch (e: any) {
+      toast({ title: "Error al exportar", description: e.message, variant: "destructive" })
+    } finally {
+      setExportingConfig(false)
+    }
+  }
+
+  async function handleRestoreConfig() {
+    const input = document.createElement("input")
+    input.type = "file"
+    input.accept = ".json,application/json"
+    input.onchange = async (e: any) => {
+      const file = e.target.files?.[0]
+      if (!file) return
+      setRestoringConfig(true)
+      try {
+        const text = await file.text()
+        const json = JSON.parse(text)
+        const res = await fetch("/api/inventory/sources/import-config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(json),
+        })
+        const result = await res.json()
+        if (!res.ok) throw new Error(result.error || `Error ${res.status}`)
+        toast({ title: "Config restaurada", description: `${result.restored} fuentes actualizadas: ${result.names.join(", ")}` })
+        loadSources()
+      } catch (e: any) {
+        toast({ title: "Error al restaurar", description: e.message, variant: "destructive" })
+      } finally {
+        setRestoringConfig(false)
+      }
+    }
+    input.click()
+  }
 
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -286,14 +334,24 @@ const App = () => {
         console.log("[v0] No se pudo cargar el historial:", historyError.message)
       }
 
+      // Eliminar duplicados por ID (prevenir duplicados si existen en DB)
+      const uniqueSourcesMap = new Map()
+      ;(sourcesData || []).forEach((source) => {
+        if (!uniqueSourcesMap.has(source.id)) {
+          uniqueSourcesMap.set(source.id, source)
+        }
+      })
+      
+      const uniqueSources = Array.from(uniqueSourcesMap.values())
+
       // Combinar datos
-      const sourcesWithSchedules: SourceWithSchedule[] = (sourcesData || []).map((source) => ({
+      const sourcesWithSchedules: SourceWithSchedule[] = uniqueSources.map((source) => ({
         ...source,
         schedules: schedulesData.filter((s) => s.source_id === source.id),
         last_import: historyData?.find((h) => h.source_id === source.id),
       }))
 
-      console.log("[v0] Fuentes cargadas:", sourcesWithSchedules.length)
+      console.log("[v0] Fuentes cargadas:", sourcesWithSchedules.length, "únicas de", sourcesData?.length || 0, "totales")
       setSources(sourcesWithSchedules)
       return sourcesWithSchedules
     } catch (error) {
@@ -314,17 +372,19 @@ const App = () => {
       return
     }
 
-    setSourceToImport(source)
-    // Para catálogos base (Arnoia), usar modo "skip" por defecto (solo importar nuevos)
-    // Para actualizaciones de stock/precio, usar modo "update"
-    if (source.feed_type === "catalog" && source.name.toLowerCase().includes("arnoia") && !source.name.toLowerCase().includes("act")) {
-      setImportMode("skip")
-    } else if (source.feed_type === "stock_price") {
-      setImportMode("update")
-    } else {
-      setImportMode("update")
+    // Determinar el modo por defecto según el tipo de feed
+    let defaultMode = "create"
+    if (source.feed_type === "catalog") {
+      defaultMode = "create" // Solo crear nuevos productos
+    } else if (source.feed_type === "stock_price" || source.name.toLowerCase().includes("stock")) {
+      defaultMode = "update" // Actualizar stock/precio
+    } else if (source.feed_type === "update") {
+      defaultMode = "update" // Actualizar productos existentes
     }
-    setShowImportConfirmDialog(true)
+
+    // Navegar directamente a batch-import sin autoStart para que el usuario configure opciones
+    const encodedName = encodeURIComponent(source.name)
+    router.push(`/inventory/sources/batch-import?sourceId=${source.id}&name=${encodedName}&mode=${defaultMode}`)
   }
 
   const executeImport = useCallback(
@@ -859,6 +919,17 @@ const App = () => {
       })
 
       setRunningImports(newRunningImports)
+
+      // Limpiar backgroundImports de fuentes que ya no tienen imports activos
+      setBackgroundImports((prev) => {
+        const cleaned = new Map(prev)
+        for (const sourceId of cleaned.keys()) {
+          if (!newRunningImports.has(sourceId)) {
+            cleaned.delete(sourceId)
+          }
+        }
+        return cleaned
+      })
     } catch (error) {
       console.error("[v0] Error checking running imports:", error)
     }
@@ -876,42 +947,7 @@ const App = () => {
     })
   }
 
-  async function confirmImport() {
-    if (!sourceToImport) return
 
-    setShowImportConfirmDialog(false)
-
-    // Redirigir a la página de batch-import con el sourceId y nombre
-    // Esta página maneja el progreso correctamente
-    if (sourceToImport.url_template) {
-      const mode = sourceToImport.feed_type === "stock_price" ? "update" : importMode
-      const encodedName = encodeURIComponent(sourceToImport.name)
-      window.location.href = `/inventory/sources/batch-import?sourceId=${sourceToImport.id}&mode=${mode}&name=${encodedName}`
-      return
-    }
-
-    // Importación sin URL (subida de archivo manual)
-    setShowProgressDialog(true)
-    isExecutingRef.current = true
-
-    const newProgress: ImportProgressState = {
-      total: 0,
-      processed: 0,
-      imported: 0,
-      updated: 0,
-      failed: 0,
-      skipped: 0,
-      status: "running",
-      startTime: new Date(),
-      lastUpdate: new Date(),
-      speed: 0,
-      errors: [],
-      csvInfo: null,
-    }
-
-    setBackgroundImports((prev) => new Map(prev).set(sourceToImport.id, newProgress))
-    await executeImport(sourceToImport)
-  }
 
   function cancelImport() {
     console.log("[v0] Cancelando importación...")
@@ -1230,6 +1266,14 @@ const App = () => {
           <p className="text-muted-foreground">Administra tus fuentes de datos y configuraciones de importación</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={handleExportConfig} disabled={exportingConfig}>
+            {exportingConfig ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Exportar config
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleRestoreConfig} disabled={restoringConfig}>
+            {restoringConfig ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+            Restaurar config
+          </Button>
           <Button variant="outline" size="sm" onClick={handleRunCron} disabled={runningCron}>
             {runningCron ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
             Ejecutar Cron
@@ -1320,6 +1364,19 @@ const App = () => {
                         ) : (
                           <Play className="h-4 w-4" />
                         )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const encodedName = encodeURIComponent(source.name)
+                          const defaultMode = source.feed_type === "catalog" ? "upsert" : "update"
+                          router.push(`/inventory/sources/import-pro?sourceId=${source.id}&name=${encodedName}&mode=${defaultMode}`)
+                        }}
+                        disabled={isRunning || importing === source.id}
+                        title="Importador PRO (anti-timeout)"
+                      >
+                        <Database className="h-4 w-4" />
                       </Button>
                       <Button variant="outline" size="sm" onClick={() => handleDeleteSource(source)}>
                         <Trash2 className="h-4 w-4" />
@@ -1523,71 +1580,7 @@ const App = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showImportConfirmDialog} onOpenChange={setShowImportConfirmDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirmar Importación</DialogTitle>
-            <DialogDescription>
-              Estás a punto de importar desde &quot;{sourceToImport?.name}&quot;
-              {sourceToImport?.feed_type === "stock_price" && " (solo stock y precios)"}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            {/* Solo mostrar selector de modo si NO es tipo stock */}
-            {sourceToImport?.feed_type !== "stock_price" && (
-              <div className="space-y-2">
-                <Label htmlFor="import-mode">Modo de Importación</Label>
-                <Select value={importMode} onValueChange={(value: any) => setImportMode(value)}>
-                  <SelectTrigger id="import-mode">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="update">
-                      <div className="flex flex-col">
-                        <span className="font-medium">Actualizar existentes</span>
-                        <span className="text-xs text-muted-foreground">
-                          Actualiza productos existentes por EAN
-                        </span>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="overwrite">
-                      <div className="flex flex-col">
-                        <span className="font-medium">Sobrescribir todo</span>
-                        <span className="text-xs text-muted-foreground">
-                          Reemplaza completamente los productos existentes
-                        </span>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="skip">
-                      <div className="flex flex-col">
-                        <span className="font-medium">Solo nuevos</span>
-                        <span className="text-xs text-muted-foreground">Ignora productos que ya existen</span>
-                      </div>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            
-            {/* Mensaje informativo para tipo stock */}
-            {sourceToImport?.feed_type === "stock_price" && (
-              <div className="rounded-lg border p-3 bg-muted/50">
-                <p className="text-sm text-muted-foreground">
-                  Se actualizará el stock y precio de los productos existentes que coincidan por EAN.
-                </p>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowImportConfirmDialog(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={confirmImport}>
-              Iniciar Importación
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+
 
       <Dialog open={showProgressDialog} onOpenChange={(open) => !open && closeProgressDialog()}>
         <DialogContent className="max-w-2xl">
@@ -1725,84 +1718,42 @@ const App = () => {
               )}
             </Button>
 
-            {analysisResult?.needsSQLSetup && (
-              <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 space-y-3">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
-                  <div className="space-y-2 flex-1">
-                    <div className="font-semibold text-yellow-900 dark:text-yellow-100">
-                      Configuración SQL requerida
-                    </div>
-                    <div className="text-sm text-yellow-800 dark:text-yellow-200">
-                      {analysisResult.instructions}
-                    </div>
-                    <div className="text-xs text-yellow-700 dark:text-yellow-300 space-y-1">
-                      <div className="font-medium">Pasos para configurar:</div>
-                      <ol className="list-decimal list-inside space-y-1 ml-2">
-                        <li>Abre el script SQL en la carpeta <code className="bg-yellow-100 dark:bg-yellow-900 px-1 rounded">scripts/</code></li>
-                        <li>Copia el contenido del archivo <code className="bg-yellow-100 dark:bg-yellow-900 px-1 rounded">EJECUTAR_PRIMERO_crear_funciones.sql</code></li>
-                        <li>Abre el SQL Editor de Supabase</li>
-                        <li>Pega y ejecuta el script</li>
-                        <li>Vuelve aquí y analiza nuevamente</li>
-                      </ol>
-                    </div>
-                    {analysisResult.sqlEditorUrl && (
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="mt-2 bg-transparent"
-                        onClick={() => window.open(analysisResult.sqlEditorUrl, '_blank')}
-                      >
-                        <ExternalLink className="mr-2 h-4 w-4" />
-                        Abrir SQL Editor de Supabase
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {analysisResult && !isAnalyzing && !analysisResult.needsSQLSetup && (
+            {analysisResult && (
               <>
-                <div className="grid grid-cols-2 gap-4">
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm font-medium text-muted-foreground">
-                        Total Productos
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-3xl font-bold">{analysisResult.totalProducts.toLocaleString()}</div>
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm font-medium text-muted-foreground">
-                        SKUs Duplicados
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className={`text-3xl font-bold ${analysisResult.totalDuplicateSKUs > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        {analysisResult.totalDuplicateSKUs}
-                      </div>
-                      {analysisResult.totalDuplicateProducts !== undefined && analysisResult.totalDuplicateProducts > 0 && (
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {analysisResult.totalDuplicateProducts.toLocaleString()} productos en total
+                {analysisResult.needsSQLSetup ? (
+                  <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 space-y-3">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+                      <div className="space-y-2 flex-1">
+                        <div className="font-semibold text-yellow-900 dark:text-yellow-100">
+                          Configuración SQL requerida
                         </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {analysisResult.method && (
-                  <div className="text-xs text-muted-foreground text-center">
-                    Método: {analysisResult.method === 'sql_direct' ? 'SQL Directo (completo)' : 'Análisis de muestra'}
-                    {analysisResult.note && ` • ${analysisResult.note}`}
+                        <div className="text-sm text-yellow-800 dark:text-yellow-200">
+                          {analysisResult.instructions}
+                        </div>
+                        <div className="text-xs text-yellow-700 dark:text-yellow-300 space-y-1">
+                          <div className="font-medium">Pasos para configurar:</div>
+                          <ol className="list-decimal list-inside space-y-1 ml-2">
+                            <li>Abre el script SQL en la carpeta <code className="bg-yellow-100 dark:bg-yellow-900 px-1 rounded">scripts/</code></li>
+                            <li>Copia el contenido del archivo <code className="bg-yellow-100 dark:bg-yellow-900 px-1 rounded">EJECUTAR_PRIMERO_crear_funciones.sql</code></li>
+                            <li>Abre el SQL Editor de Supabase</li>
+                            <li>Pega y ejecuta el script</li>
+                            <li>Vuelve aquí y analiza nuevamente</li>
+                          </ol>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                )}
+                ) : (
+                  <>
+                    {analysisResult.method && (
+                      <div className="text-xs text-muted-foreground text-center mb-4">
+                        Método: {analysisResult.method === 'sql_direct' ? 'SQL Directo (completo)' : 'Análisis de muestra'}
+                        {analysisResult.note && ` • ${analysisResult.note}`}
+                      </div>
+                    )}
 
-                {analysisResult.totalDuplicateSKUs > 0 ? (
+                    {analysisResult.totalDuplicateSKUs > 0 ? (
                   <div className="space-y-4">
                     <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
                       <div className="flex items-center gap-2 mb-2">
@@ -1859,6 +1810,8 @@ const App = () => {
                     </div>
                   </div>
                 )}
+                  </>
+                )}
               </>
             )}
           </div>
@@ -1896,13 +1849,8 @@ const App = () => {
             <Button variant="outline" onClick={() => setShowResetDialog(false)}>
               Cancelar
             </Button>
-            <Button
-              variant="destructive"
-              onClick={handleResetDatabase}
-              disabled={resetLoading || resetConfirmText !== "ELIMINAR TODO"}
-            >
-              {resetLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
-              Eliminar Todo
+            <Button onClick={handleResetDatabase} disabled={resetConfirmText !== "ELIMINAR TODO"}>
+              Restablecer todo
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -3,6 +3,7 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
+import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { FileText as FeatherFileText, Upload as FeatherUpload } from "react-feather" // Importing FileText and Upload components from react-feather
 import { LogoutButton } from "@/components/logout-button"
@@ -160,6 +161,26 @@ const Target = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 )
 
+const Receipt = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    {...props}
+  >
+    <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z" />
+    <path d="M14 8H8" />
+    <path d="M16 12H8" />
+    <path d="M13 16H8" />
+  </svg>
+)
+
 const Database = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -182,7 +203,9 @@ const Database = (props: React.SVGProps<SVGSVGElement>) => (
 export function AppSidebar() {
   const pathname = usePathname()
   const [mlExpanded, setMlExpanded] = useState(true)
-  const [integrationsExpanded, setIntegrationsExpanded] = useState(true) // Declaring integrationsExpanded state
+  const [shopifyExpanded, setShopifyExpanded] = useState(true)
+  const [inventoryExpanded, setInventoryExpanded] = useState(true)
+  const [integrationsExpanded, setIntegrationsExpanded] = useState(true)
 
   const [lastVisits, setLastVisits] = useState({
     orders: null as string | null,
@@ -269,10 +292,12 @@ export function AppSidebar() {
 
           {mlExpanded && (
             <div className="ml-8 mt-1 flex flex-col gap-1">
-              <a
-                href="/products"
+
+              {/* ── Principal ── */}
+              <Link
+                href="/ml/publications"
                 className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/products")
+                  pathname?.startsWith("/ml/publications") && !pathname?.startsWith("/ml/publications-alerts")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
@@ -286,11 +311,24 @@ export function AppSidebar() {
                     {notifications.products}
                   </span>
                 )}
-              </a>
-              <a
-                href="/orders"
+              </Link>
+              <Link
+                href="/ml/publications-alerts"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname === "/ml/publications-alerts"
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                </svg>
+                <span>Alertas</span>
+              </Link>
+              <Link
+                href="/ml/orders"
                 className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/orders")
+                  pathname?.startsWith("/ml/orders")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
@@ -304,11 +342,11 @@ export function AppSidebar() {
                     {notifications.orders}
                   </span>
                 )}
-              </a>
-              <a
-                href="/shipments"
+              </Link>
+              <Link
+                href="/ml/shipments"
                 className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/shipments")
+                  pathname?.startsWith("/ml/shipments")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
@@ -322,45 +360,254 @@ export function AppSidebar() {
                     {notifications.shipments}
                   </span>
                 )}
-              </a>
-              <a
-                href="/pagos"
+              </Link>
+              <Link
+                href="/ml/payments"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/pagos")
+                  pathname?.startsWith("/ml/payments")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
               >
                 <CreditCard className="h-4 w-4" />
                 <span>Pagos</span>
-              </a>
-              <a
-                href="/competition"
+              </Link>
+              <Link
+                href="/ml/messages"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/competition")
+                  pathname?.startsWith("/ml/messages")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
               >
-                <Target className="h-4 w-4" />
-                <span>Competencia</span>
-              </a>
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                </svg>
+                <span>Mensajes</span>
+              </Link>
+
+              {/* ── Sincronización ── */}
               <div className="my-2 border-t border-sidebar-border" />
-              <a
+              <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">Sincronización</p>
+              <Link
                 href="/ml/importer"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/ml/importer")
+                  pathname?.startsWith("/ml/importer")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
               >
                 <Database className="h-4 w-4" />
                 <span>Importación inicial</span>
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/ml/products/build"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/ml/products/build")
+                  pathname?.startsWith("/ml/products/build")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M12 8v8m-4-4h8" />
+                </svg>
+                <span>Crear productos</span>
+              </Link>
+              <Link
+                href="/ml/matcher"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/ml/matcher")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/>
+                  <rect width="4" height="12" x="2" y="9"/><circle cx="4" cy="4" r="2"/>
+                </svg>
+                <span>Vinculación</span>
+              </Link>
+
+              {/* ── Catálogo ── */}
+              <div className="my-2 border-t border-sidebar-border" />
+              <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">Catálogo</p>
+              <Link
+                href="/ml/catalog/eligibility"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/ml/catalog/eligibility")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>
+                </svg>
+                <span>Elegibilidad</span>
+              </Link>
+              <Link
+                href="/ml/catalog/optin"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/ml/catalog/optin")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 3h18v4H3z"/><path d="M3 10h18v4H3z"/><path d="M3 17h18v4H3z"/>
+                </svg>
+                <span>Opt-in / Crear catálogo</span>
+              </Link>
+              <Link
+                href="/ml/catalog/rules"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/ml/catalog/rules")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                </svg>
+                <span>Reglas / Tags</span>
+              </Link>
+
+              {/* ── Operativo ── */}
+              <div className="my-2 border-t border-sidebar-border" />
+              <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">Operativo</p>
+              <Link
+                href="/ml/moderations"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/ml/moderations")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+                <span>Moderaciones</span>
+              </Link>
+              <Link
+                href="/ml/health"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/ml/health")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                </svg>
+                <span>Salud / Exposición</span>
+              </Link>
+
+            </div>
+          )}
+        </div>
+
+        {/* Shopify */}
+        <div className="mt-2">
+          <button
+            onClick={() => setShopifyExpanded(!shopifyExpanded)}
+            className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <div className="flex items-center gap-3">
+              {/* Shopify bag icon */}
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z" />
+                <path d="M3 6h18" />
+                <path d="M16 10a4 4 0 0 1-8 0" />
+              </svg>
+              <span className="font-medium">Shopify</span>
+            </div>
+            <ChevronDown className={`h-4 w-4 transition-transform ${shopifyExpanded ? "rotate-180" : ""}`} />
+          </button>
+
+          {shopifyExpanded && (
+            <div className="ml-8 mt-1 flex flex-col gap-1">
+              <a
+                href="/shopify/orders"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/shopify/orders")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <ShoppingBag className="h-4 w-4" />
+                <span>Ventas</span>
+              </a>
+              <a
+                href="/shopify/sync"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/shopify/sync")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                  <path d="M21 3v5h-5" />
+                  <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                  <path d="M3 21v-5h5" />
+                </svg>
+                <span>Sincronización</span>
+              </a>
+              <a
+                href="/integrations/shopify-stores"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/integrations/shopify-stores")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <Settings className="h-4 w-4" />
+                <span>Tiendas</span>
+              </a>
+            </div>
+          )}
+        </div>
+
+        {/* Base de Productos */}
+        <div className="mt-2">
+          <button
+            onClick={() => setInventoryExpanded(!inventoryExpanded)}
+            className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <div className="flex items-center gap-3">
+              <Database className="h-5 w-5" />
+              <span className="font-medium">Base de Productos</span>
+            </div>
+            <ChevronDown className={`h-4 w-4 transition-transform ${inventoryExpanded ? "rotate-180" : ""}`} />
+          </button>
+
+          {inventoryExpanded && (
+            <div className="ml-8 mt-1 flex flex-col gap-1">
+              <a
+                href="/inventory"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  isActive("/inventory")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <Package className="h-4 w-4" />
+                <span>Productos</span>
+              </a>
+              <a
+                href="/inventory/sources"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  isActive("/inventory/sources")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <Database className="h-4 w-4" />
+                <span>Fuentes</span>
+              </a>
+              <a
+                href="/inventory/sources/new"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  isActive("/inventory/sources/new")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
@@ -369,38 +616,47 @@ export function AppSidebar() {
                   <rect x="3" y="3" width="18" height="18" rx="2" />
                   <path d="M12 8v8m-4-4h8" />
                 </svg>
-                <span>Crear productos</span>
+                <span>Nueva fuente</span>
               </a>
               <a
-                href="/ml/matcher"
+                href="/inventory/sources/batch-import"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/ml/matcher")
+                  pathname?.startsWith("/inventory/sources/batch-import")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <FeatherUpload className="h-4 w-4" />
+                <span>Importación inicial</span>
+              </a>
+              <a
+                href="/suppliers"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  isActive("/suppliers")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <Truck className="h-4 w-4" />
+                <span>Proveedores</span>
+              </a>
+              <a
+                href="/warehouses"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  isActive("/warehouses")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z" />
-                  <rect width="4" height="12" x="2" y="9" />
-                  <circle cx="4" cy="4" r="2" />
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                  <polyline points="9 22 9 12 15 12 15 22" />
                 </svg>
-                <span>Vinculación</span>
+                <span>Almacenes</span>
               </a>
             </div>
           )}
         </div>
-
-        <a
-          href="/inventory"
-          className={`mt-2 flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${
-            isActive("/inventory")
-              ? "bg-sidebar-accent text-sidebar-accent-foreground"
-              : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          }`}
-        >
-          <Database className="h-5 w-5" />
-          <span className="font-medium">Base de Productos</span>
-        </a>
 
         <div className="mt-2">
           <button
@@ -463,6 +719,37 @@ export function AppSidebar() {
             </div>
           )}
         </div>
+
+        {/* Facturación */}
+        <div className="mt-2">
+          <a
+            href="/billing"
+            className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${
+              isActive("/billing")
+                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            }`}
+          >
+            <Receipt className="h-5 w-5" />
+            <span className="font-medium">Facturación</span>
+          </a>
+          <div className="ml-8 mt-1 flex flex-col gap-1">
+            <a
+              href="/billing/mercadolibre"
+              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                pathname?.startsWith("/billing/mercadolibre")
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              }`}
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M14.867 5.166l-4.24 13.668h3.155l4.24-13.668h-3.155zm-6.84 0L3.787 18.834h3.155l4.24-13.668H8.027z" />
+              </svg>
+              <span>Ventas ML</span>
+            </a>
+          </div>
+        </div>
+
       </nav>
       
       {/* Usuario y logout al final del sidebar */}

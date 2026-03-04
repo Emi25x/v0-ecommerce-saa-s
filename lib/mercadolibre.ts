@@ -60,19 +60,18 @@ function base64UrlEncode(array: Uint8Array): string {
 /**
  * Get authorization URL for Mercado Libre OAuth with PKCE
  */
-export function getMercadoLibreAuthUrl(redirectUri: string, codeChallenge: string): string {
+export function getMercadoLibreAuthUrl(redirectUri: string, codeChallenge: string, state = ""): string {
   const clientId = process.env.MERCADOLIBRE_CLIENT_ID
   if (!clientId) {
     throw new Error("MERCADOLIBRE_CLIENT_ID not configured")
   }
 
   const encodedRedirectUri = encodeURIComponent(redirectUri)
-  const scope = encodeURIComponent("offline_access read write")
-  const encodedChallenge = encodeURIComponent(codeChallenge)
+  const scope              = encodeURIComponent("offline_access read write")
+  const encodedChallenge   = encodeURIComponent(codeChallenge)
 
-  const authUrl = `https://auth.mercadolibre.com/authorization?response_type=code&client_id=${clientId}&redirect_uri=${encodedRedirectUri}&scope=${scope}&code_challenge=${encodedChallenge}&code_challenge_method=S256`
-
-  console.log("[v0] ML Auth URL with PKCE:", authUrl)
+  let authUrl = `https://auth.mercadolibre.com/authorization?response_type=code&client_id=${clientId}&redirect_uri=${encodedRedirectUri}&scope=${scope}&code_challenge=${encodedChallenge}&code_challenge_method=S256`
+  if (state) authUrl += `&state=${state}`
 
   return authUrl
 }

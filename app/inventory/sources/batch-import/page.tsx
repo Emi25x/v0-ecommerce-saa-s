@@ -5,114 +5,310 @@ import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Label } from "@/components/ui/label"
 
 export default function BatchImportPage() {
   const searchParams = useSearchParams()
   const [isRunning, setIsRunning] = useState(false)
-  const [sourceId, setSourceId] = useState<string>("0477aa50-1c71-40b2-9530-9c794eb32793") // Default Arnoia
+  const [sourceId, setSourceId] = useState<string>("0477aa50-1c71-40b2-9530-9c794eb32793")
   const [sourceName, setSourceName] = useState<string>("Arnoia")
   const [importMode, setImportMode] = useState<string>("upsert")
+
+  // Contadores acumulados (solo se suman si upsert ok)
+  const [totalProcessed, setTotalProcessed] = useState(0)
+  const [totalCreated, setTotalCreated] = useState(0)
+  const [totalUpdated, setTotalUpdated] = useState(0)
+  const [totalFailed, setTotalFailed] = useState(0)
+  const [totalTimeouts, setTotalTimeouts] = useState(0)
+  const [totalRows, setTotalRows] = useState(0)
   const [progress, setProgress] = useState(0)
-  const [total, setTotal] = useState(0)
-  const [processed, setProcessed] = useState(0)
-  const [updated, setUpdated] = useState(0)
-  const [created, setCreated] = useState(0)
   const [status, setStatus] = useState<string>("")
   const [logs, setLogs] = useState<string[]>([])
+
+  // Métricas dinámicas del último lote
+  const [lastBatchSize, setLastBatchSize] = useState(500)
+  const [lastDurationMs, setLastDurationMs] = useState(0)
+
   const abortRef = useRef(false)
+  const logsEndRef = useRef<HTMLDivElement>(null)
 
   const addLog = (message: string) => {
-    setLogs((prev) => [...prev.slice(-50), `${new Date().toLocaleTimeString()} - ${message}`])
+    setLogs(prev => [...prev.slice(-100), `${new Date().toLocaleTimeString()} - ${message}`])
   }
 
-  // Leer parámetros de URL al cargar
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [logs])
+
   useEffect(() => {
     const urlSourceId = searchParams.get("sourceId")
     const urlMode = searchParams.get("mode")
     const urlName = searchParams.get("name")
-    
-    if (urlSourceId) {
-      setSourceId(urlSourceId)
-    }
-    
-    if (urlName) {
-      setSourceName(decodeURIComponent(urlName))
-    }
-    
-    if (urlMode && ["update", "create", "upsert"].includes(urlMode)) {
-      setImportMode(urlMode)
+    const autoStart = searchParams.get("autoStart")
+
+    if (urlSourceId) setSourceId(urlSourceId)
+    if (urlName) setSourceName(decodeURIComponent(urlName))
+    if (urlMode && ["update", "create", "upsert"].includes(urlMode)) setImportMode(urlMode)
+
+    if (autoStart === "true" && urlSourceId && !isRunning) {
+      setTimeout(() => startBatchImport(), 500)
     }
   }, [searchParams])
 
   const startBatchImport = async () => {
-    // Obtener sourceId directamente de la URL para evitar problemas de timing con el estado
     const urlSourceId = searchParams.get("sourceId") || sourceId
-    console.log("[v0] Starting batch import with sourceId:", urlSourceId, "mode:", importMode)
-    
+
     setIsRunning(true)
     setProgress(0)
-    setTotal(0)
-    setProcessed(0)
-    setUpdated(0)
-    setCreated(0)
+    setTotalRows(0)
+    setTotalProcessed(0)
+    setTotalUpdated(0)
+    setTotalCreated(0)
+    setTotalFailed(0)
+    setTotalTimeouts(0)
+    setLastBatchSize(500)
+    setLastDurationMs(0)
     setLogs([])
     abortRef.current = false
 
-    let offset = 0
-    let totalUpdated = 0
-    let totalCreated = 0
-    let done = false
-
     addLog(`Iniciando importacion por lotes de ${sourceName}...`)
+
+    const nameLower = sourceName.toLowerCase()
+    const isAzeta = nameLower.includes("azeta")
+    const isArnoiaStock = nameLower.includes("arnoia") && nameLower.includes("stock")
+
+    // Arnoia Stock: endpoint dedicado simple
+    if (isArnoiaStock) {
+      try {
+        setStatus("Procesando Arnoia Stock...")
+        addLog("Usando importador dedicado para Arnoia Stock...")
+        const response = await fetch("/api/arnoia/import-stock", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+        })
+        const result = await response.json().catch(() => ({}))
+        if (!response.ok) {
+          const msg = result.error || `Error ${response.status}`
+          addLog(`Error: ${msg}`)
+          setStatus(`Error: ${msg}`)
+          setIsRunning(false)
+          return
+        }
+        const c = result.created || 0
+        const u = result.updated || result.updated_count || 0
+        setTotalCreated(c); setTotalUpdated(u); setTotalProcessed(c + u); setTotalRows(c + u); setProgress(100)
+        addLog(`Completado: ${c} creados, ${u} actualizados`)
+        setStatus("Importacion completada")
+        setIsRunning(false)
+        return
+      } catch (err: any) {
+        addLog(`Error: ${err.message}`)
+        setStatus(`Error: ${err.message}`)
+        setIsRunning(false)
+        return
+      }
+    }
+
+    // AZETA: servidor hace stream ZIP→Blob directo (sin buffering), luego procesa en lotes
+    if (isAzeta) {
+      try {
+        // Paso 1: Servidor descarga ZIP y lo guarda en Blob via stream directo
+        setStatus("Descargando ZIP de AZETA al servidor...")
+        addLog("Paso 1/2: Descargando y guardando ZIP de AZETA (~230MB)...")
+        const dlRes = await fetch("/api/azeta/download", {
+          method: "POST",
+          credentials: "include",
+        })
+        const dlData = await dlRes.json().catch(() => ({}))
+        if (!dlRes.ok) {
+          addLog(`Error en descarga: ${dlData.error || `HTTP ${dlRes.status}`}`)
+          setStatus("Error en descarga")
+          setIsRunning(false)
+          return
+        }
+        const blobUrl = dlData.blob_url
+        addLog(`ZIP procesado: CSV ${dlData.csv_size_mb}MB, ${dlData.total_lines?.toLocaleString()} lineas (${dlData.elapsed_seconds}s)`)
+
+        // Paso 2: Procesar en lotes de 4MB desde el CSV en Blob
+        addLog(`ZIP descomprimido a CSV (${dlData.csv_size_mb}MB, ${dlData.total_lines?.toLocaleString()} lineas). Procesando...`)
+        setTotalRows(dlData.total_lines || 0)
+        let byteStart = 0
+        let headerLine: string | null = null
+        let accCreated = 0
+        let accUpdated = 0
+        let accProcessed = 0
+        let loopDone = false
+        let loteNum = 0
+
+        while (!loopDone && !abortRef.current) {
+          loteNum++
+          setStatus(`Lote ${loteNum} (${(byteStart / 1024 / 1024).toFixed(1)}MB procesados)...`)
+          const procBody: any = { blob_url: blobUrl, byte_start: byteStart, total_lines: dlData.total_lines }
+          if (headerLine) procBody.header_line = headerLine
+          const procRes = await fetch("/api/azeta/process", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(procBody),
+          })
+          const procData = await procRes.json().catch(() => ({}))
+          if (!procRes.ok) {
+            addLog(`Error lote ${loteNum}: ${procData.error || `HTTP ${procRes.status}`}`)
+            setStatus("Error en procesamiento")
+            setIsRunning(false)
+            await fetch("/api/azeta/process", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ blob_url: blobUrl, cleanup: true }) }).catch(() => {})
+            return
+          }
+
+          accCreated += procData.created || 0
+          accUpdated += procData.updated || 0
+          accProcessed += procData.rows_processed || 0
+          loopDone = procData.done === true
+          byteStart = procData.next_byte_start ?? byteStart
+          if (procData.header_line && !headerLine) headerLine = procData.header_line
+
+          setTotalCreated(accCreated)
+          setTotalUpdated(accUpdated)
+          setTotalProcessed(accProcessed)
+          if (dlData.total_lines > 0) {
+            setProgress(Math.min(99, Math.round((accProcessed / dlData.total_lines) * 100)))
+          }
+          addLog(`Lote ${loteNum}: +${procData.created} creados, +${procData.updated} actualizados, +${procData.discarded} descartados (${procData.elapsed_seconds}s)`)
+        }
+
+        // Limpiar blob temporal
+        await fetch("/api/azeta/process", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ blob_url: blobUrl, offset: 0, cleanup: true }),
+        }).catch(() => {})
+
+        setProgress(100)
+        addLog(`Completado: ${accCreated} creados, ${accUpdated} actualizados`)
+        setStatus("Importacion completada")
+        setIsRunning(false)
+        return
+      } catch (err: any) {
+        addLog(`Error: ${err.message}`)
+        setStatus(`Error: ${err.message}`)
+        setIsRunning(false)
+        return
+      }
+    }
+
+    // Batch generico para otras fuentes
+    let offset = 0
+    let accProcessed = 0
+    let accCreated = 0
+    let accUpdated = 0
+    let accFailed = 0
+    let accTimeouts = 0
+    let currentBatchSize = 500
+    let done = false
 
     while (!done && !abortRef.current) {
       try {
-        setStatus(`Procesando lote desde posicion ${offset}...`)
+        setStatus(`Procesando lote desde offset ${offset}...`)
         addLog(`Procesando lote desde offset ${offset}`)
 
-        // forceReload solo en la primera llamada para limpiar cache
-        const isFirstBatch = offset === 0
         const response = await fetch("/api/inventory/import/batch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sourceId: urlSourceId, offset, mode: importMode, forceReload: isFirstBatch }),
+          body: JSON.stringify({ sourceId: urlSourceId, offset, mode: importMode, batch_size: currentBatchSize }),
         })
 
+        const responseText = await response.text()
+
         if (!response.ok) {
-          const error = await response.json()
-          addLog(`Error: ${error.error}`)
-          setStatus(`Error: ${error.error}`)
+          let msg = `Error ${response.status}`
+          try { msg = JSON.parse(responseText).error || msg } catch {}
+          addLog(`Error: ${msg}`)
+          setStatus(`Error: ${msg}`)
           break
         }
 
-        const result = await response.json()
+        let result: any
+        try {
+          result = JSON.parse(responseText)
+        } catch {
+          addLog(`Error: Respuesta invalida del servidor`)
+          setStatus("Error: Respuesta invalida")
+          break
+        }
 
-        setTotal(result.total)
-        setProcessed(result.processed)
-        setProgress(result.progress || 0)
-        totalUpdated += result.updated || 0
-        totalCreated += result.created || 0
-        setUpdated(totalUpdated)
-        setCreated(totalCreated)
+        // Debug primer lote
+        if (result.debug) {
+          addLog(`[DEBUG] Delimiter: "${result.debug.delimiter}"`)
+          addLog(`[DEBUG] Headers (10 primeros): ${result.debug.headers_normalized?.slice(0, 10).join(", ")}`)
+          addLog(`[DEBUG] Sample EAN: ${result.debug.sample_ean}`)
+          addLog(`[DEBUG] Total filas en archivo: ${result.debug.total_rows_in_file}`)
+          if (result.debug.total_rows_in_file) {
+            setTotalRows(result.debug.total_rows_in_file)
+          }
+        }
 
-        addLog(`Lote completado: ${result.created || 0} creados, ${result.updated || 0} actualizados, progreso ${result.progress}%`)
+        // Acumular SOLO si no hubo error en ese lote
+        const loteOk = !result.last_error || result.last_reason === "success"
+        if (loteOk) {
+          accCreated += result.created || 0
+          accUpdated += result.updated || 0
+        } else {
+          accFailed += result.failed_rows || 0
+        }
+        accProcessed += result.rows_processed || 0
+        accTimeouts += result.timeout_count || 0
+
+        // Actualizar estado (sin closures stale — usar vars locales)
+        setTotalCreated(accCreated)
+        setTotalUpdated(accUpdated)
+        setTotalProcessed(accProcessed)
+        setTotalFailed(accFailed)
+        setTotalTimeouts(accTimeouts)
+        setLastDurationMs(result.duration_ms || 0)
+
+        // Batch size dinámico según sugerencia del server
+        if (result.suggested_next_batch_size) {
+          currentBatchSize = result.suggested_next_batch_size
+          setLastBatchSize(currentBatchSize)
+        }
+
+        // Progreso
+        if (totalRows > 0) {
+          setProgress(Math.min(99, Math.round((accProcessed / totalRows) * 100)))
+        } else if (!result.done) {
+          setProgress(prev => Math.min(90, prev + 5))
+        }
+
+        const skipped = (result.missing_ean || 0) + (result.invalid_ean || 0)
+        addLog(
+          `Lote: ${result.rows_seen} vistas, ${result.rows_processed} validas, ` +
+          `${result.created || 0} creadas, ${result.updated || 0} actualizadas, ` +
+          `${skipped} saltadas, ${result.failed_rows || 0} fallidas, ` +
+          `${result.duration_ms}ms, batch=${result.batch_size}`
+        )
+
+        if (result.timeout_count > 0) {
+          addLog(`[WARN] ${result.timeout_count} timeout(s) en este lote, batch reducido a ${currentBatchSize}`)
+        }
+        if (result.last_error && result.last_reason !== "success") {
+          addLog(`[ERROR] ${result.last_error}`)
+        }
 
         if (result.done) {
           done = true
-          setStatus("Importacion completada")
-          if (result.zeroStock && result.zeroStock > 0) {
-            addLog(`${result.zeroStock} productos sin stock en archivo puestos a stock=0`)
-          }
-          addLog(`Importacion completada. Creados: ${totalCreated}, Actualizados: ${totalUpdated}`)
+          setProgress(100)
+          setStatus(`Importacion completada`)
+          addLog(
+            `Finalizado. Procesadas: ${accProcessed}, Creadas: ${accCreated}, ` +
+            `Actualizadas: ${accUpdated}, Fallidas: ${accFailed}, Timeouts: ${accTimeouts}`
+          )
         } else {
-          offset = result.nextOffset
-          // Pequeña pausa entre lotes
-          await new Promise((resolve) => setTimeout(resolve, 500))
+          offset = result.next_offset ?? offset + result.rows_seen
+          await new Promise(r => setTimeout(r, 300))
         }
-      } catch (error) {
-        addLog(`Error de conexion: ${error}`)
+      } catch (error: any) {
+        addLog(`Error de conexion: ${error.message || error}`)
         setStatus("Error de conexion")
         break
       }
@@ -131,84 +327,106 @@ export default function BatchImportPage() {
     setStatus("Cancelando...")
   }
 
+  const fmt = (n: number) => n.toLocaleString("es-ES")
+
   return (
     <div className="container mx-auto py-8 max-w-4xl">
       <Card>
         <CardHeader>
-<CardTitle>Importacion por Lotes - {sourceName}</CardTitle>
-  <CardDescription>
-  Importa productos procesando en lotes. Mantené esta página abierta durante el proceso.
+          <CardTitle>Importacion por Lotes - {sourceName}</CardTitle>
+          <CardDescription>
+            Importa productos procesando en lotes. Mantene esta pagina abierta durante el proceso.
             El proceso puede tardar varios minutos pero no se interrumpira si cambias de pagina.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Selector de modo de importación */}
-          <div className="space-y-2">
-            <Label htmlFor="import-mode">Modo de importacion</Label>
-            <Select value={importMode} onValueChange={setImportMode} disabled={isRunning}>
-              <SelectTrigger id="import-mode" className="w-full max-w-xs">
-                <SelectValue placeholder="Seleccionar modo" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="upsert">Crear y actualizar</SelectItem>
-                <SelectItem value="update">Solo actualizar existentes</SelectItem>
-                <SelectItem value="create">Solo crear nuevos</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              {importMode === "update" && "Solo actualiza productos que ya existen en tu base de datos (por EAN)"}
-              {importMode === "create" && "Solo crea productos nuevos (por EAN), no modifica los existentes"}
-              {importMode === "upsert" && "Crea productos nuevos y actualiza los existentes (por EAN)"}
-            </p>
+
+          {/* Barra progreso superior */}
+          <div className="space-y-1">
+            <div className="flex justify-between text-sm">
+              <span>Procesadas: {fmt(totalProcessed)}</span>
+              <span>{fmt(totalUpdated + totalCreated)} actualizadas/creadas</span>
+            </div>
+            <Progress value={isRunning ? undefined : progress} className="h-2" />
           </div>
 
+          {/* Botones */}
           <div className="flex gap-4">
             <Button onClick={startBatchImport} disabled={isRunning}>
               {isRunning ? "Ejecutando..." : "Iniciar Importacion"}
             </Button>
             {isRunning && (
-              <Button variant="destructive" onClick={stopImport}>
-                Cancelar
-              </Button>
+              <Button variant="destructive" onClick={stopImport}>Cancelar</Button>
             )}
           </div>
 
-          {(isRunning || processed > 0) && (
+          {/* Métricas detalladas */}
+          {(isRunning || totalProcessed > 0) && (
             <div className="space-y-4">
               <div className="flex justify-between text-sm">
                 <span>Progreso: {progress}%</span>
-                <span>
-                  {processed.toLocaleString()} / {total.toLocaleString()} filas
-                </span>
+                <span>{fmt(totalProcessed)} / {fmt(totalRows || 0)} filas</span>
               </div>
               <Progress value={progress} />
-              <div className="grid grid-cols-3 gap-4 text-sm">
+
+              {/* Contadores principales */}
+              <div className="grid grid-cols-3 gap-3 text-sm">
                 <div className="p-3 bg-muted rounded">
                   <div className="font-medium">Creados</div>
-                  <div className="text-2xl font-bold text-blue-600">{created.toLocaleString()}</div>
+                  <div className="text-2xl font-bold text-blue-600">{fmt(totalCreated)}</div>
                 </div>
                 <div className="p-3 bg-muted rounded">
                   <div className="font-medium">Actualizados</div>
-                  <div className="text-2xl font-bold text-green-600">{updated.toLocaleString()}</div>
+                  <div className="text-2xl font-bold text-green-600">{fmt(totalUpdated)}</div>
                 </div>
                 <div className="p-3 bg-muted rounded">
                   <div className="font-medium">Estado</div>
                   <div className="text-sm">{status}</div>
                 </div>
               </div>
+
+              {/* Métricas de estabilidad */}
+              <div className="border border-yellow-200 bg-yellow-50 dark:bg-yellow-950/20 rounded p-3 text-xs">
+                <div className="font-medium mb-2">Metricas ultimo lote:</div>
+                <div className="grid grid-cols-4 gap-3">
+                  <div>
+                    <span className="text-muted-foreground">Fallidas:</span>{" "}
+                    <span className={`font-mono font-bold ${totalFailed > 0 ? "text-red-600" : "text-green-600"}`}>
+                      {fmt(totalFailed)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Timeouts:</span>{" "}
+                    <span className={`font-mono font-bold ${totalTimeouts > 0 ? "text-orange-600" : "text-green-600"}`}>
+                      {totalTimeouts}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Batch size:</span>{" "}
+                    <span className="font-mono font-bold text-blue-600">{fmt(lastBatchSize)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Duracion:</span>{" "}
+                    <span className="font-mono font-bold">{lastDurationMs > 0 ? `${(lastDurationMs / 1000).toFixed(1)}s` : "-"}</span>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
+          {/* Logs */}
           {logs.length > 0 && (
-            <div className="mt-4">
+            <div>
               <h3 className="font-medium mb-2">Logs</h3>
               <div className="bg-black text-green-400 p-4 rounded font-mono text-xs max-h-64 overflow-y-auto">
                 {logs.map((log, i) => (
                   <div key={i}>{log}</div>
                 ))}
+                <div ref={logsEndRef} />
               </div>
             </div>
           )}
+
         </CardContent>
       </Card>
     </div>

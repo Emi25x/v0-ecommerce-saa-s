@@ -65,11 +65,6 @@ export default function MLPublishPage() {
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set())
   const [selectedTemplate, setSelectedTemplate] = useState<string>("")
   const [selectedAccount, setSelectedAccount] = useState<string>("")
-  const [searchTerm, setSearchTerm] = useState("")
-  const [minStock, setMinStock] = useState<number>(5)
-  const [minPrice, setMinPrice] = useState<number>(9)
-  const [maxPrice, setMaxPrice] = useState<number>(1000)
-  const [languageFilter, setLanguageFilter] = useState<string>("SPA")
   const [publishMode, setPublishMode] = useState<"linked" | "catalog" | "traditional">("linked")
   const [previews, setPreviews] = useState<PublishPreview[]>([])
   const [publishing, setPublishing] = useState(false)
@@ -95,12 +90,16 @@ export default function MLPublishPage() {
   const [publishStartTime, setPublishStartTime] = useState<number | null>(null)
   const [bulkAction, setBulkAction] = useState<"publish" | "update_price">("publish") // Acción masiva
   const [priceProfiles, setPriceProfiles] = useState<{id: string, name: string, margin_percent: number, is_default: boolean}[]>([])
-  const [selectedPriceProfile, setSelectedPriceProfile] = useState<string>("")
   const [useIva, setUseIva] = useState<boolean>(false)
   const [ivaPercent, setIvaPercent] = useState<number>(0)
   const [useCommission, setUseCommission] = useState<boolean>(false)
   const [commissionPercent, setCommissionPercent] = useState<number>(0)
   const [marginPercent, setMarginPercent] = useState<number>(20)
+  const [minStock, setMinStock] = useState<number>(5)
+  const [minPrice, setMinPrice] = useState<number>(9)
+  const [maxPrice, setMaxPrice] = useState<number>(1000)
+  const [languageFilter, setLanguageFilter] = useState<string>("SPA")
+  const [searchTerm, setSearchTerm] = useState<string>("")
 
   // Construir URL de filtros para el servidor
   const buildFilterUrl = (onlyIds = false) => {
@@ -191,12 +190,7 @@ export default function MLPublishPage() {
       const profilesRes = await fetch("/api/price-profiles")
       const profilesData = await profilesRes.json()
       setPriceProfiles(profilesData.profiles || [])
-      const defaultProfile = profilesData.profiles?.find((p: any) => p.is_default)
-      if (defaultProfile) {
-        setSelectedPriceProfile(defaultProfile.id)
-      } else if (profilesData.profiles?.length > 0) {
-        setSelectedPriceProfile(profilesData.profiles[0].id)
-      }
+      // El perfil de precio se toma de la plantilla, no se selecciona aquí
     } catch (error) {
       toast({ title: "Error", description: "Error al cargar datos", variant: "destructive" })
     } finally {
@@ -268,7 +262,14 @@ export default function MLPublishPage() {
       return
     }
     
-    // Obtener total disponible antes de abrir el modal
+    // Si hay productos seleccionados, usar esa cantidad
+    if (selectedProducts.size > 0) {
+      setTotalAvailable(selectedProducts.size)
+      setShowPublishModal(true)
+      return
+    }
+    
+    // Si no hay seleccionados, obtener total disponible con filtros
     const fetchTotalAvailable = async () => {
       try {
         const res = await fetch(buildFilterUrl(true))
@@ -291,19 +292,30 @@ export default function MLPublishPage() {
     setElapsedTime(0)
     setPublishResults([]) // Limpiar resultados anteriores
     
-    // Obtener todos los IDs con los filtros actuales
-    const res = await fetch(buildFilterUrl(true))
-    const data = await res.json()
-    
-    if (!data.ids || data.ids.length === 0) {
-      toast({ title: "Sin productos", description: "No hay productos para publicar", variant: "destructive" })
-      setPublishingInProgress(false)
-      return
+    // Si hay productos seleccionados, usar SOLO esos
+    let productIds: string[]
+    if (selectedProducts.size > 0) {
+      productIds = Array.from(selectedProducts)
+      // Aplicar límite si está configurado
+      if (testLimit > 0) {
+        productIds = productIds.slice(0, testLimit)
+      }
+    } else {
+      // Si no hay seleccionados, obtener todos con los filtros actuales
+      const res = await fetch(buildFilterUrl(true))
+      const data = await res.json()
+      
+      if (!data.ids || data.ids.length === 0) {
+        toast({ title: "Sin productos", description: "No hay productos para publicar", variant: "destructive" })
+        setPublishingInProgress(false)
+        return
+      }
+      
+      // Aplicar límite de prueba si está configurado
+      const allIds = data.ids
+      productIds = testLimit > 0 ? allIds.slice(0, testLimit) : allIds
     }
     
-    // Aplicar límite de prueba si está configurado
-    const allIds = data.ids
-    const productIds = testLimit > 0 ? allIds.slice(0, testLimit) : allIds
     setPublishProgress({ current: 0, total: productIds.length, success: 0, errors: 0, skipped: 0 })
     
     let successCount = 0
@@ -766,27 +778,7 @@ export default function MLPublishPage() {
                   <p className="text-xs text-muted-foreground">0 para todos</p>
                 </div>
 
-                {/* Perfil de precios */}
-                <div className="space-y-2">
-                  <Label>Perfil de precios</Label>
-                  <Select value={selectedPriceProfile} onValueChange={setSelectedPriceProfile}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar perfil" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {priceProfiles.map(profile => (
-                        <SelectItem key={profile.id} value={profile.id}>
-                          {profile.name} ({profile.margin_percent}%)
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    <a href="/integrations/ml-templates" className="text-primary hover:underline">
-                      Gestionar perfiles en Calculadora
-                    </a>
-                  </p>
-                </div>
+                {/* El perfil de precios se toma de la plantilla seleccionada */}
               </div>
 
               <div className="flex items-center justify-between pt-4 border-t">
@@ -994,7 +986,10 @@ export default function MLPublishPage() {
                     disabled={!selectedTemplate || !selectedAccount}
                   >
                     <Upload className="h-4 w-4 mr-2" />
-                    Publicar masivo
+                    {selectedProducts.size > 0 
+                      ? `Publicar ${selectedProducts.size} seleccionados` 
+                      : "Publicar masivo (con filtros)"
+                    }
                   </Button>
                 </div>
               </div>
@@ -1138,8 +1133,15 @@ export default function MLPublishPage() {
                     <p className="text-sm font-medium">Configuración seleccionada:</p>
                     <ul className="text-sm space-y-1">
                       <li><strong>Acción:</strong> {bulkAction === "publish" ? "Publicar nuevos" : "Actualizar precios"}</li>
-                      <li><strong>Productos:</strong> {testLimit === 0 ? `Todos (${totalAvailable.toLocaleString()})` : `${testLimit} de ${totalAvailable.toLocaleString()}`}</li>
-                      <li><strong>Perfil:</strong> {priceProfiles.find(p => p.id === selectedPriceProfile)?.name || "No seleccionado"} ({priceProfiles.find(p => p.id === selectedPriceProfile)?.margin_percent || 0}%)</li>
+                      <li><strong>Productos:</strong> {testLimit === 0 ? (selectedProducts.size > 0 ? `${selectedProducts.size} seleccionados` : `Todos (${totalAvailable.toLocaleString()})`) : `${testLimit} de ${totalAvailable.toLocaleString()}`}</li>
+                      <li><strong>Perfil:</strong> {(() => {
+                        const selectedTemplateData = templates.find(t => t.id === selectedTemplate)
+                        if (selectedTemplateData?.price_profile_id) {
+                          const linkedProfile = priceProfiles.find(p => p.id === selectedTemplateData.price_profile_id)
+                          return linkedProfile ? `${linkedProfile.name} (${linkedProfile.margin_percent}%) - desde plantilla` : "Perfil no encontrado"
+                        }
+                        return "Usando margen de la plantilla"
+                      })()}</li>
                     </ul>
                     <p className="text-xs text-muted-foreground mt-2">
                       El precio se calcula automáticamente incluyendo tipo de cambio, comisión ML y cargos fijos.

@@ -9,30 +9,47 @@ export async function GET(request: NextRequest) {
     const error = searchParams.get("error")
 
     if (error) {
-      console.error("[v0] ML Callback - Error from ML:", error)
-      const errorDescription = searchParams.get("error_description")
-      console.error("[v0] ML Callback - Error description:", errorDescription)
-      return NextResponse.redirect(`${request.nextUrl.origin}/integrations?error=ml_error&message=${error}`)
+      return NextResponse.redirect(`${request.nextUrl.origin}/integrations?error=ml_error&message=${encodeURIComponent(error)}`)
     }
 
     if (!code) {
-      console.error("[v0] ML Callback - No code received")
       return NextResponse.redirect(`${request.nextUrl.origin}/integrations?error=no_code`)
     }
 
-    console.log("[v0] ML Callback - Code received:", code.substring(0, 10) + "...")
+    // El state puede contener token=<uuid> (verifier en BD) o from=billing (origen)
+    const stateRaw   = request.nextUrl.searchParams.get("state") || ""
+    const stateParam = decodeURIComponent(stateRaw)
+    const tokenMatch = stateParam.match(/token=([0-9a-f-]{36})/)
+    const tokenId    = tokenMatch?.[1] || null
 
-    const codeVerifier = request.cookies.get("ml_code_verifier")?.value
+    let codeVerifier: string | undefined
+
+    if (tokenId) {
+      // Flujo "link copiable": recuperar verifier de la BD
+      const supabaseForToken = await createClient()
+      const { data: tokenRow } = await supabaseForToken
+        .from("ml_auth_tokens")
+        .select("code_verifier, used, expires_at")
+        .eq("id", tokenId)
+        .single()
+
+      if (!tokenRow || tokenRow.used || new Date(tokenRow.expires_at) < new Date()) {
+      return NextResponse.redirect(`${request.nextUrl.origin}/integrations?error=token_expired`)
+    }
+
+      // Marcar como usado (un solo uso)
+      await supabaseForToken.from("ml_auth_tokens").update({ used: true }).eq("id", tokenId)
+      codeVerifier = tokenRow.code_verifier
+    } else {
+      // Flujo normal: verifier en cookie
+      codeVerifier = request.cookies.get("ml_code_verifier")?.value
+    }
 
     if (!codeVerifier) {
-      console.error("[v0] ML Callback - No code verifier found in cookies")
       return NextResponse.redirect(`${request.nextUrl.origin}/integrations?error=no_verifier`)
     }
 
-    console.log("[v0] ML Callback - Code verifier retrieved from cookie")
-
     const redirectUri = `${request.nextUrl.origin}/api/mercadolibre/callback`
-    console.log("[v0] ML Callback - Using redirect URI:", redirectUri)
 
     const tokens = await exchangeCodeForToken(code, redirectUri, codeVerifier)
 
@@ -54,31 +71,30 @@ export async function GET(request: NextRequest) {
       .eq("ml_user_id", user.id.toString())
       .single()
 
+    // Obtener el user_id de Supabase para asociar la cuenta ML al usuario autenticado
+    const { data: { user: authUser } } = await supabase.auth.getUser()
+
     if (existingAccount) {
-      // Update existing account
       await supabase
         .from("ml_accounts")
         .update({
-          access_token: tokens.access_token,
-          refresh_token: tokens.refresh_token,
+          access_token:     tokens.access_token,
+          refresh_token:    tokens.refresh_token,
           token_expires_at: tokenExpiresAt,
-          nickname: user.nickname,
-          updated_at: new Date().toISOString(),
+          nickname:         user.nickname,
+          user_id:          authUser?.id || null,
+          updated_at:       new Date().toISOString(),
         })
         .eq("id", existingAccount.id)
-
-      console.log("[v0] ML Account updated in database:", user.nickname)
     } else {
-      // Insert new account
       await supabase.from("ml_accounts").insert({
-        ml_user_id: user.id.toString(),
-        nickname: user.nickname,
-        access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token,
+        ml_user_id:       user.id.toString(),
+        nickname:         user.nickname,
+        access_token:     tokens.access_token,
+        refresh_token:    tokens.refresh_token,
         token_expires_at: tokenExpiresAt,
+        user_id:          authUser?.id || null,
       })
-
-      console.log("[v0] ML Account created in database:", user.nickname)
     }
 
     // Disparar sincronización inicial en background
@@ -98,9 +114,13 @@ export async function GET(request: NextRequest) {
       // No bloqueamos el redirect si falla el sync
     }
 
-    const response = NextResponse.redirect(
-      `${request.nextUrl.origin}/integrations?ml_connected=true&ml_user=${user.nickname}`,
-    )
+    // stateParam ya fue parseado arriba — determinar redirección de retorno
+    const fromBilling = stateParam.includes("from=billing")
+    const redirectTarget = fromBilling
+      ? `${request.nextUrl.origin}/billing/mercadolibre?ml_connected=true`
+      : `${request.nextUrl.origin}/integrations?ml_connected=true&ml_user=${encodeURIComponent(user.nickname)}`
+
+    const response = NextResponse.redirect(redirectTarget)
 
     // Delete the code verifier
     response.cookies.delete("ml_code_verifier")

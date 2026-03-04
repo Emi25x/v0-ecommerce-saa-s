@@ -7,8 +7,8 @@ import { ConditionalSidebar } from "@/components/conditional-sidebar"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "Ecommerce Manager - SaaS",
-  description: "Gestiona tu ecommerce con integraciones de Mercado Libre y Shopify",
+  title: "Ecommerce Manager",
+  description: "Gestiona tu ecommerce con integraciones de Mercado Libre, Shopify y más.",
   generator: "v0.app",
 }
 

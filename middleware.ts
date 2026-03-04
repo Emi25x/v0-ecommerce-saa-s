@@ -21,6 +21,18 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
+  // Permitir sin auth: API de importación y cron jobs
+  // Estas rutas usan service role de Supabase internamente — no necesitan sesión de usuario
+  if (
+    pathname.startsWith('/api/cron/') ||
+    pathname.startsWith('/api/azeta/') ||
+    pathname.startsWith('/api/arnoia/') ||
+    pathname.startsWith('/api/inventory/import/') ||
+    pathname.startsWith('/api/inventory/sources/')
+  ) {
+    return NextResponse.next()
+  }
+
   // Proteger TODAS las demás rutas (app y API)
   return await updateSession(request)
 }

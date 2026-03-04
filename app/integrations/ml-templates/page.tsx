@@ -185,6 +185,8 @@ export default function MLTemplatesPage() {
     warranty: "30 días de garantía",
     description_template: "",
     is_default: true,
+    handling_days: 3,
+    price_profile_id: "",
     attribute_mapping: {} as Record<string, string>,
   })
 
@@ -392,9 +394,18 @@ export default function MLTemplatesPage() {
   }
 
   const loadProfile = (profile: PriceProfile) => {
+    // Actualizar calculadora
     setSelectedProfileId(profile.id)
     setMarginPercent(Number(profile.margin_percent))
-    toast({ title: "Perfil cargado", description: `Usando "${profile.name}" (${profile.margin_percent}%)` })
+    
+    // Actualizar plantilla: vincular perfil y actualizar fórmula
+    setTemplateForm({
+      ...templateForm,
+      price_profile_id: profile.id,
+      price_formula: `margin:${profile.margin_percent}%`
+    })
+    
+    toast({ title: "Perfil cargado", description: `Vinculado "${profile.name}" (${profile.margin_percent}%) a la plantilla` })
   }
 
   const calculatePrice = async () => {
@@ -559,7 +570,7 @@ export default function MLTemplatesPage() {
     }
   }
 
-  const editTemplate = (template: Template) => {
+  const editTemplate = (template: any) => {
     setEditingTemplate(template)
     setTemplateForm({
       name: template.name,
@@ -575,6 +586,8 @@ export default function MLTemplatesPage() {
       warranty: template.warranty || "",
       description_template: template.description_template || "",
       is_default: template.is_default,
+      handling_days: template.handling_days || 3,
+      price_profile_id: template.price_profile_id || "",
       attribute_mapping: template.attribute_mapping || {},
     })
     setShowEditor(true)
@@ -582,6 +595,8 @@ export default function MLTemplatesPage() {
 
   const newTemplate = () => {
     setEditingTemplate(null)
+    // Obtener el perfil por defecto
+    const defaultProfile = priceProfiles.find(p => p.is_default)
     setTemplateForm({
       name: "Nueva Plantilla",
       description: "",
@@ -595,6 +610,8 @@ export default function MLTemplatesPage() {
       local_pick_up: false,
       warranty: "30 días de garantía",
       is_default: false,
+      handling_days: 3,
+      price_profile_id: defaultProfile?.id || "",
       attribute_mapping: {},
     })
     setShowEditor(true)
@@ -721,6 +738,14 @@ export default function MLTemplatesPage() {
                       <div className="text-sm">
                         <span className="text-muted-foreground">Formula de precio:</span>{" "}
                         <code className="rounded bg-muted px-1">{template.price_formula}</code>
+                        {template.price_profile_id && (() => {
+                          const linkedProfile = priceProfiles.find(p => p.id === template.price_profile_id)
+                          return linkedProfile ? (
+                            <span className="ml-2 text-xs text-blue-600 dark:text-blue-400">
+                              (vinculado a "{linkedProfile.name}" {linkedProfile.margin_percent}%)
+                            </span>
+                          ) : null
+                        })()}
                       </div>
                       {template.description_template && (
                         <div className="text-sm">
@@ -1343,18 +1368,57 @@ export default function MLTemplatesPage() {
               </div>
 
               <div className="space-y-2">
-                <Label>Formula de precio</Label>
-                <Input
-                  value={templateForm.price_formula}
-                  onChange={(e) => setTemplateForm({ ...templateForm, price_formula: e.target.value })}
-                  placeholder="price * 1.5 o cost_price * 2.0"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Variables: price (precio del catalogo), cost_price (costo)
+                <Label>Perfil de Precio</Label>
+                <Select
+                  value={templateForm.price_profile_id}
+                  onValueChange={(value) => {
+                    const selectedProfile = priceProfiles.find(p => p.id === value)
+                    setTemplateForm({ 
+                      ...templateForm, 
+                      price_profile_id: value,
+                      price_formula: selectedProfile ? `margin:${selectedProfile.margin_percent}%` : templateForm.price_formula
+                    })
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona un perfil" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {priceProfiles.map(profile => (
+                      <SelectItem key={profile.id} value={profile.id}>
+                        {profile.name} ({profile.margin_percent}%) {profile.is_default && "★"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {templateForm.price_profile_id ? (
+                    <>
+                      Fórmula aplicada: <code className="bg-muted px-1.5 py-0.5 rounded text-xs">{templateForm.price_formula}</code>
+                      <br />
+                      Los cambios en "Calculadora de precios" se reflejan automáticamente.
+                    </>
+                  ) : (
+                    <>Selecciona un perfil o ve a "Calculadora de precios" para crear uno.</>
+                  )}
                 </p>
               </div>
 
               <div className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-2">
+                  <Label>Días de disponibilidad</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="30"
+                    value={templateForm.handling_days}
+                    onChange={(e) => setTemplateForm({ ...templateForm, handling_days: parseInt(e.target.value) || 3 })}
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Tiempo de preparación del envío (1-30 días)
+                  </p>
+                </div>
+                
                 <div className="space-y-2">
                   <Label>Modo de envio</Label>
                   <Select

@@ -137,6 +137,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Plantilla no encontrada" }, { status: 404 })
     }
 
+    // Si la plantilla tiene un perfil de precio vinculado, cargar el margen de ese perfil
+    let marginPercent = template.margin_percent || 20 // Valor por defecto
+    if (template.price_profile_id) {
+      const { data: priceProfile } = await supabase
+        .from("price_profiles")
+        .select("margin_percent")
+        .eq("id", template.price_profile_id)
+        .single()
+      
+      if (priceProfile) {
+        marginPercent = Number(priceProfile.margin_percent)
+        console.log("[v0] Using margin from price profile:", marginPercent, "%")
+      }
+    }
+
     // Obtener la cuenta ML
     const { data: account, error: accountError } = await supabase
       .from("ml_accounts")
@@ -256,7 +271,7 @@ export async function POST(request: NextRequest) {
     let priceCalculation = null
 
     if (!finalPrice && product.cost_price) {
-      const marginPercent = template.margin_percent || 20
+      // Usar marginPercent de perfil de precio (ya cargado arriba) en lugar del template
       priceCalculation = await calculatePriceForProduct(product.cost_price, marginPercent)
       finalPrice = priceCalculation.price
     }
@@ -464,6 +479,10 @@ Idioma: ${product.language || "Español"}
 ${product.pages ? `Páginas: ${product.pages}` : ""}
 ${product.binding ? `Encuadernación: ${product.binding}` : ""}
 ${product.year_edition ? `Año de edición: ${product.year_edition}` : ""}
+${product.subject ? `Materia: ${product.subject}` : ""}
+${product.category ? `Categoría: ${product.category}` : ""}
+${product.width && product.height && product.thickness ? `Dimensiones: ${product.width} x ${product.height} x ${product.thickness} cm` : ""}
+${product.canonical_weight_g ? `Peso: ${product.canonical_weight_g} gramos` : ""}
 
 ${product.description || ""}
 
@@ -576,8 +595,7 @@ Libro nuevo. Envíos a todo el país.`
         attributes.push({ id: "PUBLICATION_YEAR", value_name: product.year_edition.toString() })
       }
       
-      // BOOK_COVER - Tapa del libro (Blanda/Dura)
-      // Solo agregar si tenemos un valor mapeado válido
+      // BOOK_COVER - Tapa del libro (Blanda/Dura) - solo enviar si tenemos valor válido
       if (product.binding) {
         const bindingLower = product.binding.toLowerCase()
         const coverMap: Record<string, string> = {
@@ -592,15 +610,31 @@ Libro nuevo. Envíos a todo el país.`
           "cartón": "Dura",
           "dura": "Dura",
         }
-        // Solo agregar si el valor está en el mapa, sino omitir
-        if (coverMap[bindingLower]) {
-          attributes.push({ id: "BOOK_COVER", value_name: coverMap[bindingLower] })
+        const coverValue = coverMap[bindingLower]
+        if (coverValue) {
+          attributes.push({ id: "BOOK_COVER", value_name: coverValue })
         }
       }
       
       // PAGES_NUMBER - Cantidad de paginas
       if (product.pages) {
         attributes.push({ id: "PAGES_NUMBER", value_name: product.pages.toString() })
+      }
+      
+      // DIMENSIONES (en milímetros para ML)
+      if (product.width && product.width > 0) {
+        attributes.push({ id: "ITEM_WIDTH", value_name: `${Math.round(product.width * 10)} mm` })
+      }
+      if (product.height && product.height > 0) {
+        attributes.push({ id: "ITEM_HEIGHT", value_name: `${Math.round(product.height * 10)} mm` })
+      }
+      if (product.thickness && product.thickness > 0) {
+        attributes.push({ id: "ITEM_THICKNESS", value_name: `${Math.round(product.thickness * 10)} mm` })
+      }
+      
+      // PESO (si tenemos canonical_weight_g)
+      if (product.canonical_weight_g && product.canonical_weight_g > 0) {
+        attributes.push({ id: "ITEM_WEIGHT", value_name: `${product.canonical_weight_g} g` })
       }
       
       // Usar el ID de imagen subido a ML (NO usamos fallback a URL porque ML la rechazará si es pequeña)
@@ -620,12 +654,13 @@ Libro nuevo. Envíos a todo el país.`
         buying_mode: "buy_it_now",
         condition: template.condition || "new",
         listing_type_id: template.listing_type_id || "gold_special",
-        // SKU del vendedor = EAN (para relacionar con nuestro inventario)
-        seller_sku: product.ean || product.sku || null,
+        // ATRIBUTOS OBLIGATORIOS (incluyen BOOK_TITLE)
+        attributes: attributes,
+        // NOTA: seller_sku NO es válido para listings tradicionales en ML API
         // NOTA: La descripción se agrega en POST separado después de crear el item
         // Imagenes
         pictures: pictures,
-        // Garantia via sale_terms (WARRANTY_TYPE + WARRANTY_TIME)
+        // Garantia y tiempo de disponibilidad via sale_terms
         sale_terms: [
           {
             id: "WARRANTY_TYPE",
@@ -634,27 +669,27 @@ Libro nuevo. Envíos a todo el país.`
           {
             id: "WARRANTY_TIME", 
             value_name: template.warranty_time || "30 días"
-          }
+          },
+          ...(template.handling_days && template.handling_days > 0 ? [{
+            id: "MANUFACTURING_TIME",
+            value_name: `${template.handling_days} días`
+          }] : [])
         ],
-        // Configuracion de envio (usar valores del template si existen)
+        // Configuracion de envio
         shipping: {
-          mode: template.shipping_mode || "me2", // Mercado Envios
-          local_pick_up: template.local_pick_up !== false, // true por defecto
-          free_shipping: template.free_shipping || false,
+          mode: template.shipping_mode || "me2",
+          local_pick_up: template.local_pick_up || false,
+          free_shipping: template.free_shipping || false
         },
-        // Atributos del libro
-        attributes: attributes,
       }
     }
     
     // Helper para construir publicacion de catalogo
     const buildCatalogItem = () => {
-      // Usar el ID de imagen subido a ML (NO usamos fallback a URL porque ML la rechazará si es pequeña)
       const pictures: Array<{ id?: string; source?: string }> = []
       if (mlPictureId) {
         pictures.push({ id: mlPictureId })
       }
-      // Si no hay mlPictureId, se publica sin imagen (mejor que fallar)
       
       return {
         site_id: "MLA",
@@ -666,12 +701,7 @@ Libro nuevo. Envíos a todo el país.`
         buying_mode: "buy_it_now",
         condition: template.condition || "new",
         listing_type_id: template.listing_type_id || "gold_special",
-        // SKU del vendedor = EAN (para relacionar con nuestro inventario)
-        seller_sku: product.ean || product.sku || null,
-        // NOTA: La descripción se agrega en POST separado después de crear el item
-        // Imagenes
         pictures: pictures,
-        // Garantia via sale_terms (WARRANTY_TYPE + WARRANTY_TIME)
         sale_terms: [
           {
             id: "WARRANTY_TYPE",
@@ -680,13 +710,16 @@ Libro nuevo. Envíos a todo el país.`
           {
             id: "WARRANTY_TIME", 
             value_name: template.warranty_time || "30 días"
-          }
+          },
+          ...(template.handling_days && template.handling_days > 0 ? [{
+            id: "MANUFACTURING_TIME",
+            value_name: `${template.handling_days} días`
+          }] : [])
         ],
-        // Configuracion de envio
         shipping: {
           mode: template.shipping_mode || "me2",
-          local_pick_up: template.local_pick_up !== false,
-          free_shipping: template.free_shipping || false,
+          local_pick_up: template.local_pick_up || false,
+          free_shipping: template.free_shipping || false
         },
       }
     }
@@ -741,11 +774,74 @@ Libro nuevo. Envíos a todo el país.`
     // Para "catalog" ya tiene catalog_product_id y catalog_listing
     const itemToPublish = mlItem
     
+    // VALIDACION ESTRICTA antes de enviar a ML
+    const item = itemToPublish as Record<string, unknown>
+    
+    // Validar family_name (requerido para tradicional/linked)
+    if (publish_mode !== "catalog") {
+      if (!item.family_name || typeof item.family_name !== 'string' || item.family_name.trim().length === 0) {
+        return NextResponse.json({
+          success: false,
+          error: `family_name inválido: "${item.family_name}". El título del producto no puede estar vacío.`,
+          validation_error: true
+        }, { status: 400 })
+      }
+      
+      // Validar atributos requeridos
+      const attrs = item.attributes as Array<{id: string, value_name?: string, value_id?: string}>
+      const bookTitle = attrs?.find(a => a.id === "BOOK_TITLE")
+      const author = attrs?.find(a => a.id === "AUTHOR")
+      const publisher = attrs?.find(a => a.id === "BOOK_PUBLISHER")
+      const genre = attrs?.find(a => a.id === "BOOK_GENRE")
+      
+      if (!bookTitle || !bookTitle.value_name || bookTitle.value_name.trim().length === 0) {
+        return NextResponse.json({
+          success: false,
+          error: `BOOK_TITLE inválido. El producto "${product.id}" no tiene título válido.`,
+          validation_error: true
+        }, { status: 400 })
+      }
+      
+      if (!author || !author.value_name || author.value_name.trim().length === 0) {
+        return NextResponse.json({
+          success: false,
+          error: `AUTHOR inválido. El producto "${product.title}" no tiene autor válido.`,
+          validation_error: true
+        }, { status: 400 })
+      }
+      
+      if (!publisher || !publisher.value_name || publisher.value_name.trim().length === 0) {
+        return NextResponse.json({
+          success: false,
+          error: `BOOK_PUBLISHER inválido. El producto "${product.title}" no tiene editorial válida.`,
+          validation_error: true
+        }, { status: 400 })
+      }
+      
+      if (!genre || !genre.value_id) {
+        return NextResponse.json({
+          success: false,
+          error: `BOOK_GENRE inválido. Error interno de validación.`,
+          validation_error: true
+        }, { status: 400 })
+      }
+    }
+    
+    // Validar precio (requerido siempre)
+    if (!item.price || typeof item.price !== 'number' || item.price <= 0) {
+      return NextResponse.json({
+        success: false,
+        error: `Precio inválido: ${item.price}. No se pudo calcular el precio de venta.`,
+        validation_error: true
+      }, { status: 400 })
+    }
+    
     // Log para debug - ver exactamente que se envia a ML
-    console.log("[v0] Item to publish - pictures:", JSON.stringify((itemToPublish as Record<string, unknown>).pictures))
-    console.log("[v0] Item to publish - description:", JSON.stringify((itemToPublish as Record<string, unknown>).description))
-    console.log("[v0] Item to publish - shipping:", JSON.stringify((itemToPublish as Record<string, unknown>).shipping))
-    console.log("[v0] Item to publish - warranty:", (itemToPublish as Record<string, unknown>).warranty)
+    console.log("[v0] Item to publish - family_name:", item.family_name)
+    console.log("[v0] Item to publish - price:", item.price)
+    console.log("[v0] Item to publish - pictures:", JSON.stringify(item.pictures))
+    console.log("[v0] Item to publish - shipping:", JSON.stringify(item.shipping))
+    console.log("[v0] Item to publish - attributes (first 5):", JSON.stringify((item.attributes as Array<unknown>)?.slice(0, 5)))
     console.log("[v0] Product image_url from DB:", product.image_url)
 
     // Publicar en ML (tradicional primero si es linked)
@@ -762,23 +858,74 @@ Libro nuevo. Envíos a todo el país.`
 
     if (!mlResponse.ok) {
       console.log("[v0] ML Error Response:", JSON.stringify(mlData))
+      
       // ML puede devolver errores en varios formatos
       let errorMsg = "Error al publicar en ML"
-      if (mlData.message) {
+      const invalidFields: string[] = []
+      
+      // Buscar campos inválidos en la respuesta de ML
+      if (mlData.cause && Array.isArray(mlData.cause)) {
+        mlData.cause.forEach((cause: any) => {
+          if (cause.message) {
+            invalidFields.push(cause.message)
+          }
+          if (cause.field) {
+            invalidFields.push(`Campo "${cause.field}": ${cause.message || 'inválido'}`)
+          }
+        })
+      }
+      
+      if (invalidFields.length > 0) {
+        errorMsg = `Campos inválidos: ${invalidFields.join("; ")}`
+      } else if (mlData.message) {
         errorMsg = mlData.message
       } else if (mlData.error) {
         errorMsg = mlData.error
-      } else if (mlData.cause && mlData.cause.length > 0) {
-        // A veces ML pone el detalle en cause[0].message
-        errorMsg = mlData.cause.map((c: { message?: string }) => c.message).filter(Boolean).join(", ") || errorMsg
       }
+      
       return NextResponse.json({
         success: false,
         error: errorMsg,
-        ml_error_detail: mlData // Incluir toda la respuesta para debug
+        invalid_fields: invalidFields.length > 0 ? invalidFields : undefined,
+        ml_error_detail: mlData, // Incluir toda la respuesta para debug
+        product_info: {
+          id: product.id,
+          title: product.title,
+          author: product.author,
+          brand: product.brand,
+          ean: product.ean,
+          cost_price: product.cost_price
+        }
       }, { status: 400 })
     }
 
+    // Agregar seller_sku via PUT (ML no lo acepta en POST inicial)
+    let sellerSkuAdded = false
+    const sellerSkuValue = product.ean || product.sku || null
+    if (sellerSkuValue) {
+      try {
+        console.log("[v0] Adding seller_sku to item", mlData.id, "value:", sellerSkuValue)
+        const skuResponse = await fetch(`https://api.mercadolibre.com/items/${mlData.id}`, {
+          method: "PUT",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ seller_custom_field: sellerSkuValue })
+        })
+        
+        if (!skuResponse.ok) {
+          const skuError = await skuResponse.json()
+          console.log("[v0] Error adding seller_sku:", JSON.stringify(skuError))
+        } else {
+          console.log("[v0] seller_sku added successfully")
+          sellerSkuAdded = true
+        }
+      } catch (skuErr) {
+        console.log("[v0] Exception adding seller_sku:", skuErr)
+      }
+    }
+    
     // Agregar descripción en un POST separado (ML lo requiere así)
     let descriptionAdded = false
     let descriptionError: string | null = null
@@ -935,20 +1082,20 @@ Libro nuevo. Envíos a todo el país.`
       ml_picture_id: mlPictureId || null,
       image_warning: imageWarning,
       pictures_in_response: mlData.pictures || [],
+      seller_sku_added: sellerSkuAdded,
+      seller_sku_value: sellerSkuValue,
       description_added: descriptionAdded,
       description_error: descriptionError,
       catalog_listing: catalogListing ? {
-        id: catalogListing.id,
-        permalink: catalogListing.permalink,
-        item_relations: catalogListing.item_relations
+        status: catalogListing.status,
+        catalog_product_id: catalogListing.catalog_product_id
       } : null
     })
-
-  } catch (error) {
-    console.error("[v0] Error en POST /api/ml/publish:", error)
-    return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : "Error interno" },
-      { status: 500 }
-    )
+  } catch (error: any) {
+    console.error("[v0] Error in publish route:", error)
+    return NextResponse.json({ 
+      success: false, 
+      error: error.message || "Error interno del servidor" 
+    }, { status: 500 })
   }
 }
