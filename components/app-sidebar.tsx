@@ -3,6 +3,7 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
+import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { FileText as FeatherFileText, Upload as FeatherUpload } from "react-feather" // Importing FileText and Upload components from react-feather
 import { LogoutButton } from "@/components/logout-button"
@@ -292,8 +293,8 @@ export function AppSidebar() {
           {mlExpanded && (
             <div className="ml-8 mt-1 flex flex-col gap-1">
 
-              {/* ── Mercado Libre ── */}
-              <a
+              {/* ── Principal ── */}
+              <Link
                 href="/ml/publications"
                 className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                   pathname?.startsWith("/ml/publications") && !pathname?.startsWith("/ml/publications-alerts")
@@ -310,11 +311,24 @@ export function AppSidebar() {
                     {notifications.products}
                   </span>
                 )}
-              </a>
-              <a
-                href="/orders"
+              </Link>
+              <Link
+                href="/ml/publications-alerts"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname === "/ml/publications-alerts"
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                </svg>
+                <span>Alertas</span>
+              </Link>
+              <Link
+                href="/ml/orders"
                 className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/orders")
+                  pathname?.startsWith("/ml/orders")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
@@ -328,11 +342,11 @@ export function AppSidebar() {
                     {notifications.orders}
                   </span>
                 )}
-              </a>
-              <a
-                href="/shipments"
+              </Link>
+              <Link
+                href="/ml/shipments"
                 className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/shipments")
+                  pathname?.startsWith("/ml/shipments")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
@@ -346,60 +360,47 @@ export function AppSidebar() {
                     {notifications.shipments}
                   </span>
                 )}
-              </a>
-              <a
-                href="/pagos"
+              </Link>
+              <Link
+                href="/ml/payments"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/pagos")
+                  pathname?.startsWith("/ml/payments")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
               >
                 <CreditCard className="h-4 w-4" />
                 <span>Pagos</span>
-              </a>
-              <a
-                href="/competition"
+              </Link>
+              <Link
+                href="/ml/messages"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/competition")
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                }`}
-              >
-                <Target className="h-4 w-4" />
-                <span>Competencia</span>
-              </a>
-              <a
-                href="/ml/publications-alerts"
-                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/ml/publications-alerts")
+                  pathname?.startsWith("/ml/messages")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-                  <path d="M2 17l10 5 10-5"/>
-                  <path d="M2 12l10 5 10-5"/>
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                 </svg>
-                <span>Alertas publicaciones</span>
-              </a>
+                <span>Mensajes</span>
+              </Link>
 
               {/* ── Sincronización ── */}
               <div className="my-2 border-t border-sidebar-border" />
               <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">Sincronización</p>
-              <a
+              <Link
                 href="/ml/importer"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/ml/importer")
+                  pathname?.startsWith("/ml/importer")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
               >
                 <Database className="h-4 w-4" />
-                <span>Importar publicaciones</span>
-              </a>
-              <a
+                <span>Importación inicial</span>
+              </Link>
+              <Link
                 href="/ml/products/build"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                   pathname?.startsWith("/ml/products/build")
@@ -408,66 +409,97 @@ export function AppSidebar() {
                 }`}
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <path d="M12 8v8m-4-4h8" />
+                  <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M12 8v8m-4-4h8" />
                 </svg>
                 <span>Crear productos</span>
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/ml/matcher"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/ml/matcher")
+                  pathname?.startsWith("/ml/matcher")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z" />
-                  <rect width="4" height="12" x="2" y="9" />
-                  <circle cx="4" cy="4" r="2" />
+                  <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/>
+                  <rect width="4" height="12" x="2" y="9"/><circle cx="4" cy="4" r="2"/>
                 </svg>
                 <span>Vinculación</span>
-              </a>
+              </Link>
 
               {/* ── Catálogo ── */}
               <div className="my-2 border-t border-sidebar-border" />
               <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">Catálogo</p>
-              <a
-                href="/ml/catalog"
+              <Link
+                href="/ml/catalog/eligibility"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/ml/catalog")
+                  pathname?.startsWith("/ml/catalog/eligibility")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M3 3h18v4H3z" />
-                  <path d="M3 10h18v4H3z" />
-                  <path d="M3 17h18v4H3z" />
+                  <circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>
                 </svg>
-                <span>Migrar a catálogo</span>
-              </a>
+                <span>Elegibilidad</span>
+              </Link>
+              <Link
+                href="/ml/catalog/optin"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/ml/catalog/optin")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 3h18v4H3z"/><path d="M3 10h18v4H3z"/><path d="M3 17h18v4H3z"/>
+                </svg>
+                <span>Opt-in / Crear catálogo</span>
+              </Link>
+              <Link
+                href="/ml/catalog/rules"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/ml/catalog/rules")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                </svg>
+                <span>Reglas / Tags</span>
+              </Link>
 
               {/* ── Operativo ── */}
               <div className="my-2 border-t border-sidebar-border" />
               <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">Operativo</p>
-              <a
-                href="/ml/daily-actions"
+              <Link
+                href="/ml/moderations"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/ml/daily-actions")
+                  pathname?.startsWith("/ml/moderations")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="4" width="18" height="18" rx="2" />
-                  <line x1="16" y1="2" x2="16" y2="6" />
-                  <line x1="8" y1="2" x2="8" y2="6" />
-                  <line x1="3" y1="10" x2="21" y2="10" />
-                  <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01" />
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                 </svg>
-                <span>Centro diario</span>
-              </a>
+                <span>Moderaciones</span>
+              </Link>
+              <Link
+                href="/ml/health"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/ml/health")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                </svg>
+                <span>Salud / Exposición</span>
+              </Link>
 
             </div>
           )}
