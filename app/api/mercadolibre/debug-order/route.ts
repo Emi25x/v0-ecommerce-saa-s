@@ -25,23 +25,27 @@ export async function GET(request: NextRequest) {
 
   const auth = `Bearer ${ml.access_token}`
 
-  // Fetch las dos fuentes de datos del comprador
-  const [orderRes, billingRes] = await Promise.all([
-    fetch(`https://api.mercadolibre.com/orders/${orderId}`,
-      { headers: { Authorization: auth } }),
-    fetch(`https://api.mercadolibre.com/orders/${orderId}/billing_info`,
-      { headers: { Authorization: auth } }),
-  ])
+  // Paso 1: obtener la orden para sacar el buyer.id
+  const orderRes  = await fetch(`https://api.mercadolibre.com/orders/${orderId}`, { headers: { Authorization: auth } })
+  const orderData = await orderRes.json()
+  const buyerId   = orderData.buyer?.id
 
-  const orderData   = await orderRes.json()
-  const billingData = billingRes.ok ? await billingRes.json() : { status: billingRes.status, error: "not ok" }
+  // Paso 2: GET /users/{buyer_id} → nombre, apellido, identification
+  const userRes  = buyerId
+    ? await fetch(`https://api.mercadolibre.com/users/${buyerId}`, { headers: { Authorization: auth } })
+    : null
+  const userData = userRes?.ok ? await userRes.json() : null
+
+  // Paso 3: billing_info → dirección fiscal
+  const billingRes  = await fetch(`https://api.mercadolibre.com/orders/${orderId}/billing_info`, { headers: { Authorization: auth } })
+  const billingData = billingRes.ok ? await billingRes.json() : { status: billingRes.status }
 
   return NextResponse.json({
-    order_status:   orderRes.status,
-    billing_status: billingRes.status,
-    // Solo el buyer del detalle de la orden
-    order_buyer:    orderData.buyer,
-    // Todo el billing_info
-    billing_info:   billingData,
+    order_buyer_id:   buyerId,
+    order_status:     orderRes.status,
+    // GET /users/{buyer_id} → aquí están first_name, last_name, identification
+    user_data:        userData,
+    billing_status:   billingRes.status,
+    billing_info:     billingData,
   })
 }
