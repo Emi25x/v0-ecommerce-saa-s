@@ -95,56 +95,37 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Datos fiscales del comprador — 2 pasos por orden
+  // Datos fiscales del comprador:
+  // GET /orders/{id} devuelve buyer.billing_info con todos los datos fiscales directamente.
+  // Estructura real confirmada:
+  //   buyer.billing_info.name           → primer nombre
+  //   buyer.billing_info.last_name      → apellido
+  //   buyer.billing_info.identification → { type: "DNI", number: "26044763" }
+  // No hace falta un segundo llamado — los datos ya vienen en la orden.
   const orderBillingMap = new Map<string, {
     first_name: string; last_name: string
     doc_type: string;   doc_number: string
-    address: string;    city: string; state: string; zip: string
   }>()
 
   for (let i = 0; i < orders.length; i += CHUNK) {
     const chunk = orders.slice(i, i + CHUNK)
     await Promise.all(chunk.map(async (o: any) => {
       try {
-        const auth = `Bearer ${mlAccount.access_token}`
-
-        // Paso 1: obtener el billing_info.id desde el detalle de la orden
+        const auth      = `Bearer ${mlAccount.access_token}`
         const orderRes  = await fetch(
           `https://api.mercadolibre.com/orders/${o.id}`,
           { headers: { Authorization: auth }, signal: AbortSignal.timeout(6000) }
         )
-        const orderDetail   = orderRes.ok ? await orderRes.json() : null
-        const billingInfoId = orderDetail?.buyer?.billing_info?.id
-        console.log(`[v0] ORDER ${o.id} status=${orderRes.status} buyer=`, JSON.stringify(orderDetail?.buyer))
-        if (!billingInfoId) {
-          console.log(`[v0] ORDER ${o.id} - NO billing_info.id encontrado`)
-          return
-        }
-
-        // Paso 2: obtener datos fiscales con el billing_info.id
-        const billingRes = await fetch(
-          `https://api.mercadolibre.com/orders/billing-info/MLA/${billingInfoId}`,
-          { headers: { Authorization: auth }, signal: AbortSignal.timeout(6000) }
-        )
-        const bd = billingRes.ok ? await billingRes.json() : null
-        console.log(`[v0] BILLING ${billingInfoId} status=${billingRes.status} data=`, JSON.stringify(bd))
-        if (!bd) return
-
-        // Estructura de billing-info: { first_name, last_name, identification: { type, number }, address: { street_name, street_number, city, state, zip_code } }
-        const ident = bd.identification || {}
-        const addr  = bd.address        || {}
+        if (!orderRes.ok) return
+        const orderDetail  = await orderRes.json()
+        const bi           = orderDetail?.buyer?.billing_info || {}
+        const ident        = bi.identification || {}
 
         orderBillingMap.set(String(o.id), {
-          first_name: bd.first_name || "",
-          last_name:  bd.last_name  || "",
-          doc_type:   ident.type    || "",
-          doc_number: ident.number  || "",
-          address: addr.street_name
-            ? `${addr.street_name} ${addr.street_number || ""}`.trim()
-            : "",
-          city:  addr.city?.name  || (typeof addr.city  === "string" ? addr.city  : "") || "",
-          state: addr.state?.name || (typeof addr.state === "string" ? addr.state : "") || "",
-          zip:   addr.zip_code    || "",
+          first_name: bi.name      || bi.first_name || "",
+          last_name:  bi.last_name || "",
+          doc_type:   ident.type   || "",
+          doc_number: ident.number || "",
         })
       } catch { /* ignorar */ }
     }))
@@ -154,10 +135,8 @@ export async function GET(req: NextRequest) {
   let enriched = orders.map((o: any) => {
     const shipment  = shipmentStatusMap.get(String(o.shipping?.id))
     const billing   = orderBillingMap.get(String(o.id))
-    const firstName = billing?.first_name || ""
-    const lastName  = billing?.last_name  || ""
-    // fallback al nickname si billing_info no tiene nombre (ej. el comprador no completó sus datos)
-    const buyerName = [firstName, lastName].filter(Boolean).join(" ").trim()
+    // buyer.billing_info.name = primer nombre, buyer.billing_info.last_name = apellido
+    const buyerName = [billing?.first_name, billing?.last_name].filter(Boolean).join(" ").trim()
       || o.buyer?.nickname
       || ""
 
@@ -172,10 +151,6 @@ export async function GET(req: NextRequest) {
       comprador:           buyerName,
       comprador_doc:       billing?.doc_number || null,
       comprador_doc_tipo:  billing?.doc_type   || null,
-      comprador_address:   billing?.address    || null,
-      comprador_city:      billing?.city       || null,
-      comprador_state:     billing?.state      || null,
-      comprador_zip:       billing?.zip        || null,
       buyer_id:            String(o.buyer?.id || ""),
       items:               (o.order_items || []).map((i: any) => ({
         titulo:   i.item?.title || "",

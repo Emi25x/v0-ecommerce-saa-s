@@ -261,7 +261,7 @@ export default function MLBillingPage() {
             concepto:               1,
             tipo_doc_receptor:      tipoDoc,
             nro_doc_receptor:       nroDoc,
-            receptor_nombre:        order.comprador || "Consumidor Final",
+            receptor_nombre:        order.comprador || order.buyer_id || "Consumidor Final",
             receptor_condicion_iva: "consumidor_final",
             items: order.items.map(i => ({
               descripcion:     i.titulo || "Venta ML",
