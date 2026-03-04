@@ -119,6 +119,7 @@ export async function GET(req: NextRequest) {
         const orderDetail = orderRes.ok ? await orderRes.json() : null
         const buyerDetail = orderDetail?.buyer || {}
         const identDetail = buyerDetail.identification || {}
+        console.log("[v0] order detail status:", orderRes.status, "buyer:", JSON.stringify(buyerDetail).slice(0, 150))
 
         // Paso 2: GET /orders/{id}/billing_info — tiene DNI/CUIT y dirección fiscal
         const billingRes = await fetch(
@@ -126,6 +127,7 @@ export async function GET(req: NextRequest) {
           { headers: { Authorization: auth }, signal: AbortSignal.timeout(7000) }
         )
         const billingData = billingRes.ok ? await billingRes.json() : null
+        console.log("[v0] billing_info status:", billingRes.status, "data:", JSON.stringify(billingData).slice(0, 150))
         // billing_info devuelve { buyer: { identification: { type, number } }, billing_address: {...} }
         const buyerBilling = billingData?.buyer  || billingData?.payer || {}
         const identBilling = buyerBilling.identification || {}
@@ -146,7 +148,9 @@ export async function GET(req: NextRequest) {
           state: addrBilling.state?.name || (typeof addrBilling.state === "string" ? addrBilling.state : "") || "",
           zip:   addrBilling.zip_code || "",
         })
-      } catch { /* ignorar errores individuales */ }
+      } catch (e: any) {
+        console.log("[v0] buyer fetch error:", o.id, e.message)
+      }
     }))
   }
 
@@ -157,7 +161,11 @@ export async function GET(req: NextRequest) {
     // Jerarquía: billing_info > order.buyer > "Consumidor Final"
     const firstName = billing?.first_name || o.buyer?.first_name || ""
     const lastName  = billing?.last_name  || o.buyer?.last_name  || ""
-    const buyerName = [firstName, lastName].filter(Boolean).join(" ").trim() || "Consumidor Final"
+    // nickname es lo único que /orders/search siempre devuelve en buyer
+    const nickname  = o.buyer?.nickname || ""
+    const buyerName = [firstName, lastName].filter(Boolean).join(" ").trim()
+      || nickname
+      || ""
 
     return {
       id:                  o.id,
@@ -167,7 +175,7 @@ export async function GET(req: NextRequest) {
       envio_substatus:     shipment?.substatus || null,
       total:               o.total_amount,
       moneda:              o.currency_id,
-      comprador:           buyerName || "Consumidor Final",
+      comprador:           buyerName,
       comprador_doc:       billing?.doc_number || o.buyer?.identification?.number || null,
       comprador_doc_tipo:  billing?.doc_type   || null,
       comprador_address:   billing?.address    || null,
