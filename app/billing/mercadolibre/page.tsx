@@ -590,10 +590,21 @@ export default function MLBillingPage() {
                     <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{fmtFecha(order.fecha)}</td>
                     <td className="px-4 py-3">
                       <p className="font-medium text-sm leading-tight">{order.comprador || "—"}</p>
-                      {(order as any).comprador_doc && (
+                      {(order as any).comprador_doc ? (
                         <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
                           {(order as any).comprador_doc_tipo || "Doc"}: {(order as any).comprador_doc}
                         </p>
+                      ) : (
+                        <button
+                          className="text-[10px] text-blue-400 hover:underline mt-0.5"
+                          onClick={async () => {
+                            const r = await fetch(`/api/mercadolibre/debug-order?account_id=${activeAccount}&order_id=${order.id}`)
+                            const d = await r.json()
+                            alert(JSON.stringify(d, null, 2))
+                          }}
+                        >
+                          [ver datos ML]
+                        </button>
                       )}
                     </td>
                     <td className="px-4 py-3 max-w-xs">
