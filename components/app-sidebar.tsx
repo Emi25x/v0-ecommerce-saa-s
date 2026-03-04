@@ -291,10 +291,12 @@ export function AppSidebar() {
 
           {mlExpanded && (
             <div className="ml-8 mt-1 flex flex-col gap-1">
+
+              {/* ── Mercado Libre ── */}
               <a
-                href="/products"
+                href="/ml/publications"
                 className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/products")
+                  pathname?.startsWith("/ml/publications") && !pathname?.startsWith("/ml/publications-alerts")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
@@ -368,9 +370,9 @@ export function AppSidebar() {
                 <span>Competencia</span>
               </a>
               <a
-                href="/integrations/ml-publicaciones"
+                href="/ml/publications-alerts"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  pathname?.startsWith("/integrations/ml-publicaciones")
+                  isActive("/ml/publications-alerts")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
@@ -380,9 +382,12 @@ export function AppSidebar() {
                   <path d="M2 17l10 5 10-5"/>
                   <path d="M2 12l10 5 10-5"/>
                 </svg>
-                <span>Publicaciones alertas</span>
+                <span>Alertas publicaciones</span>
               </a>
+
+              {/* ── Sincronización ── */}
               <div className="my-2 border-t border-sidebar-border" />
+              <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">Sincronización</p>
               <a
                 href="/ml/importer"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
@@ -392,12 +397,12 @@ export function AppSidebar() {
                 }`}
               >
                 <Database className="h-4 w-4" />
-                <span>Importación inicial</span>
+                <span>Importar publicaciones</span>
               </a>
               <a
                 href="/ml/products/build"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/ml/products/build")
+                  pathname?.startsWith("/ml/products/build")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
@@ -423,7 +428,29 @@ export function AppSidebar() {
                 </svg>
                 <span>Vinculación</span>
               </a>
+
+              {/* ── Catálogo ── */}
               <div className="my-2 border-t border-sidebar-border" />
+              <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">Catálogo</p>
+              <a
+                href="/ml/catalog"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  isActive("/ml/catalog")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 3h18v4H3z" />
+                  <path d="M3 10h18v4H3z" />
+                  <path d="M3 17h18v4H3z" />
+                </svg>
+                <span>Migrar a catálogo</span>
+              </a>
+
+              {/* ── Operativo ── */}
+              <div className="my-2 border-t border-sidebar-border" />
+              <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">Operativo</p>
               <a
                 href="/ml/daily-actions"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
@@ -439,63 +466,9 @@ export function AppSidebar() {
                   <line x1="3" y1="10" x2="21" y2="10" />
                   <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01" />
                 </svg>
-                <span>Centro Diario</span>
+                <span>Centro diario</span>
               </a>
-              <a
-                href="/ml/pricing-intel"
-                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/ml/pricing-intel")
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                }`}
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
-                  <polyline points="16 7 22 7 22 13" />
-                </svg>
-                <span>Pricing Intel</span>
-              </a>
-              <a
-                href="/ml/opportunities"
-                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/ml/opportunities")
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                }`}
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                </svg>
-                <span>Oportunidades</span>
-              </a>
-              <a
-                href="/ml/catalog"
-                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/ml/catalog")
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                }`}
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M3 3h18v4H3z" />
-                  <path d="M3 10h18v4H3z" />
-                  <path d="M3 17h18v4H3z" />
-                </svg>
-                <span>Migrar a Catálogo</span>
-              </a>
-              <a
-                href="/ml/catalog-optin"
-                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive("/ml/catalog-optin")
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                }`}
-              >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 5v14M5 12l7 7 7-7" />
-                </svg>
-                <span>Optin Catálogo</span>
-              </a>
+
             </div>
           )}
         </div>
