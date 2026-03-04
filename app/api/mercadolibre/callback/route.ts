@@ -8,12 +8,14 @@ export async function GET(request: NextRequest) {
     const code = searchParams.get("code")
     const error = searchParams.get("error")
 
+    const base = process.env.APP_URL || request.nextUrl.origin
+
     if (error) {
-      return NextResponse.redirect(`${request.nextUrl.origin}/integrations?error=ml_error&message=${encodeURIComponent(error)}`)
+      return NextResponse.redirect(`${base}/integrations?error=ml_error&message=${encodeURIComponent(error)}`)
     }
 
     if (!code) {
-      return NextResponse.redirect(`${request.nextUrl.origin}/integrations?error=no_code`)
+      return NextResponse.redirect(`${base}/integrations?error=no_code`)
     }
 
     // El state puede contener token=<uuid> (verifier en BD) o from=billing (origen)
@@ -34,8 +36,8 @@ export async function GET(request: NextRequest) {
         .single()
 
       if (!tokenRow || tokenRow.used || new Date(tokenRow.expires_at) < new Date()) {
-        return NextResponse.redirect(`${request.nextUrl.origin}/integrations?error=token_expired`)
-      }
+      return NextResponse.redirect(`${base}/integrations?error=token_expired`)
+    }
 
       // Marcar como usado (un solo uso)
       await supabaseForToken.from("ml_auth_tokens").update({ used: true }).eq("id", tokenId)
@@ -46,7 +48,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (!codeVerifier) {
-      return NextResponse.redirect(`${request.nextUrl.origin}/integrations?error=no_verifier`)
+      return NextResponse.redirect(`${base}/integrations?error=no_verifier`)
     }
 
     const redirectUri = `${process.env.APP_URL || request.nextUrl.origin}/api/mercadolibre/callback`
@@ -99,7 +101,7 @@ export async function GET(request: NextRequest) {
 
     // Disparar sincronización inicial en background
     try {
-      const syncUrl = `${request.nextUrl.origin}/api/mercadolibre/sync`
+      const syncUrl = `${base}/api/mercadolibre/sync`
       fetch(syncUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -117,8 +119,8 @@ export async function GET(request: NextRequest) {
     // stateParam ya fue parseado arriba — determinar redirección de retorno
     const fromBilling = stateParam.includes("from=billing")
     const redirectTarget = fromBilling
-      ? `${request.nextUrl.origin}/billing/mercadolibre?ml_connected=true`
-      : `${request.nextUrl.origin}/integrations?ml_connected=true&ml_user=${encodeURIComponent(user.nickname)}`
+      ? `${base}/billing/mercadolibre?ml_connected=true`
+      : `${base}/integrations?ml_connected=true&ml_user=${encodeURIComponent(user.nickname)}`
 
     const response = NextResponse.redirect(redirectTarget)
 
@@ -136,8 +138,9 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[v0] Mercado Libre callback error:", error)
     const errorMessage = error instanceof Error ? error.message : "Unknown error"
+    const base = process.env.APP_URL || request.nextUrl.origin
     return NextResponse.redirect(
-      `${request.nextUrl.origin}/integrations?error=auth_failed&message=${encodeURIComponent(errorMessage)}`,
+      `${base}/integrations?error=auth_failed&message=${encodeURIComponent(errorMessage)}`,
     )
   }
 }
