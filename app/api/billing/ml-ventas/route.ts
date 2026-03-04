@@ -91,12 +91,12 @@ export async function GET(req: NextRequest) {
     }))
   }
 
-  // Obtener datos del comprador combinando dos endpoints de ML:
-  // • GET /orders/{id}              → buyer.first_name, last_name, identification
-  // • GET /orders/{id}/billing_info → buyer.identification (doc_type/number), dirección fiscal
-  //
-  // IMPORTANTE: se procesan en lotes de 5 en serie para evitar timeout en Vercel.
-  // billing_info estructura real: { buyer: { first_name, last_name, identification: { type, number }, ... } }
+  // Obtener datos del comprador:
+  // /orders/search solo devuelve buyer: { id } — sin nombre ni DNI.
+  // Hay que llamar a GET /orders/{id} individualmente para obtener:
+  //   buyer.first_name, buyer.last_name, buyer.identification (tipo/número)
+  // Y GET /orders/{id}/billing_info para dirección fiscal.
+  // Se procesan en lotes de 5 en serie para no hacer timeout.
   const orderBillingMap = new Map<string, {
     doc_type: string; doc_number: string
     first_name: string; last_name: string
@@ -109,55 +109,44 @@ export async function GET(req: NextRequest) {
     const chunk = ordersToFetch.slice(i, i + CHUNK)
     await Promise.all(chunk.map(async (o: any) => {
       try {
-        const headers = { Authorization: `Bearer ${mlAccount.access_token}` }
-        const signal  = AbortSignal.timeout(6000)
+        const auth = `Bearer ${mlAccount.access_token}`
 
-        // Fuente 1: /orders/{id}/billing_info → DNI/CUIT + dirección fiscal
+        // Paso 1: GET /orders/{id} — tiene buyer completo con nombre e identification
+        const orderRes = await fetch(
+          `https://api.mercadolibre.com/orders/${o.id}`,
+          { headers: { Authorization: auth }, signal: AbortSignal.timeout(7000) }
+        )
+        const orderDetail = orderRes.ok ? await orderRes.json() : null
+        const buyerDetail = orderDetail?.buyer || {}
+        const identDetail = buyerDetail.identification || {}
+
+        // Paso 2: GET /orders/{id}/billing_info — tiene DNI/CUIT y dirección fiscal
         const billingRes = await fetch(
           `https://api.mercadolibre.com/orders/${o.id}/billing_info`,
-          { headers, signal }
+          { headers: { Authorization: auth }, signal: AbortSignal.timeout(7000) }
         )
-        const bd = billingRes.ok ? await billingRes.json() : null
-        console.log("[v0] billing_info raw", o.id, JSON.stringify(bd)?.slice(0, 300))
-
-        // billing_info estructura real de ML puede variar:
-        // { buyer: { first_name, last_name, identification: { type, number } }, billing_address: {...} }
-        // O simplemente: { first_name, last_name, doc_type, doc_number }
-        const buyerBd  = bd?.buyer || {}
-        const identBd  = buyerBd.identification || buyerBd.doc || {}
-        const addrBd   = bd?.billing_address || buyerBd.address || {}
-
-        // Fuente 2: buyer de la propia orden (orders/search ya lo trae con nombre en algunas versiones)
-        // Si no está, intentar GET /orders/{id} individual
-        let buyerOrder = o.buyer || {}
-        if (!buyerOrder.first_name) {
-          const orderRes = await fetch(
-            `https://api.mercadolibre.com/orders/${o.id}`,
-            { headers, signal: AbortSignal.timeout(6000) }
-          )
-          if (orderRes.ok) {
-            const od = await orderRes.json()
-            buyerOrder = od.buyer || {}
-            console.log("[v0] order buyer", o.id, JSON.stringify(buyerOrder)?.slice(0, 200))
-          }
-        }
-        const identOrder = buyerOrder.identification || {}
+        const billingData = billingRes.ok ? await billingRes.json() : null
+        // billing_info devuelve { buyer: { identification: { type, number } }, billing_address: {...} }
+        const buyerBilling = billingData?.buyer  || billingData?.payer || {}
+        const identBilling = buyerBilling.identification || {}
+        const addrBilling  = billingData?.billing_address || buyerBilling.address || {}
 
         orderBillingMap.set(String(o.id), {
-          first_name: buyerBd.first_name  || buyerOrder.first_name || "",
-          last_name:  buyerBd.last_name   || buyerOrder.last_name  || "",
-          doc_type:   identBd.type   || bd?.doc_type   || identOrder.type   || "",
-          doc_number: identBd.number || bd?.doc_number || identOrder.number || "",
-          address: addrBd.street_name
-            ? `${addrBd.street_name} ${addrBd.street_number || ""}`.trim()
+          // Nombre: viene de GET /orders/{id}
+          first_name: buyerDetail.first_name || buyerBilling.first_name || "",
+          last_name:  buyerDetail.last_name  || buyerBilling.last_name  || "",
+          // Doc: billing_info lo tiene más confiablemente
+          doc_type:   identBilling.type   || identDetail.type   || "",
+          doc_number: identBilling.number || identDetail.number || "",
+          // Dirección fiscal: viene de billing_info
+          address: addrBilling.street_name
+            ? `${addrBilling.street_name} ${addrBilling.street_number || ""}`.trim()
             : "",
-          city:  addrBd.city?.name  || (typeof addrBd.city  === "string" ? addrBd.city  : "") || "",
-          state: addrBd.state?.name || (typeof addrBd.state === "string" ? addrBd.state : "") || "",
-          zip:   addrBd.zip_code    || "",
+          city:  addrBilling.city?.name  || (typeof addrBilling.city  === "string" ? addrBilling.city  : "") || "",
+          state: addrBilling.state?.name || (typeof addrBilling.state === "string" ? addrBilling.state : "") || "",
+          zip:   addrBilling.zip_code || "",
         })
-      } catch (e: any) {
-        console.log("[v0] billing fetch error", o.id, e.message)
-      }
+      } catch { /* ignorar errores individuales */ }
     }))
   }
 
@@ -169,7 +158,6 @@ export async function GET(req: NextRequest) {
     const firstName = billing?.first_name || o.buyer?.first_name || ""
     const lastName  = billing?.last_name  || o.buyer?.last_name  || ""
     const buyerName = [firstName, lastName].filter(Boolean).join(" ").trim() || "Consumidor Final"
-    console.log("[v0] enriched buyer", o.id, { firstName, lastName, billing: !!billing, orderBuyer: o.buyer?.first_name })
 
     return {
       id:                  o.id,
