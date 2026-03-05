@@ -13,6 +13,8 @@ export async function GET(req: NextRequest) {
     const soloElegibles = searchParams.get("solo_elegibles") === "1"
     const sinStock      = searchParams.get("sin_stock") === "1"
     const countsOnly    = searchParams.get("counts_only") === "1"
+    const alertsMode    = searchParams.get("alerts_mode") as
+      "eligible_catalog" | "under_review" | "about_to_pause" | null
 
     const supabase = await createClient()
 
@@ -35,14 +37,24 @@ export async function GET(req: NextRequest) {
     }
 
     // ── Main paginated query ────────────────────────────────────────────────
+    // alerts_mode ordering: stock-first (DESC), then updated_at DESC
+    const stockFirst = !!alertsMode
+
     let query = supabase
       .from("ml_publications")
       .select(
-        "id, ml_item_id, title, status, price, current_stock, sku, ean, isbn, gtin, catalog_listing_eligible, product_id, permalink, updated_at, meli_weight_g",
+        "id, ml_item_id, account_id, title, status, price, current_stock, sku, ean, isbn, gtin, catalog_listing_eligible, product_id, permalink, updated_at, meli_weight_g",
         { count: "exact" }
       )
-      .order("updated_at", { ascending: false, nullsFirst: false })
       .range(page * limit, (page + 1) * limit - 1)
+
+    if (stockFirst) {
+      query = query
+        .order("current_stock", { ascending: false, nullsFirst: false })
+        .order("updated_at",    { ascending: false, nullsFirst: false })
+    } else {
+      query = query.order("updated_at", { ascending: false, nullsFirst: false })
+    }
 
     if (accountId)     query = query.eq("account_id", accountId)
     if (status)        query = query.eq("status", status)
@@ -51,6 +63,24 @@ export async function GET(req: NextRequest) {
     if (sinStock)      query = query.lte("current_stock", 0)
     if (q) {
       query = query.or(`title.ilike.%${q}%,ml_item_id.ilike.%${q}%`)
+    }
+
+    // ── alerts_mode specific filters ───────────────────────────────────────
+    if (alertsMode === "eligible_catalog") {
+      query = query.eq("catalog_listing_eligible", true).eq("status", "active")
+    } else if (alertsMode === "under_review") {
+      query = query.eq("status", "under_review")
+    }
+    // about_to_pause: no dedicated column yet — return empty set with placeholder flag
+    // (handled at the route level: return ok:true with placeholder:true)
+
+    if (alertsMode === "about_to_pause") {
+      return NextResponse.json({
+        ok:          true,
+        rows:        [],
+        total:       0,
+        placeholder: true,
+      })
     }
 
     const { data, count, error } = await query
