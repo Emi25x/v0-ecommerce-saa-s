@@ -30,19 +30,35 @@ export async function PATCH(
         .neq("id", id)
     }
 
-    const { data: warehouse, error } = await supabase
+    const updatePayload: Record<string, unknown> = {
+      name,
+      code,
+      address,
+      is_default,
+    }
+    if (notes !== undefined) updatePayload.notes = notes
+
+    let { data: warehouse, error } = await supabase
       .from("warehouses")
-      .update({
-        name,
-        code,
-        address,
-        notes,
-        is_default,
-      })
+      .update(updatePayload)
       .eq("id", id)
       .eq("owner_user_id", user.id)
       .select()
       .single()
+
+    // Fallback: if notes column is missing (schema cache not yet refreshed),
+    // retry without it so the rest of the update still succeeds.
+    if (error?.message?.includes("notes")) {
+      console.error("[WAREHOUSES] notes column missing — retrying without it. Run migration: ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS notes text;")
+      delete updatePayload.notes
+      ;({ data: warehouse, error } = await supabase
+        .from("warehouses")
+        .update(updatePayload)
+        .eq("id", id)
+        .eq("owner_user_id", user.id)
+        .select()
+        .single())
+    }
 
     if (error) {
       console.error("[WAREHOUSES] Error updating warehouse:", error)
