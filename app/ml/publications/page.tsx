@@ -37,6 +37,7 @@ import {
   ShoppingCart,
   Zap,
   RotateCcw,
+  Scale,
 } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
@@ -137,6 +138,7 @@ export default function MLPublicationsPage() {
   const [counts, setCounts]               = useState<Counts | null>(null)
   const [countsLoading, setCountsLoading] = useState(false)
   const [enqueueing, setEnqueueing]       = useState<string | null>(null) // tracks "itemId:type"
+  const [weightSync, setWeightSync]       = useState<{ loading: boolean; result: { updated: number; missing: number; processed: number } | null }>({ loading: false, result: null })
 
   const searchRef = useRef(search)
   searchRef.current = search
@@ -242,6 +244,33 @@ export default function MLPublicationsPage() {
     }
   }
 
+  const syncWeights = async () => {
+    if (accountId === "all") {
+      toast({ title: "Seleccioná una cuenta", description: "Elegí una cuenta antes de sincronizar pesos.", variant: "destructive" })
+      return
+    }
+    setWeightSync({ loading: true, result: null })
+    try {
+      const res  = await fetch("/api/ml/publications/sync-weight", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ account_id: accountId, batch_size: 100 }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        setWeightSync({ loading: false, result: { updated: data.updated, missing: data.missing, processed: data.processed } })
+        toast({ title: "Sincronización completada", description: `${data.updated} pesos actualizados, ${data.missing} sin peso en ML.` })
+        load(page)
+      } else {
+        setWeightSync({ loading: false, result: null })
+        toast({ title: "Error al sincronizar", description: data.error ?? "Error desconocido", variant: "destructive" })
+      }
+    } catch (err: any) {
+      setWeightSync({ loading: false, result: null })
+      toast({ title: "Error de red", description: err.message, variant: "destructive" })
+    }
+  }
+
   // ── Render ──────────────────────────────────────────────────────────────
 
   return (
@@ -302,16 +331,46 @@ export default function MLPublicationsPage() {
             </div>
           </div>
 
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={loading || countsLoading}
-            className="bg-transparent shrink-0"
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${(loading || countsLoading) ? "animate-spin" : ""}`} />
-            Actualizar
-          </Button>
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Weight sync result pill */}
+            {weightSync.result && (
+              <span className="text-xs text-muted-foreground">
+                <span className="text-green-400 font-medium">{weightSync.result.updated}</span> actualizados
+                {weightSync.result.missing > 0 && (
+                  <> · <span className="text-yellow-400">{weightSync.result.missing}</span> sin peso</>
+                )}
+              </span>
+            )}
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={syncWeights}
+                  disabled={weightSync.loading || accountId === "all"}
+                  className="bg-transparent"
+                >
+                  <Scale className={`h-4 w-4 mr-2 ${weightSync.loading ? "animate-spin" : ""}`} />
+                  {weightSync.loading ? "Sincronizando..." : "Sincronizar pesos"}
+                </Button>
+              </TooltipTrigger>
+              {accountId === "all" && (
+                <TooltipContent>Seleccioná una cuenta primero</TooltipContent>
+              )}
+            </Tooltip>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={loading || countsLoading}
+              className="bg-transparent"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${(loading || countsLoading) ? "animate-spin" : ""}`} />
+              Actualizar
+            </Button>
+          </div>
         </div>
 
         {/* ── Filtros ─────────────────────────────────────────────────────── */}
