@@ -194,9 +194,39 @@ export default function BillingPage() {
     },
   })
 
-  const [configForm, setConfigForm]   = useState(EMPTY_CONFIG_FORM())
+  const [configForm, setConfigForm]       = useState(EMPTY_CONFIG_FORM())
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [cloningFrom,  setCloningFrom]    = useState<string | null>(null)   // id empresa origen del PV
+
+  const cloneEmpresa = (empresaId: string) => {
+    const origen = empresas.find(e => e.id === empresaId)
+    if (!origen) return
+    setConfigForm({
+      id:               "",          // nueva
+      punto_venta:      "",          // el usuario lo define
+      nombre_empresa:   "",          // el usuario lo define
+      // Datos ARCA compartidos
+      cuit:             origen.cuit || "",
+      razon_social:     origen.razon_social || "",
+      domicilio_fiscal: origen.domicilio_fiscal || "",
+      condicion_iva:    origen.condicion_iva || "responsable_inscripto",
+      ambiente:         origen.ambiente || "homologacion",
+      cert_pem:         (origen as any).cert_pem || "",
+      clave_pem:        (origen as any).clave_pem || (origen as any).private_key_pem || "",
+      // Visual en blanco (propio del PV)
+      telefono: "", email: "", web: "", instagram: "", facebook: "", whatsapp: "",
+      iva_default:  origen.iva_default ?? 21,
+      nota_factura: "", datos_pago: "",
+      logo_url:     "",
+      factura_opciones: {
+        mostrar_logo: true, mostrar_datos_contacto: true, mostrar_redes: true,
+        mostrar_nota: true, mostrar_datos_pago: true, mostrar_domicilio: true,
+      },
+    })
+    setCloningFrom(empresaId)
+    setActiveTab("config")
+  }
 
   // ── Padrón lookup ─────────────────────────────────────────────────────────
   const [padronStatus, setPadronStatus] = useState<"idle"|"loading"|"found"|"error">("idle")
@@ -356,8 +386,8 @@ export default function BillingPage() {
       })
       const d = await r.json()
       if (d.ok) {
-        setConfigMsg({ type: "ok", text: "Empresa guardada correctamente." })
-        // Recargar lista y mantener empresa activa
+        setConfigMsg({ type: "ok", text: cloningFrom ? "Nuevo punto de venta creado." : "Empresa guardada correctamente." })
+        setCloningFrom(null)
         const r2 = await fetch("/api/billing/config")
         const d2 = await r2.json()
         if (d2.empresas?.length) {
@@ -523,36 +553,63 @@ export default function BillingPage() {
       {/* Selector de empresa */}
       {!loadingConfig && (
         <div className="flex items-center gap-2 flex-wrap">
-          {empresas.map(emp => {
-            const isActive = emp.id === empresaActivaId
-            const nombre   = emp.nombre_empresa || emp.razon_social
-            return (
-              <button
-                key={emp.id}
-                onClick={() => switchEmpresa(emp.id)}
-                className={`flex items-center gap-2.5 rounded-lg border px-3.5 py-2 text-sm font-medium transition-all ${
-                  isActive
-                    ? "border-emerald-500/60 bg-emerald-500/10 text-emerald-300 shadow-[0_0_0_1px_rgba(52,211,153,0.3)]"
-                    : "border-border bg-card text-muted-foreground hover:border-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Building2 className="h-3.5 w-3.5 flex-shrink-0" />
-                <span>{nombre}</span>
-                {isActive && (
-                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-sm ${
-                    emp.ambiente === "produccion"
-                      ? "bg-emerald-500/20 text-emerald-400"
-                      : "bg-amber-500/20 text-amber-400"
-                  }`}>
-                    {emp.ambiente === "produccion" ? "PROD" : "HOMO"}
-                  </span>
-                )}
-              </button>
-            )
-          })}
+          {(() => {
+            // Agrupar por CUIT para detectar multi-PV bajo mismo CUIT
+            const cuitCount: Record<string, number> = {}
+            empresas.forEach(e => { cuitCount[e.cuit] = (cuitCount[e.cuit] || 0) + 1 })
+
+            return empresas.map(emp => {
+              const isActive   = emp.id === empresaActivaId
+              const nombre     = emp.nombre_empresa || emp.razon_social
+              const multiPV    = cuitCount[emp.cuit] > 1   // mismo CUIT, varios PV
+
+              return (
+                <div key={emp.id} className="flex items-stretch">
+                  <button
+                    onClick={() => switchEmpresa(emp.id)}
+                    className={`flex items-center gap-2.5 rounded-l-lg border px-3.5 py-2 text-sm font-medium transition-all ${
+                      multiPV ? "rounded-l-lg rounded-r-none border-r-0" : "rounded-lg"
+                    } ${
+                      isActive
+                        ? "border-emerald-500/60 bg-emerald-500/10 text-emerald-300 shadow-[0_0_0_1px_rgba(52,211,153,0.3)]"
+                        : "border-border bg-card text-muted-foreground hover:border-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Building2 className="h-3.5 w-3.5 flex-shrink-0" />
+                    <span>{nombre}</span>
+                    {multiPV && (
+                      <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground">
+                        PV {String(emp.punto_venta).padStart(4, "0")}
+                      </span>
+                    )}
+                    {isActive && (
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-sm ${
+                        emp.ambiente === "produccion"
+                          ? "bg-emerald-500/20 text-emerald-400"
+                          : "bg-amber-500/20 text-amber-400"
+                      }`}>
+                        {emp.ambiente === "produccion" ? "PROD" : "HOMO"}
+                      </span>
+                    )}
+                  </button>
+                  {/* Botón "+" para clonar como nuevo PV — siempre visible */}
+                  <button
+                    onClick={() => cloneEmpresa(emp.id)}
+                    title={`Nuevo punto de venta para ${emp.razon_social}`}
+                    className={`flex items-center justify-center w-7 border border-l-0 rounded-r-lg text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors ${
+                      isActive ? "border-emerald-500/60 bg-emerald-500/5" : "border-border bg-card"
+                    }`}
+                  >
+                    <Plus className="h-3 w-3" />
+                  </button>
+                </div>
+              )
+            })
+          })()}
           <button
             onClick={() => {
               setConfigForm(EMPTY_CONFIG_FORM())
+              setCloningFrom(null)
               setActiveTab("config")
             }}
             className="flex items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground hover:text-foreground hover:border-muted-foreground transition-colors"
@@ -591,7 +648,16 @@ export default function BillingPage() {
         </div>
         <div className="rounded-lg border border-border bg-card p-4">
           <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Punto de venta</p>
-          <p className="text-2xl font-bold">{config ? String(config.punto_venta).padStart(4, "0") : "—"}</p>
+          {config ? (
+            <>
+              <p className="text-2xl font-bold font-mono">{String(config.punto_venta).padStart(4, "0")}</p>
+              {config.nombre_empresa && (
+                <p className="text-xs text-muted-foreground mt-0.5 truncate">{config.nombre_empresa}</p>
+              )}
+            </>
+          ) : (
+            <p className="text-2xl font-bold">—</p>
+          )}
         </div>
       </div>
 
@@ -722,6 +788,29 @@ export default function BillingPage() {
         <TabsContent value="config">
           <div className="max-w-2xl space-y-5">
 
+            {/* Banner: creando nuevo PV derivado */}
+            {cloningFrom && (() => {
+              const origen = empresas.find(e => e.id === cloningFrom)
+              return origen ? (
+                <div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-4 flex items-start gap-3">
+                  <Building2 className="h-4 w-4 text-blue-400 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-blue-300">Nuevo punto de venta</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Derivando de <span className="font-medium text-foreground">{origen.nombre_empresa || origen.razon_social}</span>.
+                      El CUIT y certificado ya fueron copiados. Solo completá el numero de punto de venta y el nombre interno.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => { setCloningFrom(null); setConfigForm(EMPTY_CONFIG_FORM()) }}
+                    className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : null
+            })()}
+
             {/* ── Empresa selector dentro del tab ── */}
             <div className="rounded-lg border border-border bg-card p-4">
               <div className="flex items-center justify-between gap-4">
@@ -742,7 +831,7 @@ export default function BillingPage() {
                       </button>
                     ))}
                     <button
-                      onClick={() => setConfigForm(EMPTY_CONFIG_FORM())}
+                      onClick={() => { setConfigForm(EMPTY_CONFIG_FORM()); setCloningFrom(null) }}
                       className="rounded-md border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
                     >
                       <Plus className="h-3 w-3" /> Nueva
