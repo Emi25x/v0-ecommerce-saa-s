@@ -479,6 +479,7 @@ export default function MLPublicationsPage() {
                     <th className="text-left px-4 py-3 font-medium text-muted-foreground">SKU</th>
                     <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">EAN / ISBN</th>
                     <th className="text-center px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">Cat.</th>
+                    <th className="text-right px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">Peso (g)</th>
                     <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">Actualizado</th>
                     <th className="px-4 py-3 w-20" />
                   </tr>
@@ -561,6 +562,14 @@ export default function MLPublicationsPage() {
                             {row.catalog_listing_eligible
                               ? <CheckCircle2 className="h-4 w-4 text-green-400 mx-auto" />
                               : <span className="text-muted-foreground/30 text-base leading-none">—</span>
+                            }
+                          </td>
+
+                          {/* Peso */}
+                          <td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground whitespace-nowrap">
+                            {row.meli_weight_g != null
+                              ? <span className="text-foreground">{row.meli_weight_g.toLocaleString()}</span>
+                              : <span className="text-muted-foreground/30">—</span>
                             }
                           </td>
 

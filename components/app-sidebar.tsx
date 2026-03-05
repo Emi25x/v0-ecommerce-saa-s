@@ -264,7 +264,7 @@ export function AppSidebar() {
   return (
     <aside className="w-64 border-r border-border bg-sidebar">
       <nav className="flex flex-col gap-1 p-4">
-        <a
+        <Link
           href="/"
           className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${
             isActive("/")
@@ -274,7 +274,7 @@ export function AppSidebar() {
         >
           <Package className="h-5 w-5" />
           <span className="font-medium">Dashboard</span>
-        </a>
+        </Link>
 
         <div className="mt-2">
           <button
@@ -373,17 +373,15 @@ export function AppSidebar() {
                 <span>Pagos</span>
               </Link>
               <Link
-                href="/ml/messages"
+                href="/ml/accounts"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  pathname?.startsWith("/ml/messages")
+                  pathname?.startsWith("/ml/accounts")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
               >
-                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                </svg>
-                <span>Mensajes</span>
+                <Settings className="h-4 w-4" />
+                <span>Cuentas</span>
               </Link>
 
               {/* ── Sincronización ── */}
@@ -401,31 +399,30 @@ export function AppSidebar() {
                 <span>Importación inicial</span>
               </Link>
               <Link
-                href="/ml/products/build"
+                href="/ml/import-pro"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  pathname?.startsWith("/ml/products/build")
+                  pathname?.startsWith("/ml/import-pro")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M12 8v8m-4-4h8" />
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
                 </svg>
-                <span>Crear productos</span>
+                <span>Import Pro</span>
               </Link>
               <Link
-                href="/ml/matcher"
+                href="/ml/sync"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  pathname?.startsWith("/ml/matcher")
+                  pathname?.startsWith("/ml/sync")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/>
-                  <rect width="4" height="12" x="2" y="9"/><circle cx="4" cy="4" r="2"/>
+                  <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/>
                 </svg>
-                <span>Vinculación</span>
+                <span>Sincronización</span>
               </Link>
 
               {/* ── Catálogo ── */}
@@ -453,52 +450,66 @@ export function AppSidebar() {
                 }`}
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M3 3h18v4H3z"/><path d="M3 10h18v4H3z"/><path d="M3 17h18v4H3z"/>
+                  <path d="M12 5v14m-7-7h14"/>
                 </svg>
-                <span>Opt-in / Crear catálogo</span>
+                <span>Opt-in</span>
               </Link>
               <Link
-                href="/ml/catalog/rules"
+                href="/ml/catalog/migration"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  pathname?.startsWith("/ml/catalog/rules")
+                  pathname?.startsWith("/ml/catalog/migration")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                  <path d="M5 12h14m-7-7 7 7-7 7"/>
                 </svg>
-                <span>Reglas / Tags</span>
+                <span>Migración</span>
               </Link>
 
               {/* ── Operativo ── */}
               <div className="my-2 border-t border-sidebar-border" />
               <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">Operativo</p>
               <Link
-                href="/ml/moderations"
+                href="/ml/matcher"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  pathname?.startsWith("/ml/moderations")
+                  pathname?.startsWith("/ml/matcher")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                  <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-4 0v7h-4v-7a6 6 0 0 1 6-6z"/>
+                  <rect width="4" height="12" x="2" y="9"/><circle cx="4" cy="4" r="2"/>
                 </svg>
-                <span>Moderaciones</span>
+                <span>Vinculación</span>
               </Link>
               <Link
-                href="/ml/health"
+                href="/ml/products/build"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  pathname?.startsWith("/ml/health")
+                  pathname?.startsWith("/ml/products/build")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
               >
                 <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                  <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M12 8v8m-4-4h8" />
                 </svg>
-                <span>Salud / Exposición</span>
+                <span>Crear productos</span>
+              </Link>
+              <Link
+                href="/ml/products/unmatched"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/ml/products/unmatched")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10"/><path d="m15 9-6 6m0-6 6 6"/>
+                </svg>
+                <span>Sin vincular</span>
               </Link>
 
             </div>
@@ -525,7 +536,7 @@ export function AppSidebar() {
 
           {shopifyExpanded && (
             <div className="ml-8 mt-1 flex flex-col gap-1">
-              <a
+              <Link
                 href="/shopify/orders"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                   pathname?.startsWith("/shopify/orders")
@@ -535,8 +546,8 @@ export function AppSidebar() {
               >
                 <ShoppingBag className="h-4 w-4" />
                 <span>Ventas</span>
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/shopify/sync"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                   pathname?.startsWith("/shopify/sync")
@@ -551,8 +562,8 @@ export function AppSidebar() {
                   <path d="M3 21v-5h5" />
                 </svg>
                 <span>Sincronización</span>
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/integrations/shopify-stores"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                   pathname?.startsWith("/integrations/shopify-stores")
@@ -562,7 +573,7 @@ export function AppSidebar() {
               >
                 <Settings className="h-4 w-4" />
                 <span>Tiendas</span>
-              </a>
+              </Link>
             </div>
           )}
         </div>
@@ -582,7 +593,7 @@ export function AppSidebar() {
 
           {inventoryExpanded && (
             <div className="ml-8 mt-1 flex flex-col gap-1">
-              <a
+              <Link
                 href="/inventory"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                   isActive("/inventory")
@@ -592,8 +603,8 @@ export function AppSidebar() {
               >
                 <Package className="h-4 w-4" />
                 <span>Productos</span>
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/inventory/sources"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                   isActive("/inventory/sources")
@@ -603,8 +614,8 @@ export function AppSidebar() {
               >
                 <Database className="h-4 w-4" />
                 <span>Fuentes</span>
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/inventory/sources/new"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                   isActive("/inventory/sources/new")
@@ -617,8 +628,8 @@ export function AppSidebar() {
                   <path d="M12 8v8m-4-4h8" />
                 </svg>
                 <span>Nueva fuente</span>
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/inventory/sources/batch-import"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                   pathname?.startsWith("/inventory/sources/batch-import")
@@ -628,8 +639,8 @@ export function AppSidebar() {
               >
                 <FeatherUpload className="h-4 w-4" />
                 <span>Importación inicial</span>
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/suppliers"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                   isActive("/suppliers")
@@ -639,8 +650,8 @@ export function AppSidebar() {
               >
                 <Truck className="h-4 w-4" />
                 <span>Proveedores</span>
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/warehouses"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                   isActive("/warehouses")
@@ -653,7 +664,7 @@ export function AppSidebar() {
                   <polyline points="9 22 9 12 15 12 15 22" />
                 </svg>
                 <span>Almacenes</span>
-              </a>
+              </Link>
             </div>
           )}
         </div>
@@ -672,7 +683,7 @@ export function AppSidebar() {
 
           {integrationsExpanded && (
             <div className="ml-8 mt-1 flex flex-col gap-1">
-              <a
+              <Link
                 href="/integrations"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                   pathname === "/integrations"
@@ -681,9 +692,9 @@ export function AppSidebar() {
                 }`}
               >
                 <Settings className="h-4 w-4" />
-                <span>Configuracion</span>
-              </a>
-              <a
+                <span>Configuración</span>
+              </Link>
+              <Link
                 href="/integrations/ml-templates"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                   pathname === "/integrations/ml-templates"
@@ -693,8 +704,8 @@ export function AppSidebar() {
               >
                 <FeatherFileText className="h-4 w-4" />
                 <span>Plantillas y Precios</span>
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/integrations/ml-publish"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                   pathname === "/integrations/ml-publish"
@@ -704,8 +715,8 @@ export function AppSidebar() {
               >
                 <FeatherUpload className="h-4 w-4" />
                 <span>Publicar en ML</span>
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/settings/reports"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                   pathname === "/settings/reports"
@@ -715,14 +726,14 @@ export function AppSidebar() {
               >
                 <FeatherFileText className="h-4 w-4" />
                 <span>Reportes de Ventas</span>
-              </a>
+              </Link>
             </div>
           )}
         </div>
 
         {/* Facturación */}
         <div className="mt-2">
-          <a
+          <Link
             href="/billing"
             className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-colors ${
               isActive("/billing")
@@ -732,9 +743,9 @@ export function AppSidebar() {
           >
             <Receipt className="h-5 w-5" />
             <span className="font-medium">Facturación</span>
-          </a>
+          </Link>
           <div className="ml-8 mt-1 flex flex-col gap-1">
-            <a
+            <Link
               href="/billing/mercadolibre"
               className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                 pathname?.startsWith("/billing/mercadolibre")
@@ -746,7 +757,7 @@ export function AppSidebar() {
                 <path d="M14.867 5.166l-4.24 13.668h3.155l4.24-13.668h-3.155zm-6.84 0L3.787 18.834h3.155l4.24-13.668H8.027z" />
               </svg>
               <span>Ventas ML</span>
-            </a>
+            </Link>
           </div>
         </div>
 

@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { getValidAccessToken } from "@/lib/mercadolibre"
 import { NextRequest, NextResponse } from "next/server"
-import { protectAPI } from "@/lib/auth/protect-api"
+import { protectCron } from "@/lib/auth/protect-api"
 import { randomUUID } from "crypto"
 
 export const maxDuration = 60
@@ -672,8 +672,8 @@ async function executeJob(job: any, supabase: any, instanceId: string) {
  * }
  */
 export async function POST(request: NextRequest) {
-  const authError = await protectAPI(request)
-  if (authError) return authError
+  const authCheck = await protectCron(request)
+  if (authCheck.error) return authCheck.response
 
   const instanceId = randomUUID()
   const body       = await request.json().catch(() => ({}))

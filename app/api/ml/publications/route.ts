@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
     let query = supabase
       .from("ml_publications")
       .select(
-        "id, ml_item_id, title, status, price, current_stock, sku, ean, isbn, gtin, catalog_listing_eligible, product_id, permalink, updated_at",
+        "id, ml_item_id, title, status, price, current_stock, sku, ean, isbn, gtin, catalog_listing_eligible, product_id, permalink, updated_at, meli_weight_g",
         { count: "exact" }
       )
       .order("updated_at", { ascending: false, nullsFirst: false })
