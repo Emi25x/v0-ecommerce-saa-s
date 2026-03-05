@@ -113,12 +113,13 @@ interface Account {
 }
 
 interface Counts {
-  total: number
-  active: number
-  paused: number
-  closed: number
-  sin_producto: number
-  sin_stock: number
+  total:            number
+  active:           number
+  paused:           number
+  closed:           number
+  sin_producto:     number
+  sin_stock:        number
+  eligible_catalog: number
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -133,6 +134,7 @@ export default function MLPublicationsPage() {
   const [sinProducto, setSinProducto]     = useState(false)
   const [soloElegibles, setSoloElegibles] = useState(false)
   const [sinStock, setSinStock]           = useState(false)
+  const [stockFirst, setStockFirst]       = useState(false)
   const [importProgress, setImportProgress] = useState<{
     status: string
     publications_offset: number
@@ -206,6 +208,7 @@ export default function MLPublicationsPage() {
         ...(sinProducto ? { sin_producto: "1" } : {}),
         ...(soloElegibles ? { solo_elegibles: "1" } : {}),
         ...(sinStock ? { sin_stock: "1" } : {}),
+        ...(stockFirst ? { stock_first: "1" } : {}),
       })
       const res  = await fetch(`/api/ml/publications?${params}`)
       const data = await res.json()
@@ -216,9 +219,9 @@ export default function MLPublicationsPage() {
     } finally {
       setLoading(false)
     }
-  }, [accountId, statusFilter, sinProducto, soloElegibles, sinStock])
+  }, [accountId, statusFilter, sinProducto, soloElegibles, sinStock, stockFirst])
 
-  useEffect(() => { setPage(0); load(0) }, [accountId, statusFilter, sinProducto, soloElegibles, sinStock])
+  useEffect(() => { setPage(0); load(0) }, [accountId, statusFilter, sinProducto, soloElegibles, sinStock, stockFirst])
 
   const handleSearch = () => { setPage(0); load(0) }
   const prevPage = () => { const p = page - 1; setPage(p); load(p) }
@@ -389,6 +392,15 @@ export default function MLPublicationsPage() {
                     active={sinStock}
                     onClick={() => { setSinStock(s => !s); setSinProducto(false); setStatusFilter("all"); setPage(0); }}
                   />
+                  {counts.eligible_catalog != null && (
+                    <BadgeCount
+                      label="Elegibles catálogo"
+                      value={counts.eligible_catalog}
+                      color="emerald"
+                      active={soloElegibles}
+                      onClick={() => { setSoloElegibles(s => !s); setSinStock(false); setSinProducto(false); setStatusFilter("all"); setPage(0); }}
+                    />
+                  )}
                 </>
               ) : null}
             </div>
@@ -581,6 +593,15 @@ export default function MLPublicationsPage() {
                 className="accent-primary"
               />
               Sin stock
+            </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={stockFirst}
+                onChange={e => { setStockFirst(e.target.checked); setPage(0) }}
+                className="accent-primary"
+              />
+              Stock primero
             </label>
           </div>
         </div>
@@ -973,12 +994,13 @@ export default function MLPublicationsPage() {
 // ── BadgeCount sub-component ──────────────────────────────────────────────
 
 const COLOR_MAP: Record<string, string> = {
-  green:  "bg-green-500/15 text-green-400 border-green-500/30 hover:bg-green-500/25",
-  yellow: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/25",
-  zinc:   "bg-zinc-500/15 text-zinc-400 border-zinc-500/30 hover:bg-zinc-500/25",
-  orange: "bg-orange-500/15 text-orange-400 border-orange-500/30 hover:bg-orange-500/25",
-  red:    "bg-red-500/15 text-red-400 border-red-500/30 hover:bg-red-500/25",
-  default:"bg-muted/40 text-muted-foreground border-border hover:bg-muted/60",
+  green:   "bg-green-500/15 text-green-400 border-green-500/30 hover:bg-green-500/25",
+  yellow:  "bg-yellow-500/15 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/25",
+  zinc:    "bg-zinc-500/15 text-zinc-400 border-zinc-500/30 hover:bg-zinc-500/25",
+  orange:  "bg-orange-500/15 text-orange-400 border-orange-500/30 hover:bg-orange-500/25",
+  red:     "bg-red-500/15 text-red-400 border-red-500/30 hover:bg-red-500/25",
+  emerald: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25",
+  default: "bg-muted/40 text-muted-foreground border-border hover:bg-muted/60",
 }
 
 function BadgeCount({

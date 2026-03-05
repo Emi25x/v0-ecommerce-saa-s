@@ -35,7 +35,7 @@ import { useToast } from "@/hooks/use-toast"
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
-type AlertsMode = "eligible_catalog" | "under_review" | "about_to_pause"
+type AlertsMode = "con_stock" | "sin_stock" | "eligible_catalog"
 
 interface Publication {
   id:                       string
@@ -66,28 +66,28 @@ const PAGE_SIZE = 50
 
 const TABS: { value: AlertsMode; label: string; description: string; color: string; bg: string; badgeCls: string }[] = [
   {
+    value:       "con_stock",
+    label:       "Con stock",
+    description: "Publicaciones activas con stock disponible (current_stock > 0), ordenadas de mayor a menor stock.",
+    color:       "text-blue-400",
+    bg:          "bg-blue-500/10 border-blue-500/20",
+    badgeCls:    "bg-blue-500/15 text-blue-300 border-blue-500/30",
+  },
+  {
+    value:       "sin_stock",
+    label:       "Sin stock",
+    description: "Publicaciones con stock agotado (current_stock = 0). Considerá pausarlas o reponer stock.",
+    color:       "text-red-400",
+    bg:          "bg-red-500/10 border-red-500/20",
+    badgeCls:    "bg-red-500/15 text-red-300 border-red-500/30",
+  },
+  {
     value:       "eligible_catalog",
-    label:       "Elegibles para catálogo",
+    label:       "Elegibles catálogo",
     description: "Activas con catalog_listing_eligible = true. Podés hacer opt-in para competir directamente.",
     color:       "text-emerald-400",
     bg:          "bg-emerald-500/10 border-emerald-500/20",
     badgeCls:    "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-  },
-  {
-    value:       "about_to_pause",
-    label:       "Próximas a pausarse",
-    description: "Publicaciones que ML detectó que deben migrar al catálogo o serán pausadas.",
-    color:       "text-amber-400",
-    bg:          "bg-amber-500/10 border-amber-500/20",
-    badgeCls:    "bg-amber-500/15 text-amber-300 border-amber-500/30",
-  },
-  {
-    value:       "under_review",
-    label:       "Bajo revisión",
-    description: "Publicaciones pausadas esperando publicación de catálogo para reactivarse.",
-    color:       "text-red-400",
-    bg:          "bg-red-500/10 border-red-500/20",
-    badgeCls:    "bg-red-500/15 text-red-300 border-red-500/30",
   },
 ]
 
@@ -261,7 +261,7 @@ export default function PublicationsAlertsPage() {
   const [accountId, setAccountId] = useState<string>("")
 
   // Tab / mode
-  const [activeTab, setActiveTab] = useState<AlertsMode>("eligible_catalog")
+  const [activeTab, setActiveTab] = useState<AlertsMode>("con_stock")
 
   // Data
   const [rows,        setRows]        = useState<Publication[]>([])
@@ -310,12 +310,18 @@ export default function PublicationsAlertsPage() {
     setLoading(true)
     setPlaceholder(false)
     try {
+      // Map tab to API params
+      const tabParams: Record<AlertsMode, Record<string, string>> = {
+        con_stock:        { con_stock: "1",      stock_first: "1" },
+        sin_stock:        { sin_stock: "1",      stock_first: "1" },
+        eligible_catalog: { solo_elegibles: "1", stock_first: "1", status: "active" },
+      }
+
       const params = new URLSearchParams({
-        page:        String(p),
-        limit:       String(PAGE_SIZE),
-        account_id:  accountId,
-        alerts_mode: activeTab,
-        ...(sinStock                 ? { sin_stock: "1" }        : {}),
+        page:       String(p),
+        limit:      String(PAGE_SIZE),
+        account_id: accountId,
+        ...tabParams[activeTab],
         ...(searchRef.current?.trim() ? { q: searchRef.current } : {}),
       })
       const res  = await fetch(`/api/ml/publications?${params}`)
@@ -332,11 +338,11 @@ export default function PublicationsAlertsPage() {
     } finally {
       setLoading(false)
     }
-  }, [accountId, activeTab, sinStock, toast])
+  }, [accountId, activeTab, toast])
 
   useEffect(() => {
     if (accountId) { setPage(0); setSelected(new Set()); load(0) }
-  }, [accountId, activeTab, sinStock])
+  }, [accountId, activeTab])
 
   const handleSearch = () => { setPage(0); setSelected(new Set()); load(0) }
 
