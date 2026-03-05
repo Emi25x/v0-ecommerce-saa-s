@@ -4,6 +4,7 @@ import { protectAPI } from "@/lib/auth/protect-api"
 
 const VALID_TYPES = [
   "import_publications",
+  "import_single_item",
   "build_products",
   "match_products",
   "catalog_optin",

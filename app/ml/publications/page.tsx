@@ -36,8 +36,10 @@ import {
   MoreHorizontal,
   ShoppingCart,
   Zap,
+  RotateCcw,
 } from "lucide-react"
 import Link from "next/link"
+import { useToast } from "@/hooks/use-toast"
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -87,6 +89,7 @@ const relDate = (iso: string | null | undefined) => {
 interface Publication {
   id: string
   ml_item_id: string
+  account_id: string
   title: string
   status: string
   price: number | null
@@ -117,6 +120,8 @@ interface Counts {
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function MLPublicationsPage() {
+  const { toast } = useToast()
+
   const [accounts, setAccounts]           = useState<Account[]>([])
   const [accountId, setAccountId]         = useState<string>("all")
   const [statusFilter, setStatusFilter]   = useState<string>("all")
@@ -131,6 +136,7 @@ export default function MLPublicationsPage() {
   const [detail, setDetail]               = useState<Publication | null>(null)
   const [counts, setCounts]               = useState<Counts | null>(null)
   const [countsLoading, setCountsLoading] = useState(false)
+  const [enqueueing, setEnqueueing]       = useState<string | null>(null) // tracks "itemId:type"
 
   const searchRef = useRef(search)
   searchRef.current = search
@@ -204,6 +210,36 @@ export default function MLPublicationsPage() {
   const handleRefresh = () => {
     load(page)
     loadCounts(accountId)
+  }
+
+  const enqueueJob = async (
+    pub: Publication,
+    type: "catalog_optin" | "buybox_sync" | "import_single_item",
+  ) => {
+    const key = `${pub.ml_item_id}:${type}`
+    setEnqueueing(key)
+    try {
+      const res = await fetch("/api/ml/jobs/enqueue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_id: pub.account_id,
+          type,
+          payload: { item_id: pub.ml_item_id, account_id: pub.account_id },
+        }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        toast({ title: "Job agregado a la cola", description: `${pub.ml_item_id} → ${type}` })
+        load(page)
+      } else {
+        toast({ title: "Error al encolar", description: data.error ?? "Error desconocido", variant: "destructive" })
+      }
+    } catch (err: any) {
+      toast({ title: "Error de red", description: err.message, variant: "destructive" })
+    } finally {
+      setEnqueueing(null)
+    }
   }
 
   // ── Render ──────────────────────────────────────────────────────────────
@@ -511,35 +547,78 @@ export default function MLPublicationsPage() {
                               {/* Menú Más */}
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                  <button className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted/50">
+                                  <button
+                                    disabled={enqueueing?.startsWith(row.ml_item_id) ?? false}
+                                    className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted/50 disabled:opacity-40"
+                                  >
                                     <MoreHorizontal className="h-4 w-4" />
                                   </button>
                                 </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-48">
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <div>
-                                        <DropdownMenuItem disabled className="gap-2 cursor-not-allowed opacity-50">
-                                          <ShoppingCart className="h-4 w-4" />
-                                          Opt-in catálogo
-                                          <span className="ml-auto text-xs text-muted-foreground">pronto</span>
-                                        </DropdownMenuItem>
-                                      </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="left">Próximamente</TooltipContent>
-                                  </Tooltip>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <div>
-                                        <DropdownMenuItem disabled className="gap-2 cursor-not-allowed opacity-50">
-                                          <Zap className="h-4 w-4" />
-                                          Sync buybox
-                                          <span className="ml-auto text-xs text-muted-foreground">pronto</span>
-                                        </DropdownMenuItem>
-                                      </div>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="left">Próximamente</TooltipContent>
-                                  </Tooltip>
+                                <DropdownMenuContent align="end" className="w-52">
+
+                                  {/* Copiar item ID */}
+                                  <DropdownMenuItem
+                                    className="gap-2"
+                                    onClick={() => copyId(row.ml_item_id)}
+                                  >
+                                    <Copy className="h-4 w-4" />
+                                    Copiar item ID
+                                  </DropdownMenuItem>
+
+                                  {/* Abrir en ML */}
+                                  {row.permalink && (
+                                    <DropdownMenuItem className="gap-2" asChild>
+                                      <a href={row.permalink} target="_blank" rel="noopener noreferrer">
+                                        <ExternalLink className="h-4 w-4" />
+                                        Abrir en ML
+                                      </a>
+                                    </DropdownMenuItem>
+                                  )}
+
+                                  {/* Opt-in catálogo */}
+                                  {row.catalog_listing_eligible ? (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div>
+                                          <DropdownMenuItem disabled className="gap-2 opacity-50">
+                                            <ShoppingCart className="h-4 w-4" />
+                                            Opt-in catálogo
+                                          </DropdownMenuItem>
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="left">Ya está en catálogo</TooltipContent>
+                                    </Tooltip>
+                                  ) : (
+                                    <DropdownMenuItem
+                                      className="gap-2"
+                                      disabled={enqueueing === `${row.ml_item_id}:catalog_optin`}
+                                      onClick={() => enqueueJob(row, "catalog_optin")}
+                                    >
+                                      <ShoppingCart className="h-4 w-4" />
+                                      Opt-in catálogo
+                                    </DropdownMenuItem>
+                                  )}
+
+                                  {/* Sync buybox */}
+                                  <DropdownMenuItem
+                                    className="gap-2"
+                                    disabled={enqueueing === `${row.ml_item_id}:buybox_sync`}
+                                    onClick={() => enqueueJob(row, "buybox_sync")}
+                                  >
+                                    <Zap className="h-4 w-4" />
+                                    Sync buybox
+                                  </DropdownMenuItem>
+
+                                  {/* Reimportar */}
+                                  <DropdownMenuItem
+                                    className="gap-2"
+                                    disabled={enqueueing === `${row.ml_item_id}:import_single_item`}
+                                    onClick={() => enqueueJob(row, "import_single_item")}
+                                  >
+                                    <RotateCcw className="h-4 w-4" />
+                                    Reimportar
+                                  </DropdownMenuItem>
+
                                 </DropdownMenuContent>
                               </DropdownMenu>
 
