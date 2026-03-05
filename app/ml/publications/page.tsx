@@ -427,9 +427,11 @@ export default function MLPublicationsPage() {
                   {skuBackfill.loading ? "Rellenando..." : "Backfill SKU"}
                 </Button>
               </TooltipTrigger>
-              {accountId === "all" && (
-                <TooltipContent>Seleccioná una cuenta primero</TooltipContent>
-              )}
+              <TooltipContent>
+                {accountId === "all"
+                  ? "Seleccioná una cuenta primero"
+                  : "Rellena el campo SKU para publicaciones sin SKU consultando la API de ML"}
+              </TooltipContent>
             </Tooltip>
 
             <Tooltip>
@@ -445,9 +447,11 @@ export default function MLPublicationsPage() {
                   {weightSync.loading ? "Sincronizando..." : "Sincronizar pesos"}
                 </Button>
               </TooltipTrigger>
-              {accountId === "all" && (
-                <TooltipContent>Seleccioná una cuenta primero</TooltipContent>
-              )}
+              <TooltipContent>
+                {accountId === "all"
+                  ? "Seleccioná una cuenta primero"
+                  : "Sincroniza el peso (g) de cada publicación desde ML"}
+              </TooltipContent>
             </Tooltip>
 
             <Button
