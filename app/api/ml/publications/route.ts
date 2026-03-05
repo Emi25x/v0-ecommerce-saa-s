@@ -36,58 +36,57 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: true, counts: { total, active, paused, closed, sin_producto, sin_stock } })
     }
 
-    // ── Main paginated query ────────────────────────────────────────────────
-    // alerts_mode ordering: stock-first (DESC), then updated_at DESC
+    // ── alerts_mode: about_to_pause has no column yet ─────────────────────
+    if (alertsMode === "about_to_pause") {
+      return NextResponse.json({ ok: true, rows: [], total: 0, placeholder: true })
+    }
+
     const stockFirst = !!alertsMode
 
-    let query = supabase
+    // ── Helper: apply shared filters to any query builder ─────────────────
+    function applyFilters(qb: any): any {
+      if (accountId)     qb = qb.eq("account_id", accountId)
+      if (status)        qb = qb.eq("status", status)
+      if (sinProducto)   qb = qb.is("product_id", null)
+      if (soloElegibles) qb = qb.eq("catalog_listing_eligible", true)
+      if (sinStock)      qb = qb.lte("current_stock", 0)
+      if (q)             qb = qb.or(`title.ilike.%${q}%,ml_item_id.ilike.%${q}%`)
+      if (alertsMode === "eligible_catalog") qb = qb.eq("catalog_listing_eligible", true).eq("status", "active")
+      if (alertsMode === "under_review")     qb = qb.eq("status", "under_review")
+      return qb
+    }
+
+    // ── 1. Exact count — separate HEAD query, no range cap ─────────────────
+    let countQuery = supabase
+      .from("ml_publications")
+      .select("id", { count: "exact", head: true })
+
+    countQuery = applyFilters(countQuery)
+    const { count: exactCount, error: countErr } = await countQuery
+    if (countErr) throw countErr
+
+    // ── 2. Paginated data query — no count needed here ────────────────────
+    let dataQuery = supabase
       .from("ml_publications")
       .select(
-        "id, ml_item_id, account_id, title, status, price, current_stock, sku, ean, isbn, gtin, catalog_listing_eligible, product_id, permalink, updated_at, meli_weight_g",
-        { count: "exact" }
+        "id, ml_item_id, account_id, title, status, price, current_stock, sku, ean, isbn, gtin, catalog_listing_eligible, product_id, permalink, updated_at, meli_weight_g"
       )
       .range(page * limit, (page + 1) * limit - 1)
 
     if (stockFirst) {
-      query = query
+      dataQuery = dataQuery
         .order("current_stock", { ascending: false, nullsFirst: false })
         .order("updated_at",    { ascending: false, nullsFirst: false })
     } else {
-      query = query.order("updated_at", { ascending: false, nullsFirst: false })
+      dataQuery = dataQuery.order("updated_at", { ascending: false, nullsFirst: false })
     }
 
-    if (accountId)     query = query.eq("account_id", accountId)
-    if (status)        query = query.eq("status", status)
-    if (sinProducto)   query = query.is("product_id", null)
-    if (soloElegibles) query = query.eq("catalog_listing_eligible", true)
-    if (sinStock)      query = query.lte("current_stock", 0)
-    if (q) {
-      query = query.or(`title.ilike.%${q}%,ml_item_id.ilike.%${q}%`)
-    }
+    dataQuery = applyFilters(dataQuery)
 
-    // ── alerts_mode specific filters ───────────────────────────────────────
-    if (alertsMode === "eligible_catalog") {
-      query = query.eq("catalog_listing_eligible", true).eq("status", "active")
-    } else if (alertsMode === "under_review") {
-      query = query.eq("status", "under_review")
-    }
-    // about_to_pause: no dedicated column yet — return empty set with placeholder flag
-    // (handled at the route level: return ok:true with placeholder:true)
-
-    if (alertsMode === "about_to_pause") {
-      return NextResponse.json({
-        ok:          true,
-        rows:        [],
-        total:       0,
-        placeholder: true,
-      })
-    }
-
-    const { data, count, error } = await query
-
+    const { data, error } = await dataQuery
     if (error) throw error
 
-    return NextResponse.json({ ok: true, rows: data ?? [], total: count ?? 0 })
+    return NextResponse.json({ ok: true, rows: data ?? [], total: exactCount ?? 0 })
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 })
   }
