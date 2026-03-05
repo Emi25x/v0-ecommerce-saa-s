@@ -119,7 +119,7 @@ export async function POST(request: Request) {
 
       const items = JSON.parse(detailsText)
 
-      // PASO 3: Para cada item, extraer EAN y buscar match en nuestra DB
+      // PASO 3: Para cada item, extraer SKU/EAN y buscar match en nuestra DB
       for (const itemWrapper of items) {
         if (itemWrapper.code !== 200 || !itemWrapper.body) {
           errors++
@@ -128,10 +128,24 @@ export async function POST(request: Request) {
 
         const item = itemWrapper.body
 
-        // Extraer EAN: seller_sku -> seller_custom_field -> atributo GTIN/EAN/ISBN
-        let ean = item.seller_sku || item.seller_custom_field || null
+        // Extraer SKU: seller_custom_field → variations[].seller_custom_field → attributes[SELLER_SKU]
+        let sku: string | null = item.seller_custom_field || null
 
-        if (!ean && item.attributes) {
+        if (!sku && Array.isArray(item.variations)) {
+          for (const v of item.variations) {
+            if (v.seller_custom_field) { sku = v.seller_custom_field; break }
+          }
+        }
+
+        if (!sku && Array.isArray(item.attributes)) {
+          const skuAttr = item.attributes.find((a: any) => a.id === "SELLER_SKU")
+          if (skuAttr?.value_name) sku = skuAttr.value_name
+        }
+
+        // Extraer EAN/GTIN para el match con products
+        let ean: string | null = sku
+
+        if (!ean && Array.isArray(item.attributes)) {
           for (const attr of item.attributes) {
             if (["GTIN", "EAN", "ISBN", "UPC"].includes(attr.id) && attr.value_name) {
               ean = attr.value_name
@@ -142,6 +156,17 @@ export async function POST(request: Request) {
 
         if (!ean) {
           noEan++
+          // Guardar publicación igualmente para actualizar stock (sin vínculo)
+          try {
+            await supabase.from("ml_publications").upsert({
+              account_id:    account.id,
+              ml_item_id:    item.id,
+              sku:           sku ?? null,
+              price:         item.price,
+              current_stock: item.available_quantity,
+              updated_at:    new Date().toISOString(),
+            }, { onConflict: "account_id,ml_item_id" })
+          } catch { /* best-effort */ }
           continue
         }
 
@@ -154,17 +179,16 @@ export async function POST(request: Request) {
 
         if (!product) {
           noProductMatch++
-          // Guardar publicación sin vincular usando upsert (solo campos dinámicos)
+          // Guardar publicación sin vincular usando upsert (preservar sku)
           try {
             await supabase.from("ml_publications").upsert({
-              account_id: account.id,
-              ml_item_id: item.id,
-              price: item.price,
+              account_id:    account.id,
+              ml_item_id:    item.id,
+              sku:           sku ?? null,
+              price:         item.price,
               current_stock: item.available_quantity,
-              updated_at: new Date().toISOString()
-            }, {
-              onConflict: "account_id,ml_item_id"
-            })
+              updated_at:    new Date().toISOString(),
+            }, { onConflict: "account_id,ml_item_id" })
           } catch (e) {
             console.error("[v0] Error guardando publicación sin vincular:", e)
             errors++
@@ -172,7 +196,7 @@ export async function POST(request: Request) {
           continue
         }
 
-        // PASO 4: Guardar/actualizar en ml_publications con vinculación usando upsert
+        // PASO 4: Guardar/actualizar en ml_publications con vinculación y sku
         try {
           const { data: existingPub } = await supabase
             .from("ml_publications")
@@ -184,20 +208,18 @@ export async function POST(request: Request) {
           if (existingPub && !existingPub.product_id) {
             linked++
           } else if (!existingPub) {
-            // Si no existe, también es un nuevo vínculo
             linked++
           }
 
           await supabase.from("ml_publications").upsert({
-            account_id: account.id,
-            ml_item_id: item.id,
-            product_id: product.id,
-            price: item.price,
+            account_id:    account.id,
+            ml_item_id:    item.id,
+            product_id:    product.id,
+            sku:           sku ?? null,
+            price:         item.price,
             current_stock: item.available_quantity,
-            updated_at: new Date().toISOString()
-          }, {
-            onConflict: "account_id,ml_item_id"
-          })
+            updated_at:    new Date().toISOString(),
+          }, { onConflict: "account_id,ml_item_id" })
 
           updated++
         } catch (e) {

@@ -39,6 +39,7 @@ import {
   Zap,
   RotateCcw,
   Scale,
+  Tag,
 } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
@@ -148,6 +149,7 @@ export default function MLPublicationsPage() {
   const [countsLoading, setCountsLoading] = useState(false)
   const [enqueueing, setEnqueueing]       = useState<string | null>(null) // tracks "itemId:type"
   const [weightSync, setWeightSync]       = useState<{ loading: boolean; result: { updated: number; missing: number; processed: number } | null }>({ loading: false, result: null })
+  const [skuBackfill, setSkuBackfill]     = useState<{ loading: boolean; result: { updated: number; skipped: number; processed: number } | null }>({ loading: false, result: null })
 
   const searchRef = useRef(search)
   searchRef.current = search
@@ -297,6 +299,33 @@ export default function MLPublicationsPage() {
     }
   }
 
+  const backfillSku = async () => {
+    if (accountId === "all") {
+      toast({ title: "Seleccioná una cuenta", description: "Elegí una cuenta antes de hacer backfill.", variant: "destructive" })
+      return
+    }
+    setSkuBackfill({ loading: true, result: null })
+    try {
+      const res  = await fetch("/api/ml/publications/backfill-sku", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ account_id: accountId, batch_size: 100 }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        setSkuBackfill({ loading: false, result: { updated: data.updated, skipped: data.skipped, processed: data.processed } })
+        toast({ title: "Backfill SKU completado", description: `${data.updated} actualizados, ${data.skipped} sin SKU en ML.` })
+        load(page)
+      } else {
+        setSkuBackfill({ loading: false, result: null })
+        toast({ title: "Error en backfill", description: data.error ?? "Error desconocido", variant: "destructive" })
+      }
+    } catch (err: any) {
+      setSkuBackfill({ loading: false, result: null })
+      toast({ title: "Error de red", description: err.message, variant: "destructive" })
+    }
+  }
+
   // ── Render ──────────────────────────────────────────────────────────────
 
   return (
@@ -374,6 +403,34 @@ export default function MLPublicationsPage() {
                 )}
               </span>
             )}
+
+            {/* SKU backfill result pill */}
+            {skuBackfill.result && (
+              <span className="text-xs text-muted-foreground">
+                <span className="text-green-400 font-medium">{skuBackfill.result.updated}</span> SKU cargados
+                {skuBackfill.result.skipped > 0 && (
+                  <> · <span className="text-yellow-400">{skuBackfill.result.skipped}</span> sin SKU</>
+                )}
+              </span>
+            )}
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={backfillSku}
+                  disabled={skuBackfill.loading || accountId === "all"}
+                  className="bg-transparent"
+                >
+                  <Tag className={`h-4 w-4 mr-2 ${skuBackfill.loading ? "animate-spin" : ""}`} />
+                  {skuBackfill.loading ? "Rellenando..." : "Backfill SKU"}
+                </Button>
+              </TooltipTrigger>
+              {accountId === "all" && (
+                <TooltipContent>Seleccioná una cuenta primero</TooltipContent>
+              )}
+            </Tooltip>
 
             <Tooltip>
               <TooltipTrigger asChild>
