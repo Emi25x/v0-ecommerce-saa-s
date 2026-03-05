@@ -26,6 +26,7 @@ import {
 import {
   ExternalLink,
   Copy,
+  Link2,
   RefreshCw,
   ChevronLeft,
   ChevronRight,
@@ -116,6 +117,7 @@ interface Counts {
   paused: number
   closed: number
   sin_producto: number
+  sin_stock: number
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -129,11 +131,18 @@ export default function MLPublicationsPage() {
   const [search, setSearch]               = useState<string>("")
   const [sinProducto, setSinProducto]     = useState(false)
   const [soloElegibles, setSoloElegibles] = useState(false)
+  const [sinStock, setSinStock]           = useState(false)
+  const [importProgress, setImportProgress] = useState<{
+    status: string
+    publications_offset: number
+    publications_total: number | null
+  } | null>(null)
   const [page, setPage]                   = useState(0)
   const [rows, setRows]                   = useState<Publication[]>([])
   const [total, setTotal]                 = useState(0)
   const [loading, setLoading]             = useState(false)
   const [copied, setCopied]               = useState<string | null>(null)
+  const [copiedLink, setCopiedLink]       = useState<string | null>(null)
   const [detail, setDetail]               = useState<Publication | null>(null)
   const [counts, setCounts]               = useState<Counts | null>(null)
   const [countsLoading, setCountsLoading] = useState(false)
@@ -171,6 +180,16 @@ export default function MLPublicationsPage() {
 
   useEffect(() => { loadCounts(accountId) }, [accountId, loadCounts])
 
+  // ── Load import progress from ml_import_progress ──────────────────────
+
+  useEffect(() => {
+    if (accountId === "all") { setImportProgress(null); return }
+    fetch(`/api/ml/publications/import-progress?account_id=${accountId}`)
+      .then(r => r.json())
+      .then(d => { if (d.ok && d.progress) setImportProgress(d.progress) })
+      .catch(() => {})
+  }, [accountId])
+
   // ── Load rows ──────────────────────────────────────────────────────────
 
   const load = useCallback(async (p = 0) => {
@@ -184,6 +203,7 @@ export default function MLPublicationsPage() {
         ...(searchRef.current ? { q: searchRef.current } : {}),
         ...(sinProducto ? { sin_producto: "1" } : {}),
         ...(soloElegibles ? { solo_elegibles: "1" } : {}),
+        ...(sinStock ? { sin_stock: "1" } : {}),
       })
       const res  = await fetch(`/api/ml/publications?${params}`)
       const data = await res.json()
@@ -194,9 +214,9 @@ export default function MLPublicationsPage() {
     } finally {
       setLoading(false)
     }
-  }, [accountId, statusFilter, sinProducto, soloElegibles])
+  }, [accountId, statusFilter, sinProducto, soloElegibles, sinStock])
 
-  useEffect(() => { setPage(0); load(0) }, [accountId, statusFilter, sinProducto, soloElegibles])
+  useEffect(() => { setPage(0); load(0) }, [accountId, statusFilter, sinProducto, soloElegibles, sinStock])
 
   const handleSearch = () => { setPage(0); load(0) }
   const prevPage = () => { const p = page - 1; setPage(p); load(p) }
