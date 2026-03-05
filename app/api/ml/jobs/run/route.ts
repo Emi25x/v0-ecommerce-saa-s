@@ -10,10 +10,11 @@ export const maxDuration = 60
 const BACKOFF_SECONDS = [30, 120, 300, 600, 1800]
 const MAX_ATTEMPTS    = 5
 
-// ML constants (mismos que import-pro)
+// ML constants
+const ML_API          = "https://api.mercadolibre.com"
 const ML_SCAN_PAGE_SIZE   = 50
 const ML_MULTIGET_MAX_IDS = 50
-const ML_ATTRIBUTES       = "id,title,price,available_quantity,sold_quantity,status,permalink,thumbnail,listing_type_id,attributes"
+const ML_ATTRIBUTES       = "id,title,price,available_quantity,sold_quantity,status,permalink,thumbnail,listing_type_id,attributes,seller_custom_field"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -61,7 +62,429 @@ async function runPool<T>(tasks: (() => Promise<T>)[], concurrency: number): Pro
   return results
 }
 
+// ── Rate-limit token bucket ───────────────────────────────────────────────────
+
+/**
+ * Consume `cost` tokens from the per-account bucket stored in ml_rate_limits.
+ * Window resets every 60 s.  If the bucket would overflow, wait until the
+ * window resets (max ~60 s) and retry once.
+ */
+async function consumeRateLimit(
+  supabase: any,
+  accountId: string,
+  cost = 1,
+): Promise<void> {
+  const WINDOW_MS = 60_000
+  const LIMIT     = 500   // conservative: ML allows ~600 req/min per app
+
+  const now        = new Date()
+  const windowStart = new Date(Math.floor(now.getTime() / WINDOW_MS) * WINDOW_MS).toISOString()
+
+  // Upsert bucket row
+  const { data: row } = await supabase
+    .from("ml_rate_limits")
+    .select("tokens_used, window_start, tokens_limit")
+    .eq("account_id", accountId)
+    .maybeSingle()
+
+  const sameWindow = row && row.window_start === windowStart
+  const used       = sameWindow ? (row.tokens_used ?? 0) : 0
+
+  if (used + cost > LIMIT) {
+    // Wait until the next window
+    const windowEnd = new Date(Math.floor(now.getTime() / WINDOW_MS) * WINDOW_MS + WINDOW_MS)
+    const waitMs    = Math.max(0, windowEnd.getTime() - Date.now()) + 100
+    await new Promise((r) => setTimeout(r, waitMs))
+  }
+
+  // Record usage
+  await supabase.from("ml_rate_limits").upsert(
+    {
+      account_id:   accountId,
+      window_start: windowStart,
+      tokens_used:  used + cost,
+      tokens_limit: LIMIT,
+      updated_at:   new Date().toISOString(),
+    },
+    { onConflict: "account_id" },
+  )
+}
+
+// ── Shared ML fetch with rate-limit + retry ───────────────────────────────────
+
+async function mlFetch(
+  url: string,
+  token: string,
+  options: RequestInit = {},
+): Promise<{ ok: boolean; status: number; data: any; rateLimited: boolean; retryAfter: number }> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+    ...(options.headers as Record<string, string> ?? {}),
+  }
+
+  let attempt = 0
+  while (attempt < 3) {
+    const res = await fetch(url, { ...options, headers, signal: AbortSignal.timeout(15_000) })
+
+    if (res.status === 429) {
+      const retryAfter = parseInt(res.headers.get("retry-after") ?? "60", 10)
+      return { ok: false, status: 429, data: null, rateLimited: true, retryAfter }
+    }
+    if (res.status >= 500 && attempt < 2) {
+      await new Promise((r) => setTimeout(r, 400 * 2 ** attempt))
+      attempt++
+      continue
+    }
+
+    let data: any = null
+    try { data = await res.json() } catch { /* no-op */ }
+
+    return { ok: res.ok, status: res.status, data, rateLimited: false, retryAfter: 0 }
+  }
+
+  return { ok: false, status: 0, data: null, rateLimited: false, retryAfter: 0 }
+}
+
+// ── Job log helper ────────────────────────────────────────────────────────────
+
+async function jobLog(
+  supabase: any,
+  jobId: string,
+  level: "info" | "warn" | "error",
+  message: string,
+  meta?: Record<string, unknown>,
+) {
+  await supabase.from("ml_job_logs").insert({
+    job_id:  jobId,
+    level,
+    message,
+    meta:    meta ?? {},
+  })
+}
+
 // ── Handlers por tipo de job ─────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// catalog_index
+// Payload: { batch_size?: number, offset?: number, force?: boolean }
+// Resolves catalog_product_id for publications that have ISBN/EAN/GTIN.
+// ─────────────────────────────────────────────────────────────────────────────
+async function executeCatalogIndex(job: any, supabase: any): Promise<Record<string, unknown>> {
+  const { account_id, payload = {} } = job
+  const batchSize = Math.min(Number(payload.batch_size ?? 30), 50)
+  const offset    = Number(payload.offset ?? 0)
+  const force     = Boolean(payload.force ?? false)
+
+  const token = await getValidAccessToken(account_id)
+
+  // Fetch publications with identifiers
+  let q = supabase
+    .from("ml_publications")
+    .select("id, ml_item_id, isbn, ean, gtin")
+    .eq("account_id", account_id)
+    .or("isbn.not.is.null,ean.not.is.null,gtin.not.is.null")
+    .order("updated_at", { ascending: false })
+    .range(offset, offset + batchSize - 1)
+
+  if (!force) q = q.is("catalog_product_id", null)
+
+  const { data: pubs, error } = await q
+  if (error) throw error
+  if (!pubs || pubs.length === 0) return { done: true, has_more: false, processed: 0, offset }
+
+  let matched = 0, not_found = 0, ambiguous = 0, errors = 0
+
+  for (const pub of pubs) {
+    const identifier = pub.isbn || pub.ean || pub.gtin
+    if (!identifier) continue
+
+    try {
+      await consumeRateLimit(supabase, account_id)
+      const url = `${ML_API}/products/search?status=active&q=${encodeURIComponent(identifier)}&limit=3`
+      const { ok, data, rateLimited, retryAfter } = await mlFetch(url, token)
+
+      if (rateLimited) {
+        await jobLog(supabase, job.id, "warn", `Rate limited, retry-after ${retryAfter}s`, { identifier })
+        await new Promise((r) => setTimeout(r, Math.min(retryAfter, 60) * 1000))
+        continue
+      }
+
+      if (!ok || !data) { errors++; continue }
+
+      const results: any[] = data.results ?? []
+      const catalogProductId = results.length === 1 ? results[0].id : null
+      const isEligible       = catalogProductId !== null
+
+      await supabase.from("ml_publications").update({
+        catalog_product_id:      catalogProductId,
+        catalog_listing_eligible: isEligible,
+        updated_at:              new Date().toISOString(),
+      }).eq("id", pub.id)
+
+      if (isEligible)              matched++
+      else if (results.length === 0) not_found++
+      else                           ambiguous++
+
+      // Minimum inter-request delay
+      await new Promise((r) => setTimeout(r, 100))
+    } catch (e: any) {
+      errors++
+      await jobLog(supabase, job.id, "error", `Error indexing ${pub.ml_item_id}: ${e.message}`)
+    }
+  }
+
+  const nextOffset = offset + pubs.length
+  const hasMore    = pubs.length === batchSize
+
+  await jobLog(supabase, job.id, "info", "catalog_index batch completed", {
+    processed: pubs.length, matched, not_found, ambiguous, errors,
+    has_more: hasMore, next_offset: nextOffset,
+  })
+
+  return { processed: pubs.length, matched, not_found, ambiguous, errors, has_more: hasMore, next_offset: nextOffset }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// catalog_optin
+// Payload: { ml_item_id: string, catalog_product_id: string }
+// Opts the item into the ML catalog via PUT /items/{id}.
+// ─────────────────────────────────────────────────────────────────────────────
+async function executeCatalogOptIn(job: any, supabase: any): Promise<Record<string, unknown>> {
+  const { account_id, payload } = job
+  const { ml_item_id, catalog_product_id } = payload as { ml_item_id: string; catalog_product_id: string }
+
+  if (!ml_item_id || !catalog_product_id) {
+    throw new Error("catalog_optin requiere ml_item_id y catalog_product_id en payload")
+  }
+
+  const token = await getValidAccessToken(account_id)
+
+  // Track in ml_catalog_job_items if a catalog job context is provided
+  const catalogJobId = payload.catalog_job_id as string | undefined
+  if (catalogJobId) {
+    await supabase.from("ml_catalog_job_items").upsert({
+      job_id:            catalogJobId,
+      old_item_id:       ml_item_id,
+      catalog_product_id,
+      action:            "optin",
+      status:            "running",
+    }, { onConflict: "job_id,old_item_id" })
+  }
+
+  await consumeRateLimit(supabase, account_id)
+
+  const { ok, status, data, rateLimited, retryAfter } = await mlFetch(
+    `${ML_API}/items/${ml_item_id}`,
+    token,
+    {
+      method: "PUT",
+      body: JSON.stringify({ catalog_product_id }),
+    },
+  )
+
+  if (rateLimited) {
+    throw new Error(`Rate limited — retry after ${retryAfter}s`)
+  }
+
+  if (!ok) {
+    const errMsg = data?.message ?? data?.error ?? `HTTP ${status}`
+    if (catalogJobId) {
+      await supabase.from("ml_catalog_job_items")
+        .update({ status: "error", error: errMsg })
+        .match({ job_id: catalogJobId, old_item_id: ml_item_id })
+    }
+    throw new Error(`ML opt-in failed for ${ml_item_id}: ${errMsg}`)
+  }
+
+  // Update local record
+  await supabase.from("ml_publications")
+    .update({
+      catalog_product_id,
+      catalog_listing_eligible: true,
+      updated_at: new Date().toISOString(),
+    })
+    .match({ account_id, ml_item_id })
+
+  if (catalogJobId) {
+    await supabase.from("ml_catalog_job_items")
+      .update({ status: "success", new_item_id: data?.id ?? ml_item_id })
+      .match({ job_id: catalogJobId, old_item_id: ml_item_id })
+
+    // Increment success counter on parent job
+    await supabase.rpc("increment_catalog_job_success", { _job_id: catalogJobId }).catch(() => {/* ignore if RPC doesn't exist */})
+  }
+
+  await jobLog(supabase, job.id, "info", `catalog_optin OK: ${ml_item_id} → ${catalog_product_id}`, { status })
+
+  return { ml_item_id, catalog_product_id, status: "success", ml_response_status: status }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buybox_sync
+// Payload: { ml_item_id?: string, account_id?: string, batch_size?: number }
+// Fetches the catalog buybox price from ML and updates price_to_win.
+// ─────────────────────────────────────────────────────────────────────────────
+async function executeBuyboxSync(job: any, supabase: any): Promise<Record<string, unknown>> {
+  const { account_id, payload = {} } = job
+  const specificItemId = payload.ml_item_id as string | undefined
+  const batchSize      = Math.min(Number(payload.batch_size ?? 20), 50)
+
+  const token = await getValidAccessToken(account_id)
+
+  // Determine which items to sync
+  let itemIds: string[]
+
+  if (specificItemId) {
+    itemIds = [specificItemId]
+  } else {
+    // Sync items that are catalog-eligible and haven't been synced recently
+    const { data: pubs } = await supabase
+      .from("ml_publications")
+      .select("ml_item_id")
+      .eq("account_id", account_id)
+      .eq("catalog_listing_eligible", true)
+      .eq("status", "active")
+      .not("catalog_product_id", "is", null)
+      .order("health_checked_at", { ascending: true, nullsFirst: true })
+      .limit(batchSize)
+
+    itemIds = (pubs ?? []).map((p: any) => p.ml_item_id)
+  }
+
+  if (itemIds.length === 0) {
+    return { synced: 0, errors: 0, message: "No hay items elegibles para sincronizar" }
+  }
+
+  let synced = 0, errors = 0
+
+  // Process in chunks of ML_MULTIGET_MAX_IDS
+  const chunks: string[][] = []
+  for (let i = 0; i < itemIds.length; i += ML_MULTIGET_MAX_IDS) {
+    chunks.push(itemIds.slice(i, i + ML_MULTIGET_MAX_IDS))
+  }
+
+  for (const chunk of chunks) {
+    await consumeRateLimit(supabase, account_id, chunk.length)
+
+    const url = `${ML_API}/items?ids=${chunk.join(",")}&attributes=id,price,status,catalog_listing,health`
+    const { ok, data, rateLimited, retryAfter } = await mlFetch(url, token)
+
+    if (rateLimited) {
+      await jobLog(supabase, job.id, "warn", `Rate limited, pausing ${retryAfter}s`)
+      await new Promise((r) => setTimeout(r, Math.min(retryAfter, 60) * 1000))
+      continue
+    }
+
+    if (!ok || !Array.isArray(data)) { errors += chunk.length; continue }
+
+    for (const entry of data) {
+      if (entry.code !== 200) { errors++; continue }
+      const item = entry.body
+
+      // price_to_win: the buybox price we need to match or beat
+      // ML returns the catalog buybox price via item.health.catalog_data or just item.price
+      const priceToWin = item.health?.catalog_data?.min_price ?? item.price ?? null
+
+      const { error: upErr } = await supabase
+        .from("ml_publications")
+        .update({
+          price_to_win:      priceToWin,
+          is_competing:      item.catalog_listing === true,
+          health_checked_at: new Date().toISOString(),
+          updated_at:        new Date().toISOString(),
+        })
+        .match({ account_id, ml_item_id: item.id })
+
+      if (upErr) { errors++; continue }
+      synced++
+    }
+
+    await new Promise((r) => setTimeout(r, 80))
+  }
+
+  await jobLog(supabase, job.id, "info", "buybox_sync completed", { synced, errors, item_count: itemIds.length })
+
+  return { synced, errors, item_count: itemIds.length }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// import_single_item
+// Payload: { ml_item_id: string }
+// Fetches a single item from the ML API and upserts it into ml_publications.
+// ─────────────────────────────────────────────────────────────────────────────
+async function executeImportSingle(job: any, supabase: any): Promise<Record<string, unknown>> {
+  const { account_id, payload } = job
+  const ml_item_id = payload?.ml_item_id as string | undefined
+
+  if (!ml_item_id) throw new Error("import_single_item requiere ml_item_id en payload")
+
+  const token = await getValidAccessToken(account_id)
+
+  await consumeRateLimit(supabase, account_id)
+
+  const fullAttributes = [
+    "id", "title", "price", "available_quantity", "sold_quantity", "status",
+    "permalink", "thumbnail", "listing_type_id", "attributes",
+    "seller_custom_field", "catalog_listing", "catalog_product_id", "health",
+  ].join(",")
+
+  const { ok, status, data, rateLimited, retryAfter } = await mlFetch(
+    `${ML_API}/items/${ml_item_id}?attributes=${fullAttributes}`,
+    token,
+  )
+
+  if (rateLimited) throw new Error(`Rate limited — retry after ${retryAfter}s`)
+  if (!ok || !data) throw new Error(`ML GET /items/${ml_item_id} falló: HTTP ${status}`)
+
+  const item = data
+
+  // Extract identifiers from attributes
+  const attrs: any[] = item.attributes ?? []
+  const findAttr     = (ids: string[]) =>
+    attrs.find((a: any) => ids.includes(a.id))?.value_name ?? null
+
+  const isbn = findAttr(["ISBN"])
+  const ean  = findAttr(["EAN", "GTIN"])
+  const sku  = item.seller_custom_field
+    ?? attrs.find((a: any) => ["SELLER_SKU", "SKU"].includes(a.id))?.value_name
+    ?? null
+
+  const row = {
+    account_id,
+    ml_item_id:              item.id,
+    title:                   item.title,
+    price:                   item.price,
+    current_stock:           item.available_quantity,
+    status:                  item.status,
+    permalink:               item.permalink,
+    sku,
+    isbn,
+    ean,
+    catalog_listing_eligible: item.catalog_listing ?? false,
+    catalog_product_id:      item.catalog_product_id ?? null,
+    updated_at:              new Date().toISOString(),
+  }
+
+  const { error: upsertErr } = await supabase
+    .from("ml_publications")
+    .upsert(row, { onConflict: "account_id,ml_item_id", ignoreDuplicates: false })
+
+  if (upsertErr) throw upsertErr
+
+  // Update ml_import_queue entry if present
+  await supabase
+    .from("ml_import_queue")
+    .update({ status: "processed", processed_at: new Date().toISOString() })
+    .eq("ml_item_id", ml_item_id)
+    .eq("status", "claimed")
+
+  await jobLog(supabase, job.id, "info", `import_single OK: ${ml_item_id}`, {
+    title: item.title, price: item.price, status: item.status,
+  })
+
+  return { ml_item_id, title: item.title, status: item.status, price: item.price }
+}
 
 async function handleImportPublications(
   job: any,
@@ -219,6 +642,14 @@ async function executeJob(job: any, supabase: any, instanceId: string) {
   switch (job.type) {
     case "import_publications":
       return handleImportPublications(job, supabase, instanceId)
+    case "catalog_index":
+      return executeCatalogIndex(job, supabase)
+    case "catalog_optin":
+      return executeCatalogOptIn(job, supabase)
+    case "buybox_sync":
+      return executeBuyboxSync(job, supabase)
+    case "import_single_item":
+      return executeImportSingle(job, supabase)
     default:
       throw new Error(`Tipo de job no implementado: ${job.type}`)
   }
