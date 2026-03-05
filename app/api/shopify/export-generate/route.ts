@@ -1,32 +1,128 @@
 /**
  * POST /api/shopify/export-generate
  * Body: { store_id, eans: string[], warehouse_id?: string }
- * Returns: JSON array of rows matching the store's template columns.
- * The client converts this to XLSX using the xlsx package.
+ *
+ * Generates an XLSX-ready row set matching the exact 78-column Shopify
+ * products import format. The route returns { ok, columns, rows } where
+ * rows is an array of objects keyed by the column headers.
+ *
+ * Tag construction (comma + space separated):
+ *   - Temática     → products.category        (e.g. "144")
+ *   - Editorial    → products.brand           (e.g. "Anaya")
+ *   - literal      → "catalogo"
+ *   - Autor        → products.author
+ *   - Rango título → "Titulo A-C" based on first letter of title
+ *   - flags        → from custom_fields.flags[] if present
  */
+
 import { createClient } from "@/lib/supabase/server"
 import { NextRequest, NextResponse } from "next/server"
 
-// Default Shopify column set used when no template is configured
-const DEFAULT_COLUMNS = [
+// ── The canonical 78-column Shopify products export header ────────────────
+export const SHOPIFY_COLUMNS = [
   "Handle",
   "Title",
   "Body (HTML)",
   "Vendor",
+  "Product Category",
   "Type",
   "Tags",
   "Published",
+  "Option1 Name",
+  "Option1 Value",
+  "Option2 Name",
+  "Option2 Value",
+  "Option3 Name",
+  "Option3 Value",
   "Variant SKU",
   "Variant Grams",
+  "Variant Inventory Tracker",
   "Variant Inventory Qty",
+  "Variant Inventory Policy",
+  "Variant Fulfillment Service",
   "Variant Price",
+  "Variant Compare At Price",
+  "Variant Requires Shipping",
+  "Variant Taxable",
   "Variant Barcode",
   "Image Src",
   "Image Position",
+  "Image Alt Text",
+  "Gift Card",
   "SEO Title",
   "SEO Description",
+  "Google Shopping / Google Product Category",
+  "Google Shopping / Gender",
+  "Google Shopping / Age Group",
+  "Google Shopping / MPN",
+  "Google Shopping / AdWords Grouping",
+  "Google Shopping / AdWords Labels",
+  "Google Shopping / Condition",
+  "Google Shopping / Custom Product",
+  "Google Shopping / Custom Label 0",
+  "Google Shopping / Custom Label 1",
+  "Google Shopping / Custom Label 2",
+  "Google Shopping / Custom Label 3",
+  "Google Shopping / Custom Label 4",
+  "Variant Image",
+  "Variant Weight Unit",
+  "Variant Tax Code",
+  "Cost per item",
+  "Included / Argentina",
+  "Price / Argentina",
+  "Compare At Price / Argentina",
+  "Included / International",
+  "Price / International",
+  "Compare At Price / International",
+  "Status",
+  // Metafields
+  "Metafield: custom.autor [single_line_text_field]",
+  "Metafield: custom.editorial [single_line_text_field]",
+  "Metafield: custom.idioma [single_line_text_field]",
+  "Metafield: custom.isbn [single_line_text_field]",
+  "Metafield: custom.tematica [single_line_text_field]",
+  "Metafield: custom.tematica_especifica [single_line_text_field]",
+  "Metafield: custom.paginas [number_integer]",
+  "Metafield: custom.encuadernacion [single_line_text_field]",
+  "Metafield: custom.anio_edicion [single_line_text_field]",
+  "Metafield: custom.alto_mm [number_integer]",
+  "Metafield: custom.ancho_mm [number_integer]",
+  "Metafield: custom.espesor_mm [number_integer]",
+  "Metafield: custom.peso_g [number_integer]",
+  "Metafield: custom.condicion [single_line_text_field]",
+  "Metafield: custom.codigo_ibic [single_line_text_field]",
+  "Metafield: custom.ean [single_line_text_field]",
+  "Metafield: custom.materia [single_line_text_field]",
+  "Metafield: custom.curso [single_line_text_field]",
 ]
 
+// ── Title-range tag helper ────────────────────────────────────────────────
+const TITLE_RANGES = [
+  { tag: "Titulo A-C", from: "a", to: "c" },
+  { tag: "Titulo D-F", from: "d", to: "f" },
+  { tag: "Titulo G-I", from: "g", to: "i" },
+  { tag: "Titulo J-L", from: "j", to: "l" },
+  { tag: "Titulo M-O", from: "m", to: "o" },
+  { tag: "Titulo P-R", from: "p", to: "r" },
+  { tag: "Titulo S-U", from: "s", to: "u" },
+  { tag: "Titulo V-Z", from: "v", to: "z" },
+  { tag: "Titulo 0-9", from: "0", to: "9" },
+]
+
+function titleRangeTag(title: string): string {
+  const first = title
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .charAt(0)
+  for (const r of TITLE_RANGES) {
+    if (first >= r.from && first <= r.to) return r.tag
+  }
+  return "Titulo Otros"
+}
+
+// ── Slug helper ───────────────────────────────────────────────────────────
 function slugify(text: string): string {
   return text
     .toLowerCase()
@@ -38,23 +134,26 @@ function slugify(text: string): string {
     .slice(0, 80)
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-    const { store_id, eans, warehouse_id } = await request.json() as {
+    const body = await request.json() as {
       store_id: string
       eans: string[]
       warehouse_id?: string
     }
+    const { store_id, eans, warehouse_id } = body
 
     if (!store_id || !eans?.length) {
       return NextResponse.json({ error: "store_id y eans son requeridos" }, { status: 400 })
     }
 
-    // 1. Verify store ownership & get defaults
+    // 1. Verify store ownership
     const { data: store } = await supabase
       .from("shopify_stores")
       .select("id, shop_domain, name")
@@ -63,40 +162,52 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
     if (!store) return NextResponse.json({ error: "Tienda no encontrada" }, { status: 404 })
 
-    // 2. Load template
+    // 2. Load template (columns override + defaults like Vendor, Type)
     const { data: tpl } = await supabase
       .from("shopify_export_templates")
       .select("template_columns_json, defaults_json")
       .eq("shopify_store_id", store_id)
       .maybeSingle()
 
-    const columns: string[] = (tpl?.template_columns_json as string[] | null) ?? DEFAULT_COLUMNS
-    const defaults: Record<string, string> = (tpl?.defaults_json as Record<string, string> | null) ?? {}
+    // Use stored column list if available, otherwise the canonical 78 columns
+    const columns: string[] =
+      (tpl?.template_columns_json as string[] | null)?.length
+        ? (tpl!.template_columns_json as string[])
+        : SHOPIFY_COLUMNS
 
-    // 3. Load products by EAN/ISBN
+    const defaults: Record<string, string> =
+      (tpl?.defaults_json as Record<string, string> | null) ?? {}
+
+    // 3. Load products by EAN or ISBN
     const { data: products, error: prodError } = await supabase
       .from("products")
       .select(
-        "id, title, description, brand, sku, ean, isbn, price, canonical_weight_g, image_url, category, custom_fields, height, width, thickness",
+        "id, title, description, brand, sku, ean, isbn, price, cost_price, " +
+        "canonical_weight_g, image_url, category, custom_fields, " +
+        "height, width, thickness, pages, author, language, binding, " +
+        "ibic_subjects, edition_date, year_edition, subject, course, condition"
       )
       .or(eans.map((e) => `ean.eq.${e},isbn.eq.${e}`).join(","))
 
     if (prodError) return NextResponse.json({ error: prodError.message }, { status: 500 })
-    if (!products?.length) return NextResponse.json({ error: "No se encontraron productos para los EANs ingresados" }, { status: 404 })
+    if (!products?.length) {
+      return NextResponse.json(
+        { error: "No se encontraron productos para los EANs ingresados" },
+        { status: 404 }
+      )
+    }
 
-    // 4. Load stock from supplier_catalog_items for the selected warehouse (or default)
+    // 4. Load best stock per product from supplier_catalog_items
     const productIds = products.map((p) => p.id)
     let stockQuery = supabase
       .from("supplier_catalog_items")
-      .select("product_id, stock_quantity, warehouse_id")
+      .select("product_id, stock_quantity")
       .in("product_id", productIds)
       .order("stock_quantity", { ascending: false })
 
     if (warehouse_id) stockQuery = stockQuery.eq("warehouse_id", warehouse_id)
 
     const { data: stockRows } = await stockQuery
-
-    // Build product_id -> best stock map
     const stockMap: Record<string, number> = {}
     for (const s of stockRows ?? []) {
       if (s.product_id && !(s.product_id in stockMap)) {
@@ -108,57 +219,175 @@ export async function POST(request: NextRequest) {
     const rows: Record<string, string | number>[] = []
 
     for (const p of products) {
-      const handle = slugify(p.title ?? p.ean ?? "producto")
-      const barcode = p.ean || p.isbn || ""
-      const weightG = p.canonical_weight_g ?? ""
-      const stock   = stockMap[p.id] ?? 0
-      const price   = p.price ?? ""
-
-      // Custom / metafield columns from custom_fields or dimensions
       const customFields = (p.custom_fields as Record<string, unknown> | null) ?? {}
 
-      const metaHeight    = (customFields.alto_mm    ?? (p.height    ? p.height * 10    : "")) as string | number
-      const metaWidth     = (customFields.ancho_mm   ?? (p.width     ? p.width * 10     : "")) as string | number
-      const metaThickness = (customFields.espesor_mm ?? (p.thickness ? p.thickness * 10 : "")) as string | number
+      // ── Identifiers ────────────────────────────────────────────────────
+      const barcode    = p.ean || p.isbn || ""
+      // SKU: prefer internal sku, fallback to EAN, then ISBN
+      const variantSku = p.sku || p.ean || p.isbn || ""
+      const handle     = slugify(p.title ?? barcode ?? "producto")
+      const weightG    = p.canonical_weight_g ?? ""
+      const stock      = stockMap[p.id] ?? 0
+      const price      = p.price != null ? String(p.price) : ""
 
-      // Helpers to fill any column name
-      const cellValue = (col: string): string | number => {
-        const c = col.toLowerCase().trim()
+      // ── Dimensions (mm) from DB or custom_fields ───────────────────────
+      const alto    = p.height    != null ? Math.round(p.height * 10)    : (customFields.alto_mm    ?? "")
+      const ancho   = p.width     != null ? Math.round(p.width * 10)     : (customFields.ancho_mm   ?? "")
+      const espesor = p.thickness != null ? Math.round(p.thickness * 10) : (customFields.espesor_mm ?? "")
 
-        if (c === "handle")                      return handle
-        if (c === "title")                       return p.title ?? ""
-        if (c === "body (html)")                 return p.description ? `<p>${p.description}</p>` : ""
-        if (c === "vendor")                      return defaults.Vendor ?? p.brand ?? ""
-        if (c === "type")                        return defaults.Type ?? p.category ?? ""
-        if (c === "tags")                        return defaults.Tags ?? ""
-        if (c === "published")                   return defaults.Published ?? "TRUE"
-        if (c === "variant sku")                 return p.sku ?? ""
-        if (c === "variant grams")               return weightG
-        if (c === "variant inventory qty")       return stock
-        if (c === "variant price")               return price
-        if (c === "variant barcode")             return barcode
-        if (c === "image src")                   return p.image_url ?? ""
-        if (c === "image position")              return "1"
-        if (c === "seo title")                   return p.title ?? ""
-        if (c === "seo description")             return p.description?.slice(0, 160) ?? ""
+      // ── Tags ─────────────────────────────────────────────────────────
+      const tagParts: string[] = []
+      if (p.category) tagParts.push(p.category)
+      if (p.brand)    tagParts.push(p.brand)
+      tagParts.push("catalogo")
+      if (p.author)   tagParts.push(p.author)
+      tagParts.push(titleRangeTag(p.title ?? ""))
 
-        // Metafields: match by common patterns
-        if (c.includes("alto") || c.includes("height"))     return metaHeight
-        if (c.includes("ancho") || c.includes("width"))     return metaWidth
-        if (c.includes("espesor") || c.includes("thick"))   return metaThickness
-        if (c.includes("peso") || c.includes("weight"))     return weightG
+      // Extra flags from custom_fields.flags[]
+      const flags = customFields.flags
+      if (Array.isArray(flags)) {
+        for (const f of flags) if (typeof f === "string") tagParts.push(f)
+      }
 
-        // Fall back to defaults then custom_fields
-        return defaults[col] ?? (customFields[col] as string | number | null) ?? ""
+      const tags = tagParts.filter(Boolean).join(", ")
+
+      // ── Vendor / Type ─────────────────────────────────────────────────
+      const vendor = defaults["Vendor"] || p.brand || ""
+      const type   = defaults["Type"]   || p.category || ""
+
+      // ── Body HTML ────────────────────────────────────────────────────
+      const bodyHtml = p.description ? `<p>${p.description}</p>` : ""
+
+      // ── SEO ──────────────────────────────────────────────────────────
+      const seoTitle = p.title ?? ""
+      const seoDesc  = p.description?.slice(0, 320) ?? ""
+
+      // ── Cell resolver: maps every column name to its value ──────────
+      const cell = (col: string): string | number => {
+        switch (col) {
+          // Core product fields
+          case "Handle":                    return handle
+          case "Title":                     return p.title ?? ""
+          case "Body (HTML)":               return bodyHtml
+          case "Vendor":                    return vendor
+          case "Product Category":          return defaults["Product Category"] ?? ""
+          case "Type":                      return type
+          case "Tags":                      return tags
+          case "Published":                 return defaults["Published"] ?? "TRUE"
+          case "Status":                    return defaults["Status"] ?? "active"
+
+          // Options (single variant — no options needed for books)
+          case "Option1 Name":              return "Title"
+          case "Option1 Value":             return "Default Title"
+          case "Option2 Name":              return ""
+          case "Option2 Value":             return ""
+          case "Option3 Name":              return ""
+          case "Option3 Value":             return ""
+
+          // Variant
+          case "Variant SKU":               return variantSku
+          case "Variant Grams":             return weightG
+          case "Variant Inventory Tracker": return "shopify"
+          case "Variant Inventory Qty":     return stock
+          case "Variant Inventory Policy":  return "deny"
+          case "Variant Fulfillment Service": return "manual"
+          case "Variant Price":             return price
+          case "Variant Compare At Price":  return ""
+          case "Variant Requires Shipping": return "TRUE"
+          case "Variant Taxable":           return defaults["Variant Taxable"] ?? "TRUE"
+          case "Variant Barcode":           return barcode
+          case "Variant Weight Unit":       return "g"
+          case "Variant Tax Code":          return ""
+          case "Variant Image":             return ""
+
+          // Image
+          case "Image Src":                 return p.image_url ?? ""
+          case "Image Position":            return p.image_url ? "1" : ""
+          case "Image Alt Text":            return p.title ?? ""
+
+          // Cost
+          case "Cost per item":             return p.cost_price != null ? String(p.cost_price) : ""
+
+          // Pricing by market
+          case "Included / Argentina":      return "TRUE"
+          case "Price / Argentina":         return price
+          case "Compare At Price / Argentina": return ""
+          case "Included / International":  return "FALSE"
+          case "Price / International":     return ""
+          case "Compare At Price / International": return ""
+
+          // Gift card / SEO
+          case "Gift Card":                 return "FALSE"
+          case "SEO Title":                 return seoTitle
+          case "SEO Description":           return seoDesc
+
+          // Google Shopping — left mostly empty for books
+          case "Google Shopping / Google Product Category": return defaults["Google Shopping / Google Product Category"] ?? ""
+          case "Google Shopping / Gender":               return ""
+          case "Google Shopping / Age Group":            return ""
+          case "Google Shopping / MPN":                  return barcode
+          case "Google Shopping / AdWords Grouping":     return ""
+          case "Google Shopping / AdWords Labels":       return ""
+          case "Google Shopping / Condition":            return p.condition ?? "new"
+          case "Google Shopping / Custom Product":       return "FALSE"
+          case "Google Shopping / Custom Label 0":       return p.brand ?? ""
+          case "Google Shopping / Custom Label 1":       return p.category ?? ""
+          case "Google Shopping / Custom Label 2":       return p.author ?? ""
+          case "Google Shopping / Custom Label 3":       return ""
+          case "Google Shopping / Custom Label 4":       return ""
+
+          // Metafields
+          case "Metafield: custom.autor [single_line_text_field]":
+            return p.author ?? ""
+          case "Metafield: custom.editorial [single_line_text_field]":
+            return p.brand ?? ""
+          case "Metafield: custom.idioma [single_line_text_field]":
+            return p.language ?? (customFields.idioma as string) ?? ""
+          case "Metafield: custom.isbn [single_line_text_field]":
+            return p.isbn ?? ""
+          case "Metafield: custom.tematica [single_line_text_field]":
+            return p.category ?? (customFields.tematica as string) ?? ""
+          case "Metafield: custom.tematica_especifica [single_line_text_field]":
+            return (customFields.tematica_especifica as string) ?? p.ibic_subjects ?? ""
+          case "Metafield: custom.paginas [number_integer]":
+            return p.pages != null ? p.pages : ((customFields.paginas as number) ?? "")
+          case "Metafield: custom.encuadernacion [single_line_text_field]":
+            return p.binding ?? (customFields.encuadernacion as string) ?? ""
+          case "Metafield: custom.anio_edicion [single_line_text_field]":
+            return p.year_edition ?? p.edition_date ?? (customFields.anio_edicion as string) ?? ""
+          case "Metafield: custom.alto_mm [number_integer]":
+            return alto
+          case "Metafield: custom.ancho_mm [number_integer]":
+            return ancho
+          case "Metafield: custom.espesor_mm [number_integer]":
+            return espesor
+          case "Metafield: custom.peso_g [number_integer]":
+            return weightG
+          case "Metafield: custom.condicion [single_line_text_field]":
+            return p.condition ?? (customFields.condicion as string) ?? "Nuevo"
+          case "Metafield: custom.codigo_ibic [single_line_text_field]":
+            return p.ibic_subjects ?? (customFields.codigo_ibic as string) ?? ""
+          case "Metafield: custom.ean [single_line_text_field]":
+            return barcode
+          case "Metafield: custom.materia [single_line_text_field]":
+            return p.subject ?? (customFields.materia as string) ?? ""
+          case "Metafield: custom.curso [single_line_text_field]":
+            return p.course ?? (customFields.curso as string) ?? ""
+
+          default:
+            // Fall back to defaults, then custom_fields
+            return defaults[col] ?? (customFields[col] as string | number | null) ?? ""
+        }
       }
 
       const row: Record<string, string | number> = {}
-      for (const col of columns) row[col] = cellValue(col)
+      for (const col of columns) row[col] = cell(col)
       rows.push(row)
     }
 
     return NextResponse.json({ ok: true, columns, rows })
   } catch (e: any) {
+    console.error("[shopify/export-generate]", e)
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }
