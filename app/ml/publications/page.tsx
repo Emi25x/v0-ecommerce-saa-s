@@ -235,6 +235,7 @@ export default function MLPublicationsPage() {
     navigator.clipboard.writeText(permalink)
     setCopiedLink(id)
     setTimeout(() => setCopiedLink(null), 1500)
+    toast({ title: "Copiado", description: permalink })
   }
 
   const handleRefresh = () => {
@@ -715,7 +716,7 @@ export default function MLPublicationsPage() {
 
                           {/* Acciones */}
                           <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="flex items-center gap-1">
 
                               {/* Abrir en ML + Copiar link */}
                               {row.permalink && (
@@ -726,7 +727,7 @@ export default function MLPublicationsPage() {
                                         href={row.permalink}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted/50"
+                                        className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted/50 opacity-0 group-hover:opacity-100 transition-opacity"
                                       >
                                         <ExternalLink className="h-4 w-4" />
                                       </a>
