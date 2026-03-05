@@ -10,6 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import {
   Receipt, RefreshCw, CheckCircle2, XCircle, ChevronLeft, ChevronRight,
   FileText, Zap, Filter, Building2, AlertTriangle, ShoppingCart, Info, Download,
+  Upload, Clock, RotateCcw,
 } from "lucide-react"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -27,6 +28,8 @@ interface MLOrder {
   facturada:       boolean
   factura_info:    any
 }
+
+type UploadStatus = "pending" | "uploaded" | "error" | null
 
 interface MLAccount {
   id:         string
@@ -142,7 +145,52 @@ export default function MLBillingPage() {
   // Selección masiva
   const [selected,      setSelected]      = useState<Set<number>>(new Set())
   const [emittingBatch, setEmittingBatch] = useState(false)
-  const [batchResult,   setBatchResult]   = useState<{ ok: number; err: number; errors: string[] } | null>(null)
+  const [batchResult,   setBatchResult]   = useState<{ ok: number; err: number; errors: string[]; warnings: string[] } | null>(null)
+
+  // Subida de facturas a ML
+  const [uploadingId,  setUploadingId]  = useState<number | null>(null)
+  const [uploadStatus, setUploadStatus] = useState<Record<number, UploadStatus>>({})
+
+  const subirFacturaML = async (order: MLOrder) => {
+    if (!order.factura_info?.factura_id) return
+    setUploadingId(order.id)
+    try {
+      // 1. Obtener PDF URL de la factura
+      const pdfUrl = `/api/billing/facturas/${order.factura_info.factura_id}/pdf`
+
+      // 2. Obtener número y total de la factura
+      const facRes  = await fetch(`/api/billing/facturas/${order.factura_info.factura_id}`)
+      const facData = facRes.ok ? await facRes.json() : null
+      const factura  = facData?.factura
+
+      const invoiceNumber = factura?.numero
+        ? `${String(factura.punto_venta).padStart(4, "0")}-${String(factura.numero).padStart(8, "0")}`
+        : `FC-${order.factura_info.factura_id.slice(0, 8)}`
+      const invoiceDate   = factura?.fecha || new Date().toISOString().slice(0, 10)
+      const totalAmount   = factura?.importe_total || order.total
+
+      // 3. Llamar al endpoint de subida
+      const res  = await fetch("/api/billing/ml-upload-invoice", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          account_id:     activeAccount,
+          order_id:       String(order.id),
+          factura_id:     order.factura_info.factura_id,
+          invoice_number: invoiceNumber,
+          invoice_date:   invoiceDate,
+          total_amount:   totalAmount,
+          pdf_url:        `${window.location.origin}${pdfUrl}`,
+        }),
+      })
+      const data = await res.json()
+      setUploadStatus(prev => ({ ...prev, [order.id]: data.ok ? "uploaded" : "error" }))
+    } catch {
+      setUploadStatus(prev => ({ ...prev, [order.id]: "error" }))
+    } finally {
+      setUploadingId(null)
+    }
+  }
 
   // ── Conectar cuenta ML ────────────────────────────────────────────────────
   const conectarML = async () => {
@@ -231,21 +279,25 @@ export default function MLBillingPage() {
     setEmittingBatch(true); setBatchResult(null)
 
     const selOrders = orders.filter(o => selected.has(o.id))
-    let ok = 0; let err = 0; const errs: string[] = []
+    let ok = 0; let err = 0; const errs: string[] = []; const warns: string[] = []
     const round2 = (n: number) => Math.round(n * 100) / 100
 
     for (const order of selOrders) {
       try {
-        // Paso 1: obtener datos fiscales del comprador desde GET /orders/{id}
-        // buyer.billing_info = { name, last_name, identification: { type, number } }
+        // Paso 1: obtener datos fiscales reales via /orders/{id}/billing_info (con cache 24h)
         const billingRes  = await fetch(
           `/api/billing/ml-order-billing?account_id=${activeAccount}&order_id=${order.id}`
         )
         const billingData = billingRes.ok ? await billingRes.json() : null
 
-        const nombre   = billingData?.nombre   || order.comprador || "Consumidor Final"
+        const nombre    = billingData?.nombre    || order.comprador || "Consumidor Final"
         const docNumRaw = billingData?.doc_numero || null
-        const docTipo  = (billingData?.doc_tipo  || "").toUpperCase()
+        const docTipo   = (billingData?.doc_tipo  || "").toUpperCase()
+
+        // Warning si no hay datos fiscales reales
+        if (billingData?.billing_info_missing) {
+          warns.push(`Orden #${order.id} (${order.comprador}): sin datos fiscales en ML, se facturó como Consumidor Final`)
+        }
 
         // Mapeo ML → AFIP: CUIT/CUIL → 80, DNI → 96, sin doc → 99
         const tipoDoc = docNumRaw
@@ -296,7 +348,7 @@ export default function MLBillingPage() {
       }
     }
 
-    setBatchResult({ ok, err, errors: errs })
+    setBatchResult({ ok, err, errors: errs, warnings: warns })
     setEmittingBatch(false)
     loadOrders(page)
   }
@@ -496,17 +548,31 @@ export default function MLBillingPage() {
             ? <CheckCircle2 className="h-5 w-5 text-emerald-400 flex-shrink-0 mt-0.5" />
             : <AlertTriangle className="h-5 w-5 text-amber-400 flex-shrink-0 mt-0.5" />
           }
-          <div>
+          <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold">
               {batchResult.ok} factura{batchResult.ok !== 1 ? "s" : ""} emitida{batchResult.ok !== 1 ? "s" : ""} correctamente
               {batchResult.err > 0 && ` · ${batchResult.err} con error`}
+              {batchResult.warnings.length > 0 && ` · ${batchResult.warnings.length} sin datos fiscales`}
             </p>
             {batchResult.errors.length > 0 && (
               <ul className="mt-2 space-y-0.5">
                 {batchResult.errors.map((e, i) => (
-                  <li key={i} className="text-xs text-muted-foreground">{e}</li>
+                  <li key={i} className="text-xs text-red-400">{e}</li>
                 ))}
               </ul>
+            )}
+            {batchResult.warnings.length > 0 && (
+              <details className="mt-2">
+                <summary className="text-xs text-amber-400 cursor-pointer select-none flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  {batchResult.warnings.length} orden{batchResult.warnings.length !== 1 ? "es" : ""} sin datos fiscales ML (facturadas como Consumidor Final)
+                </summary>
+                <ul className="mt-1.5 space-y-0.5 pl-4">
+                  {batchResult.warnings.map((w, i) => (
+                    <li key={i} className="text-xs text-muted-foreground">{w}</li>
+                  ))}
+                </ul>
+              </details>
             )}
           </div>
         </div>
@@ -579,7 +645,9 @@ export default function MLBillingPage() {
                     <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{fmtFecha(order.fecha)}</td>
                     <td className="px-4 py-3">
                       <p className="font-medium text-sm leading-tight">{order.comprador || "—"}</p>
-                      <p className="text-[10px] text-muted-foreground/40 mt-0.5 italic">Doc. se obtiene al facturar</p>
+                      {!order.facturada && (
+                        <p className="text-[10px] text-muted-foreground/40 mt-0.5 italic">Doc. se obtiene al facturar</p>
+                      )}
                     </td>
                     <td className="px-4 py-3 max-w-xs">
                       {order.items.slice(0, 2).map((item, i) => (
@@ -597,7 +665,7 @@ export default function MLBillingPage() {
                     <td className="px-4 py-3 text-center"><EnvioBadge estado={order.envio_status} /></td>
                     <td className="px-4 py-3 text-center">
                       {order.facturada ? (
-                        <div className="inline-flex flex-col items-center gap-0.5">
+                        <div className="inline-flex flex-col items-center gap-1">
                           <span className="inline-flex items-center gap-1 text-xs text-emerald-400">
                             <CheckCircle2 className="h-3.5 w-3.5" />
                             {order.factura_info?.facturado_at
@@ -615,6 +683,41 @@ export default function MLBillingPage() {
                               <Download className="h-3 w-3" />PDF
                             </a>
                           )}
+                          {/* Subir factura a ML */}
+                          {(() => {
+                            const st = uploadStatus[order.id]
+                            if (st === "uploaded") {
+                              return (
+                                <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400">
+                                  <CheckCircle2 className="h-3 w-3" />Subida a ML
+                                </span>
+                              )
+                            }
+                            if (uploadingId === order.id) {
+                              return (
+                                <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                                  <RefreshCw className="h-3 w-3 animate-spin" />Subiendo...
+                                </span>
+                              )
+                            }
+                            return (
+                              <button
+                                onClick={() => subirFacturaML(order)}
+                                disabled={uploadingId !== null}
+                                className={`inline-flex items-center gap-1 text-[10px] transition-colors ${
+                                  st === "error"
+                                    ? "text-red-400 hover:text-red-300"
+                                    : "text-muted-foreground/60 hover:text-primary"
+                                }`}
+                                title={st === "error" ? "Error al subir — reintentar" : "Subir factura a ML"}
+                              >
+                                {st === "error"
+                                  ? <><RotateCcw className="h-3 w-3" />Reintentar</>
+                                  : <><Upload className="h-3 w-3" />Subir a ML</>
+                                }
+                              </button>
+                            )
+                          })()}
                         </div>
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>
