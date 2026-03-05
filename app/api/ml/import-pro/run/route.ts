@@ -286,14 +286,29 @@ export async function POST(request: NextRequest) {
           let sku: string | null = null
           let isbn: string | null = null
           let gtin: string | null = null
+          let ean: string | null = null
 
           if (Array.isArray(b.attributes)) {
             for (const attr of b.attributes) {
-              if (attr.id === "SELLER_SKU") sku  = attr.value_name
-              if (attr.id === "ISBN")       isbn = attr.value_name
-              if (attr.id === "GTIN")       gtin = attr.value_name
+              if (attr.id === "SELLER_SKU") sku  = attr.value_name ?? null
+              if (attr.id === "ISBN")       isbn = attr.value_name ?? null
+              if (attr.id === "GTIN")       gtin = attr.value_name ?? null
+              if (attr.id === "EAN")        ean  = attr.value_name ?? null
             }
           }
+
+          // seller_custom_field is the most reliable SKU source — prefer it
+          if (b.seller_custom_field) sku = b.seller_custom_field
+
+          // Also check variations for seller_custom_field if item-level is missing
+          if (!sku && Array.isArray(b.variations) && b.variations.length > 0) {
+            for (const v of b.variations) {
+              if (v.seller_custom_field) { sku = v.seller_custom_field; break }
+            }
+          }
+
+          // EAN fallback: use GTIN if no dedicated EAN attribute
+          if (!ean && gtin) ean = gtin
 
           toUpsert.push({
             account_id:    accountId,
@@ -306,7 +321,7 @@ export async function POST(request: NextRequest) {
             sku:           sku,
             isbn:          isbn,
             gtin:          gtin,
-            ean:           gtin,
+            ean:           ean,
             updated_at:    now,
           })
         }

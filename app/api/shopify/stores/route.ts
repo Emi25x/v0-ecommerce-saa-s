@@ -92,7 +92,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { shop_domain, access_token, api_key, api_secret, default_location_id } = body
+    const { shop_domain, name, access_token, api_key, api_secret, default_location_id } = body
 
     if (!shop_domain) {
       return NextResponse.json({ error: "shop_domain es requerido" }, { status: 400 })
@@ -133,6 +133,7 @@ export async function POST(request: Request) {
       .insert({
         owner_user_id: user.id,
         shop_domain: domain,
+        name: name || domain,
         access_token: effectiveToken,
         api_key: api_key || null,
         api_secret: api_secret || null,

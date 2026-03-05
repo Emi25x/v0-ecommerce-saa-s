@@ -67,18 +67,32 @@ export async function POST(request: Request) {
         .eq("owner_user_id", user.id)
     }
 
-    const { data: warehouse, error } = await supabase
+    const insertPayload: Record<string, unknown> = {
+      owner_user_id: user.id,
+      name,
+      code,
+      address,
+      is_default: is_default || false,
+    }
+    if (notes !== undefined) insertPayload.notes = notes
+
+    let { data: warehouse, error } = await supabase
       .from("warehouses")
-      .insert({
-        owner_user_id: user.id,
-        name,
-        code,
-        address,
-        notes,
-        is_default: is_default || false,
-      })
+      .insert(insertPayload)
       .select()
       .single()
+
+    // Fallback: if notes column is missing (schema cache not yet refreshed),
+    // retry without it so the rest of the create still succeeds.
+    if (error?.message?.includes("notes")) {
+      console.error("[WAREHOUSES] notes column missing — retrying without it. Run migration: ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS notes text;")
+      delete insertPayload.notes
+      ;({ data: warehouse, error } = await supabase
+        .from("warehouses")
+        .insert(insertPayload)
+        .select()
+        .single())
+    }
 
     if (error) {
       console.error("[WAREHOUSES] Error creating warehouse:", error)
