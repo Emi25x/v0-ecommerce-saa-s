@@ -229,6 +229,12 @@ export default function MLPublicationsPage() {
     setTimeout(() => setCopied(null), 1500)
   }
 
+  const copyLink = (permalink: string, id: string) => {
+    navigator.clipboard.writeText(permalink)
+    setCopiedLink(id)
+    setTimeout(() => setCopiedLink(null), 1500)
+  }
+
   const handleRefresh = () => {
     load(page)
     loadCounts(accountId)
@@ -344,7 +350,14 @@ export default function MLPublicationsPage() {
                     value={counts.sin_producto}
                     color="orange"
                     active={sinProducto}
-                    onClick={() => { setSinProducto(true); setStatusFilter("all"); setPage(0); }}
+                    onClick={() => { setSinProducto(p => !p); setSinStock(false); setStatusFilter("all"); setPage(0); }}
+                  />
+                  <BadgeCount
+                    label="Sin stock"
+                    value={counts.sin_stock}
+                    color="red"
+                    active={sinStock}
+                    onClick={() => { setSinStock(s => !s); setSinProducto(false); setStatusFilter("all"); setPage(0); }}
                   />
                 </>
               ) : null}
@@ -392,6 +405,38 @@ export default function MLPublicationsPage() {
             </Button>
           </div>
         </div>
+
+        {/* ── Import progress indicator ───────────────────────────────────── */}
+        {importProgress && importProgress.status !== "completed" && (
+          <div className="rounded-lg border border-border bg-muted/20 px-4 py-3 flex items-center gap-4 text-sm">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-1.5 gap-2">
+                <span className="text-muted-foreground font-medium truncate">
+                  Importación {importProgress.status === "running" ? "en curso" : importProgress.status}
+                </span>
+                <span className="text-xs text-muted-foreground whitespace-nowrap tabular-nums">
+                  {importProgress.publications_offset.toLocaleString("es-AR")}
+                  {importProgress.publications_total
+                    ? ` / ${importProgress.publications_total.toLocaleString("es-AR")}`
+                    : ""}
+                </span>
+              </div>
+              <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${importProgress.status === "running" ? "bg-blue-500 animate-pulse" : "bg-green-500"}`}
+                  style={{
+                    width: importProgress.publications_total
+                      ? `${Math.min(100, (importProgress.publications_offset / importProgress.publications_total) * 100)}%`
+                      : "100%",
+                  }}
+                />
+              </div>
+            </div>
+            {importProgress.status === "running" && (
+              <RefreshCw className="h-4 w-4 text-blue-400 animate-spin shrink-0" />
+            )}
+          </div>
+        )}
 
         {/* ── Filtros ─────────────────────────────────────────────────────── */}
         <div className="flex flex-wrap gap-3 items-end">
@@ -465,6 +510,15 @@ export default function MLPublicationsPage() {
                 className="accent-primary"
               />
               Solo elegibles catálogo
+            </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={sinStock}
+                onChange={e => { setSinStock(e.target.checked); setPage(0) }}
+                className="accent-primary"
+              />
+              Sin stock
             </label>
           </div>
         </div>
@@ -602,21 +656,39 @@ export default function MLPublicationsPage() {
                           <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
 
-                              {/* Abrir en ML */}
+                              {/* Abrir en ML + Copiar link */}
                               {row.permalink && (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <a
-                                      href={row.permalink}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted/50"
-                                    >
-                                      <ExternalLink className="h-4 w-4" />
-                                    </a>
-                                  </TooltipTrigger>
-                                  <TooltipContent>Abrir en ML</TooltipContent>
-                                </Tooltip>
+                                <>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <a
+                                        href={row.permalink}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted/50"
+                                      >
+                                        <ExternalLink className="h-4 w-4" />
+                                      </a>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Abrir en ML</TooltipContent>
+                                  </Tooltip>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button
+                                        onClick={() => copyLink(row.permalink!, row.id)}
+                                        className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted/50"
+                                      >
+                                        {copiedLink === row.id
+                                          ? <CheckCircle2 className="h-4 w-4 text-green-400" />
+                                          : <Link2 className="h-4 w-4" />
+                                        }
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      {copiedLink === row.id ? "Copiado!" : "Copiar link"}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </>
                               )}
 
                               {/* Detalle */}
@@ -843,6 +915,7 @@ const COLOR_MAP: Record<string, string> = {
   yellow: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/25",
   zinc:   "bg-zinc-500/15 text-zinc-400 border-zinc-500/30 hover:bg-zinc-500/25",
   orange: "bg-orange-500/15 text-orange-400 border-orange-500/30 hover:bg-orange-500/25",
+  red:    "bg-red-500/15 text-red-400 border-red-500/30 hover:bg-red-500/25",
   default:"bg-muted/40 text-muted-foreground border-border hover:bg-muted/60",
 }
 
