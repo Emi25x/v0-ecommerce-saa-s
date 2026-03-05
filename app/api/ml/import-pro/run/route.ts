@@ -219,12 +219,16 @@ export async function POST(request: NextRequest) {
       const newScrollId: string | null = searchData.scroll_id || null
       const totalFromApi: number = searchData.paging?.total || 0
 
-      // scan termina cuando results vacío
+      // scan termina cuando results vacío — nunca usar offset >= total como stop signal
       if (itemIds.length === 0) {
         hasMore = false
         await supabase
           .from("ml_import_progress")
-          .update({ status: "done", scroll_id: null })
+          .update({
+            status:      "done",
+            scroll_id:   null,
+            finished_at: new Date().toISOString(),
+          })
           .eq("account_id", accountId)
         break
       }
