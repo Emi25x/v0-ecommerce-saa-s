@@ -228,6 +228,7 @@ export function AppSidebar() {
   const [shopifyExpanded, setShopifyExpanded] = useState(true)
   const [inventoryExpanded, setInventoryExpanded] = useState(true)
   const [integrationsExpanded, setIntegrationsExpanded] = useState(true)
+  const [pricingExpanded, setPricingExpanded] = useState(true)
 
   const [lastVisits, setLastVisits] = useState({
     orders: null as string | null,
@@ -759,6 +760,101 @@ export function AppSidebar() {
               >
                 <FeatherFileText className="h-4 w-4" />
                 <span>Reportes de Ventas</span>
+              </Link>
+            </div>
+          )}
+        </div>
+
+        {/* Pricing */}
+        <div className="mt-2">
+          <button
+            onClick={() => setPricingExpanded(!pricingExpanded)}
+            className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <div className="flex items-center gap-3">
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/>
+                <path d="M12 6v2m0 8v2"/>
+              </svg>
+              <span className="font-medium">Precios</span>
+            </div>
+            <svg className={`h-4 w-4 transition-transform ${pricingExpanded ? "rotate-180" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
+
+          {pricingExpanded && (
+            <div className="ml-8 mt-1 flex flex-col gap-1">
+              <Link
+                href="/pricing"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname === "/pricing"
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+                  <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+                </svg>
+                <span>Resumen</span>
+              </Link>
+              <Link
+                href="/pricing/lists"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/pricing/lists")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>
+                  <rect x="9" y="3" width="6" height="4" rx="1"/>
+                  <path d="M9 12h6m-6 4h4"/>
+                </svg>
+                <span>Listas</span>
+              </Link>
+              <Link
+                href="/pricing/exchange-rates"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/pricing/exchange-rates")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M8 3l4 4-4 4"/><path d="M16 21l-4-4 4-4"/>
+                  <path d="M3 7h13M8 17h13"/>
+                </svg>
+                <span>Tipos de cambio</span>
+              </Link>
+              <Link
+                href="/pricing/calculator"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/pricing/calculator")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="4" y="2" width="16" height="20" rx="2"/>
+                  <path d="M8 6h8M8 10h8M8 14h4"/>
+                </svg>
+                <span>Calculadora</span>
+              </Link>
+              <Link
+                href="/pricing/results"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/pricing/results")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                </svg>
+                <span>Resultados</span>
               </Link>
             </div>
           )}
