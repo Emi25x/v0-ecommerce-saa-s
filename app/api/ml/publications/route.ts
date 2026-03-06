@@ -96,7 +96,7 @@ export async function GET(req: NextRequest) {
     let dataQuery = supabase
       .from("ml_publications")
       .select(
-        "id, ml_item_id, account_id, title, status, price, current_stock, sku, ean, isbn, gtin, catalog_listing_eligible, product_id, permalink, updated_at, meli_weight_g"
+        "id, ml_item_id, account_id, title, status, price, current_stock, sku, ean, isbn, gtin, catalog_listing_eligible, catalog_listing, product_id, permalink, meli_weight_g, last_sync_at, updated_at"
       )
       .range(page * limit, (page + 1) * limit - 1)
 

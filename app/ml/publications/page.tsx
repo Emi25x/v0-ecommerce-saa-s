@@ -40,6 +40,8 @@ import {
   RotateCcw,
   Scale,
   Tag,
+  ScanLine,
+  AlertCircle,
 } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
@@ -102,8 +104,11 @@ interface Publication {
   isbn: string | null
   gtin: string | null
   catalog_listing_eligible: boolean | null
+  catalog_listing: boolean | null
   product_id: string | null
   permalink: string | null
+  meli_weight_g: number | null
+  last_sync_at: string | null
   updated_at: string
 }
 
@@ -152,6 +157,7 @@ export default function MLPublicationsPage() {
   const [enqueueing, setEnqueueing]       = useState<string | null>(null) // tracks "itemId:type"
   const [weightSync, setWeightSync]       = useState<{ loading: boolean; result: { updated: number; missing: number; processed: number } | null }>({ loading: false, result: null })
   const [skuBackfill, setSkuBackfill]     = useState<{ loading: boolean; result: { updated: number; skipped: number; processed: number } | null }>({ loading: false, result: null })
+  const [verifying, setVerifying]         = useState<string | null>(null) // ml_item_id being verified
 
   const searchRef = useRef(search)
   searchRef.current = search
@@ -273,6 +279,31 @@ export default function MLPublicationsPage() {
       toast({ title: "Error de red", description: err.message, variant: "destructive" })
     } finally {
       setEnqueueing(null)
+    }
+  }
+
+  const verifyItem = async (pub: Publication) => {
+    setVerifying(pub.ml_item_id)
+    try {
+      const res = await fetch("/api/ml/jobs/enqueue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_id: pub.account_id,
+          type: "import_single_item",
+          payload: { item_id: pub.ml_item_id, account_id: pub.account_id },
+        }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        toast({ title: "Verificacion encolada", description: `${pub.ml_item_id} se actualizará en el próximo ciclo.` })
+      } else {
+        toast({ title: "Error al verificar", description: data.error ?? "Error desconocido", variant: "destructive" })
+      }
+    } catch (err: any) {
+      toast({ title: "Error de red", description: err.message, variant: "destructive" })
+    } finally {
+      setVerifying(null)
     }
   }
 
@@ -723,10 +754,20 @@ export default function MLPublicationsPage() {
                           </td>
 
                           {/* Peso */}
-                          <td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground whitespace-nowrap">
+                          <td className="px-4 py-3 text-right font-mono text-xs whitespace-nowrap">
                             {row.meli_weight_g != null
-                              ? <span className="text-foreground">{row.meli_weight_g.toLocaleString()}</span>
-                              : <span className="text-muted-foreground/30">—</span>
+                              ? <span className="text-foreground">{row.meli_weight_g.toLocaleString()} g</span>
+                              : (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="inline-flex items-center gap-1 text-yellow-500/70">
+                                      <AlertCircle className="h-3 w-3" />
+                                      <span className="text-[11px]">Faltante</span>
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Peso no sincronizado. Usá "Sincronizar pesos".</TooltipContent>
+                                </Tooltip>
+                              )
                             }
                           </td>
 
@@ -819,7 +860,7 @@ export default function MLPublicationsPage() {
                                   )}
 
                                   {/* Opt-in catálogo */}
-                                  {row.catalog_listing_eligible ? (
+                                  {row.catalog_listing ? (
                                     <Tooltip>
                                       <TooltipTrigger asChild>
                                         <div>
@@ -831,7 +872,7 @@ export default function MLPublicationsPage() {
                                       </TooltipTrigger>
                                       <TooltipContent side="left">Ya está en catálogo</TooltipContent>
                                     </Tooltip>
-                                  ) : (
+                                  ) : row.catalog_listing_eligible ? (
                                     <DropdownMenuItem
                                       className="gap-2"
                                       disabled={enqueueing === `${row.ml_item_id}:catalog_optin`}
@@ -840,6 +881,18 @@ export default function MLPublicationsPage() {
                                       <ShoppingCart className="h-4 w-4" />
                                       Opt-in catálogo
                                     </DropdownMenuItem>
+                                  ) : (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div>
+                                          <DropdownMenuItem disabled className="gap-2 opacity-40">
+                                            <ShoppingCart className="h-4 w-4" />
+                                            Opt-in catálogo
+                                          </DropdownMenuItem>
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="left">No elegible para catálogo</TooltipContent>
+                                    </Tooltip>
                                   )}
 
                                   {/* Sync buybox */}
@@ -860,6 +913,16 @@ export default function MLPublicationsPage() {
                                   >
                                     <RotateCcw className="h-4 w-4" />
                                     Reimportar
+                                  </DropdownMenuItem>
+
+                                  {/* Verificar con ML */}
+                                  <DropdownMenuItem
+                                    className="gap-2"
+                                    disabled={verifying === row.ml_item_id}
+                                    onClick={() => verifyItem(row)}
+                                  >
+                                    <ScanLine className="h-4 w-4" />
+                                    {verifying === row.ml_item_id ? "Verificando..." : "Verificar con ML"}
                                   </DropdownMenuItem>
 
                                 </DropdownMenuContent>
@@ -949,7 +1012,10 @@ export default function MLPublicationsPage() {
                   ["ISBN",                 detail.isbn ?? "—"],
                   ["GTIN",                 detail.gtin ?? "—"],
                   ["Elegible catálogo",    detail.catalog_listing_eligible ? "Sí" : "No"],
+                  ["En catálogo",          detail.catalog_listing ? "Sí" : "No"],
+                  ["Peso (g)",             detail.meli_weight_g != null ? `${detail.meli_weight_g} g` : "—"],
                   ["Producto vinculado",   detail.product_id ? "Sí" : "No"],
+                  ["Última sync ML",       detail.last_sync_at ? new Date(detail.last_sync_at).toLocaleString("es-AR") : "—"],
                   ["Actualizado",          detail.updated_at ? new Date(detail.updated_at).toLocaleString("es-AR") : "—"],
                 ] as [string, string | number][]).map(([label, value]) => (
                   <div key={label}>

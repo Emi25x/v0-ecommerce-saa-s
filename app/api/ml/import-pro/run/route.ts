@@ -8,7 +8,7 @@ export const maxDuration = 60
 // ML API hard limits
 const ML_SCAN_PAGE_SIZE   = 50   // search_type=scan: máximo real permitido
 const ML_MULTIGET_MAX_IDS = 50   // /items?ids=...: máximo 50 por request
-const ML_ATTRIBUTES       = "id,title,price,available_quantity,sold_quantity,status,permalink,thumbnail,listing_type_id,attributes"
+const ML_ATTRIBUTES       = "id,title,price,available_quantity,sold_quantity,status,permalink,thumbnail,listing_type_id,seller_custom_field,attributes,variations,shipping,catalog_listing,catalog_listing_eligible"
 
 // ── Retry con backoff exponencial ────────────────────────────────────────────
 async function fetchWithRetry(
@@ -291,6 +291,7 @@ export async function POST(request: NextRequest) {
           let isbn: string | null = null
           let gtin: string | null = null
           let ean: string | null = null
+          let weightG: number | null = null
 
           if (Array.isArray(b.attributes)) {
             for (const attr of b.attributes) {
@@ -298,7 +299,30 @@ export async function POST(request: NextRequest) {
               if (attr.id === "ISBN")       isbn = attr.value_name ?? null
               if (attr.id === "GTIN")       gtin = attr.value_name ?? null
               if (attr.id === "EAN")        ean  = attr.value_name ?? null
+              if (attr.id === "WEIGHT") {
+                const vs = attr.value_struct
+                if (vs?.number != null && isFinite(vs.number) && vs.number > 0) {
+                  const unit = (vs.unit ?? "g").toLowerCase()
+                  if (unit === "g")  weightG = Math.round(vs.number)
+                  if (unit === "kg") weightG = Math.round(vs.number * 1000)
+                } else if (attr.value_name) {
+                  const m = attr.value_name.match(/^([\d.]+)\s*(g|kg)?/i)
+                  if (m) {
+                    const n = parseFloat(m[1])
+                    weightG = (m[2] ?? "g").toLowerCase() === "kg"
+                      ? Math.round(n * 1000)
+                      : Math.round(n)
+                  }
+                }
+              }
             }
+          }
+
+          // shipping.dimensions.weight is the most reliable weight source
+          const dimW = b?.shipping?.dimensions?.weight
+          if (dimW != null && weightG == null) {
+            const n = typeof dimW === "string" ? parseFloat(dimW) : dimW
+            if (isFinite(n) && n > 0) weightG = Math.round(n)
           }
 
           // seller_custom_field is the most reliable SKU source — prefer it
@@ -315,18 +339,22 @@ export async function POST(request: NextRequest) {
           if (!ean && gtin) ean = gtin
 
           toUpsert.push({
-            account_id:    accountId,
-            ml_item_id:    b.id,
-            title:         b.title,
-            price:         b.price,
-            current_stock: b.available_quantity ?? 0,
-            status:        b.status,
-            permalink:     b.permalink,
-            sku:           sku,
-            isbn:          isbn,
-            gtin:          gtin,
-            ean:           ean,
-            updated_at:    now,
+            account_id:               accountId,
+            ml_item_id:               b.id,
+            title:                    b.title,
+            price:                    b.price,
+            current_stock:            b.available_quantity ?? 0,
+            status:                   b.status,
+            permalink:                b.permalink,
+            sku,
+            isbn,
+            gtin,
+            ean,
+            catalog_listing:          b.catalog_listing          ?? false,
+            catalog_listing_eligible: b.catalog_listing_eligible ?? false,
+            ...(weightG != null ? { meli_weight_g: weightG } : {}),
+            last_sync_at:             now,
+            updated_at:               now,
           })
         }
       }
