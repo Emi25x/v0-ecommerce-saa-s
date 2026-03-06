@@ -76,6 +76,13 @@ const relDate = (iso: string | null | undefined) => {
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
+interface MLOrderItem {
+  title: string
+  quantity: number
+  unit_price: number
+  ml_item_id: string | null
+}
+
 interface MLOrder {
   id: string
   ml_order_id: number    // bigint en Postgres → number en JS
@@ -89,7 +96,7 @@ interface MLOrder {
   shipping_status: string | null
   shipping_id: string | null
   packing_status: string | null
-  items_json: string | null
+  items_json: MLOrderItem[] | string | null   // jsonb → object in Supabase, guard for both
   updated_at: string
 }
 
@@ -150,8 +157,10 @@ export default function MLOrdersPage() {
     }
   }, [accountId, statusFilter])
 
-  useEffect(() => { setPage(0); load(0) }, [accountId, statusFilter, load])
-  useEffect(() => { load(page) }, [page, load])
+  // Reset to page 0 when filters change; load is stable via useCallback
+  useEffect(() => { setPage(0); load(0) }, [accountId, statusFilter])   // eslint-disable-line react-hooks/exhaustive-deps
+  // Load when page changes (not when filters change — that's handled above)
+  useEffect(() => { if (page > 0) load(page) }, [page])                 // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Sync from ML ─────────────────────────────────────────────────────────
 
@@ -186,9 +195,12 @@ export default function MLOrdersPage() {
 
   // ── Items parser ─────────────────────────────────────────────────────────
 
-  const parseItems = (json: string | null) => {
+  const parseItems = (json: MLOrderItem[] | string | null): MLOrderItem[] => {
     if (!json) return []
-    try { return JSON.parse(json) as { title: string; quantity: number; unit_price: number; ml_item_id: string | null }[] }
+    // Supabase returns jsonb columns as objects, not strings
+    if (Array.isArray(json)) return json
+    if (typeof json === "object") return []
+    try { return JSON.parse(json) as MLOrderItem[] }
     catch { return [] }
   }
 

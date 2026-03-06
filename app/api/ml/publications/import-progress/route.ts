@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await supabase
       .from("ml_import_progress")
-      .select("status, publications_offset, publications_total, updated_at")
+      .select("status, publications_scope, publications_offset, publications_total, updated_at")
       .eq("account_id", accountId)
       .order("updated_at", { ascending: false })
       .limit(1)

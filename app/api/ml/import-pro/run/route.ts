@@ -8,7 +8,7 @@ export const maxDuration = 60
 // ML API hard limits
 const ML_SCAN_PAGE_SIZE   = 50   // search_type=scan: máximo real permitido
 const ML_MULTIGET_MAX_IDS = 50   // /items?ids=...: máximo 50 por request
-const ML_ATTRIBUTES       = "id,title,price,available_quantity,sold_quantity,status,permalink,thumbnail,listing_type_id,seller_custom_field,attributes,variations,shipping,catalog_listing,catalog_listing_eligible"
+const ML_ATTRIBUTES       = "id,title,price,available_quantity,sold_quantity,status,permalink,thumbnail,listing_type_id,seller_custom_field,attributes,variations,shipping,tags,catalog_listing,catalog_listing_eligible"
 
 // ── Retry con backoff exponencial ────────────────────────────────────────────
 async function fetchWithRetry(
@@ -338,6 +338,14 @@ export async function POST(request: NextRequest) {
           // EAN fallback: use GTIN if no dedicated EAN attribute
           if (!ean && gtin) ean = gtin
 
+          // catalog_listing_eligible: top-level field OR derived from tags
+          // ML sometimes returns this only via tags array when multiget attributes list is used
+          let catalogEligible: boolean = b.catalog_listing_eligible ?? false
+          if (!catalogEligible && Array.isArray(b.tags)) {
+            catalogEligible = b.tags.includes("catalog_listing_eligible")
+          }
+          const catalogListing: boolean = b.catalog_listing ?? false
+
           toUpsert.push({
             account_id:               accountId,
             ml_item_id:               b.id,
@@ -350,8 +358,8 @@ export async function POST(request: NextRequest) {
             isbn,
             gtin,
             ean,
-            catalog_listing:          b.catalog_listing          ?? false,
-            catalog_listing_eligible: b.catalog_listing_eligible ?? false,
+            catalog_listing:          catalogListing,
+            catalog_listing_eligible: catalogEligible,
             ...(weightG != null ? { meli_weight_g: weightG } : {}),
             last_sync_at:             now,
             updated_at:               now,
@@ -361,6 +369,14 @@ export async function POST(request: NextRequest) {
 
       // ── Paso 4: Upsert en Supabase (un solo batch) ───────────────────────
       if (toUpsert.length > 0) {
+        // Batch audit
+        const sinSku      = toUpsert.filter(r => !r.sku).length
+        const sinPeso     = toUpsert.filter(r => r.meli_weight_g == null).length
+        const elegibles   = toUpsert.filter(r => r.catalog_listing_eligible).length
+        console.log(
+          `[import-pro] batch offset=${offset} total=${toUpsert.length} sin_sku=${sinSku} sin_peso=${sinPeso} elegibles=${elegibles}`
+        )
+
         const { error: upsertError } = await supabase
           .from("ml_publications")
           .upsert(toUpsert, { onConflict: "account_id,ml_item_id" })

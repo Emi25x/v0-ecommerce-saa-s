@@ -142,6 +142,7 @@ export default function MLPublicationsPage() {
   const [stockFirst, setStockFirst]       = useState(false)
   const [importProgress, setImportProgress] = useState<{
     status: string
+    publications_scope: string | null
     publications_offset: number
     publications_total: number | null
   } | null>(null)
@@ -576,12 +577,24 @@ export default function MLPublicationsPage() {
 
         {/* ── Import progress indicator ───────────────────────────────────── */}
         {importProgress && importProgress.status !== "completed" && (
-          <div className="rounded-lg border border-border bg-muted/20 px-4 py-3 flex items-center gap-4 text-sm">
+          <div className={`rounded-lg border px-4 py-3 flex items-center gap-4 text-sm ${
+            importProgress.publications_scope === "active_only"
+              ? "border-amber-500/30 bg-amber-500/5"
+              : "border-border bg-muted/20"
+          }`}>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between mb-1.5 gap-2">
-                <span className="text-muted-foreground font-medium truncate">
-                  Importación {importProgress.status === "running" ? "en curso" : importProgress.status}
-                </span>
+              <div className="flex items-center justify-between mb-1.5 gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground font-medium">
+                    Importación {importProgress.status === "running" ? "en curso" : importProgress.status}
+                  </span>
+                  {importProgress.publications_scope === "active_only" && (
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-400 bg-amber-500/15 border border-amber-500/30 rounded px-1.5 py-0.5">
+                      <Info className="h-3 w-3" />
+                      Solo activas — puede faltar pausadas/cerradas
+                    </span>
+                  )}
+                </div>
                 <span className="text-xs text-muted-foreground whitespace-nowrap tabular-nums">
                   {importProgress.publications_offset.toLocaleString("es-AR")}
                   {importProgress.publications_total
@@ -591,7 +604,9 @@ export default function MLPublicationsPage() {
               </div>
               <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all ${importProgress.status === "running" ? "bg-blue-500 animate-pulse" : "bg-green-500"}`}
+                  className={`h-full rounded-full transition-all ${
+                    importProgress.status === "running" ? "bg-blue-500 animate-pulse" : "bg-green-500"
+                  }`}
                   style={{
                     width: importProgress.publications_total
                       ? `${Math.min(100, (importProgress.publications_offset / importProgress.publications_total) * 100)}%`

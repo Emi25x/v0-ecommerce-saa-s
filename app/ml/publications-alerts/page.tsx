@@ -51,6 +51,7 @@ interface Publication {
   isbn:                     string | null
   gtin:                     string | null
   catalog_listing_eligible: boolean | null
+  catalog_listing:          boolean | null
   product_id:               string | null
   permalink:                string | null
   updated_at:               string
@@ -108,6 +109,7 @@ const fmt = (n: number | null | undefined) =>
 interface ListRowProps {
   row:          Publication
   tab:          (typeof TABS)[number]
+  activeTab:    AlertsMode
   selected:     boolean
   onToggle:     (id: string) => void
   enqueueing:   string | null
@@ -119,6 +121,7 @@ interface ListRowProps {
 function ListRow({
   row,
   tab,
+  activeTab,
   selected,
   onToggle,
   enqueueing,
@@ -128,6 +131,12 @@ function ListRow({
 }: ListRowProps) {
   const isEnqueueing = enqueueing === row.ml_item_id
   const ean          = row.isbn ?? row.ean ?? row.gtin ?? null
+  // Opt-in is only valid for eligible_catalog tab, and only if the item is actually eligible
+  const isEligibleForOptin = activeTab === "eligible_catalog" && (row.catalog_listing_eligible === true)
+  // For sin_stock tab the action is pause, not opt-in — always enabled
+  const isPauseAction = activeTab === "sin_stock"
+  const showActionBtn = activeTab !== "con_stock" // con_stock tab has no primary action
+  const actionDisabled = !isPauseAction && !isEligibleForOptin
 
   return (
     <div
@@ -229,24 +238,39 @@ function ListRow({
           </>
         )}
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={isEnqueueing}
-              onClick={() => onEnqueue(row)}
-              className="h-8 gap-1.5 bg-transparent"
-            >
-              {isEnqueueing
-                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                : <ShoppingCart className="h-3.5 w-3.5" />
+        {showActionBtn && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isEnqueueing || actionDisabled}
+                  onClick={() => !actionDisabled && onEnqueue(row)}
+                  className={`h-8 gap-1.5 bg-transparent ${actionDisabled ? "opacity-40 cursor-not-allowed" : ""}`}
+                >
+                  {isEnqueueing
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : isPauseAction
+                      ? <Pause className="h-3.5 w-3.5" />
+                      : <ShoppingCart className="h-3.5 w-3.5" />
+                  }
+                  <span className="hidden sm:inline">
+                    {isPauseAction ? "Pausar" : "Opt-in"}
+                  </span>
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              {actionDisabled
+                ? "No elegible para catálogo"
+                : isPauseAction
+                  ? "Encolar job pause_item"
+                  : "Encolar job catalog_optin"
               }
-              <span className="hidden sm:inline">Opt-in</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Encolar job catalog_optin</TooltipContent>
-        </Tooltip>
+            </TooltipContent>
+          </Tooltip>
+        )}
       </div>
     </div>
   )
@@ -418,7 +442,12 @@ export default function PublicationsAlertsPage() {
     setBulkLoading(true)
     setBulkResult(null)
 
-    const targets = rows.filter(r => selected.has(r.id))
+    // For eligible_catalog tab: only process rows that are actually eligible
+    const targets = rows.filter(r => {
+      if (!selected.has(r.id)) return false
+      if (bulkJobType === "catalog_optin") return r.catalog_listing_eligible === true
+      return true
+    })
     let enqueued  = 0
     let failed    = 0
 
@@ -642,6 +671,7 @@ export default function PublicationsAlertsPage() {
                 key={row.id}
                 row={row}
                 tab={currentTab}
+                activeTab={activeTab}
                 selected={selected.has(row.id)}
                 onToggle={toggleRow}
                 enqueueing={enqueueing}
