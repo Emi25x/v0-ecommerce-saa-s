@@ -145,7 +145,16 @@ export default function MLPublicationsPage() {
     publications_scope: string | null
     publications_offset: number
     publications_total: number | null
+    discovered_count: number | null
+    fetched_count: number | null
+    upsert_new_count: number | null
+    failed_count: number | null
+    last_error: string | null
+    last_error_at: string | null
+    last_run_at: string | null
+    updated_at: string | null
   } | null>(null)
+  const [syncingML, setSyncingML]           = useState(false)
   const [page, setPage]                   = useState(0)
   const [rows, setRows]                   = useState<Publication[]>([])
   const [total, setTotal]                 = useState(0)
@@ -162,6 +171,16 @@ export default function MLPublicationsPage() {
   const [selected, setSelected]           = useState<Set<string>>(new Set()) // ml_item_ids seleccionados
   const [batchEnqueueing, setBatchEnqueueing] = useState(false)
   const [mlTotal, setMlTotal]             = useState<{ total_db: number; total_ml: number | null; diff: number | null; loading: boolean } | null>(null)
+  const [progressAudit, setProgressAudit] = useState<{
+    status: string
+    ml_total: number
+    ml_items_seen: number
+    db_rows_upserted: number
+    upsert_errors: number
+    db_gap: number
+    last_run_at: string | null
+    last_sync_batch_at: string | null
+  } | null>(null)
 
   const searchRef = useRef(search)
   searchRef.current = search
@@ -284,6 +303,7 @@ export default function MLPublicationsPage() {
       if (data.ok) {
         setRows(data.rows)
         setTotal(data.total)
+        if (data.progress) setProgressAudit(data.progress)
       }
     } finally {
       setLoading(false)
@@ -425,6 +445,46 @@ export default function MLPublicationsPage() {
     }
   }
 
+  const refreshProgress = () => {
+    if (accountId === "all") return
+    fetch(`/api/ml/publications/import-progress?account_id=${accountId}`)
+      .then(r => r.json())
+      .then(d => { if (d.ok && d.progress) setImportProgress(d.progress) })
+      .catch(() => {})
+  }
+
+  const syncWithML = async () => {
+    if (accountId === "all") {
+      toast({ title: "Seleccioná una cuenta", variant: "destructive" })
+      return
+    }
+    setSyncingML(true)
+    try {
+      const res  = await fetch("/api/ml/import-pro/run", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ account_id: accountId, max_seconds: 12 }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        const desc = `${data.db_rows_upserted ?? data.imported_count} filas persistidas (ML vio ${data.ml_items_seen_count ?? "?"} IDs)${data.has_more ? " — continúa en próxima corrida" : " — completado"}`
+        toast({ title: "Sincronización ejecutada", description: desc })
+        refreshProgress()
+        load(0)
+        loadCounts(accountId)
+        loadMlTotal(accountId)
+      } else if (data.rate_limited) {
+        toast({ title: "Rate limit ML", description: `Esperá ${data.wait_seconds ?? 60}s y reintentá.`, variant: "destructive" })
+      } else {
+        toast({ title: "Error al sincronizar", description: data.error ?? "Error desconocido", variant: "destructive" })
+      }
+    } catch (err: any) {
+      toast({ title: "Error de red", description: err.message, variant: "destructive" })
+    } finally {
+      setSyncingML(false)
+    }
+  }
+
   // ── Render ──────────────────────────────────────────────────────────────
 
   return (
@@ -562,101 +622,230 @@ export default function MLPublicationsPage() {
               </TooltipContent>
             </Tooltip>
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRefresh}
-              disabled={loading || countsLoading}
-              className="bg-transparent"
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${(loading || countsLoading) ? "animate-spin" : ""}`} />
-              Actualizar
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRefresh}
+                  disabled={loading || countsLoading}
+                  className="bg-transparent"
+                >
+                  <RefreshCw className={`h-4 w-4 mr-2 ${(loading || countsLoading) ? "animate-spin" : ""}`} />
+                  Refrescar
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Recarga los datos desde la DB local. No llama a ML.</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={syncWithML}
+                  disabled={syncingML || accountId === "all"}
+                >
+                  <ScanLine className={`h-4 w-4 mr-2 ${syncingML ? "animate-spin" : ""}`} />
+                  {syncingML ? "Sincronizando..." : "Sincronizar con ML"}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {accountId === "all"
+                  ? "Seleccioná una cuenta primero"
+                  : "Llama a la API de ML, hidrata items con multiget y persiste las filas realmente guardadas en DB. El progreso se registra en ml_import_progress."}
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
 
         {/* ── Import progress indicator ───────────────────────────────────── */}
-        {importProgress && importProgress.status !== "completed" && (
-          <div className={`rounded-lg border px-4 py-3 flex items-center gap-4 text-sm ${
-            importProgress.publications_scope === "active_only"
-              ? "border-amber-500/30 bg-amber-500/5"
-              : "border-border bg-muted/20"
+        {importProgress && (
+          <div className={`rounded-lg border px-4 py-3 text-sm space-y-2 ${
+            importProgress.status === "error" || importProgress.last_error
+              ? "border-red-500/30 bg-red-500/5"
+              : importProgress.publications_scope === "active_only"
+                ? "border-amber-500/30 bg-amber-500/5"
+                : "border-border bg-muted/20"
           }`}>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between mb-1.5 gap-2 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground font-medium">
-                    Importación {importProgress.status === "running" ? "en curso" : importProgress.status}
-                  </span>
-                  {importProgress.publications_scope === "active_only" && (
-                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-400 bg-amber-500/15 border border-amber-500/30 rounded px-1.5 py-0.5">
-                      <Info className="h-3 w-3" />
-                      Solo activas — puede faltar pausadas/cerradas
-                    </span>
-                  )}
-                </div>
-                <span className="text-xs text-muted-foreground whitespace-nowrap tabular-nums">
-                  {importProgress.publications_offset.toLocaleString("es-AR")}
-                  {importProgress.publications_total
-                    ? ` / ${importProgress.publications_total.toLocaleString("es-AR")}`
-                    : ""}
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-muted-foreground font-medium">
+                Importación{" "}
+                <span className={
+                  importProgress.status === "running"    ? "text-blue-400"
+                  : importProgress.status === "done"     ? "text-green-400"
+                  : importProgress.status === "error"    ? "text-red-400"
+                  : importProgress.status === "paused"   ? "text-yellow-400"
+                  : "text-muted-foreground"
+                }>
+                  {importProgress.status === "running" ? "en curso"
+                   : importProgress.status === "done"   ? "completada"
+                   : importProgress.status}
                 </span>
+              </span>
+
+              {importProgress.publications_scope === "active_only" && (
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-400 bg-amber-500/15 border border-amber-500/30 rounded px-1.5 py-0.5">
+                  <Info className="h-3 w-3" />
+                  Solo activas — puede faltar pausadas/cerradas
+                </span>
+              )}
+
+              {/* Botón para refrescar progress sin tocar los rows */}
+              <button
+                onClick={refreshProgress}
+                className="ml-auto text-muted-foreground hover:text-foreground"
+                title="Actualizar estado"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${importProgress.status === "running" ? "animate-spin text-blue-400" : ""}`} />
+              </button>
+            </div>
+
+            {/* Barra de progreso ML seen (offset real = filas persistidas) */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums">
+                <span>
+                  DB persistidas: <span className="text-foreground font-semibold">
+                    {(importProgress.upsert_new_count ?? importProgress.publications_offset ?? 0).toLocaleString("es-AR")}
+                  </span>
+                  {importProgress.discovered_count != null && importProgress.discovered_count > 0 && (
+                    <>
+                      {" / ML vistas: "}
+                      <span className="text-foreground font-semibold">
+                        {importProgress.discovered_count.toLocaleString("es-AR")}
+                      </span>
+                    </>
+                  )}
+                  {importProgress.publications_total != null && (
+                    <>
+                      {" / Total ML: "}
+                      <span className="text-foreground font-semibold">
+                        {importProgress.publications_total.toLocaleString("es-AR")}
+                      </span>
+                    </>
+                  )}
+                </span>
+                {importProgress.last_run_at && (
+                  <span>Última corrida: {relDate(importProgress.last_run_at)}</span>
+                )}
               </div>
               <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${
-                    importProgress.status === "running" ? "bg-blue-500 animate-pulse" : "bg-green-500"
+                    importProgress.status === "running" ? "bg-blue-500 animate-pulse"
+                    : importProgress.status === "done"  ? "bg-green-500"
+                    : importProgress.status === "error" ? "bg-red-500"
+                    : "bg-muted-foreground/50"
                   }`}
                   style={{
                     width: importProgress.publications_total
-                      ? `${Math.min(100, (importProgress.publications_offset / importProgress.publications_total) * 100)}%`
+                      ? `${Math.min(100, ((importProgress.upsert_new_count ?? importProgress.publications_offset ?? 0) / importProgress.publications_total) * 100)}%`
                       : "100%",
                   }}
                 />
               </div>
             </div>
-            {importProgress.status === "running" && (
-              <RefreshCw className="h-4 w-4 text-blue-400 animate-spin shrink-0" />
+
+            {/* Alerta de import incompleto: ML vistas >> DB persistidas */}
+            {(() => {
+              const seen    = importProgress.discovered_count ?? 0
+              const saved   = importProgress.upsert_new_count ?? importProgress.publications_offset ?? 0
+              const missing = seen - saved
+              if (seen > 0 && missing > 10) {
+                return (
+                  <div className="flex items-start gap-2 rounded border border-red-500/30 bg-red-500/10 px-3 py-2">
+                    <AlertCircle className="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
+                    <p className="text-xs text-red-300">
+                      <span className="font-semibold">Import incompleto:</span> ML envió {seen.toLocaleString("es-AR")} IDs
+                      pero solo {saved.toLocaleString("es-AR")} filas quedaron persistidas en DB.
+                      Faltan <span className="font-bold">{missing.toLocaleString("es-AR")}</span> filas.
+                      Usá "Sincronizar con ML" para reintentar.
+                    </p>
+                  </div>
+                )
+              }
+              return null
+            })()}
+
+            {/* Error de última corrida */}
+            {importProgress.last_error && (
+              <p className="text-xs text-red-400 font-mono truncate">
+                Error: {importProgress.last_error}
+              </p>
             )}
           </div>
         )}
 
-        {/* ── Diagnóstico DB vs ML ────────────────────────────────────────── */}
-        {mlTotal && (
-          <div className={`rounded-lg border px-4 py-3 flex items-center gap-4 text-sm ${
-            mlTotal.loading
-              ? "border-border bg-muted/10"
-              : mlTotal.diff != null && mlTotal.diff > 0
-                ? "border-amber-500/30 bg-amber-500/5"
+        {/* ── Auditoría DB vs ML (datos reales de persistencia) ─────────── */}
+        {progressAudit && accountId !== "all" && (
+          <div className={`rounded-lg border px-4 py-3 text-sm space-y-2 ${
+            progressAudit.db_gap > 50
+              ? "border-amber-500/30 bg-amber-500/5"
+              : progressAudit.upsert_errors > 0
+                ? "border-red-500/30 bg-red-500/5"
                 : "border-border bg-muted/10"
           }`}>
-            {mlTotal.loading ? (
-              <div className="h-4 w-48 bg-muted/40 rounded animate-pulse" />
-            ) : (
-              <>
-                <span className="text-muted-foreground">Diagnóstico:</span>
-                <span className="font-mono text-xs">
-                  DB <span className="font-semibold text-foreground">{(mlTotal.total_db ?? 0).toLocaleString("es-AR")}</span>
-                  {" — "}
-                  ML <span className="font-semibold text-foreground">{mlTotal.total_ml != null ? mlTotal.total_ml.toLocaleString("es-AR") : "—"}</span>
+            <div className="flex items-center gap-4 flex-wrap">
+              <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Auditoría</span>
+
+              {/* DB rows (lo que realmente está en DB) */}
+              <span className="text-xs tabular-nums">
+                DB persistidas:{" "}
+                <span className="font-semibold text-foreground">
+                  {(progressAudit.db_rows_upserted || total).toLocaleString("es-AR")}
                 </span>
-                {mlTotal.diff != null && mlTotal.diff > 0 && (
+              </span>
+
+              {/* ML total */}
+              {progressAudit.ml_total > 0 && (
+                <span className="text-xs tabular-nums">
+                  Total ML:{" "}
+                  <span className="font-semibold text-foreground">
+                    {progressAudit.ml_total.toLocaleString("es-AR")}
+                  </span>
+                </span>
+              )}
+
+              {/* Gap */}
+              {progressAudit.ml_total > 0 && (
+                progressAudit.db_gap > 50 ? (
                   <span className="inline-flex items-center gap-1 text-xs text-amber-400 font-medium">
                     <AlertCircle className="h-3.5 w-3.5" />
-                    Faltan {mlTotal.diff.toLocaleString("es-AR")} por importar
+                    Faltan {progressAudit.db_gap.toLocaleString("es-AR")} por persistir
                   </span>
-                )}
-                {mlTotal.diff === 0 && (
+                ) : (
                   <span className="text-xs text-green-400 font-medium">Sincronizado</span>
-                )}
-                <button
-                  onClick={() => loadMlTotal(accountId)}
-                  className="ml-auto text-muted-foreground hover:text-foreground transition-colors"
-                  title="Actualizar diagnóstico"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                </button>
-              </>
+                )
+              )}
+
+              {/* Upsert errors */}
+              {progressAudit.upsert_errors > 0 && (
+                <span className="inline-flex items-center gap-1 text-xs text-red-400 font-medium">
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  {progressAudit.upsert_errors.toLocaleString("es-AR")} errores de upsert
+                </span>
+              )}
+
+              {/* Last sync */}
+              {(progressAudit.last_sync_batch_at || progressAudit.last_run_at) && (
+                <span className="ml-auto text-xs text-muted-foreground">
+                  Último batch: {relDate(progressAudit.last_sync_batch_at ?? progressAudit.last_run_at)}
+                </span>
+              )}
+            </div>
+
+            {/* Progress bar: upserted / ml_total */}
+            {progressAudit.ml_total > 0 && (
+              <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    progressAudit.db_gap > 50 ? "bg-amber-500" : "bg-green-500"
+                  }`}
+                  style={{
+                    width: `${Math.min(100, ((progressAudit.db_rows_upserted || total) / progressAudit.ml_total) * 100)}%`
+                  }}
+                />
+              </div>
             )}
           </div>
         )}

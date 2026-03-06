@@ -171,10 +171,11 @@ export async function POST(request: NextRequest) {
     const authHeader   = { Authorization: `Bearer ${accessToken}` }
     const publicationsScope = progress.publications_scope || "all"
 
-    let importedCount  = 0
-    let errorsCount    = 0
-    let rateLimited    = false
-    let hasMore        = true
+    let importedCount   = 0   // filas realmente persistidas en DB en esta corrida
+    let mlSeenCount     = 0   // IDs vistos en ML en esta corrida
+    let errorsCount     = 0
+    let rateLimited     = false
+    let hasMore         = true
     let lastScrollId: string | null = progress.scroll_id || null
 
     // ── Loop principal por tiempo ─────────────────────────────────────────────
@@ -219,13 +220,32 @@ export async function POST(request: NextRequest) {
       const newScrollId: string | null = searchData.scroll_id || null
       const totalFromApi: number = searchData.paging?.total || 0
 
+      // Acumular IDs vistos en ML (independiente del upsert)
+      mlSeenCount += itemIds.length
+
       // scan termina cuando results vacío — nunca usar offset >= total como stop signal
       if (itemIds.length === 0) {
         hasMore = false
+
+        // Re-leer contadores acumulados para la verificación de salud
+        const { data: auditRow } = await supabase
+          .from("ml_import_progress")
+          .select("ml_items_seen_count, db_rows_upserted_count, publications_total")
+          .eq("account_id", accountId)
+          .single()
+
+        const totalSeen     = auditRow?.ml_items_seen_count    ?? 0
+        const totalUpserted = auditRow?.db_rows_upserted_count ?? 0
+        const mlTotal       = auditRow?.publications_total     ?? 0
+
+        // Solo marcar done si persistimos ≥90% de lo visto
+        const upsertHealthy = totalSeen === 0 || (totalUpserted / totalSeen) >= 0.9
+        const finalStatus   = upsertHealthy ? "done" : "scan_complete_pending_verification"
+
         await supabase
           .from("ml_import_progress")
           .update({
-            status:      "done",
+            status:      finalStatus,
             scroll_id:   null,
             finished_at: new Date().toISOString(),
           })
@@ -368,15 +388,9 @@ export async function POST(request: NextRequest) {
       }
 
       // ── Paso 4: Upsert en Supabase (un solo batch) ───────────────────────
-      if (toUpsert.length > 0) {
-        // Batch audit
-        const sinSku      = toUpsert.filter(r => !r.sku).length
-        const sinPeso     = toUpsert.filter(r => r.meli_weight_g == null).length
-        const elegibles   = toUpsert.filter(r => r.catalog_listing_eligible).length
-        console.log(
-          `[import-pro] batch offset=${offset} total=${toUpsert.length} sin_sku=${sinSku} sin_peso=${sinPeso} elegibles=${elegibles}`
-        )
+      let batchUpserted = 0  // filas realmente guardadas en DB en este batch
 
+      if (toUpsert.length > 0) {
         const { error: upsertError } = await supabase
           .from("ml_publications")
           .upsert(toUpsert, { onConflict: "account_id,ml_item_id" })
@@ -385,18 +399,48 @@ export async function POST(request: NextRequest) {
           errorsCount++
           await supabase
             .from("ml_import_progress")
-            .update({ last_error: `Upsert: ${upsertError.message}` })
+            .update({
+              last_error:    `Upsert: ${upsertError.message}`,
+              last_error_at: new Date().toISOString(),
+              failed_count:  (progress.failed_count ?? 0) + toUpsert.length,
+            })
             .eq("account_id", accountId)
+          // NO avanzar offset si el upsert falló — se reintentará en la próxima corrida
+          // pero sí continuar con la siguiente página para no bloquearse
         } else {
-          importedCount += toUpsert.length
+          batchUpserted  = toUpsert.length
+          importedCount += batchUpserted
         }
       }
 
-      // Actualizar offset
-      const newOffset = offset + itemIds.length
+      // Actualizar offset SOLO con las filas realmente persistidas en DB
+      // Si el upsert falló, batchUpserted = 0 y el offset no avanza
+      const newOffset = offset + batchUpserted
+
+      // Re-leer los contadores acumulados para incrementar correctamente
+      // (el loop puede ejecutar múltiples iteraciones con el mismo `progress` snapshot)
+      const { data: curCounts } = await supabase
+        .from("ml_import_progress")
+        .select("upsert_new_count, fetched_count, discovered_count, request_count, ml_items_seen_count, db_rows_upserted_count, upsert_errors_count")
+        .eq("account_id", accountId)
+        .single()
+
+      const batchErrors = toUpsert.length > 0 && batchUpserted === 0 ? toUpsert.length : 0
+
       await supabase
         .from("ml_import_progress")
-        .update({ publications_offset: newOffset })
+        .update({
+          publications_offset:    newOffset,
+          upsert_new_count:       (curCounts?.upsert_new_count    ?? 0) + batchUpserted,
+          fetched_count:          (curCounts?.fetched_count       ?? 0) + toUpsert.length,
+          discovered_count:       (curCounts?.discovered_count    ?? 0) + itemIds.length,
+          request_count:          (curCounts?.request_count       ?? 0) + 1,
+          // audit columns — track seen vs actually persisted
+          ml_items_seen_count:    (curCounts?.ml_items_seen_count    ?? 0) + itemIds.length,
+          db_rows_upserted_count: (curCounts?.db_rows_upserted_count ?? 0) + batchUpserted,
+          upsert_errors_count:    (curCounts?.upsert_errors_count    ?? 0) + batchErrors,
+          last_sync_batch_at:     new Date().toISOString(),
+        })
         .eq("account_id", accountId)
 
       if (rateLimited) break
@@ -425,14 +469,29 @@ export async function POST(request: NextRequest) {
 
     const elapsed_ms = Date.now() - startTime
 
+    // Leer contadores finales para la respuesta
+    const { data: finalCounts } = await supabase
+      .from("ml_import_progress")
+      .select("ml_items_seen_count, db_rows_upserted_count, upsert_errors_count, publications_total")
+      .eq("account_id", accountId)
+      .single()
+
     return NextResponse.json({
-      ok:             true,
-      imported_count: importedCount,
+      ok:                     true,
+      imported_count:         importedCount,                           // filas persistidas en esta corrida
+      ml_items_seen_count:    mlSeenCount,                             // IDs vistos en ML en esta corrida
+      db_rows_upserted:       importedCount,
+      // totales acumulados en DB
+      total_seen:             finalCounts?.ml_items_seen_count    ?? 0,
+      total_upserted:         finalCounts?.db_rows_upserted_count ?? 0,
+      total_upsert_errors:    finalCounts?.upsert_errors_count    ?? 0,
+      ml_total:               finalCounts?.publications_total     ?? 0,
+      db_gap:                 (finalCounts?.publications_total ?? 0) - (finalCounts?.db_rows_upserted_count ?? 0),
       elapsed_ms,
-      has_more:       hasMore && !isDone,
-      last_scroll_id: finalScrollId,
-      errors_count:   errorsCount,
-      rate_limited:   rateLimited,
+      has_more:               hasMore && !isDone,
+      last_scroll_id:         finalScrollId,
+      errors_count:           errorsCount,
+      rate_limited:           rateLimited,
     })
 
   } catch (error: any) {

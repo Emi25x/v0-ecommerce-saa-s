@@ -114,7 +114,37 @@ export async function GET(req: NextRequest) {
     const { data, error } = await dataQuery
     if (error) throw error
 
-    return NextResponse.json({ ok: true, rows: data ?? [], total: exactCount ?? 0 })
+    // ── 3. Import progress audit data ─────────────────────────────────────
+    let progressAudit: Record<string, any> | null = null
+    if (accountId) {
+      const { data: prog } = await supabase
+        .from("ml_import_progress")
+        .select("status, publications_total, ml_items_seen_count, db_rows_upserted_count, upsert_errors_count, last_run_at, last_sync_batch_at, finished_at")
+        .eq("account_id", accountId)
+        .maybeSingle()
+
+      if (prog) {
+        progressAudit = {
+          status:                 prog.status,
+          ml_total:               prog.publications_total     ?? 0,
+          ml_items_seen:          prog.ml_items_seen_count    ?? 0,
+          db_rows_upserted:       prog.db_rows_upserted_count ?? 0,
+          upsert_errors:          prog.upsert_errors_count    ?? 0,
+          db_gap:                 (prog.publications_total ?? 0) - (prog.db_rows_upserted_count ?? 0),
+          last_run_at:            prog.last_run_at,
+          last_sync_batch_at:     prog.last_sync_batch_at,
+          finished_at:            prog.finished_at,
+        }
+      }
+    }
+
+    return NextResponse.json({
+      ok:       true,
+      rows:     data ?? [],
+      total:    exactCount ?? 0,
+      db_count: exactCount ?? 0,
+      progress: progressAudit,
+    })
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 })
   }
