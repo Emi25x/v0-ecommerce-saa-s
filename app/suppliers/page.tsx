@@ -22,7 +22,25 @@ type FeedKind      = "catalog" | "stock"
 interface Supplier  { id: string; name: string; code: string; is_active: boolean }
 interface Catalog   { id: string; name: string; file_url: string; file_format: string; import_status: string | null; imported_at: string | null; total_items: number; matched_items: number; catalog_mode: string; overwrite_mode: string; warehouse_id: string | null; created_at: string }
 interface Warehouse { id: string; name: string; code: string; is_default: boolean }
-interface ImportRun { id: string; feed_kind: string; catalog_mode: string | null; overwrite_mode: string | null; total_rows: number; valid_ean: number; created_count: number; updated_count: number; skipped_count: number; set_zero_stock_count: number; new_detected_count: number; error_count: number; status: string; started_at: string; finished_at: string | null }
+interface ImportRun {
+  id: string
+  feed_kind: string
+  catalog_mode: string | null
+  overwrite_mode: string | null
+  total_rows: number
+  valid_ean: number
+  created_count: number
+  updated_count: number
+  skipped_count: number
+  set_zero_stock_count: number
+  new_detected_count: number
+  error_count: number
+  status: string
+  started_at: string
+  finished_at: string | null
+  error_message: string | null
+  supplier_catalogs?: { name: string } | null
+}
 
 interface Preview {
   total_rows: number
@@ -56,6 +74,15 @@ function fmt(n: number | null | undefined) {
   return (n ?? 0).toLocaleString("es-AR")
 }
 
+function dur(started: string, finished: string | null) {
+  if (!finished) return "—"
+  const ms = new Date(finished).getTime() - new Date(started).getTime()
+  if (ms < 0) return "—"
+  const s = Math.round(ms / 1000)
+  if (s < 60) return `${s}s`
+  return `${Math.floor(s / 60)}m ${s % 60}s`
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function SuppliersPage() {
   const { toast } = useToast()
@@ -63,8 +90,9 @@ export default function SuppliersPage() {
   const [suppliers,        setSuppliers]        = useState<Supplier[]>([])
   const [catalogs,         setCatalogs]         = useState<Catalog[]>([])
   const [warehouses,       setWarehouses]       = useState<Warehouse[]>([])
-  const [importRuns,       setImportRuns]       = useState<ImportRun[]>([])
-  const [selectedSupplier, setSelectedSupplier] = useState<string>("")
+  const [importRuns,         setImportRuns]         = useState<ImportRun[]>([])
+  const [lastRunBySupplierId, setLastRunBySupplierId] = useState<Record<string, ImportRun>>({})
+  const [selectedSupplier, setSelectedSupplier]   = useState<string>("")
   const [activeTab,        setActiveTab]        = useState("import")
   const [loading,          setLoading]          = useState(false)
 
@@ -98,7 +126,18 @@ export default function SuppliersPage() {
       const def = ws.find((w: Warehouse) => w.is_default)
       if (def) setWarehouseId(def.id)
     })
-  }, [])
+    // Cargar último run completado por cada proveedor
+    fetch("/api/suppliers/import-runs?limit=100").then(r => r.json()).then(d => {
+      const runs: ImportRun[] = d.runs ?? []
+      const map: Record<string, ImportRun> = {}
+      for (const run of runs) {
+        if (run.status === "completed" && !map[(run as any).supplier_id]) {
+          map[(run as any).supplier_id] = run
+        }
+      }
+      setLastRunBySupplierId(map)
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!selectedSupplier) return
@@ -216,9 +255,12 @@ export default function SuppliersPage() {
       const data = await res.json()
       setApplyResult(data)
 
-      // Refresh runs log
+      // Refresh runs log + last run map
       const r = await fetch(`/api/suppliers/import-runs?supplier_id=${selectedSupplier}&limit=20`)
-      setImportRuns((await r.json()).runs ?? [])
+      const freshRuns: ImportRun[] = (await r.json()).runs ?? []
+      setImportRuns(freshRuns)
+      const latest = freshRuns.find(r => r.status === "completed")
+      if (latest) setLastRunBySupplierId(prev => ({ ...prev, [selectedSupplier]: latest }))
 
       if (data.ok) {
         toast({ title: "Importación completada", description: `${fmt(data.created ?? 0)} creados · ${fmt(data.updated ?? 0)} actualizados` })
@@ -250,21 +292,33 @@ export default function SuppliersPage() {
 
       {/* Supplier selector */}
       <div className="flex items-center gap-2 flex-wrap">
-        {suppliers.map(s => (
-          <button
-            key={s.id}
-            onClick={() => setSelectedSupplier(s.id)}
-            className={`flex items-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-medium transition-all ${
-              s.id === selectedSupplier
-                ? "border-emerald-500/60 bg-emerald-500/10 text-emerald-300"
-                : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-muted-foreground"
-            }`}
-          >
-            <Package className="h-3.5 w-3.5" />
-            {s.name}
-            <span className="text-[10px] font-mono text-muted-foreground">{s.code}</span>
-          </button>
-        ))}
+        {suppliers.map(s => {
+          const lr = lastRunBySupplierId[s.id]
+          return (
+            <button
+              key={s.id}
+              onClick={() => setSelectedSupplier(s.id)}
+              className={`flex flex-col items-start rounded-lg border px-3.5 py-2.5 text-sm font-medium transition-all text-left ${
+                s.id === selectedSupplier
+                  ? "border-emerald-500/60 bg-emerald-500/10 text-emerald-300"
+                  : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-muted-foreground"
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <Package className="h-3.5 w-3.5" />
+                {s.name}
+                <span className="text-[10px] font-mono opacity-60">{s.code}</span>
+              </span>
+              {lr && (
+                <span className="text-[10px] mt-1 font-normal opacity-70 tabular-nums">
+                  {new Date(lr.started_at).toLocaleDateString("es-AR")} ·{" "}
+                  <span className="text-emerald-400">+{fmt(lr.created_count)}</span>{" "}
+                  <span className="text-amber-400">~{fmt(lr.updated_count)}</span>
+                </span>
+              )}
+            </button>
+          )
+        })}
       </div>
 
       {!selectedSupplier && (
@@ -621,15 +675,18 @@ export default function SuppliersPage() {
                     <th className="px-4 py-3 text-right">Actualizados</th>
                     <th className="px-4 py-3 text-right">Omitidos</th>
                     <th className="px-4 py-3 text-right">A cero</th>
+                    <th className="px-4 py-3 text-right">Nuevos</th>
+                    <th className="px-4 py-3 text-right">Errores</th>
+                    <th className="px-4 py-3 text-left">Duración</th>
                     <th className="px-4 py-3 text-left">Inicio</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {importRuns.length === 0 && (
-                    <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground text-sm">Sin corridas registradas.</td></tr>
+                    <tr><td colSpan={11} className="px-4 py-8 text-center text-muted-foreground text-sm">Sin corridas registradas.</td></tr>
                   )}
                   {importRuns.map(run => (
-                    <tr key={run.id} className="hover:bg-muted/20">
+                    <tr key={run.id} className={`hover:bg-muted/20 ${run.error_message ? "bg-red-500/5" : ""}`}>
                       <td className="px-4 py-3">
                         <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
                           run.feed_kind === "stock"
@@ -639,13 +696,29 @@ export default function SuppliersPage() {
                           {run.feed_kind === "stock" ? "STOCK" : "CAT"}
                         </span>
                       </td>
-                      <td className="px-4 py-3"><StatusBadge status={run.status} /></td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col gap-0.5">
+                          <StatusBadge status={run.status} />
+                          {run.error_message && (
+                            <span className="text-[10px] text-red-400 max-w-[120px] truncate" title={run.error_message}>
+                              {run.error_message}
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-4 py-3 text-right font-mono text-xs">{fmt(run.total_rows)}</td>
                       <td className="px-4 py-3 text-right font-mono text-xs text-emerald-400">{fmt(run.created_count)}</td>
                       <td className="px-4 py-3 text-right font-mono text-xs text-amber-400">{fmt(run.updated_count)}</td>
                       <td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">{fmt(run.skipped_count)}</td>
                       <td className="px-4 py-3 text-right font-mono text-xs text-red-400">{fmt(run.set_zero_stock_count)}</td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">
+                      <td className="px-4 py-3 text-right font-mono text-xs text-blue-400">{fmt(run.new_detected_count)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-xs text-red-400">
+                        {run.error_count > 0 ? fmt(run.error_count) : <span className="text-muted-foreground/40">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-xs font-mono text-muted-foreground">
+                        {dur(run.started_at, run.finished_at)}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
                         {new Date(run.started_at).toLocaleString("es-AR")}
                       </td>
                     </tr>
