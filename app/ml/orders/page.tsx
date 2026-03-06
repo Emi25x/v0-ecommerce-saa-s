@@ -78,9 +78,9 @@ const relDate = (iso: string | null | undefined) => {
 
 interface MLOrder {
   id: string
-  ml_order_id: string
+  ml_order_id: number    // bigint en Postgres → number en JS
   account_id: string
-  buyer_id: string
+  buyer_id: number | null
   buyer_nickname: string | null
   status: string
   date_created: string

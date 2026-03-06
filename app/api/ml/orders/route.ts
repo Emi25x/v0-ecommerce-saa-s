@@ -22,7 +22,13 @@ export async function GET(req: NextRequest) {
     function applyFilters(qb: any): any {
       if (accountId) qb = qb.eq("account_id", accountId)
       if (status)    qb = qb.eq("status", status)
-      if (q)         qb = qb.or(`buyer_nickname.ilike.%${q}%,ml_order_id.ilike.%${q}%`)
+      // ml_order_id es bigint — buscar por igualdad si q es numérico, por nickname siempre
+      if (q) {
+        const isNumeric = /^\d+$/.test(q)
+        qb = isNumeric
+          ? qb.or(`buyer_nickname.ilike.%${q}%,ml_order_id.eq.${q}`)
+          : qb.ilike("buyer_nickname", `%${q}%`)
+      }
       return qb
     }
 

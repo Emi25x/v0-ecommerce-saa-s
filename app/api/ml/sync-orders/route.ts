@@ -62,12 +62,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, synced: 0, total: totalML, has_more: false })
     }
 
-    // Construir batch de upsert — orders/search ya trae buyer + shipping embebidos
+    // Construir batch de upsert — types deben coincidir con ml_orders schema:
+    // ml_order_id bigint, buyer_id bigint, shipping_id bigint, items_json jsonb
     const now   = new Date().toISOString()
     const batch = orders.map((o: any) => ({
       account_id:      account.id,
-      ml_order_id:     String(o.id),
-      buyer_id:        String(o.buyer?.id ?? ""),
+      ml_order_id:     Number(o.id),
+      buyer_id:        o.buyer?.id ? Number(o.buyer.id) : null,
       buyer_nickname:  o.buyer?.nickname ?? null,
       status:          o.status,
       date_created:    o.date_created,
@@ -75,16 +76,14 @@ export async function POST(request: NextRequest) {
       currency_id:     o.currency_id ?? "ARS",
       packing_status:  o.pack_status  ?? null,
       shipping_status: o.shipping?.status ?? null,
-      shipping_id:     o.shipping?.id ? String(o.shipping.id) : null,
-      // items: array [{title, quantity, unit_price, ean?}]
-      items_json:      JSON.stringify(
-        (o.order_items ?? []).map((i: any) => ({
-          title:      i.item?.title ?? "",
-          quantity:   i.quantity,
-          unit_price: i.unit_price,
-          ml_item_id: i.item?.id ?? null,
-        }))
-      ),
+      shipping_id:     o.shipping?.id ? Number(o.shipping.id) : null,
+      // jsonb — pasar objeto directamente, no JSON.stringify
+      items_json: (o.order_items ?? []).map((i: any) => ({
+        title:      i.item?.title ?? "",
+        quantity:   i.quantity,
+        unit_price: i.unit_price,
+        ml_item_id: i.item?.id ?? null,
+      })),
       updated_at: now,
     }))
 
