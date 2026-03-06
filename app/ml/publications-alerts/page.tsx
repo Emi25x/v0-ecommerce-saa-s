@@ -26,6 +26,7 @@ import {
   ExternalLink,
   Link2,
   Loader2,
+  Pause,
   RefreshCw,
   Search,
   ShoppingCart,
@@ -271,8 +272,7 @@ export default function PublicationsAlertsPage() {
   const [placeholder, setPlaceholder] = useState(false)
 
   // Filters
-  const [sinStock, setSinStock] = useState(false)
-  const [search,   setSearch]   = useState("")
+  const [search, setSearch] = useState("")
   const searchRef  = useRef(search)
   searchRef.current = search
 
@@ -382,6 +382,7 @@ export default function PublicationsAlertsPage() {
   // ── Single row enqueue ────────────────────────────────────────────────────
 
   const enqueueOne = async (pub: Publication) => {
+    const jobType = activeTab === "sin_stock" ? "pause_item" : "catalog_optin"
     setEnqueueing(pub.ml_item_id)
     try {
       const res  = await fetch("/api/ml/jobs/enqueue", {
@@ -389,13 +390,13 @@ export default function PublicationsAlertsPage() {
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({
           account_id: pub.account_id,
-          type:       "catalog_optin",
+          type:       jobType,
           payload:    { item_id: pub.ml_item_id, account_id: pub.account_id },
         }),
       })
       const data = await res.json()
       if (data.ok) {
-        toast({ title: "Job encolado", description: `${pub.ml_item_id} → catalog_optin` })
+        toast({ title: "Job encolado", description: `${pub.ml_item_id} → ${jobType}` })
       } else {
         toast({ title: "Error al encolar", description: data.error ?? "Error desconocido", variant: "destructive" })
       }
@@ -406,9 +407,13 @@ export default function PublicationsAlertsPage() {
     }
   }
 
-  // ── Bulk opt-in ───────────────────────────────────────────────────────────
+  // ── Bulk action (tipo varía por tab) ─────────────────────────────────────
 
-  const handleBulkOptin = async () => {
+  // sin_stock  → pause_item
+  // eligible_catalog / con_stock → catalog_optin
+  const bulkJobType = activeTab === "sin_stock" ? "pause_item" : "catalog_optin"
+
+  const handleBulkAction = async () => {
     if (selected.size === 0) return
     setBulkLoading(true)
     setBulkResult(null)
@@ -424,7 +429,7 @@ export default function PublicationsAlertsPage() {
           headers: { "Content-Type": "application/json" },
           body:    JSON.stringify({
             account_id: pub.account_id,
-            type:       "catalog_optin",
+            type:       bulkJobType,
             payload:    { item_id: pub.ml_item_id, account_id: pub.account_id },
           }),
         })
@@ -435,11 +440,12 @@ export default function PublicationsAlertsPage() {
       }
     }
 
+    const actionLabel = bulkJobType === "pause_item" ? "pausas" : "opt-ins"
     setBulkResult({ enqueued, failed })
     setBulkLoading(false)
     setSelected(new Set())
     toast({
-      title:       `Bulk opt-in: ${enqueued} encolados`,
+      title:       `${enqueued} ${actionLabel} encolados`,
       description: failed > 0 ? `${failed} fallaron` : "Todos encolados correctamente",
       variant:     failed > 0 ? "destructive" : "default",
     })
@@ -542,16 +548,6 @@ export default function PublicationsAlertsPage() {
             </Button>
           </div>
 
-          {/* Sin stock toggle */}
-          <label className="flex items-center gap-2 text-sm cursor-pointer select-none pb-0.5">
-            <input
-              type="checkbox"
-              checked={sinStock}
-              onChange={e => { setSinStock(e.target.checked); setPage(0); setSelected(new Set()) }}
-              className="accent-primary"
-            />
-            Mostrar solo sin stock
-          </label>
         </div>
 
         {/* Bulk actions bar */}
@@ -573,15 +569,20 @@ export default function PublicationsAlertsPage() {
             {selected.size > 0 && (
               <Button
                 size="sm"
-                onClick={handleBulkOptin}
+                onClick={handleBulkAction}
                 disabled={bulkLoading}
                 className="gap-1.5"
               >
                 {bulkLoading
                   ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  : <ShoppingCart className="h-3.5 w-3.5" />
+                  : bulkJobType === "pause_item"
+                    ? <Pause className="h-3.5 w-3.5" />
+                    : <ShoppingCart className="h-3.5 w-3.5" />
                 }
-                Opt-in catálogo ({selected.size})
+                {bulkJobType === "pause_item"
+                  ? `Pausar sin stock (${selected.size})`
+                  : `Opt-in catálogo (${selected.size})`
+                }
               </Button>
             )}
 
