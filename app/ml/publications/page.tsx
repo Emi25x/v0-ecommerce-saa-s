@@ -158,6 +158,9 @@ export default function MLPublicationsPage() {
   const [weightSync, setWeightSync]       = useState<{ loading: boolean; result: { updated: number; missing: number; processed: number } | null }>({ loading: false, result: null })
   const [skuBackfill, setSkuBackfill]     = useState<{ loading: boolean; result: { updated: number; skipped: number; processed: number } | null }>({ loading: false, result: null })
   const [verifying, setVerifying]         = useState<string | null>(null) // ml_item_id being verified
+  const [selected, setSelected]           = useState<Set<string>>(new Set()) // ml_item_ids seleccionados
+  const [batchEnqueueing, setBatchEnqueueing] = useState(false)
+  const [mlTotal, setMlTotal]             = useState<{ total_db: number; total_ml: number | null; diff: number | null; loading: boolean } | null>(null)
 
   const searchRef = useRef(search)
   searchRef.current = search
@@ -200,6 +203,65 @@ export default function MLPublicationsPage() {
       .catch(() => {})
   }, [accountId])
 
+  // ── Diagnóstico DB vs ML ────────────────────────────────────────────────
+
+  const loadMlTotal = useCallback(async (accId: string) => {
+    if (accId === "all") { setMlTotal(null); return }
+    setMlTotal(prev => ({ total_db: prev?.total_db ?? 0, total_ml: prev?.total_ml ?? null, diff: null, loading: true }))
+    try {
+      const res  = await fetch(`/api/ml/publications/ml-total?account_id=${accId}`)
+      const data = await res.json()
+      if (data.ok) setMlTotal({ total_db: data.total_db, total_ml: data.total_ml, diff: data.diff, loading: false })
+      else setMlTotal(null)
+    } catch { setMlTotal(null) }
+  }, [])
+
+  // ── Acción masiva opt-in ───────────────────────────────────────────────
+
+  const batchOptIn = async () => {
+    if (selected.size === 0 || accountId === "all") return
+    setBatchEnqueueing(true)
+    let ok = 0; let err = 0
+    for (const ml_item_id of selected) {
+      try {
+        const pub = rows.find(r => r.ml_item_id === ml_item_id)
+        if (!pub) continue
+        const res  = await fetch("/api/ml/jobs/enqueue", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({
+            account_id: accountId,
+            type:       "catalog_optin",
+            payload:    { item_id: ml_item_id, account_id: accountId },
+          }),
+        })
+        const data = await res.json()
+        if (data.ok) ok++; else err++
+      } catch { err++ }
+    }
+    toast({
+      title:       `${ok} jobs encolados`,
+      description: err > 0 ? `${err} errores al encolar` : "Todos encolados correctamente",
+      variant:     err > 0 ? "destructive" : "default",
+    })
+    setSelected(new Set())
+    setBatchEnqueueing(false)
+  }
+
+  const toggleSelect = (ml_item_id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(ml_item_id)) next.delete(ml_item_id)
+      else next.add(ml_item_id)
+      return next
+    })
+  }
+
+  const selectAllEligible = () => {
+    const eligible = rows.filter(r => r.catalog_listing_eligible && !r.catalog_listing).map(r => r.ml_item_id)
+    setSelected(new Set(eligible))
+  }
+
   // ── Load rows ──────────────────────────────────────────────────────────
 
   const load = useCallback(async (p = 0) => {
@@ -227,7 +289,8 @@ export default function MLPublicationsPage() {
     }
   }, [accountId, statusFilter, sinProducto, soloElegibles, sinStock, stockFirst])
 
-  useEffect(() => { setPage(0); load(0) }, [accountId, statusFilter, sinProducto, soloElegibles, sinStock, stockFirst])
+  useEffect(() => { setPage(0); setSelected(new Set()); load(0) }, [accountId, statusFilter, sinProducto, soloElegibles, sinStock, stockFirst])
+  useEffect(() => { loadMlTotal(accountId) }, [accountId, loadMlTotal])
 
   const handleSearch = () => { setPage(0); load(0) }
   const prevPage = () => { const p = page - 1; setPage(p); load(p) }
@@ -543,6 +606,46 @@ export default function MLPublicationsPage() {
           </div>
         )}
 
+        {/* ── Diagnóstico DB vs ML ────────────────────────────────────────── */}
+        {mlTotal && (
+          <div className={`rounded-lg border px-4 py-3 flex items-center gap-4 text-sm ${
+            mlTotal.loading
+              ? "border-border bg-muted/10"
+              : mlTotal.diff != null && mlTotal.diff > 0
+                ? "border-amber-500/30 bg-amber-500/5"
+                : "border-border bg-muted/10"
+          }`}>
+            {mlTotal.loading ? (
+              <div className="h-4 w-48 bg-muted/40 rounded animate-pulse" />
+            ) : (
+              <>
+                <span className="text-muted-foreground">Diagnóstico:</span>
+                <span className="font-mono text-xs">
+                  DB <span className="font-semibold text-foreground">{(mlTotal.total_db ?? 0).toLocaleString("es-AR")}</span>
+                  {" — "}
+                  ML <span className="font-semibold text-foreground">{mlTotal.total_ml != null ? mlTotal.total_ml.toLocaleString("es-AR") : "—"}</span>
+                </span>
+                {mlTotal.diff != null && mlTotal.diff > 0 && (
+                  <span className="inline-flex items-center gap-1 text-xs text-amber-400 font-medium">
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    Faltan {mlTotal.diff.toLocaleString("es-AR")} por importar
+                  </span>
+                )}
+                {mlTotal.diff === 0 && (
+                  <span className="text-xs text-green-400 font-medium">Sincronizado</span>
+                )}
+                <button
+                  onClick={() => loadMlTotal(accountId)}
+                  className="ml-auto text-muted-foreground hover:text-foreground transition-colors"
+                  title="Actualizar diagnóstico"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
         {/* ── Filtros ─────────────────────────────────────────────────────── */}
         <div className="flex flex-wrap gap-3 items-end">
 
@@ -637,6 +740,29 @@ export default function MLPublicationsPage() {
           </div>
         </div>
 
+        {/* ── Barra acción masiva ─────────────────────────────────────────── */}
+        {selected.size > 0 && (
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-2.5 flex items-center gap-3 text-sm">
+            <span className="font-medium text-emerald-300">{selected.size} seleccionada{selected.size !== 1 ? "s" : ""}</span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs border-emerald-500/40 hover:bg-emerald-500/10"
+              onClick={batchOptIn}
+              disabled={batchEnqueueing}
+            >
+              <ShoppingCart className="h-3.5 w-3.5 mr-1.5" />
+              {batchEnqueueing ? "Encolando..." : "Opt-in catálogo"}
+            </Button>
+            <button
+              className="ml-auto text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => setSelected(new Set())}
+            >
+              Limpiar seleccion
+            </button>
+          </div>
+        )}
+
         {/* ── Tabla / Empty ───────────────────────────────────────────────── */}
         {rows.length === 0 && !loading ? (
           <div className="flex flex-col items-center justify-center py-24 gap-4 text-center border border-dashed rounded-xl">
@@ -659,6 +785,19 @@ export default function MLPublicationsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/30">
+                    <th className="px-3 py-3 w-8">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <input
+                            type="checkbox"
+                            className="accent-primary cursor-pointer"
+                            checked={selected.size > 0 && rows.filter(r => r.catalog_listing_eligible && !r.catalog_listing).every(r => selected.has(r.ml_item_id))}
+                            onChange={e => e.target.checked ? selectAllEligible() : setSelected(new Set())}
+                          />
+                        </TooltipTrigger>
+                        <TooltipContent>Seleccionar elegibles de esta pagina</TooltipContent>
+                      </Tooltip>
+                    </th>
                     <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">Item ID</th>
                     <th className="text-left px-4 py-3 font-medium text-muted-foreground">Título</th>
                     <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">Estado</th>
@@ -676,7 +815,7 @@ export default function MLPublicationsPage() {
                   {loading
                     ? Array.from({ length: 10 }).map((_, i) => (
                         <tr key={i} className="border-b animate-pulse">
-                          {Array.from({ length: 10 }).map((_, j) => (
+                          {Array.from({ length: 11 }).map((_, j) => (
                             <td key={j} className="px-4 py-3">
                               <div className="h-4 bg-muted/40 rounded w-full" />
                             </td>
@@ -689,6 +828,18 @@ export default function MLPublicationsPage() {
                           className="border-b hover:bg-muted/20 transition-colors group cursor-pointer"
                           onClick={() => setDetail(row)}
                         >
+                          {/* Checkbox seleccion */}
+                          <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                            {(row.catalog_listing_eligible && !row.catalog_listing) && (
+                              <input
+                                type="checkbox"
+                                className="accent-primary cursor-pointer"
+                                checked={selected.has(row.ml_item_id)}
+                                onChange={() => toggleSelect(row.ml_item_id)}
+                              />
+                            )}
+                          </td>
+
                           {/* Item ID */}
                           <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                             <div className="flex items-center gap-1.5">
