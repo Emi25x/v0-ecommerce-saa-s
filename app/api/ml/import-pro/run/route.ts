@@ -223,20 +223,48 @@ export async function POST(request: NextRequest) {
       // Acumular IDs vistos en ML (independiente del upsert)
       mlSeenCount += itemIds.length
 
-      // scan termina cuando results vacío — nunca usar offset >= total como stop signal
+      // scan termina cuando results vacío — pero hay que distinguir entre
+      // "terminé de verdad" y "scroll expiró antes de terminar"
       if (itemIds.length === 0) {
-        hasMore = false
-
         // Re-leer contadores acumulados para la verificación de salud
         const { data: auditRow } = await supabase
           .from("ml_import_progress")
-          .select("ml_items_seen_count, db_rows_upserted_count, publications_total")
+          .select("ml_items_seen_count, db_rows_upserted_count, publications_total, publications_offset")
           .eq("account_id", accountId)
           .single()
 
         const totalSeen     = auditRow?.ml_items_seen_count    ?? 0
         const totalUpserted = auditRow?.db_rows_upserted_count ?? 0
         const mlTotal       = auditRow?.publications_total     ?? 0
+        const currentOffset = auditRow?.publications_offset    ?? 0
+
+        // ── Detectar scroll expirado ──────────────────────────────────────────
+        // Si el total ML conocido es > 0 y solo procesamos < 95% de esas publicaciones,
+        // el scroll probablemente expiró (ML los descarta después de ~10 minutos inactivos).
+        // En ese caso, limpiar el scroll_id para que la próxima invocación
+        // comience un scan nuevo desde el principio — el upsert con onConflict
+        // garantiza que no se duplican registros.
+        const pctCovered = mlTotal > 0 ? (totalSeen / mlTotal) : 1
+        const scrollExpired = mlTotal > 0 && pctCovered < 0.95
+
+        if (scrollExpired) {
+          // Scroll expirado — limpiar scroll_id, NO marcar done
+          // La próxima invocación arranca un scan nuevo y cubre lo que falta
+          await supabase
+            .from("ml_import_progress")
+            .update({
+              status:        "idle",
+              scroll_id:     null,
+              last_error:    `Scroll expirado al ${Math.round(pctCovered * 100)}% (${totalSeen}/${mlTotal}). Se reiniciará el scan.`,
+              last_error_at: new Date().toISOString(),
+            })
+            .eq("account_id", accountId)
+          hasMore = true
+          break
+        }
+
+        // ── Scan completo ─────────────────────────────────────────────────────
+        hasMore = false
 
         // Solo marcar done si persistimos ≥90% de lo visto
         const upsertHealthy = totalSeen === 0 || (totalUpserted / totalSeen) >= 0.9
@@ -248,6 +276,7 @@ export async function POST(request: NextRequest) {
             status:      finalStatus,
             scroll_id:   null,
             finished_at: new Date().toISOString(),
+            last_error:  null,
           })
           .eq("account_id", accountId)
         break
@@ -262,8 +291,8 @@ export async function POST(request: NextRequest) {
           .eq("account_id", accountId)
       }
 
-      // Guardar total si aún no lo tenemos
-      if (!cur.publications_total && totalFromApi > 0) {
+      // Guardar total siempre que ML lo reporte (actualizar si mejoró, nunca bajar a 0)
+      if (totalFromApi > 0 && totalFromApi > (cur.publications_total ?? 0)) {
         await supabase
           .from("ml_import_progress")
           .update({ publications_total: totalFromApi })
