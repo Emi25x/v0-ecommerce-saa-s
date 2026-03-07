@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       tipo_comprobante, concepto,
       tipo_doc_receptor, nro_doc_receptor, receptor_nombre, receptor_domicilio, receptor_condicion_iva,
       items, moneda, orden_id,
-      fuente,                  // "ml" | "manual" | undefined
+      origen,                  // "ml" | "manual" | undefined — mapea a columna `origen`
       billing_info_snapshot,   // raw billing_info de ML para auditoría
     } = body
 
@@ -149,7 +149,7 @@ export async function POST(request: Request) {
         items,
         estado:                "emitida",
         orden_id:              orden_id || null,
-        fuente:                fuente || (orden_id ? "ml" : "manual"),
+        origen:                origen || (orden_id ? "ml" : "manual"),
         billing_info_snapshot: billing_info_snapshot || null,
         fecha:                 new Date().toISOString().slice(0, 10),
         concepto:              concepto || 1,

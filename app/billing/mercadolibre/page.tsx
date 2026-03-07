@@ -317,6 +317,9 @@ export default function MLBillingPage() {
             nro_doc_receptor:       nroDoc,
             receptor_nombre:        nombre,
             receptor_condicion_iva: tipoDoc === 80 ? "responsable_inscripto" : "consumidor_final",
+            orden_id:               String(order.id),
+            origen:                 "ml",
+            billing_info_snapshot:  billingData ?? null,
             items: order.items.map(i => ({
               descripcion:     i.titulo || "Venta ML",
               cantidad:        i.cantidad,
