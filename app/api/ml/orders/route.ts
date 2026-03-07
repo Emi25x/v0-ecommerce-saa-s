@@ -52,7 +52,34 @@ export async function GET(req: NextRequest) {
     const { data, error } = await dataQ
     if (error) throw error
 
-    return NextResponse.json({ ok: true, rows: data ?? [], total: exactCount ?? 0 })
+    const rows = data ?? []
+
+    // ── Join factura_status from facturas via orden_id ──────────────────────
+    // facturas.orden_id is text, ml_orders.ml_order_id is bigint — cast to match
+    if (rows.length > 0) {
+      const orderIds = rows.map(r => String(r.ml_order_id))
+      const { data: facturas } = await supabase
+        .from("facturas")
+        .select("orden_id, estado, cae, numero, tipo_comprobante")
+        .in("orden_id", orderIds)
+        .eq("origen", "ml")
+
+      // Build lookup: orden_id → factura
+      const facturaMap = new Map<string, { estado: string; cae: string | null; numero: number | null; tipo_comprobante: number | null }>()
+      for (const f of facturas ?? []) {
+        if (f.orden_id) facturaMap.set(f.orden_id, f)
+      }
+
+      // Attach factura_status to each row
+      const enriched = rows.map(r => ({
+        ...r,
+        factura: facturaMap.get(String(r.ml_order_id)) ?? null,
+      }))
+
+      return NextResponse.json({ ok: true, rows: enriched, total: exactCount ?? 0 })
+    }
+
+    return NextResponse.json({ ok: true, rows, total: exactCount ?? 0 })
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 })
   }

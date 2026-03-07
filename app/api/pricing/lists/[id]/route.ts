@@ -8,7 +8,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     const supabase = await createClient()
     const { data, error } = await supabase
       .from("price_lists")
-      .select(`*, rules:price_list_rules(*), fee_rules:price_list_fee_rules(*)`)
+      .select(`*, rules:price_list_rules(*), fee_rules:price_list_fee_rules(*), warehouse:warehouses(id,name,base_currency,code)`)
       .eq("id", params.id)
       .single()
     if (error) throw error

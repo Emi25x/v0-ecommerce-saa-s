@@ -18,23 +18,42 @@ export async function POST(req: NextRequest) {
     if (!price_list_id)
       return NextResponse.json({ ok: false, error: "price_list_id required" }, { status: 400 })
 
-    // Load price list config
+    // Load price list config — join warehouse to get base_currency
     const { data: listRow, error: listErr } = await supabase
       .from("price_lists")
-      .select(`*, rules:price_list_rules(*), fee_rules:price_list_fee_rules(*)`)
+      .select(`*, rules:price_list_rules(*), fee_rules:price_list_fee_rules(*), warehouse:warehouses(id,base_currency)`)
       .eq("id", price_list_id)
       .single()
 
     if (listErr || !listRow)
       return NextResponse.json({ ok: false, error: "price list not found" }, { status: 404 })
 
+    const fromCurrency: string | null = listRow.warehouse?.base_currency ?? null
+    const toCurrency:   string        = listRow.currency
+
+    // Auto-resolve FX rate from exchange_rates when currencies differ
+    let resolvedFxRate: number | null = null
+    if (fromCurrency && fromCurrency !== toCurrency) {
+      const { data: fxRow } = await supabase
+        .from("exchange_rates")
+        .select("rate")
+        .eq("from_currency", fromCurrency)
+        .eq("to_currency", toCurrency)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      resolvedFxRate = fxRow?.rate ?? null
+    }
+
     const list: PriceListConfig = {
-      id:           listRow.id,
-      name:         listRow.name,
-      pricing_base: listRow.pricing_base,
-      currency:     listRow.currency,
-      rules:        listRow.rules?.[0] ?? null,
-      fee_rules:    listRow.fee_rules ?? [],
+      id:               listRow.id,
+      name:             listRow.name,
+      pricing_base:     listRow.pricing_base,
+      currency:         toCurrency,
+      from_currency:    fromCurrency,
+      resolved_fx_rate: resolvedFxRate,
+      rules:            listRow.rules?.[0] ?? null,
+      fee_rules:        listRow.fee_rules ?? [],
     }
 
     // Resolve product inputs

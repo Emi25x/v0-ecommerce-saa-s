@@ -10,7 +10,19 @@ export interface PriceListConfig {
   id: string
   name: string
   pricing_base: PricingBase
+  /** Moneda destino del precio final (ej: "ARS", "USD") */
   currency: string
+  /**
+   * Moneda origen del cálculo — viene de warehouse.base_currency.
+   * Si es igual a `currency` no se aplica conversión.
+   * Si difiere, el engine usará `resolved_fx_rate` (precalculado por el caller).
+   */
+  from_currency?: string | null
+  /**
+   * Tasa FX ya resuelta por el caller (desde exchange_rates o manual).
+   * Tiene prioridad sobre rules.fx_rate cuando from_currency != currency.
+   */
+  resolved_fx_rate?: number | null
   rules: {
     fx_rate: number
     fx_markup_pct: number
@@ -134,7 +146,15 @@ export function calculatePrice(
   const feeRules  = list.fee_rules ?? []
   const warnings: string[] = []
 
-  const fxRate       = rules?.fx_rate       ?? 1
+  // FX resolution priority:
+  // 1. list.resolved_fx_rate — auto-resolved from exchange_rates by the caller
+  //    using warehouse.base_currency → price_lists.currency pair
+  // 2. rules.fx_rate — manual override stored in price_list_rules
+  // 3. 1 (no conversion — same currency)
+  const sameCurrency = !list.from_currency || list.from_currency === list.currency
+  const fxRate       = sameCurrency
+    ? 1
+    : (list.resolved_fx_rate ?? rules?.fx_rate ?? 1)
   const fxMarkupPct  = rules?.fx_markup_pct ?? 0
   const marginTarget = rules?.margin_target_pct ?? 30
   const marginMin    = rules?.margin_min_pct    ?? 10

@@ -11,6 +11,13 @@ import { useToast } from "@/hooks/use-toast"
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
+interface Warehouse {
+  id:            string
+  name:          string
+  code:          string | null
+  base_currency: string | null
+}
+
 interface PriceList {
   id:             string
   name:           string
@@ -23,6 +30,8 @@ interface PriceList {
   markup_default: number | null
   round_to:       number | null
   updated_at:     string
+  warehouse_id:   string | null
+  warehouse?:     Warehouse | null
 }
 
 const EMPTY_FORM = (): Partial<PriceList> => ({
@@ -35,6 +44,7 @@ const EMPTY_FORM = (): Partial<PriceList> => ({
   margin_min:     10,
   markup_default: 35,
   round_to:       null,
+  warehouse_id:   null,
 })
 
 const CHANNEL_OPTS = [
@@ -75,20 +85,24 @@ const relDate = (iso: string) => {
 export default function PricingListsPage() {
   const router      = useRouter()
   const { toast }   = useToast()
-  const [lists,     setLists]     = useState<PriceList[]>([])
-  const [loading,   setLoading]   = useState(true)
-  const [saving,    setSaving]    = useState(false)
-  const [deleting,  setDeleting]  = useState<string | null>(null)
-  const [showForm,  setShowForm]  = useState(false)
-  const [form,      setForm]      = useState(EMPTY_FORM())
-  const [editId,    setEditId]    = useState<string | null>(null)
+  const [lists,      setLists]      = useState<PriceList[]>([])
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [loading,    setLoading]    = useState(true)
+  const [saving,     setSaving]     = useState(false)
+  const [deleting,   setDeleting]   = useState<string | null>(null)
+  const [showForm,   setShowForm]   = useState(false)
+  const [form,       setForm]       = useState(EMPTY_FORM())
+  const [editId,     setEditId]     = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res  = await fetch("/api/pricing/lists")
-      const data = await res.json()
-      if (data.ok) setLists(data.lists ?? [])
+      const [rLists, rWh] = await Promise.all([
+        fetch("/api/pricing/lists").then(r => r.json()),
+        fetch("/api/warehouses").then(r => r.json()),
+      ])
+      if (rLists.ok) setLists(rLists.lists ?? [])
+      if (rWh.ok)    setWarehouses(rWh.warehouses ?? rWh.data ?? [])
     } finally { setLoading(false) }
   }, [])
 
