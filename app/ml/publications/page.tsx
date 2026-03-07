@@ -672,14 +672,16 @@ export default function MLPublicationsPage() {
               <span className="text-muted-foreground font-medium">
                 Importación{" "}
                 <span className={
-                  importProgress.status === "running"    ? "text-blue-400"
-                  : importProgress.status === "done"     ? "text-green-400"
-                  : importProgress.status === "error"    ? "text-red-400"
-                  : importProgress.status === "paused"   ? "text-yellow-400"
+                  importProgress.status === "running"                           ? "text-blue-400"
+                  : importProgress.status === "done"                            ? "text-green-400"
+                  : importProgress.status === "error"                           ? "text-red-400"
+                  : importProgress.status === "paused"                          ? "text-yellow-400"
+                  : importProgress.status === "scan_complete_pending_verification" ? "text-amber-400"
                   : "text-muted-foreground"
                 }>
-                  {importProgress.status === "running" ? "en curso"
-                   : importProgress.status === "done"   ? "completada"
+                  {importProgress.status === "running"                              ? "en curso"
+                   : importProgress.status === "done"                               ? "completada"
+                   : importProgress.status === "scan_complete_pending_verification" ? "scan completo — verificar"
                    : importProgress.status}
                 </span>
               </span>
@@ -704,29 +706,38 @@ export default function MLPublicationsPage() {
             {/* Barra de progreso ML seen (offset real = filas persistidas) */}
             <div className="space-y-1">
               <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums">
-                <span>
-                  DB persistidas: <span className="text-foreground font-semibold">
-                    {(importProgress.upsert_new_count ?? importProgress.publications_offset ?? 0).toLocaleString("es-AR")}
+                <span className="flex items-center gap-3 flex-wrap">
+                  <span>
+                    DB persistidas:{" "}
+                    <span className="text-foreground font-semibold">
+                      {/* Prefer new audit column, fallback to old upsert_new_count */}
+                      {(importProgress.db_rows_upserted_count ?? importProgress.upsert_new_count ?? importProgress.publications_offset ?? 0).toLocaleString("es-AR")}
+                    </span>
                   </span>
-                  {importProgress.discovered_count != null && importProgress.discovered_count > 0 && (
-                    <>
-                      {" / ML vistas: "}
+                  {(importProgress.ml_items_seen_count ?? importProgress.discovered_count ?? 0) > 0 && (
+                    <span>
+                      ML vistas:{" "}
                       <span className="text-foreground font-semibold">
-                        {importProgress.discovered_count.toLocaleString("es-AR")}
+                        {(importProgress.ml_items_seen_count ?? importProgress.discovered_count ?? 0).toLocaleString("es-AR")}
                       </span>
-                    </>
+                    </span>
                   )}
                   {importProgress.publications_total != null && (
-                    <>
-                      {" / Total ML: "}
+                    <span>
+                      Total ML:{" "}
                       <span className="text-foreground font-semibold">
                         {importProgress.publications_total.toLocaleString("es-AR")}
                       </span>
-                    </>
+                    </span>
+                  )}
+                  {(importProgress.upsert_errors_count ?? 0) > 0 && (
+                    <span className="text-red-400 font-semibold">
+                      {(importProgress.upsert_errors_count).toLocaleString("es-AR")} errores upsert
+                    </span>
                   )}
                 </span>
-                {importProgress.last_run_at && (
-                  <span>Última corrida: {relDate(importProgress.last_run_at)}</span>
+                {importProgress.last_sync_batch_at && (
+                  <span>Ultimo batch: {relDate(importProgress.last_sync_batch_at)}</span>
                 )}
               </div>
               <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
@@ -734,12 +745,13 @@ export default function MLPublicationsPage() {
                   className={`h-full rounded-full transition-all ${
                     importProgress.status === "running" ? "bg-blue-500 animate-pulse"
                     : importProgress.status === "done"  ? "bg-green-500"
+                    : importProgress.status === "scan_complete_pending_verification" ? "bg-amber-500"
                     : importProgress.status === "error" ? "bg-red-500"
                     : "bg-muted-foreground/50"
                   }`}
                   style={{
                     width: importProgress.publications_total
-                      ? `${Math.min(100, ((importProgress.upsert_new_count ?? importProgress.publications_offset ?? 0) / importProgress.publications_total) * 100)}%`
+                      ? `${Math.min(100, ((importProgress.db_rows_upserted_count ?? importProgress.upsert_new_count ?? importProgress.publications_offset ?? 0) / importProgress.publications_total) * 100)}%`
                       : "100%",
                   }}
                 />
@@ -748,8 +760,8 @@ export default function MLPublicationsPage() {
 
             {/* Alerta de import incompleto: ML vistas >> DB persistidas */}
             {(() => {
-              const seen    = importProgress.discovered_count ?? 0
-              const saved   = importProgress.upsert_new_count ?? importProgress.publications_offset ?? 0
+              const seen    = importProgress.ml_items_seen_count ?? importProgress.discovered_count ?? 0
+              const saved   = importProgress.db_rows_upserted_count ?? importProgress.upsert_new_count ?? importProgress.publications_offset ?? 0
               const missing = seen - saved
               if (seen > 0 && missing > 10) {
                 return (

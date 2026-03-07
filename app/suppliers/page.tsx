@@ -22,7 +22,7 @@ type FeedKind      = "catalog" | "stock"
 interface Supplier  { id: string; name: string; code: string; is_active: boolean }
 interface Catalog   { id: string; name: string; file_url: string; file_format: string; import_status: string | null; imported_at: string | null; total_items: number; matched_items: number; catalog_mode: string; overwrite_mode: string; warehouse_id: string | null; created_at: string }
 interface Warehouse { id: string; name: string; code: string; is_default: boolean }
-interface ImportRun { id: string; feed_kind: string; catalog_mode: string | null; overwrite_mode: string | null; total_rows: number; valid_ean: number; created_count: number; updated_count: number; skipped_count: number; set_zero_stock_count: number; new_detected_count: number; error_count: number; status: string; started_at: string; finished_at: string | null }
+interface ImportRun { id: string; catalog_id: string | null; feed_kind: string; catalog_mode: string | null; overwrite_mode: string | null; total_rows: number; valid_ean: number; created_count: number; updated_count: number; skipped_count: number; set_zero_stock_count: number; new_detected_count: number; error_count: number; status: string; started_at: string; finished_at: string | null }
 
 interface Preview {
   total_rows: number
@@ -287,28 +287,6 @@ export default function SuppliersPage() {
 
           {/* ── Import tab ── */}
           <TabsContent value="import" className="space-y-5 mt-4">
-
-            {/* Last run chip */}
-            {importRuns[0] && importRuns[0].status === "completed" && (
-              <div className="rounded-lg border border-border bg-muted/10 px-4 py-2.5 flex items-center gap-3 text-xs flex-wrap">
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 flex-shrink-0" />
-                <span className="text-muted-foreground">Ultima importacion:</span>
-                <span className="font-mono">
-                  <span className="text-emerald-400 font-semibold">{fmt(importRuns[0].created_count)}</span> creados ·{" "}
-                  <span className="text-amber-400 font-semibold">{fmt(importRuns[0].updated_count)}</span> actualizados ·{" "}
-                  <span className="text-muted-foreground">{fmt(importRuns[0].skipped_count)}</span> omitidos
-                  {importRuns[0].new_detected_count > 0 && <> · <span className="text-blue-400 font-semibold">{fmt(importRuns[0].new_detected_count)}</span> nuevos EAN</>}
-                </span>
-                <span className="ml-auto text-muted-foreground">{new Date(importRuns[0].started_at).toLocaleString("es-AR")}</span>
-              </div>
-            )}
-            {importRuns[0] && importRuns[0].status === "failed" && (
-              <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-2.5 flex items-center gap-3 text-xs">
-                <XCircle className="h-3.5 w-3.5 text-red-400 flex-shrink-0" />
-                <span className="text-red-300 font-medium">La última importacion falló</span>
-                <span className="text-muted-foreground">{new Date(importRuns[0].started_at).toLocaleString("es-AR")}</span>
-              </div>
-            )}
 
             {/* ARNOIA info banner */}
             {supplier?.code === "ARNOIA" && (
@@ -601,16 +579,20 @@ export default function SuppliersPage() {
                     <th className="px-4 py-3 text-left">Estado</th>
                     <th className="px-4 py-3 text-left">Modo</th>
                     <th className="px-4 py-3 text-right">Items</th>
+                    <th className="px-4 py-3 text-right">Ultimo run</th>
                     <th className="px-4 py-3 text-left">Fecha</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {catalogs.length === 0 && (
-                    <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground text-sm">Sin archivos importados aún.</td></tr>
+                    <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground text-sm">Sin archivos importados aún.</td></tr>
                   )}
-                  {catalogs.map(cat => (
+                  {catalogs.map(cat => {
+                    // Buscar el ultimo run de este catálogo en importRuns
+                    const lastRun = importRuns.find(r => r.catalog_id === cat.id)
+                    return (
                     <tr key={cat.id} className="hover:bg-muted/20">
-                      <td className="px-4 py-3 font-medium">{cat.name}</td>
+                      <td className="px-4 py-3 font-medium max-w-[180px] truncate">{cat.name}</td>
                       <td className="px-4 py-3"><StatusBadge status={cat.import_status ?? "pending"} /></td>
                       <td className="px-4 py-3">
                         <span className="text-xs text-muted-foreground">
@@ -620,52 +602,31 @@ export default function SuppliersPage() {
                       <td className="px-4 py-3 text-right font-mono text-xs">
                         {fmt(cat.matched_items)}/{fmt(cat.total_items)}
                       </td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground">
+                      <td className="px-4 py-3 text-right">
+                        {lastRun ? (
+                          <span className="text-xs font-mono space-x-1.5">
+                            <span className="text-emerald-400">+{fmt(lastRun.created_count)}</span>
+                            <span className="text-amber-400">~{fmt(lastRun.updated_count)}</span>
+                            {lastRun.error_count > 0 && <span className="text-red-400">!{fmt(lastRun.error_count)}</span>}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
                         {cat.imported_at ? new Date(cat.imported_at).toLocaleString("es-AR") : new Date(cat.created_at).toLocaleDateString("es-AR")}
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
           </TabsContent>
 
           {/* ── Logs tab ── */}
-          <TabsContent value="logs" className="mt-4 space-y-4">
-
-            {/* Last run summary chip */}
-            {importRuns[0] && (
-              <div className={`rounded-lg border px-4 py-3 flex items-center gap-4 text-xs flex-wrap ${
-                importRuns[0].status === "completed"
-                  ? "border-emerald-500/30 bg-emerald-500/5"
-                  : importRuns[0].status === "failed"
-                    ? "border-red-500/30 bg-red-500/5"
-                    : "border-border bg-muted/10"
-              }`}>
-                <StatusBadge status={importRuns[0].status} />
-                <span className="text-muted-foreground">Ultima corrida</span>
-                <span className="font-mono">
-                  <span className="text-emerald-400 font-semibold">{fmt(importRuns[0].created_count)}</span> creados
-                  {" · "}
-                  <span className="text-amber-400 font-semibold">{fmt(importRuns[0].updated_count)}</span> actualizados
-                  {" · "}
-                  <span className="text-muted-foreground">{fmt(importRuns[0].skipped_count)}</span> omitidos
-                  {importRuns[0].new_detected_count > 0 && (
-                    <> · <span className="text-blue-400 font-semibold">{fmt(importRuns[0].new_detected_count)}</span> nuevos EAN</>
-                  )}
-                  {importRuns[0].error_count > 0 && (
-                    <> · <span className="text-red-400 font-semibold">{fmt(importRuns[0].error_count)}</span> errores</>
-                  )}
-                </span>
-                {importRuns[0].finished_at && importRuns[0].started_at && (
-                  <span className="ml-auto text-muted-foreground">
-                    {Math.round((new Date(importRuns[0].finished_at).getTime() - new Date(importRuns[0].started_at).getTime()) / 1000)}s
-                  </span>
-                )}
-              </div>
-            )}
-
-            <div className="rounded-lg border border-border overflow-x-auto">
+          <TabsContent value="logs" className="mt-4">
+            <div className="rounded-lg border border-border overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-muted/30 text-xs text-muted-foreground uppercase tracking-wide">
                   <tr>
@@ -673,13 +634,13 @@ export default function SuppliersPage() {
                     <th className="px-4 py-3 text-left">Estado</th>
                     <th className="px-4 py-3 text-right">Filas</th>
                     <th className="px-4 py-3 text-right">Creados</th>
-                    <th className="px-4 py-3 text-right">Actualiz.</th>
+                    <th className="px-4 py-3 text-right">Actualizados</th>
                     <th className="px-4 py-3 text-right">Omitidos</th>
                     <th className="px-4 py-3 text-right">A cero</th>
-                    <th className="px-4 py-3 text-right">Nuevos EAN</th>
+                    <th className="px-4 py-3 text-right">Nuevos</th>
                     <th className="px-4 py-3 text-right">Errores</th>
                     <th className="px-4 py-3 text-left">Inicio</th>
-                    <th className="px-4 py-3 text-right">Duración</th>
+                    <th className="px-4 py-3 text-left">Duracion</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -687,39 +648,44 @@ export default function SuppliersPage() {
                     <tr><td colSpan={11} className="px-4 py-8 text-center text-muted-foreground text-sm">Sin corridas registradas.</td></tr>
                   )}
                   {importRuns.map(run => {
-                    const durationSec = run.finished_at && run.started_at
-                      ? Math.round((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000)
+                    const durMs = run.finished_at
+                      ? new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()
                       : null
+                    const durLabel = durMs == null ? "—"
+                      : durMs < 60000 ? `${Math.round(durMs / 1000)}s`
+                      : `${Math.round(durMs / 60000)}m ${Math.round((durMs % 60000) / 1000)}s`
+
                     return (
-                      <tr key={run.id} className="hover:bg-muted/20">
-                        <td className="px-4 py-3">
-                          <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
-                            run.feed_kind === "stock"
-                              ? "bg-blue-500/15 text-blue-400"
-                              : "bg-purple-500/15 text-purple-400"
-                          }`}>
-                            {run.feed_kind === "stock" ? "STOCK" : "CAT"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3"><StatusBadge status={run.status} /></td>
-                        <td className="px-4 py-3 text-right font-mono text-xs">{fmt(run.total_rows)}</td>
-                        <td className="px-4 py-3 text-right font-mono text-xs text-emerald-400">{fmt(run.created_count)}</td>
-                        <td className="px-4 py-3 text-right font-mono text-xs text-amber-400">{fmt(run.updated_count)}</td>
-                        <td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">{fmt(run.skipped_count)}</td>
-                        <td className="px-4 py-3 text-right font-mono text-xs text-red-400">{fmt(run.set_zero_stock_count)}</td>
-                        <td className="px-4 py-3 text-right font-mono text-xs text-blue-400">
-                          {run.new_detected_count > 0 ? fmt(run.new_detected_count) : <span className="text-muted-foreground">—</span>}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-xs text-red-400">
-                          {run.error_count > 0 ? fmt(run.error_count) : <span className="text-muted-foreground">—</span>}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                          {new Date(run.started_at).toLocaleString("es-AR")}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">
-                          {durationSec != null ? `${durationSec}s` : "—"}
-                        </td>
-                      </tr>
+                    <tr key={run.id} className={`hover:bg-muted/20 ${run.error_count > 0 ? "bg-red-500/3" : ""}`}>
+                      <td className="px-4 py-3">
+                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                          run.feed_kind === "stock"
+                            ? "bg-blue-500/15 text-blue-400"
+                            : "bg-purple-500/15 text-purple-400"
+                        }`}>
+                          {run.feed_kind === "stock" ? "STOCK" : "CAT"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3"><StatusBadge status={run.status} /></td>
+                      <td className="px-4 py-3 text-right font-mono text-xs">{fmt(run.total_rows)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-xs text-emerald-400">{fmt(run.created_count)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-xs text-amber-400">{fmt(run.updated_count)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">{fmt(run.skipped_count)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-xs text-red-400">{fmt(run.set_zero_stock_count)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-xs text-sky-400">
+                        {run.new_detected_count > 0 ? fmt(run.new_detected_count) : <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-xs">
+                        {run.error_count > 0
+                          ? <span className="text-red-400 font-semibold">{fmt(run.error_count)}</span>
+                          : <span className="text-muted-foreground">—</span>
+                        }
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                        {new Date(run.started_at).toLocaleString("es-AR")}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground font-mono">{durLabel}</td>
+                    </tr>
                     )
                   })}
                 </tbody>
