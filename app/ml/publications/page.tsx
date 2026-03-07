@@ -152,7 +152,13 @@ export default function MLPublicationsPage() {
     last_error: string | null
     last_error_at: string | null
     last_run_at: string | null
+    last_sync_batch_at: string | null
+    finished_at: string | null
     updated_at: string | null
+    // audit columns
+    ml_items_seen_count: number | null
+    db_rows_upserted_count: number | null
+    upsert_errors_count: number | null
   } | null>(null)
   const [syncingML, setSyncingML]           = useState(false)
   const [page, setPage]                   = useState(0)
@@ -170,17 +176,7 @@ export default function MLPublicationsPage() {
   const [verifying, setVerifying]         = useState<string | null>(null) // ml_item_id being verified
   const [selected, setSelected]           = useState<Set<string>>(new Set()) // ml_item_ids seleccionados
   const [batchEnqueueing, setBatchEnqueueing] = useState(false)
-  const [mlTotal, setMlTotal]             = useState<{ total_db: number; total_ml: number | null; diff: number | null; loading: boolean } | null>(null)
-  const [progressAudit, setProgressAudit] = useState<{
-    status: string
-    ml_total: number
-    ml_items_seen: number
-    db_rows_upserted: number
-    upsert_errors: number
-    db_gap: number
-    last_run_at: string | null
-    last_sync_batch_at: string | null
-  } | null>(null)
+
 
   const searchRef = useRef(search)
   searchRef.current = search
@@ -223,18 +219,7 @@ export default function MLPublicationsPage() {
       .catch(() => {})
   }, [accountId])
 
-  // ── Diagnóstico DB vs ML ────────────────────────────────────────────────
 
-  const loadMlTotal = useCallback(async (accId: string) => {
-    if (accId === "all") { setMlTotal(null); return }
-    setMlTotal(prev => ({ total_db: prev?.total_db ?? 0, total_ml: prev?.total_ml ?? null, diff: null, loading: true }))
-    try {
-      const res  = await fetch(`/api/ml/publications/ml-total?account_id=${accId}`)
-      const data = await res.json()
-      if (data.ok) setMlTotal({ total_db: data.total_db, total_ml: data.total_ml, diff: data.diff, loading: false })
-      else setMlTotal(null)
-    } catch { setMlTotal(null) }
-  }, [])
 
   // ── Acción masiva opt-in ───────────────────────────────────────────────
 
@@ -300,10 +285,9 @@ export default function MLPublicationsPage() {
       })
       const res  = await fetch(`/api/ml/publications?${params}`)
       const data = await res.json()
-      if (data.ok) {
+        if (data.ok) {
         setRows(data.rows)
         setTotal(data.total)
-        if (data.progress) setProgressAudit(data.progress)
       }
     } finally {
       setLoading(false)
@@ -788,79 +772,7 @@ export default function MLPublicationsPage() {
           </div>
         )}
 
-        {/* ── Auditoría DB vs ML (datos reales de persistencia) ─────────── */}
-        {progressAudit && accountId !== "all" && (
-          <div className={`rounded-lg border px-4 py-3 text-sm space-y-2 ${
-            progressAudit.db_gap > 50
-              ? "border-amber-500/30 bg-amber-500/5"
-              : progressAudit.upsert_errors > 0
-                ? "border-red-500/30 bg-red-500/5"
-                : "border-border bg-muted/10"
-          }`}>
-            <div className="flex items-center gap-4 flex-wrap">
-              <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Auditoría</span>
 
-              {/* DB rows (lo que realmente está en DB) */}
-              <span className="text-xs tabular-nums">
-                DB persistidas:{" "}
-                <span className="font-semibold text-foreground">
-                  {(progressAudit.db_rows_upserted || total).toLocaleString("es-AR")}
-                </span>
-              </span>
-
-              {/* ML total */}
-              {progressAudit.ml_total > 0 && (
-                <span className="text-xs tabular-nums">
-                  Total ML:{" "}
-                  <span className="font-semibold text-foreground">
-                    {progressAudit.ml_total.toLocaleString("es-AR")}
-                  </span>
-                </span>
-              )}
-
-              {/* Gap */}
-              {progressAudit.ml_total > 0 && (
-                progressAudit.db_gap > 50 ? (
-                  <span className="inline-flex items-center gap-1 text-xs text-amber-400 font-medium">
-                    <AlertCircle className="h-3.5 w-3.5" />
-                    Faltan {progressAudit.db_gap.toLocaleString("es-AR")} por persistir
-                  </span>
-                ) : (
-                  <span className="text-xs text-green-400 font-medium">Sincronizado</span>
-                )
-              )}
-
-              {/* Upsert errors */}
-              {progressAudit.upsert_errors > 0 && (
-                <span className="inline-flex items-center gap-1 text-xs text-red-400 font-medium">
-                  <AlertCircle className="h-3.5 w-3.5" />
-                  {progressAudit.upsert_errors.toLocaleString("es-AR")} errores de upsert
-                </span>
-              )}
-
-              {/* Last sync */}
-              {(progressAudit.last_sync_batch_at || progressAudit.last_run_at) && (
-                <span className="ml-auto text-xs text-muted-foreground">
-                  Último batch: {relDate(progressAudit.last_sync_batch_at ?? progressAudit.last_run_at)}
-                </span>
-              )}
-            </div>
-
-            {/* Progress bar: upserted / ml_total */}
-            {progressAudit.ml_total > 0 && (
-              <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all ${
-                    progressAudit.db_gap > 50 ? "bg-amber-500" : "bg-green-500"
-                  }`}
-                  style={{
-                    width: `${Math.min(100, ((progressAudit.db_rows_upserted || total) / progressAudit.ml_total) * 100)}%`
-                  }}
-                />
-              </div>
-            )}
-          </div>
-        )}
 
         {/* ── Filtros ─────────────────────────────────────────────────────── */}
         <div className="flex flex-wrap gap-3 items-end">
