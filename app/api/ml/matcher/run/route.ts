@@ -35,91 +35,149 @@ export async function POST(request: Request) {
   const supabase = await createClient({ useServiceRole: true })
 
   try {
-    // ── 1) Capturar lista fija de IDs de candidatos ─────────────────────────
-    // CRÍTICO: seleccionar los IDs ANTES de empezar a procesar para que el conjunto
-    // no cambie mientras iteramos (evita el drift de offset que causaba 3/1719 matches).
-    const { data: candidateRows, count: totalCandidates } = await supabase
-      .from("ml_publications")
-      .select("id", { count: "exact" })
-      .eq("account_id", accountId)
-      .is("product_id", null)
-      .order("id")          // orden estable por PK
-      .limit(batch_size)
-
-    if (!candidateRows || candidateRows.length === 0) {
-      // Actualizar progreso a completed si corresponde
-      await supabase.from("ml_matcher_progress")
-        .upsert({
-          account_id:               accountId,
-          status:                   "completed",
-          finished_at:              new Date().toISOString(),
-          last_heartbeat_at:        new Date().toISOString(),
-        }, { onConflict: "account_id" })
-
-      return NextResponse.json({
-        ok: true, status: "no_work", reason: "no_candidates",
-        processed: 0, matched: 0,
-        elapsed_seconds: elapsed(t0),
-      })
-    }
-
-    const candidateIds = candidateRows.map(r => r.id)
-
-    // ── 2) Obtener o inicializar progreso ───────────────────────────────────
+    // ── 1) Obtener o inicializar progreso ────────────────────────────────────
     let { data: progress } = await supabase
       .from("ml_matcher_progress")
       .select("*")
       .eq("account_id", accountId)
       .maybeSingle()
 
+    // Leer cursor estable (last_id procesado en la invocación anterior)
+    const cursorLastId: string | null = (progress?.cursor as any)?.last_id ?? null
+
+    // Si viene reset=true o el run completó, reiniciar cursor y contadores
+    const resetRun = body.reset === true || progress?.status === "completed" || progress?.status === "failed"
+
+    // ── 2) Contar candidatos restantes (total para diagnóstico) ─────────────
+    let totalCountQuery = supabase
+      .from("ml_publications")
+      .select("id", { count: "exact", head: true })
+      .eq("account_id", accountId)
+      .is("product_id", null)
+    if (!resetRun && cursorLastId) totalCountQuery = totalCountQuery.gt("id", cursorLastId)
+    const { count: remainingCandidates } = await totalCountQuery
+
+    if ((remainingCandidates ?? 0) === 0 && !resetRun) {
+      // No quedan candidatos — completar
+      await supabase.from("ml_matcher_progress").upsert({
+        account_id:        accountId,
+        status:            "completed",
+        finished_at:       new Date().toISOString(),
+        last_heartbeat_at: new Date().toISOString(),
+      }, { onConflict: "account_id" })
+
+      return NextResponse.json({
+        ok: true, status: "no_work", reason: "no_candidates",
+        processed: 0, matched: 0, cursor_last_id: cursorLastId,
+        elapsed_seconds: elapsed(t0),
+      })
+    }
+
+    // ── 3) Inicializar / reiniciar progreso ──────────────────────────────────
     if (!progress) {
       await supabase.from("ml_matcher_progress").insert({
         account_id:               accountId,
         status:                   "idle",
-        total_target:             totalCandidates ?? 0,
+        total_target:             remainingCandidates ?? 0,
         processed_count:          0,
         matched_count:            0,
         ambiguous_count:          0,
         not_found_count:          0,
         invalid_identifier_count: 0,
         error_count:              0,
+        cursor:                   null,
       })
       const { data: fresh } = await supabase.from("ml_matcher_progress").select("*").eq("account_id", accountId).single()
       progress = fresh
-    } else if (progress.status === "completed" || progress.status === "failed") {
-      // Reinicio
+    } else if (resetRun) {
       await supabase.from("ml_matcher_progress").update({
-        status: "idle", total_target: totalCandidates ?? 0,
-        processed_count: 0, matched_count: 0, ambiguous_count: 0,
-        not_found_count: 0, invalid_identifier_count: 0, error_count: 0,
-        last_error: null, started_at: null, finished_at: null,
+        status:                   "idle",
+        total_target:             remainingCandidates ?? 0,
+        processed_count:          0,
+        matched_count:            0,
+        ambiguous_count:          0,
+        not_found_count:          0,
+        invalid_identifier_count: 0,
+        error_count:              0,
+        last_error:               null,
+        started_at:               null,
+        finished_at:              null,
+        cursor:                   null,
       }).eq("account_id", accountId)
       const { data: fresh } = await supabase.from("ml_matcher_progress").select("*").eq("account_id", accountId).single()
       progress = fresh
     }
 
-    // ── 3) Concurrencia: heartbeat check ────────────────────────────────────
+    // ── 4) Concurrencia: heartbeat check ─────────────────────────────────────
     if (progress!.status === "running") {
       const sinceHeartbeat = (Date.now() - new Date(progress!.last_heartbeat_at ?? 0).getTime()) / 1000
       if (sinceHeartbeat < 60) {
-        return NextResponse.json({ ok: false, message: "Another matcher is running", seconds_since_heartbeat: Math.round(sinceHeartbeat) })
+        return NextResponse.json({
+          ok: false,
+          message: "Another matcher is running",
+          seconds_since_heartbeat: Math.round(sinceHeartbeat),
+        })
       }
     }
 
-    // ── 4) Marcar como running ───────────────────────────────────────────────
+    // ── 5) Marcar como running ────────────────────────────────────────────────
     await supabase.from("ml_matcher_progress").update({
       status:            "running",
       started_at:        progress!.started_at || new Date().toISOString(),
       last_heartbeat_at: new Date().toISOString(),
     }).eq("account_id", accountId)
 
-    // ── 5) Cargar products en memoria (índices) ──────────────────────────────
+    // ── 6) Capturar lista fija de IDs con cursor estable ─────────────────────
+    //
+    // ESTRATEGIA: en lugar de range(offset, ...) sobre un dataset que cambia,
+    // usamos id > last_processed_id ORDER BY id LIMIT batch_size.
+    //
+    // Esto garantiza:
+    //   a) El conjunto de IDs a procesar en esta invocación es fijo e inmutable
+    //      (aunque otras filas obtengan product_id durante el proceso, no afectan
+    //      la paginación porque el cursor avanza por id, no por posición).
+    //   b) No hay solapamiento entre invocaciones: cada una retoma exactamente
+    //      donde terminó la anterior.
+    //   c) product_id IS NULL filtra publicaciones ya vinculadas — si alguna fue
+    //      vinculada por otra sesión, simplemente no aparece en el fetch de detalles.
+    //
+    const effectiveCursor = resetRun ? null : cursorLastId
+    let candidateQuery = supabase
+      .from("ml_publications")
+      .select("id")
+      .eq("account_id", accountId)
+      .is("product_id", null)
+      .order("id", { ascending: true })
+      .limit(batch_size)
+    if (effectiveCursor) candidateQuery = candidateQuery.gt("id", effectiveCursor)
+
+    const { data: candidateRows } = await candidateQuery
+
+    if (!candidateRows || candidateRows.length === 0) {
+      await supabase.from("ml_matcher_progress").update({
+        status:            "completed",
+        finished_at:       new Date().toISOString(),
+        last_heartbeat_at: new Date().toISOString(),
+      }).eq("account_id", accountId)
+
+      return NextResponse.json({
+        ok: true, status: "no_work", reason: "no_candidates_after_cursor",
+        cursor_last_id: effectiveCursor,
+        processed: 0, matched: 0,
+        elapsed_seconds: elapsed(t0),
+      })
+    }
+
+    // IDs fijos — inmutables durante esta invocación
+    const candidateIds = candidateRows.map(r => r.id)
+    const newCursorLastId = candidateIds[candidateIds.length - 1]
+
+    // ── 7) Construir índices de productos ────────────────────────────────────
     const { data: allProducts } = await supabase
       .from("products")
       .select("id, ean, gtin, isbn, sku")
       .or("ean.not.is.null,gtin.not.is.null,isbn.not.is.null,sku.not.is.null")
 
-    // Métricas de products (para warning en respuesta)
     let productsWithId = 0
     const eanIndex  = new Map<string, string[]>()
     const isbnIndex = new Map<string, string[]>()
@@ -127,14 +185,12 @@ export async function POST(request: Request) {
 
     for (const p of allProducts ?? []) {
       let hasAny = false
-      // EAN y GTIN van al mismo índice (EAN-13 compatible)
       for (const raw of [p.ean, p.gtin]) {
         if (!raw) continue
         const key = norm(raw)
         if (!key) continue
         hasAny = true
-        if (!eanIndex.has(key)) eanIndex.set(key, [])
-        eanIndex.get(key)!.push(p.id)
+        addToIndex(eanIndex, key, p.id)
       }
       if (p.isbn) {
         const key = norm(p.isbn)
@@ -149,42 +205,41 @@ export async function POST(request: Request) {
 
     const productsMissingIdentifiers = (allProducts?.length ?? 0) > 0 && productsWithId === 0
 
-    // ── 6) Fetch detalles de los candidatos por IDs fijos ───────────────────
+    // ── 8) Fetch detalles solo de los IDs fijos ──────────────────────────────
+    // Si alguna publicación fue vinculada por otra sesión en el interim,
+    // product_id no es NULL y podemos filtrarla aquí para no re-matchearla.
     const { data: pubs } = await supabase
       .from("ml_publications")
       .select("id, ml_item_id, title, ean, gtin, isbn, sku")
       .in("id", candidateIds)
+      .is("product_id", null)   // protección extra: saltar las ya vinculadas
 
-    // Métricas de publicaciones (informativos)
     let pubsWithEan = 0, pubsWithIsbn = 0, pubsWithSku = 0
-
     let matched = 0, ambiguous = 0, notFound = 0, invalid = 0
     const batchUpdates: Array<{ id: string; product_id: string; matched_by: string }> = []
 
     for (const pub of pubs ?? []) {
       if (Date.now() - t0 > max_seconds * 1000) break
 
-      // Recopilar identificadores: campo directo + extraídos del título
       const eans:  string[] = []
       const isbns: string[] = []
       const skus:  string[] = []
 
       if (pub.ean)  { const k = norm(pub.ean);  if (k) { eans.push(k);  pubsWithEan++ } }
-      if (pub.gtin) { const k = norm(pub.gtin); if (k) eans.push(k) }
+      if (pub.gtin) { const k = norm(pub.gtin); if (k) addUnique(eans, k) }
       if (pub.isbn) { const k = norm(pub.isbn); if (k) { isbns.push(k); pubsWithIsbn++ } }
       if (pub.sku)  { const k = norm(pub.sku);  if (k) { skus.push(k);  pubsWithSku++ } }
 
-      // Extraer identificadores del título
       const fromTitle = extractFromTitle(pub.title ?? "")
-      eans.push(...fromTitle.eans.filter(k => !eans.includes(k)))
-      isbns.push(...fromTitle.isbns.filter(k => !isbns.includes(k)))
+      fromTitle.eans.forEach(k  => addUnique(eans, k))
+      fromTitle.isbns.forEach(k => addUnique(isbns, k))
 
       if (eans.length + isbns.length + skus.length === 0) {
         invalid++
         continue
       }
 
-      // Buscar: prioridad EAN → ISBN → SKU
+      // Prioridad: 1) EAN exacto  2) ISBN exacto  3) SKU exacto
       let productId: string | null = null
       let matchType: string | null = null
       let totalMatches = 0
@@ -211,22 +266,24 @@ export async function POST(request: Request) {
       }
     }
 
-    // ── 7) Aplicar updates ──────────────────────────────────────────────────
+    // ── 9) Aplicar updates en un solo loop ───────────────────────────────────
     for (const u of batchUpdates) {
-      await supabase.from("ml_publications").update({
-        product_id:  u.product_id,
-        matched_by:  u.matched_by,
-      }).eq("id", u.id)
+      await supabase.from("ml_publications")
+        .update({ product_id: u.product_id, matched_by: u.matched_by })
+        .eq("id", u.id)
     }
 
-    // ── 8) Actualizar progreso ───────────────────────────────────────────────
+    // ── 10) Actualizar progreso con nuevo cursor ──────────────────────────────
     const actuallyProcessed = pubs?.length ?? 0
     const newProcessed  = (progress!.processed_count || 0) + actuallyProcessed
-    const newMatched    = (progress!.matched_count || 0) + matched
+    const newMatched    = (progress!.matched_count   || 0) + matched
     const newAmbiguous  = (progress!.ambiguous_count || 0) + ambiguous
     const newNotFound   = (progress!.not_found_count || 0) + notFound
     const newInvalid    = (progress!.invalid_identifier_count || 0) + invalid
-    const isComplete    = actuallyProcessed < batch_size  // lote incompleto = no hay más
+
+    // Es el último lote si el query devolvió menos de batch_size filas
+    // (el dataset is inmutable para el cursor: si hay más, siempre devuelve batch_size)
+    const isComplete = candidateRows.length < batch_size
 
     await supabase.from("ml_matcher_progress").update({
       status:                   isComplete ? "completed" : "idle",
@@ -235,31 +292,35 @@ export async function POST(request: Request) {
       ambiguous_count:          newAmbiguous,
       not_found_count:          newNotFound,
       invalid_identifier_count: newInvalid,
+      // Guardar cursor para la siguiente invocación
+      cursor:                   isComplete ? null : { last_id: newCursorLastId },
       finished_at:              isComplete ? new Date().toISOString() : null,
       last_heartbeat_at:        new Date().toISOString(),
       updated_at:               new Date().toISOString(),
     }).eq("account_id", accountId)
 
     return NextResponse.json({
-      ok:          true,
-      status:      "success",
-      processed:   actuallyProcessed,
+      ok:              true,
+      status:          "success",
+      processed:       actuallyProcessed,
       matched,
       ambiguous,
-      not_found:   notFound,
+      not_found:       notFound,
       invalid,
       total_processed: newProcessed,
-      is_complete: isComplete,
+      is_complete:     isComplete,
+      cursor_last_id:  isComplete ? null : newCursorLastId,
       elapsed_seconds: elapsed(t0),
-      // Métricas informativas
       metrics: {
-        pubs_with_ean:  pubsWithEan,
-        pubs_with_isbn: pubsWithIsbn,
-        pubs_with_sku:  pubsWithSku,
+        pubs_with_ean:    pubsWithEan,
+        pubs_with_isbn:   pubsWithIsbn,
+        pubs_with_sku:    pubsWithSku,
         products_indexed: productsWithId,
-        ean_index_size:  eanIndex.size,
-        isbn_index_size: isbnIndex.size,
-        sku_index_size:  skuIndex.size,
+        ean_index_size:   eanIndex.size,
+        isbn_index_size:  isbnIndex.size,
+        sku_index_size:   skuIndex.size,
+        candidates_fetched: candidateIds.length,
+        remaining_before:   remainingCandidates ?? 0,
       },
       warnings: productsMissingIdentifiers ? ["products_missing_identifiers"] : [],
     })
