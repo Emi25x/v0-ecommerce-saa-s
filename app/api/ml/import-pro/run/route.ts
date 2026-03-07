@@ -391,25 +391,40 @@ export async function POST(request: NextRequest) {
       let batchUpserted = 0  // filas realmente guardadas en DB en este batch
 
       if (toUpsert.length > 0) {
-        const { error: upsertError } = await supabase
+        const { error: upsertError, count: upsertCount } = await supabase
           .from("ml_publications")
-          .upsert(toUpsert, { onConflict: "account_id,ml_item_id" })
+          .upsert(toUpsert, { onConflict: "account_id,ml_item_id", count: "exact" })
 
         if (upsertError) {
-          errorsCount++
+          // Upsert falló completamente — no avanzar offset, registrar error claro
+          errorsCount += toUpsert.length
           await supabase
             .from("ml_import_progress")
             .update({
-              last_error:    `Upsert: ${upsertError.message}`,
+              last_error:    `Upsert falló (${toUpsert.length} filas no guardadas): ${upsertError.message}`,
               last_error_at: new Date().toISOString(),
-              failed_count:  (progress.failed_count ?? 0) + toUpsert.length,
             })
             .eq("account_id", accountId)
-          // NO avanzar offset si el upsert falló — se reintentará en la próxima corrida
-          // pero sí continuar con la siguiente página para no bloquearse
+          // batchUpserted queda en 0 — offset NO avanza
         } else {
-          batchUpserted  = toUpsert.length
+          // Usar el count real devuelto por Supabase cuando está disponible.
+          // Si count es null (driver no lo soporta), usar toUpsert.length como fallback
+          // ya que la ausencia de error significa que todas las filas se procesaron.
+          batchUpserted  = upsertCount ?? toUpsert.length
           importedCount += batchUpserted
+
+          // Si el count real es menor que lo enviado, registrar la discrepancia
+          if (upsertCount !== null && upsertCount < toUpsert.length) {
+            const missing = toUpsert.length - upsertCount
+            errorsCount += missing
+            await supabase
+              .from("ml_import_progress")
+              .update({
+                last_error:    `Upsert parcial: ${upsertCount}/${toUpsert.length} filas guardadas (${missing} sin confirmar)`,
+                last_error_at: new Date().toISOString(),
+              })
+              .eq("account_id", accountId)
+          }
         }
       }
 
@@ -425,22 +440,31 @@ export async function POST(request: NextRequest) {
         .eq("account_id", accountId)
         .single()
 
-      const batchErrors = toUpsert.length > 0 && batchUpserted === 0 ? toUpsert.length : 0
+      // filas enviadas al upsert que NO quedaron confirmadas en DB
+      const batchErrors = Math.max(0, toUpsert.length - batchUpserted)
+
+      const progressUpdate: Record<string, any> = {
+        publications_offset:    newOffset,
+        upsert_new_count:       (curCounts?.upsert_new_count    ?? 0) + batchUpserted,
+        fetched_count:          (curCounts?.fetched_count       ?? 0) + toUpsert.length,
+        discovered_count:       (curCounts?.discovered_count    ?? 0) + itemIds.length,
+        request_count:          (curCounts?.request_count       ?? 0) + 1,
+        // audit columns — track seen vs actually persisted
+        ml_items_seen_count:    (curCounts?.ml_items_seen_count    ?? 0) + itemIds.length,
+        db_rows_upserted_count: (curCounts?.db_rows_upserted_count ?? 0) + batchUpserted,
+        upsert_errors_count:    (curCounts?.upsert_errors_count    ?? 0) + batchErrors,
+        last_sync_batch_at:     new Date().toISOString(),
+      }
+
+      // Si el batch fue exitoso y sin errores, limpiar el último error
+      if (batchErrors === 0 && toUpsert.length > 0) {
+        progressUpdate.last_error    = null
+        progressUpdate.last_error_at = null
+      }
 
       await supabase
         .from("ml_import_progress")
-        .update({
-          publications_offset:    newOffset,
-          upsert_new_count:       (curCounts?.upsert_new_count    ?? 0) + batchUpserted,
-          fetched_count:          (curCounts?.fetched_count       ?? 0) + toUpsert.length,
-          discovered_count:       (curCounts?.discovered_count    ?? 0) + itemIds.length,
-          request_count:          (curCounts?.request_count       ?? 0) + 1,
-          // audit columns — track seen vs actually persisted
-          ml_items_seen_count:    (curCounts?.ml_items_seen_count    ?? 0) + itemIds.length,
-          db_rows_upserted_count: (curCounts?.db_rows_upserted_count ?? 0) + batchUpserted,
-          upsert_errors_count:    (curCounts?.upsert_errors_count    ?? 0) + batchErrors,
-          last_sync_batch_at:     new Date().toISOString(),
-        })
+        .update(progressUpdate)
         .eq("account_id", accountId)
 
       if (rateLimited) break
