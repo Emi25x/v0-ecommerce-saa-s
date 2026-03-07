@@ -59,6 +59,10 @@
     {
       "path": "/api/arnoia/import-stock",
       "schedule": "0 */3 * * *"
+    },
+    {
+      "path": "/api/cron/jobs",
+      "schedule": "0 */12 * * *"
     }
   ]
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
-import { RefreshCw, TrendingUp, BookOpen, AlertCircle, Zap, ChevronRight, BarChart3 } from "lucide-react"
+import { RefreshCw, TrendingUp, BookOpen, AlertCircle, Zap, ChevronRight, BarChart3, Newspaper, ExternalLink } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -47,15 +47,25 @@ const STATUS_COLOR: Record<string, string> = {
 }
 
 export default function RadarDashboardPage() {
-  const [stats, setStats]   = useState<Stats | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [stats, setStats]       = useState<Stats | null>(null)
+  const [loading, setLoading]   = useState(true)
+  const [newsItems, setNewsItems] = useState<{
+    id: string; title: string; source: string; url: string | null;
+    detected_book: string | null; detected_author: string | null;
+    project_type: string; confidence_score: number; published_at: string | null
+  }[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res  = await fetch("/api/radar/stats")
-      const data = await res.json()
-      if (data.ok) setStats(data)
+      const [statsRes, newsRes] = await Promise.all([
+        fetch("/api/radar/stats"),
+        fetch("/api/radar/news?only_adaptations=true&limit=5"),
+      ])
+      const statsData = await statsRes.json()
+      const newsData  = await newsRes.json()
+      if (statsData.ok) setStats(statsData)
+      if (newsData.ok)  setNewsItems(newsData.rows ?? [])
     } finally {
       setLoading(false)
     }
@@ -253,13 +263,81 @@ export default function RadarDashboardPage() {
         </Card>
       </div>
 
+      {/* Adaptaciones detectadas en noticias */}
+      <Card className="p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Newspaper className="h-4 w-4 text-rose-400" />
+            <h2 className="text-sm font-semibold">Adaptaciones detectadas en noticias</h2>
+          </div>
+          <Link href="/radar/adaptaciones-tempranas" className="text-xs text-muted-foreground hover:text-foreground">
+            Ver todas →
+          </Link>
+        </div>
+        {loading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-10 bg-muted/30 rounded animate-pulse" />)}
+          </div>
+        ) : newsItems.length === 0 ? (
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">Sin detecciones todavía.</p>
+            <Link href="/radar/adaptaciones-tempranas">
+              <Button size="sm" variant="outline" className="text-xs">
+                <Newspaper className="h-3.5 w-3.5 mr-1.5" />
+                Actualizar feeds
+              </Button>
+            </Link>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {newsItems.map(item => (
+              <div key={item.id} className="flex items-start gap-3 rounded-md border border-border bg-muted/10 px-3 py-2.5">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">
+                    {item.detected_book ?? item.title}
+                  </p>
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                    <span className="text-[10px] text-muted-foreground">{item.source}</span>
+                    {item.detected_author && (
+                      <span className="text-[10px] text-muted-foreground">· {item.detected_author}</span>
+                    )}
+                    <span className={`text-[10px] font-medium ${
+                      item.project_type === "series" ? "text-sky-400" :
+                      item.project_type === "film"   ? "text-violet-400" : "text-muted-foreground"
+                    }`}>
+                      · {item.project_type === "series" ? "Serie" : item.project_type === "film" ? "Película" : ""}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className={`text-xs font-bold tabular-nums ${
+                    item.confidence_score >= 75 ? "text-emerald-400" :
+                    item.confidence_score >= 50 ? "text-amber-400" : "text-muted-foreground"
+                  }`}>
+                    {Number(item.confidence_score).toFixed(0)}
+                  </span>
+                  {item.url && (
+                    <a href={item.url} target="_blank" rel="noopener noreferrer"
+                      className="text-muted-foreground hover:text-foreground"
+                      title="Abrir artículo"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
       {/* Quick links */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
         {[
-          { label: "Oportunidades", href: "/radar/oportunidades", desc: "Revisar y gestionar" },
-          { label: "Tendencias", href: "/radar/tendencias", desc: "Señales de 7 días" },
-          { label: "Huecos de mercado", href: "/radar/huecos", desc: "Demanda sin oferta" },
-          { label: "Configuración", href: "/radar/config", desc: "Fuentes y parámetros" },
+          { label: "Oportunidades",        href: "/radar/oportunidades",          desc: "Revisar y gestionar" },
+          { label: "Tendencias",           href: "/radar/tendencias",             desc: "Señales de 7 días" },
+          { label: "Huecos de mercado",    href: "/radar/huecos",                 desc: "Demanda sin oferta" },
+          { label: "Adapt. tempranas",     href: "/radar/adaptaciones-tempranas", desc: "Noticias de la industria" },
         ].map(l => (
           <Link key={l.href} href={l.href}>
             <Card className="p-4 hover:bg-muted/20 transition-colors cursor-pointer h-full">
