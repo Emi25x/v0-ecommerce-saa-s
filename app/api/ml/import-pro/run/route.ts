@@ -212,6 +212,32 @@ export async function POST(request: NextRequest) {
 
       if (!searchRes || !searchRes.ok) {
         errorsCount++
+        const errStatus = searchRes?.status ?? 0
+        const errBody   = searchRes ? await searchRes.text().catch(() => "") : "no response"
+
+        // 401 = token expirado — renovar y reintentar una vez antes de abortar
+        if (errStatus === 401) {
+          try {
+            const newToken = await getValidAccessToken(accountId)
+            authHeader.Authorization = `Bearer ${newToken}`
+            // Continuar el loop — la próxima iteración usará el token renovado
+            await supabase
+              .from("ml_import_progress")
+              .update({ last_error: "Token ML renovado automáticamente (401)", last_error_at: new Date().toISOString() })
+              .eq("account_id", accountId)
+            continue
+          } catch {
+            // Si la renovación falla, abortar
+          }
+        }
+
+        await supabase
+          .from("ml_import_progress")
+          .update({
+            last_error:    `Search scan falló (HTTP ${errStatus}): ${errBody.slice(0, 300)}`,
+            last_error_at: new Date().toISOString(),
+          })
+          .eq("account_id", accountId)
         break
       }
 
@@ -318,11 +344,15 @@ export async function POST(request: NextRequest) {
         const detailsUrl = `https://api.mercadolibre.com/items?ids=${idsParam}&attributes=${ML_ATTRIBUTES}`
         const { res, rateLimited: rl } = await fetchWithRetry(detailsUrl, authHeader)
 
-        if (rl) return { rateLimited: true, items: [] }
-        if (!res || !res.ok) return { rateLimited: false, items: [] }
+        if (rl) return { rateLimited: true, items: [], errorMsg: null }
+        if (!res || !res.ok) {
+          const errStatus = res?.status ?? 0
+          const errBody   = res ? await res.text().catch(() => "") : "no response"
+          return { rateLimited: false, items: [], errorMsg: `multiget HTTP ${errStatus}: ${errBody.slice(0, 200)}` }
+        }
 
         const data = await res.json()
-        return { rateLimited: false, items: Array.isArray(data) ? data : [] }
+        return { rateLimited: false, items: Array.isArray(data) ? data : [], errorMsg: null }
       })
 
       // Ejecutar con pool de concurrencia controlada
@@ -332,10 +362,14 @@ export async function POST(request: NextRequest) {
       const toUpsert: any[] = []
       const now = new Date().toISOString()
 
+      // Recolectar errores de multiget para diagnóstico
+      const multigetErrors: string[] = []
+
       for (const result of multigetResults) {
         if (result.status !== "fulfilled") { errorsCount++; continue }
-        const { rateLimited: batchRl, items } = result.value
+        const { rateLimited: batchRl, items, errorMsg } = result.value
 
+        if (errorMsg) multigetErrors.push(errorMsg)
         if (batchRl) { rateLimited = true; continue }
 
         for (const item of items) {
@@ -442,6 +476,17 @@ export async function POST(request: NextRequest) {
 
       // ── Paso 4: Upsert en Supabase (un solo batch) ───────────────────────
       let batchUpserted = 0  // filas realmente guardadas en DB en este batch
+
+      // Si el multiget falló y no tenemos nada para guardar, registrar el error
+      if (toUpsert.length === 0 && multigetErrors.length > 0) {
+        await supabase
+          .from("ml_import_progress")
+          .update({
+            last_error:    `Multiget falló (${multigetErrors.length} batch/es): ${multigetErrors[0]}`,
+            last_error_at: new Date().toISOString(),
+          })
+          .eq("account_id", accountId)
+      }
 
       if (toUpsert.length > 0) {
         const { error: upsertError, count: upsertCount } = await supabase
