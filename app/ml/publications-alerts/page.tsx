@@ -131,12 +131,19 @@ function ListRow({
 }: ListRowProps) {
   const isEnqueueing = enqueueing === row.ml_item_id
   const ean          = row.isbn ?? row.ean ?? row.gtin ?? null
-  // Opt-in is only valid for eligible_catalog tab, and only if the item is actually eligible
-  const isEligibleForOptin = activeTab === "eligible_catalog" && (row.catalog_listing_eligible === true)
-  // For sin_stock tab the action is pause, not opt-in — always enabled
+  // Pause action: only on sin_stock tab, always enabled
   const isPauseAction = activeTab === "sin_stock"
-  const showActionBtn = activeTab !== "con_stock" // con_stock tab has no primary action
+  // Opt-in: only on eligible_catalog tab AND item must have catalog_listing_eligible = true
+  const isEligibleForOptin = row.catalog_listing_eligible === true
+  // Show action button on sin_stock (pause) and eligible_catalog (opt-in) tabs
+  const showActionBtn = activeTab === "sin_stock" || activeTab === "eligible_catalog"
+  // Disabled only when it's an opt-in attempt on a non-eligible item
   const actionDisabled = !isPauseAction && !isEligibleForOptin
+  const actionTooltip = isPauseAction
+    ? "Encolar job pause_item"
+    : isEligibleForOptin
+      ? "Encolar job catalog_optin"
+      : "Esta publicación no es elegible para catálogo (catalog_listing_eligible = false)"
 
   return (
     <div
@@ -261,14 +268,7 @@ function ListRow({
                 </Button>
               </span>
             </TooltipTrigger>
-            <TooltipContent>
-              {actionDisabled
-                ? "No elegible para catálogo"
-                : isPauseAction
-                  ? "Encolar job pause_item"
-                  : "Encolar job catalog_optin"
-              }
-            </TooltipContent>
+            <TooltipContent className="max-w-xs text-xs">{actionTooltip}</TooltipContent>
           </Tooltip>
         )}
       </div>
@@ -287,6 +287,10 @@ export default function PublicationsAlertsPage() {
 
   // Tab / mode
   const [activeTab, setActiveTab] = useState<AlertsMode>("con_stock")
+
+  // Tab counts (exact, from HEAD queries)
+  const [tabCounts,       setTabCounts]       = useState<Record<AlertsMode, number | null>>({ con_stock: null, sin_stock: null, eligible_catalog: null })
+  const [countsLoading,   setCountsLoading]   = useState(false)
 
   // Data
   const [rows,        setRows]        = useState<Publication[]>([])
@@ -327,6 +331,29 @@ export default function PublicationsAlertsPage() {
       .catch(() => {})
   }, [])
 
+  // ── Load tab counts ───────────────────────────────────────────────────────
+
+  const loadCounts = useCallback(async (accId: string) => {
+    if (!accId) return
+    setCountsLoading(true)
+    try {
+      // Three HEAD queries in parallel — one per tab definition
+      const [conRes, sinRes, eligRes] = await Promise.all([
+        fetch(`/api/ml/publications?counts_only=1&account_id=${accId}&con_stock=1`),
+        fetch(`/api/ml/publications?counts_only=1&account_id=${accId}&sin_stock=1`),
+        fetch(`/api/ml/publications?counts_only=1&account_id=${accId}&solo_elegibles=1&status=active`),
+      ])
+      const [conD, sinD, eligD] = await Promise.all([conRes.json(), sinRes.json(), eligRes.json()])
+      setTabCounts({
+        con_stock:        conD.ok  ? (conD.counts?.total  ?? null) : null,
+        sin_stock:        sinD.ok  ? (sinD.counts?.total  ?? null) : null,
+        eligible_catalog: eligD.ok ? (eligD.counts?.total ?? null) : null,
+      })
+    } catch { /* silent */ } finally {
+      setCountsLoading(false)
+    }
+  }, [])
+
   // ── Load rows ─────────────────────────────────────────────────────────────
 
   const load = useCallback(async (p = 0) => {
@@ -365,7 +392,7 @@ export default function PublicationsAlertsPage() {
   }, [accountId, activeTab, toast])
 
   useEffect(() => {
-    if (accountId) { setPage(0); setSelected(new Set()); load(0) }
+    if (accountId) { setPage(0); setSelected(new Set()); load(0); loadCounts(accountId) }
   }, [accountId, activeTab])
 
   const handleSearch = () => { setPage(0); setSelected(new Set()); load(0) }
@@ -523,31 +550,44 @@ export default function PublicationsAlertsPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => { setPage(0); load(0) }}
+              onClick={() => { setPage(0); load(0); loadCounts(accountId) }}
               disabled={loading || !accountId}
               className="h-9 bg-transparent"
             >
-              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-              Actualizar
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading || countsLoading ? "animate-spin" : ""}`} />
+              Refrescar
             </Button>
           </div>
         </div>
 
         {/* Tabs */}
         <div className="flex gap-2 flex-wrap">
-          {TABS.map(tab => (
-            <button
-              key={tab.value}
-              onClick={() => handleTabChange(tab.value)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                activeTab === tab.value
-                  ? `${tab.bg} ${tab.color} border-current`
-                  : "bg-transparent text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+          {TABS.map(tab => {
+            const count = tabCounts[tab.value]
+            return (
+              <button
+                key={tab.value}
+                onClick={() => handleTabChange(tab.value)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                  activeTab === tab.value
+                    ? `${tab.bg} ${tab.color} border-current`
+                    : "bg-transparent text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground"
+                }`}
+              >
+                {tab.label}
+                {count != null && (
+                  <span className={`text-xs font-mono px-1.5 py-0 rounded-full border ${
+                    activeTab === tab.value ? tab.badgeCls : "bg-muted/40 text-muted-foreground border-border"
+                  }`}>
+                    {count.toLocaleString("es-AR")}
+                  </span>
+                )}
+                {count == null && countsLoading && (
+                  <span className="h-3.5 w-6 rounded-full bg-muted animate-pulse" />
+                )}
+              </button>
+            )
+          })}
         </div>
 
         {/* Description banner */}
