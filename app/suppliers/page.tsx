@@ -22,25 +22,7 @@ type FeedKind      = "catalog" | "stock"
 interface Supplier  { id: string; name: string; code: string; is_active: boolean }
 interface Catalog   { id: string; name: string; file_url: string; file_format: string; import_status: string | null; imported_at: string | null; total_items: number; matched_items: number; catalog_mode: string; overwrite_mode: string; warehouse_id: string | null; created_at: string }
 interface Warehouse { id: string; name: string; code: string; is_default: boolean }
-interface ImportRun {
-  id: string
-  feed_kind: string
-  catalog_mode: string | null
-  overwrite_mode: string | null
-  total_rows: number
-  valid_ean: number
-  created_count: number
-  updated_count: number
-  skipped_count: number
-  set_zero_stock_count: number
-  new_detected_count: number
-  error_count: number
-  status: string
-  started_at: string
-  finished_at: string | null
-  error_message: string | null
-  supplier_catalogs?: { name: string } | null
-}
+interface ImportRun { id: string; feed_kind: string; catalog_mode: string | null; overwrite_mode: string | null; total_rows: number; valid_ean: number; created_count: number; updated_count: number; skipped_count: number; set_zero_stock_count: number; new_detected_count: number; error_count: number; status: string; started_at: string; finished_at: string | null }
 
 interface Preview {
   total_rows: number
@@ -74,15 +56,6 @@ function fmt(n: number | null | undefined) {
   return (n ?? 0).toLocaleString("es-AR")
 }
 
-function dur(started: string, finished: string | null) {
-  if (!finished) return "—"
-  const ms = new Date(finished).getTime() - new Date(started).getTime()
-  if (ms < 0) return "—"
-  const s = Math.round(ms / 1000)
-  if (s < 60) return `${s}s`
-  return `${Math.floor(s / 60)}m ${s % 60}s`
-}
-
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function SuppliersPage() {
   const { toast } = useToast()
@@ -90,9 +63,8 @@ export default function SuppliersPage() {
   const [suppliers,        setSuppliers]        = useState<Supplier[]>([])
   const [catalogs,         setCatalogs]         = useState<Catalog[]>([])
   const [warehouses,       setWarehouses]       = useState<Warehouse[]>([])
-  const [importRuns,         setImportRuns]         = useState<ImportRun[]>([])
-  const [lastRunBySupplierId, setLastRunBySupplierId] = useState<Record<string, ImportRun>>({})
-  const [selectedSupplier, setSelectedSupplier]   = useState<string>("")
+  const [importRuns,       setImportRuns]       = useState<ImportRun[]>([])
+  const [selectedSupplier, setSelectedSupplier] = useState<string>("")
   const [activeTab,        setActiveTab]        = useState("import")
   const [loading,          setLoading]          = useState(false)
 
@@ -126,18 +98,7 @@ export default function SuppliersPage() {
       const def = ws.find((w: Warehouse) => w.is_default)
       if (def) setWarehouseId(def.id)
     })
-    // Cargar último run completado por cada proveedor
-    fetch("/api/suppliers/import-runs?limit=100").then(r => r.json()).then(d => {
-      const runs: ImportRun[] = d.runs ?? []
-      const map: Record<string, ImportRun> = {}
-      for (const run of runs) {
-        if (run.status === "completed" && !map[(run as any).supplier_id]) {
-          map[(run as any).supplier_id] = run
-        }
-      }
-      setLastRunBySupplierId(map)
-    })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     if (!selectedSupplier) return
@@ -255,12 +216,9 @@ export default function SuppliersPage() {
       const data = await res.json()
       setApplyResult(data)
 
-      // Refresh runs log + last run map
+      // Refresh runs log
       const r = await fetch(`/api/suppliers/import-runs?supplier_id=${selectedSupplier}&limit=20`)
-      const freshRuns: ImportRun[] = (await r.json()).runs ?? []
-      setImportRuns(freshRuns)
-      const latest = freshRuns.find(r => r.status === "completed")
-      if (latest) setLastRunBySupplierId(prev => ({ ...prev, [selectedSupplier]: latest }))
+      setImportRuns((await r.json()).runs ?? [])
 
       if (data.ok) {
         toast({ title: "Importación completada", description: `${fmt(data.created ?? 0)} creados · ${fmt(data.updated ?? 0)} actualizados` })
@@ -292,33 +250,21 @@ export default function SuppliersPage() {
 
       {/* Supplier selector */}
       <div className="flex items-center gap-2 flex-wrap">
-        {suppliers.map(s => {
-          const lr = lastRunBySupplierId[s.id]
-          return (
-            <button
-              key={s.id}
-              onClick={() => setSelectedSupplier(s.id)}
-              className={`flex flex-col items-start rounded-lg border px-3.5 py-2.5 text-sm font-medium transition-all text-left ${
-                s.id === selectedSupplier
-                  ? "border-emerald-500/60 bg-emerald-500/10 text-emerald-300"
-                  : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-muted-foreground"
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                <Package className="h-3.5 w-3.5" />
-                {s.name}
-                <span className="text-[10px] font-mono opacity-60">{s.code}</span>
-              </span>
-              {lr && (
-                <span className="text-[10px] mt-1 font-normal opacity-70 tabular-nums">
-                  {new Date(lr.started_at).toLocaleDateString("es-AR")} ·{" "}
-                  <span className="text-emerald-400">+{fmt(lr.created_count)}</span>{" "}
-                  <span className="text-amber-400">~{fmt(lr.updated_count)}</span>
-                </span>
-              )}
-            </button>
-          )
-        })}
+        {suppliers.map(s => (
+          <button
+            key={s.id}
+            onClick={() => setSelectedSupplier(s.id)}
+            className={`flex items-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-medium transition-all ${
+              s.id === selectedSupplier
+                ? "border-emerald-500/60 bg-emerald-500/10 text-emerald-300"
+                : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-muted-foreground"
+            }`}
+          >
+            <Package className="h-3.5 w-3.5" />
+            {s.name}
+            <span className="text-[10px] font-mono text-muted-foreground">{s.code}</span>
+          </button>
+        ))}
       </div>
 
       {!selectedSupplier && (
@@ -341,6 +287,28 @@ export default function SuppliersPage() {
 
           {/* ── Import tab ── */}
           <TabsContent value="import" className="space-y-5 mt-4">
+
+            {/* Last run chip */}
+            {importRuns[0] && importRuns[0].status === "completed" && (
+              <div className="rounded-lg border border-border bg-muted/10 px-4 py-2.5 flex items-center gap-3 text-xs flex-wrap">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 flex-shrink-0" />
+                <span className="text-muted-foreground">Ultima importacion:</span>
+                <span className="font-mono">
+                  <span className="text-emerald-400 font-semibold">{fmt(importRuns[0].created_count)}</span> creados ·{" "}
+                  <span className="text-amber-400 font-semibold">{fmt(importRuns[0].updated_count)}</span> actualizados ·{" "}
+                  <span className="text-muted-foreground">{fmt(importRuns[0].skipped_count)}</span> omitidos
+                  {importRuns[0].new_detected_count > 0 && <> · <span className="text-blue-400 font-semibold">{fmt(importRuns[0].new_detected_count)}</span> nuevos EAN</>}
+                </span>
+                <span className="ml-auto text-muted-foreground">{new Date(importRuns[0].started_at).toLocaleString("es-AR")}</span>
+              </div>
+            )}
+            {importRuns[0] && importRuns[0].status === "failed" && (
+              <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-2.5 flex items-center gap-3 text-xs">
+                <XCircle className="h-3.5 w-3.5 text-red-400 flex-shrink-0" />
+                <span className="text-red-300 font-medium">La última importacion falló</span>
+                <span className="text-muted-foreground">{new Date(importRuns[0].started_at).toLocaleString("es-AR")}</span>
+              </div>
+            )}
 
             {/* ARNOIA info banner */}
             {supplier?.code === "ARNOIA" && (
@@ -663,8 +631,41 @@ export default function SuppliersPage() {
           </TabsContent>
 
           {/* ── Logs tab ── */}
-          <TabsContent value="logs" className="mt-4">
-            <div className="rounded-lg border border-border overflow-hidden">
+          <TabsContent value="logs" className="mt-4 space-y-4">
+
+            {/* Last run summary chip */}
+            {importRuns[0] && (
+              <div className={`rounded-lg border px-4 py-3 flex items-center gap-4 text-xs flex-wrap ${
+                importRuns[0].status === "completed"
+                  ? "border-emerald-500/30 bg-emerald-500/5"
+                  : importRuns[0].status === "failed"
+                    ? "border-red-500/30 bg-red-500/5"
+                    : "border-border bg-muted/10"
+              }`}>
+                <StatusBadge status={importRuns[0].status} />
+                <span className="text-muted-foreground">Ultima corrida</span>
+                <span className="font-mono">
+                  <span className="text-emerald-400 font-semibold">{fmt(importRuns[0].created_count)}</span> creados
+                  {" · "}
+                  <span className="text-amber-400 font-semibold">{fmt(importRuns[0].updated_count)}</span> actualizados
+                  {" · "}
+                  <span className="text-muted-foreground">{fmt(importRuns[0].skipped_count)}</span> omitidos
+                  {importRuns[0].new_detected_count > 0 && (
+                    <> · <span className="text-blue-400 font-semibold">{fmt(importRuns[0].new_detected_count)}</span> nuevos EAN</>
+                  )}
+                  {importRuns[0].error_count > 0 && (
+                    <> · <span className="text-red-400 font-semibold">{fmt(importRuns[0].error_count)}</span> errores</>
+                  )}
+                </span>
+                {importRuns[0].finished_at && importRuns[0].started_at && (
+                  <span className="ml-auto text-muted-foreground">
+                    {Math.round((new Date(importRuns[0].finished_at).getTime() - new Date(importRuns[0].started_at).getTime()) / 1000)}s
+                  </span>
+                )}
+              </div>
+            )}
+
+            <div className="rounded-lg border border-border overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-muted/30 text-xs text-muted-foreground uppercase tracking-wide">
                   <tr>
@@ -672,57 +673,55 @@ export default function SuppliersPage() {
                     <th className="px-4 py-3 text-left">Estado</th>
                     <th className="px-4 py-3 text-right">Filas</th>
                     <th className="px-4 py-3 text-right">Creados</th>
-                    <th className="px-4 py-3 text-right">Actualizados</th>
+                    <th className="px-4 py-3 text-right">Actualiz.</th>
                     <th className="px-4 py-3 text-right">Omitidos</th>
                     <th className="px-4 py-3 text-right">A cero</th>
-                    <th className="px-4 py-3 text-right">Nuevos</th>
+                    <th className="px-4 py-3 text-right">Nuevos EAN</th>
                     <th className="px-4 py-3 text-right">Errores</th>
-                    <th className="px-4 py-3 text-left">Duración</th>
                     <th className="px-4 py-3 text-left">Inicio</th>
+                    <th className="px-4 py-3 text-right">Duración</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
                   {importRuns.length === 0 && (
                     <tr><td colSpan={11} className="px-4 py-8 text-center text-muted-foreground text-sm">Sin corridas registradas.</td></tr>
                   )}
-                  {importRuns.map(run => (
-                    <tr key={run.id} className={`hover:bg-muted/20 ${run.error_message ? "bg-red-500/5" : ""}`}>
-                      <td className="px-4 py-3">
-                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
-                          run.feed_kind === "stock"
-                            ? "bg-blue-500/15 text-blue-400"
-                            : "bg-purple-500/15 text-purple-400"
-                        }`}>
-                          {run.feed_kind === "stock" ? "STOCK" : "CAT"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-col gap-0.5">
-                          <StatusBadge status={run.status} />
-                          {run.error_message && (
-                            <span className="text-[10px] text-red-400 max-w-[120px] truncate" title={run.error_message}>
-                              {run.error_message}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono text-xs">{fmt(run.total_rows)}</td>
-                      <td className="px-4 py-3 text-right font-mono text-xs text-emerald-400">{fmt(run.created_count)}</td>
-                      <td className="px-4 py-3 text-right font-mono text-xs text-amber-400">{fmt(run.updated_count)}</td>
-                      <td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">{fmt(run.skipped_count)}</td>
-                      <td className="px-4 py-3 text-right font-mono text-xs text-red-400">{fmt(run.set_zero_stock_count)}</td>
-                      <td className="px-4 py-3 text-right font-mono text-xs text-blue-400">{fmt(run.new_detected_count)}</td>
-                      <td className="px-4 py-3 text-right font-mono text-xs text-red-400">
-                        {run.error_count > 0 ? fmt(run.error_count) : <span className="text-muted-foreground/40">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-xs font-mono text-muted-foreground">
-                        {dur(run.started_at, run.finished_at)}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                        {new Date(run.started_at).toLocaleString("es-AR")}
-                      </td>
-                    </tr>
-                  ))}
+                  {importRuns.map(run => {
+                    const durationSec = run.finished_at && run.started_at
+                      ? Math.round((new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()) / 1000)
+                      : null
+                    return (
+                      <tr key={run.id} className="hover:bg-muted/20">
+                        <td className="px-4 py-3">
+                          <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                            run.feed_kind === "stock"
+                              ? "bg-blue-500/15 text-blue-400"
+                              : "bg-purple-500/15 text-purple-400"
+                          }`}>
+                            {run.feed_kind === "stock" ? "STOCK" : "CAT"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3"><StatusBadge status={run.status} /></td>
+                        <td className="px-4 py-3 text-right font-mono text-xs">{fmt(run.total_rows)}</td>
+                        <td className="px-4 py-3 text-right font-mono text-xs text-emerald-400">{fmt(run.created_count)}</td>
+                        <td className="px-4 py-3 text-right font-mono text-xs text-amber-400">{fmt(run.updated_count)}</td>
+                        <td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">{fmt(run.skipped_count)}</td>
+                        <td className="px-4 py-3 text-right font-mono text-xs text-red-400">{fmt(run.set_zero_stock_count)}</td>
+                        <td className="px-4 py-3 text-right font-mono text-xs text-blue-400">
+                          {run.new_detected_count > 0 ? fmt(run.new_detected_count) : <span className="text-muted-foreground">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono text-xs text-red-400">
+                          {run.error_count > 0 ? fmt(run.error_count) : <span className="text-muted-foreground">—</span>}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                          {new Date(run.started_at).toLocaleString("es-AR")}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">
+                          {durationSec != null ? `${durationSec}s` : "—"}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

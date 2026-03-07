@@ -8,7 +8,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
     const supabase = await createClient()
     const { data, error } = await supabase
       .from("price_lists")
-      .select(`*, rules:price_list_rules(*), fee_rules:price_list_fee_rules(*), ml_rules:price_list_ml_rules(*)`)
+      .select(`*, rules:price_list_rules(*), fee_rules:price_list_fee_rules(*)`)
       .eq("id", params.id)
       .single()
     if (error) throw error
@@ -22,7 +22,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   try {
     const supabase = await createClient()
     const body     = await req.json()
-    const { rules, fee_rules, ml_rules, ...listFields } = body
+    const { rules, fee_rules, ...listFields } = body
 
     // Update list header
     if (Object.keys(listFields).length > 0) {
@@ -40,17 +40,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         .upsert({ ...rules, price_list_id: params.id, updated_at: new Date().toISOString() },
           { onConflict: "price_list_id" })
       if (error) throw error
-    }
-
-    // Upsert ml_rules (one row per list)
-    if (ml_rules !== undefined) {
-      await supabase.from("price_list_ml_rules").delete().eq("price_list_id", params.id)
-      if (ml_rules) {
-        const { error } = await supabase
-          .from("price_list_ml_rules")
-          .insert({ ...ml_rules, price_list_id: params.id })
-        if (error) throw error
-      }
     }
 
     // Replace fee_rules
