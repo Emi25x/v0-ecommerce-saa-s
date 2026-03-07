@@ -194,11 +194,13 @@ export default function MLPublicationsPage() {
 
   // ── Load status counts (badge query) ──────────────────────────────────
 
-  const loadCounts = useCallback(async (accId: string) => {
+  const loadCounts = useCallback(async (accId: string, searchQ?: string) => {
     setCountsLoading(true)
     try {
       const params = new URLSearchParams({ counts_only: "1" })
       if (accId !== "all") params.set("account_id", accId)
+      // Pasar q para que los 7 HEAD queries reflejen la búsqueda activa
+      if (searchQ?.trim()) params.set("q", searchQ.trim())
       const res  = await fetch(`/api/ml/publications?${params}`)
       const data = await res.json()
       if (data.ok) setCounts(data.counts)
@@ -294,10 +296,17 @@ export default function MLPublicationsPage() {
     }
   }, [accountId, statusFilter, sinProducto, soloElegibles, sinStock, stockFirst])
 
-  useEffect(() => { setPage(0); setSelected(new Set()); load(0) }, [accountId, statusFilter, sinProducto, soloElegibles, sinStock, stockFirst])
-  useEffect(() => { loadMlTotal(accountId) }, [accountId, loadMlTotal])
+  useEffect(() => {
+    setPage(0); setSelected(new Set()); load(0)
+    // Actualizar counts cuando cambian filtros (sin q — los tabs son globales de la cuenta)
+    loadCounts(accountId)
+  }, [accountId, statusFilter, sinProducto, soloElegibles, sinStock, stockFirst])
 
-  const handleSearch = () => { setPage(0); load(0) }
+  const handleSearch = () => {
+    setPage(0); load(0)
+    // Actualizar counts con el q activo para que los tabs reflejen la búsqueda
+    loadCounts(accountId, searchQuery)
+  }
   const prevPage = () => { const p = page - 1; setPage(p); load(p) }
   const nextPage = () => { const p = page + 1; setPage(p); load(p) }
   const totalPages = Math.ceil(total / PAGE_SIZE)
@@ -317,7 +326,7 @@ export default function MLPublicationsPage() {
 
   const handleRefresh = () => {
     load(page)
-    loadCounts(accountId)
+    loadCounts(accountId, searchQuery)
   }
 
   const enqueueJob = async (
@@ -464,7 +473,7 @@ export default function MLPublicationsPage() {
         toast({ title: "Sincronización ejecutada", description: desc })
         refreshProgress()
         load(0)
-        loadCounts(accountId)
+        loadCounts(accountId, searchQuery)
         loadMlTotal(accountId)
       } else if (data.rate_limited) {
         toast({ title: "Rate limit ML", description: `Esperá ${data.wait_seconds ?? 60}s y reintentá.`, variant: "destructive" })
