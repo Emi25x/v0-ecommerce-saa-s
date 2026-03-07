@@ -47,15 +47,63 @@ export async function POST(request: Request) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const body = await request.json()
-    const {
+    let {
       tipo_comprobante, concepto,
       tipo_doc_receptor, nro_doc_receptor, receptor_nombre, receptor_domicilio, receptor_condicion_iva,
       items, moneda, orden_id,
       origen,                  // "ml" | "manual" | undefined — mapea a columna `origen`
       billing_info_snapshot,   // raw billing_info de ML para auditoría
+      account_id: bodyAccountId,
     } = body
 
     if (!items?.length) return NextResponse.json({ error: "La factura debe tener al menos un ítem" }, { status: 400 })
+
+    // ── Auto-enrich datos fiscales desde ML si viene orden_id ────────────────
+    // Prioridad: server-side fetch > lo que mandó el frontend.
+    // Esto protege contra facturas emitidas con datos fiscales incompletos.
+    if (orden_id && bodyAccountId) {
+      try {
+        const billingUrl = `${process.env.APP_URL || "http://localhost:3000"}/api/billing/ml-order-billing?account_id=${bodyAccountId}&order_id=${orden_id}`
+        const billingRes = await fetch(billingUrl, {
+          headers: { cookie: request.headers.get("cookie") || "" },
+          signal: AbortSignal.timeout(8000),
+        })
+        if (billingRes.ok) {
+          const bi = await billingRes.json()
+          if (bi.ok) {
+            // Guardar snapshot independientemente de si hay datos completos o no
+            billing_info_snapshot = billing_info_snapshot ?? bi
+
+            // Completar datos fiscales solo si el frontend no los mandó o los mandó vacíos
+            if (bi.nombre && !receptor_nombre) {
+              receptor_nombre = bi.nombre
+            }
+            if (bi.doc_numero) {
+              const docTipo = (bi.doc_tipo || "").toUpperCase()
+              tipo_doc_receptor  = tipo_doc_receptor  ?? (["CUIT","CUIL"].includes(docTipo) ? "80" : "96")
+              nro_doc_receptor   = nro_doc_receptor   ?? String(bi.doc_numero).replace(/\D/g, "")
+            }
+            if (bi.condicion_iva && !receptor_condicion_iva) {
+              receptor_condicion_iva = bi.condicion_iva
+            }
+            if (bi.direccion && !receptor_domicilio) {
+              receptor_domicilio = bi.direccion
+            }
+
+            // Si sigue sin datos fiscales reales → consumidor final con warning en respuesta
+            if (bi.billing_info_missing) {
+              receptor_nombre         = receptor_nombre || "Consumidor Final"
+              tipo_doc_receptor       = tipo_doc_receptor ?? "99"
+              nro_doc_receptor        = nro_doc_receptor  ?? "0"
+              receptor_condicion_iva  = receptor_condicion_iva ?? "consumidor_final"
+            }
+          }
+        }
+      } catch {
+        // Si falla el enrich, continuar con los datos del frontend
+      }
+    }
+
     if (!receptor_nombre) return NextResponse.json({ error: "Nombre del receptor requerido" }, { status: 400 })
 
     // empresa_id puede venir en el body o tomamos la primera del usuario
