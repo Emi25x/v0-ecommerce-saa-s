@@ -248,15 +248,21 @@ export async function POST(request: NextRequest) {
         const scrollExpired = mlTotal > 0 && pctCovered < 0.95
 
         if (scrollExpired) {
-          // Scroll expirado — limpiar scroll_id, NO marcar done
-          // La próxima invocación arranca un scan nuevo y cubre lo que falta
+          // Scroll expirado — limpiar scroll_id y resetear contadores para que
+          // el nuevo scan empiece desde cero sin acumular sobre valores viejos.
+          // El upsert usa onConflict: "account_id,ml_item_id" así que re-procesar
+          // publicaciones ya importadas solo las actualiza, no las duplica.
           await supabase
             .from("ml_import_progress")
             .update({
-              status:        "idle",
-              scroll_id:     null,
-              last_error:    `Scroll expirado al ${Math.round(pctCovered * 100)}% (${totalSeen}/${mlTotal}). Se reiniciará el scan.`,
-              last_error_at: new Date().toISOString(),
+              status:                 "idle",
+              scroll_id:              null,
+              publications_offset:    0,          // reset: el nuevo scan empieza desde el ítem 0
+              ml_items_seen_count:    0,          // reset: contar desde cero para que pctCovered funcione
+              db_rows_upserted_count: 0,          // reset: alinear con el nuevo scan
+              upsert_errors_count:    0,
+              last_error:             `Scroll ML expirado al ${Math.round(pctCovered * 100)}% (${totalSeen}/${mlTotal} ítems vistos). Reiniciando scan desde el principio.`,
+              last_error_at:          new Date().toISOString(),
             })
             .eq("account_id", accountId)
           hasMore = true
