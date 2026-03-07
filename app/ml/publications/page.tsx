@@ -437,6 +437,15 @@ export default function MLPublicationsPage() {
       .catch(() => {})
   }
 
+  // Reusa el mismo endpoint de progress para actualizar publications_total
+  const loadMlTotal = useCallback((accId: string) => {
+    if (accId === "all") return
+    fetch(`/api/ml/publications/import-progress?account_id=${accId}`)
+      .then(r => r.json())
+      .then(d => { if (d.ok && d.progress) setImportProgress(d.progress) })
+      .catch(() => {})
+  }, [])
+
   const syncWithML = async () => {
     if (accountId === "all") {
       toast({ title: "Seleccioná una cuenta", variant: "destructive" })
@@ -687,38 +696,52 @@ export default function MLPublicationsPage() {
               </button>
             </div>
 
+            {/* Diagnóstico: grilla de métricas clave */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 py-1">
+              <DiagStat
+                label="DB rows"
+                value={counts?.total ?? null}
+                color="default"
+                tooltip="Filas totales en ml_publications para esta cuenta"
+              />
+              <DiagStat
+                label="ML total"
+                value={importProgress.publications_total ?? null}
+                color="default"
+                tooltip="Total de publicaciones reportado por la API de ML"
+              />
+              <DiagStat
+                label="ML vistas"
+                value={importProgress.ml_items_seen_count ?? importProgress.discovered_count ?? null}
+                color="blue"
+                tooltip="IDs que el importador leyó de ML en la última corrida"
+              />
+              <DiagStat
+                label="DB upserted"
+                value={importProgress.db_rows_upserted_count ?? importProgress.upsert_new_count ?? null}
+                color="green"
+                tooltip="Filas que realmente quedaron persistidas en DB (confirmadas por Supabase)"
+              />
+              <DiagStat
+                label="Errores upsert"
+                value={importProgress.upsert_errors_count ?? null}
+                color={(importProgress.upsert_errors_count ?? 0) > 0 ? "red" : "default"}
+                tooltip="Filas enviadas al upsert que no quedaron confirmadas"
+              />
+            </div>
+
             {/* Barra de progreso ML seen (offset real = filas persistidas) */}
             <div className="space-y-1">
               <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums">
                 <span className="flex items-center gap-3 flex-wrap">
-                  <span>
-                    DB persistidas:{" "}
-                    <span className="text-foreground font-semibold">
-                      {/* Prefer new audit column, fallback to old upsert_new_count */}
-                      {(importProgress.db_rows_upserted_count ?? importProgress.upsert_new_count ?? importProgress.publications_offset ?? 0).toLocaleString("es-AR")}
-                    </span>
-                  </span>
-                  {(importProgress.ml_items_seen_count ?? importProgress.discovered_count ?? 0) > 0 && (
-                    <span>
-                      ML vistas:{" "}
-                      <span className="text-foreground font-semibold">
-                        {(importProgress.ml_items_seen_count ?? importProgress.discovered_count ?? 0).toLocaleString("es-AR")}
-                      </span>
-                    </span>
-                  )}
-                  {importProgress.publications_total != null && (
-                    <span>
-                      Total ML:{" "}
-                      <span className="text-foreground font-semibold">
-                        {importProgress.publications_total.toLocaleString("es-AR")}
-                      </span>
-                    </span>
-                  )}
-                  {(importProgress.upsert_errors_count ?? 0) > 0 && (
-                    <span className="text-red-400 font-semibold">
-                      {(importProgress.upsert_errors_count).toLocaleString("es-AR")} errores upsert
-                    </span>
-                  )}
+                  <span>Status: <span className={
+                    importProgress.status === "running" ? "text-blue-400 font-semibold"
+                    : importProgress.status === "done"  ? "text-green-400 font-semibold"
+                    : importProgress.status === "error" ? "text-red-400 font-semibold"
+                    : importProgress.status === "paused" ? "text-yellow-400 font-semibold"
+                    : importProgress.status === "scan_complete_pending_verification" ? "text-amber-400 font-semibold"
+                    : "text-muted-foreground"
+                  }>{importProgress.status}</span></span>
                 </span>
                 {importProgress.last_sync_batch_at && (
                   <span>Ultimo batch: {relDate(importProgress.last_sync_batch_at)}</span>
@@ -1375,5 +1398,41 @@ function BadgeCount({
       {label}
       <span className="tabular-nums">{value.toLocaleString("es-AR")}</span>
     </button>
+  )
+}
+
+// ── DiagStat ───────────────────────────────────────────────────────────────
+
+function DiagStat({
+  label,
+  value,
+  color = "default",
+  tooltip,
+}: {
+  label: string
+  value: number | null | undefined
+  color?: "default" | "blue" | "green" | "red" | "yellow"
+  tooltip?: string
+}) {
+  const valueColor = {
+    default: "text-foreground",
+    blue:    "text-blue-400",
+    green:   "text-green-400",
+    red:     "text-red-400",
+    yellow:  "text-yellow-400",
+  }[color]
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="rounded-md border border-border bg-muted/20 px-3 py-2 cursor-default">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">{label}</p>
+          <p className={`text-base font-semibold tabular-nums ${valueColor}`}>
+            {value != null ? value.toLocaleString("es-AR") : <span className="text-muted-foreground text-sm">—</span>}
+          </p>
+        </div>
+      </TooltipTrigger>
+      {tooltip && <TooltipContent side="bottom" className="max-w-xs text-xs">{tooltip}</TooltipContent>}
+    </Tooltip>
   )
 }
