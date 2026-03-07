@@ -313,53 +313,71 @@ export async function POST(request: NextRequest) {
           let ean: string | null = null
           let weightG: number | null = null
 
-          if (Array.isArray(b.attributes)) {
-            for (const attr of b.attributes) {
-              if (attr.id === "SELLER_SKU") sku  = attr.value_name ?? null
-              if (attr.id === "ISBN")       isbn = attr.value_name ?? null
-              if (attr.id === "GTIN")       gtin = attr.value_name ?? null
-              if (attr.id === "EAN")        ean  = attr.value_name ?? null
-              if (attr.id === "WEIGHT") {
-                const vs = attr.value_struct
-                if (vs?.number != null && isFinite(vs.number) && vs.number > 0) {
-                  const unit = (vs.unit ?? "g").toLowerCase()
-                  if (unit === "g")  weightG = Math.round(vs.number)
-                  if (unit === "kg") weightG = Math.round(vs.number * 1000)
-                } else if (attr.value_name) {
-                  const m = attr.value_name.match(/^([\d.]+)\s*(g|kg)?/i)
-                  if (m) {
-                    const n = parseFloat(m[1])
-                    weightG = (m[2] ?? "g").toLowerCase() === "kg"
-                      ? Math.round(n * 1000)
-                      : Math.round(n)
+          // ── Helper: extraer atributos de un array genérico de ML ────────────
+          function extractAttrs(attrs: any[]) {
+            for (const attr of attrs) {
+              const val = attr.value_name ?? null
+              if (!val) continue
+              switch (attr.id) {
+                case "SELLER_SKU": if (!sku)  sku  = val; break
+                case "ISBN":       if (!isbn) isbn = val; break
+                // ML usa tanto "GTIN" como "GTIN_CODE" según la categoría
+                case "GTIN":
+                case "GTIN_CODE":  if (!gtin) gtin = val; break
+                case "EAN":        if (!ean)  ean  = val; break
+                case "WEIGHT": {
+                  if (weightG != null) break   // ya tenemos un valor
+                  const vs = attr.value_struct
+                  if (vs?.number != null && isFinite(vs.number) && vs.number > 0) {
+                    const unit = (vs.unit ?? "g").toLowerCase()
+                    weightG = unit === "kg" ? Math.round(vs.number * 1000) : Math.round(vs.number)
+                  } else if (val) {
+                    const m = val.match(/^([\d.]+)\s*(g|kg)?/i)
+                    if (m) {
+                      const n = parseFloat(m[1])
+                      weightG = (m[2] ?? "g").toLowerCase() === "kg"
+                        ? Math.round(n * 1000)
+                        : Math.round(n)
+                    }
                   }
+                  break
                 }
               }
             }
           }
 
-          // shipping.dimensions.weight is the most reliable weight source
+          // 1. Atributos a nivel item
+          if (Array.isArray(b.attributes)) extractAttrs(b.attributes)
+
+          // 2. seller_custom_field directo en el item — fuente más confiable de SKU
+          if (b.seller_custom_field) sku = b.seller_custom_field
+
+          // 3. shipping.dimensions.weight — fuente más precisa de peso
           const dimW = b?.shipping?.dimensions?.weight
           if (dimW != null && weightG == null) {
             const n = typeof dimW === "string" ? parseFloat(dimW) : dimW
             if (isFinite(n) && n > 0) weightG = Math.round(n)
           }
 
-          // seller_custom_field is the most reliable SKU source — prefer it
-          if (b.seller_custom_field) sku = b.seller_custom_field
-
-          // Also check variations for seller_custom_field if item-level is missing
-          if (!sku && Array.isArray(b.variations) && b.variations.length > 0) {
+          // 4. Variaciones: recorrer para obtener SKU/EAN/ISBN/GTIN faltantes
+          if (Array.isArray(b.variations) && b.variations.length > 0) {
             for (const v of b.variations) {
-              if (v.seller_custom_field) { sku = v.seller_custom_field; break }
+              // seller_custom_field a nivel variación
+              if (!sku && v.seller_custom_field) sku = v.seller_custom_field
+
+              // atributos dentro de cada variación (ISBN, EAN, GTIN pueden estar aquí)
+              if (Array.isArray(v.attributes)) extractAttrs(v.attributes)
+
+              // Si ya tenemos todos los datos buscados no hace falta seguir
+              if (sku && ean && isbn && gtin && weightG != null) break
             }
           }
 
-          // EAN fallback: use GTIN if no dedicated EAN attribute
+          // 5. EAN fallback: usar GTIN si no hay EAN dedicado
           if (!ean && gtin) ean = gtin
 
-          // catalog_listing_eligible: top-level field OR derived from tags
-          // ML sometimes returns this only via tags array when multiget attributes list is used
+          // 6. catalog_listing_eligible: campo top-level OR derivar de tags
+          // ML a veces solo lo expone via tags cuando se usa el multiget con atributos
           let catalogEligible: boolean = b.catalog_listing_eligible ?? false
           if (!catalogEligible && Array.isArray(b.tags)) {
             catalogEligible = b.tags.includes("catalog_listing_eligible")
