@@ -177,6 +177,7 @@ export async function POST(request: NextRequest) {
     let rateLimited     = false
     let hasMore         = true
     let lastScrollId: string | null = progress.scroll_id || null
+    let consecutiveZeroRuns = 0  // contador de runs consecutivos con 0 items de ML
 
     // ── Loop principal por tiempo ─────────────────────────────────────────────
     while (Date.now() - startTime < max_seconds * 1000) {
@@ -249,6 +250,33 @@ export async function POST(request: NextRequest) {
       // Acumular IDs vistos en ML (independiente del upsert)
       mlSeenCount += itemIds.length
 
+      // ── Safety check: si hay 0 items, incrementar contador ──────────────────
+      // Si la cuenta quedó desconectada o el token inválido, ML devuelve []
+      // Si esto ocurre 3 veces seguidas en la misma invocación, es que algo broke
+      if (itemIds.length === 0) {
+        consecutiveZeroRuns++
+        if (consecutiveZeroRuns >= 3) {
+          // Algo está severamente roto — fuerza reset total
+          await supabase
+            .from("ml_import_progress")
+            .update({
+              status:                 "idle",
+              scroll_id:              null,
+              publications_offset:    0,
+              publications_total:     0,
+              ml_items_seen_count:    0,
+              db_rows_upserted_count: 0,
+              upsert_errors_count:    0,
+              last_error:             "Detección automática: 3 scans consecutivos sin items. Estado corrupto. Reset total.",
+              last_error_at:          new Date().toISOString(),
+            })
+            .eq("account_id", accountId)
+          break
+        }
+      } else {
+        consecutiveZeroRuns = 0  // Reset el contador si hay items
+      }
+
       // scan termina cuando results vacío — pero hay que distinguir entre
       // "terminé de verdad" y "scroll expiró antes de terminar"
       if (itemIds.length === 0) {
@@ -274,20 +302,20 @@ export async function POST(request: NextRequest) {
         const scrollExpired = mlTotal > 0 && pctCovered < 0.95
 
         if (scrollExpired) {
-          // Scroll expirado — limpiar scroll_id y resetear contadores para que
-          // el nuevo scan empiece desde cero sin acumular sobre valores viejos.
-          // El upsert usa onConflict: "account_id,ml_item_id" así que re-procesar
-          // publicaciones ya importadas solo las actualiza, no las duplica.
+          // Scroll expirado — hacer reset TOTAL: contadores a 0, scroll_id a null,
+          // y también publications_total a 0 para que la próxima corrida recalcule
+          // el total real desde ML (en caso de que esté corrupto)
           await supabase
             .from("ml_import_progress")
             .update({
               status:                 "idle",
               scroll_id:              null,
-              publications_offset:    0,          // reset: el nuevo scan empieza desde el ítem 0
-              ml_items_seen_count:    0,          // reset: contar desde cero para que pctCovered funcione
-              db_rows_upserted_count: 0,          // reset: alinear con el nuevo scan
+              publications_offset:    0,
+              publications_total:     0,          // RESET TOTAL: fuerza recálculo
+              ml_items_seen_count:    0,
+              db_rows_upserted_count: 0,
               upsert_errors_count:    0,
-              last_error:             `Scroll ML expirado al ${Math.round(pctCovered * 100)}% (${totalSeen}/${mlTotal} ítems vistos). Reiniciando scan desde el principio.`,
+              last_error:             `Scroll ML expirado al ${Math.round(pctCovered * 100)}% (${totalSeen}/${mlTotal}). Reset total iniciado.`,
               last_error_at:          new Date().toISOString(),
             })
             .eq("account_id", accountId)

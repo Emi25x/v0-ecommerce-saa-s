@@ -42,6 +42,7 @@ export async function GET(req: NextRequest) {
         { count: closed },
         { count: sin_producto },
         { count: sin_stock },
+        { count: con_stock },
         { count: eligible_catalog },
       ] = await Promise.all([
         head(qb => qb),
@@ -50,18 +51,20 @@ export async function GET(req: NextRequest) {
         head(qb => qb.eq("status", "closed")),
         head(qb => qb.is("product_id", null)),
         head(qb => qb.lte("current_stock", 0)),
+        head(qb => qb.gt("current_stock", 0)),
         head(qb => qb.eq("catalog_listing_eligible", true).eq("status", "active")),
       ])
 
       return NextResponse.json({
         ok: true,
         counts: {
-          total:           total           ?? 0,
-          active:          active          ?? 0,
-          paused:          paused          ?? 0,
-          closed:          closed          ?? 0,
-          sin_producto:    sin_producto    ?? 0,
-          sin_stock:       sin_stock       ?? 0,
+          total:            total            ?? 0,
+          active:           active           ?? 0,
+          paused:           paused           ?? 0,
+          closed:           closed           ?? 0,
+          sin_producto:     sin_producto     ?? 0,
+          sin_stock:        sin_stock        ?? 0,
+          con_stock:        con_stock        ?? 0,
           eligible_catalog: eligible_catalog ?? 0,
         },
       })
