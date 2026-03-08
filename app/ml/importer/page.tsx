@@ -80,25 +80,14 @@ export default function MLImporterPage() {
     loadData()
   }, [selectedAccountId])
 
-  // Auto-mode: ejecutar cada 20s cuando está activo y hay trabajo pendiente
+  // Auto-mode TEMPORALMENTE DESHABILITADO para diagnóstico
+  // No se ejecutarán invocaciones automáticas mientras diagnosticamos por qué se clava en 40%
   useEffect(() => {
-    if (!autoMode || !selectedAccountId || running) return
-
-    // Parar si:
-    // 1) ML devuelve results vacío (status=done)
-    // 2) El importador está pausado (rate limit o error)
-    // 3) Hay error último guardado
-    if (progress?.status === 'done' || progress?.status === 'paused' || progress?.last_error) {
+    if (autoMode) {
+      console.log("[v0] Auto-mode deshabilitado temporalmente - diagnóstico en curso")
       setAutoMode(false)
-      return
     }
-
-    const interval = setInterval(() => {
-      handleRun()
-    }, 20000) // 20s — seguro para 12-14s server runs + network latency
-
-    return () => clearInterval(interval)
-  }, [autoMode, selectedAccountId, running, progress])
+  }, [])
 
   const handleRun = async () => {
     if (!selectedAccountId || running) return
