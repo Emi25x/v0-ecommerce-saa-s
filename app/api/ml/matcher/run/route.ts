@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { NextResponse } from "next/server"
 import { protectAPI } from "@/lib/auth/protect-api"
 
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_account_id_format" }, { status: 400 })
   }
 
-  const supabase = await createClient({ useServiceRole: true })
+  const supabase = createAdminClient()
 
   try {
     // ── 1) Obtener o inicializar progreso ────────────────────────────────────
@@ -266,11 +266,13 @@ export async function POST(request: Request) {
       }
     }
 
-    // ── 9) Aplicar updates en un solo loop ───────────────────────────────────
-    for (const u of batchUpdates) {
+    // ── 9) Aplicar updates en un solo batch upsert ───────────────────────────
+    if (batchUpdates.length > 0) {
       await supabase.from("ml_publications")
-        .update({ product_id: u.product_id, matched_by: u.matched_by })
-        .eq("id", u.id)
+        .upsert(
+          batchUpdates.map(u => ({ id: u.id, product_id: u.product_id, matched_by: u.matched_by })),
+          { onConflict: "id" },
+        )
     }
 
     // ── 10) Actualizar progreso con nuevo cursor ──────────────────────────────
@@ -343,6 +345,11 @@ function elapsed(t0: number): string {
 function addToIndex(index: Map<string, string[]>, key: string, id: string) {
   if (!index.has(key)) index.set(key, [])
   index.get(key)!.push(id)
+}
+
+/** Agrega val a arr solo si no está ya presente */
+function addUnique(arr: string[], val: string) {
+  if (!arr.includes(val)) arr.push(val)
 }
 
 /** Normaliza un identificador: quita todo excepto dígitos y letras, lowercase */

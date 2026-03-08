@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,8 +20,7 @@ export async function POST(request: NextRequest) {
     //   return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     // }
 
-    // Use service role for reset operation
-    const supabase = await createClient({ useServiceRole: true })
+    const supabase = createAdminClient()
 
     // Verify account exists (ownership check disabled until auth is implemented)
     const { data: account } = await supabase

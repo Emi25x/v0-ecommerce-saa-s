@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { NextRequest, NextResponse } from "next/server"
 
 export const maxDuration = 10
@@ -25,8 +25,7 @@ export async function GET(request: NextRequest) {
     //   return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     // }
 
-    // Use service role to bypass RLS
-    const supabase = await createClient({ useServiceRole: true })
+    const supabase = createAdminClient()
 
     // Verify account exists (ownership check disabled until auth is implemented)
     const { data: account, error: accountError } = await supabase

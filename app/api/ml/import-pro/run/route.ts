@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { getValidAccessToken } from "@/lib/mercadolibre"
 import { NextRequest, NextResponse } from "next/server"
 import { protectAPI } from "@/lib/auth/protect-api"
@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "account_id required" }, { status: 400 })
     }
 
-    const supabase = await createClient({ useServiceRole: true })
+    const supabase = createAdminClient()
 
     // ── Verificar cuenta ─────────────────────────────────────────────────────
     const { data: account, error: accountError } = await supabase
@@ -663,7 +663,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     if (accountId) {
       try {
-        const supabase = await createClient({ useServiceRole: true })
+        const supabase = createAdminClient()
         await supabase
           .from("ml_import_progress")
           .update({ status: "error", last_error: error.message })
