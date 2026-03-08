@@ -13,31 +13,72 @@ export async function POST(request: Request) {
   
   try {
     const supabase = await createClient()
-    const { job_id, account_id, offset = 0 } = await request.json()
+    const body = await request.json()
+    const { job_id, account_id, offset = 0 } = body
 
-    console.log("[v0] INDEX - job_id:", job_id, "account_id:", account_id, "offset:", offset)
+    console.log("[v0] INDEX - Received params:", { job_id, account_id, offset })
+    console.log("[v0] INDEX - Request body:", JSON.stringify(body))
 
     if (!job_id || !account_id) {
+      console.error("[v0] INDEX - Missing required parameters!")
       return NextResponse.json({ error: "job_id y account_id requeridos" }, { status: 400 })
     }
 
     // Obtener job y cuenta
-    const { data: job, error: jobError } = await supabase.from("ml_import_jobs").select("*").eq("id", job_id).single()
-    const { data: account, error: accountError } = await supabase.from("ml_accounts").select("*").eq("id", account_id).single()
+    console.log("[v0] INDEX - Fetching job:", job_id)
+    const { data: job, error: jobError } = await supabase
+      .from("ml_import_jobs")
+      .select("*")
+      .eq("id", job_id)
+      .single()
+    
+    console.log("[v0] INDEX - Job fetch result:", { jobError, job: job ? { id: job.id, status: job.status } : null })
+
+    console.log("[v0] INDEX - Fetching account:", account_id)
+    const { data: account, error: accountError } = await supabase
+      .from("ml_accounts")
+      .select("*")
+      .eq("id", account_id)
+      .single()
+    
+    console.log("[v0] INDEX - Account fetch result:", { 
+      accountError, 
+      account: account ? { 
+        id: account.id, 
+        nickname: account.nickname,
+        ml_user_id: account.ml_user_id,
+        access_token: account.access_token ? account.access_token.substring(0, 20) + "..." : null
+      } : null 
+    })
 
     if (jobError) {
-      console.error("[v0] Supabase job query error:", jobError.code, jobError.message)
+      console.error("[v0] INDEX - Supabase job query error:", jobError.code, jobError.message)
       return NextResponse.json({ error: `Error buscando job: ${jobError.message}` }, { status: 500 })
     }
 
     if (accountError) {
-      console.error("[v0] Supabase account query error:", accountError.code, accountError.message)
+      console.error("[v0] INDEX - Supabase account query error:", accountError.code, accountError.message)
       return NextResponse.json({ error: `Error buscando cuenta: ${accountError.message}` }, { status: 500 })
     }
 
-    if (!job || !account) {
-      console.error("[v0] Job or account not found. job_id:", job_id, "account_id:", account_id)
-      return NextResponse.json({ error: "Job o cuenta no encontrados" }, { status: 404 })
+    if (!job) {
+      console.error("[v0] INDEX - Job not found. job_id:", job_id)
+      return NextResponse.json({ error: "Job no encontrado" }, { status: 404 })
+    }
+
+    if (!account) {
+      console.error("[v0] INDEX - Account not found. account_id:", account_id)
+      return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
+    }
+
+    if (!account.access_token) {
+      console.error("[v0] INDEX - Account has no access_token")
+      return NextResponse.json({ error: "Account missing access_token" }, { status: 400 })
+    }
+
+    if (!account.ml_user_id) {
+      console.error("[v0] INDEX - Account has no ml_user_id")
+      return NextResponse.json({ error: "Account missing ml_user_id" }, { status: 400 })
     }
 
     const BATCH_SIZE = 200 // Items por llamada
@@ -46,32 +87,59 @@ export async function POST(request: Request) {
 
     console.log("[v0] INDEX - Starting from offset:", currentOffset, "| job status:", job.status)
 
-    // Consultar ML con search (no usa scan porque tiene limitaciones)
-    const searchUrl = `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?limit=${BATCH_SIZE}&offset=${currentOffset}`
-    console.log("[v0] Calling ML API:", searchUrl)
-    
-    const searchResponse = await fetch(searchUrl, {
-      headers: { Authorization: `Bearer ${account.access_token}` }
+    // Construir params correctamente
+    const params = new URLSearchParams({
+      limit: BATCH_SIZE.toString(),
+      offset: currentOffset.toString(),
     })
 
-    console.log("[v0] ML API response status:", searchResponse.status)
+    // Consultar ML con search usando la URL correcta
+    const searchUrl = `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?${params.toString()}`
+    console.log("[v0] INDEX - Calling ML API:", searchUrl)
+    console.log("[v0] INDEX - Authorization: Bearer ${account.access_token.substring(0, 20)}...")
+    
+    const searchResponse = await fetch(searchUrl, {
+      headers: { 
+        Authorization: `Bearer ${account.access_token}`,
+        "Content-Type": "application/json"
+      }
+    })
+
+    console.log("[v0] INDEX - ML API response status:", searchResponse.status)
+    console.log("[v0] INDEX - Response content-type:", searchResponse.headers.get("content-type"))
 
     if (!searchResponse.ok) {
       const errorText = await searchResponse.text()
-      console.error("[v0] ML API error:", searchResponse.status, errorText)
+      console.error("[v0] INDEX - ML API error:", searchResponse.status, errorText)
       
       if (searchResponse.status === 429) {
         return NextResponse.json({ error: "Rate limit alcanzado", retry_after: 3600 }, { status: 429 })
+      }
+
+      if (searchResponse.status === 401) {
+        throw new Error(`ML API authentication failed. Token may be expired. Status: ${searchResponse.status}`)
       }
       
       throw new Error(`ML API error ${searchResponse.status}: ${errorText}`)
     }
 
-    const searchData = await searchResponse.json()
+    let searchData: any = {}
+    try {
+      searchData = await searchResponse.json()
+    } catch (parseError) {
+      console.error("[v0] INDEX - Failed to parse JSON response:", parseError)
+      throw new Error("Failed to parse ML API response as JSON")
+    }
+
     const itemIds = searchData.results || []
     const totalItems = searchData.paging?.total || 0
     
+    console.log("[v0] INDEX - Response paging:", JSON.stringify(searchData.paging))
     console.log("[v0] INDEX - Found", itemIds.length, "items at offset", currentOffset, "| total ML items:", totalItems)
+    
+    if (!totalItems && itemIds.length === 0) {
+      console.warn("[v0] INDEX - WARNING: No items found and total_items is 0. May indicate auth issue or empty account.")
+    }
 
     // Insertar item_ids en la cola (usando UPSERT para evitar duplicados)
     if (itemIds.length > 0) {
