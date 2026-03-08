@@ -299,6 +299,22 @@ export async function POST(request: Request) {
       updated_at:               new Date().toISOString(),
     }).eq("account_id", accountId)
 
+    // ── Si el matching está completo, eliminar items huérfanos (sin product_id) ──
+    if (isComplete) {
+      console.log(`[v0] Matcher completado. Limpiando items huérfanos (product_id IS NULL)...`)
+      const { error: deleteError, data: deletedData } = await supabase
+        .from("ml_publications")
+        .delete()
+        .eq("account_id", accountId)
+        .is("product_id", null)
+      
+      if (deleteError) {
+        console.error(`[v0] Error eliminando huérfanos:`, deleteError)
+      } else {
+        console.log(`[v0] Eliminados items huérfanos. Solo quedan los vinculados.`)
+      }
+    }
+
     return NextResponse.json({
       ok:              true,
       status:          "success",
@@ -311,6 +327,7 @@ export async function POST(request: Request) {
       is_complete:     isComplete,
       cursor_last_id:  isComplete ? null : newCursorLastId,
       elapsed_seconds: elapsed(t0),
+      cleanup_performed: isComplete,
       metrics: {
         pubs_with_ean:    pubsWithEan,
         pubs_with_isbn:   pubsWithIsbn,
