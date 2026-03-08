@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 import { getWSAATicket } from "@/lib/arca/wsaa"
 import { requestCAE } from "@/lib/arca/wsfe"
+import { getMlOrderBillingInfo } from "@/lib/arca/ml-billing"
 import type { FacturaItem } from "@/lib/arca/wsfe"
 
 // GET — listar facturas con paginación y filtros
@@ -66,58 +67,48 @@ export async function POST(request: Request) {
 
     if (orden_id && bodyAccountId) {
       try {
-        const billingUrl = `${process.env.APP_URL || "http://localhost:3000"}/api/billing/ml-order-billing?account_id=${bodyAccountId}&order_id=${orden_id}`
-        const billingRes = await fetch(billingUrl, {
-          headers: { cookie: request.headers.get("cookie") || "" },
-          signal:  AbortSignal.timeout(8000),
-        })
+        // Llamada interna segura sin depender de APP_URL
+        const bi = await getMlOrderBillingInfo(supabase, bodyAccountId, orden_id, false)
 
-        if (billingRes.ok) {
-          const bi = await billingRes.json()
+        if (bi.ok) {
+          // Guardar snapshot para auditoría
+          billing_info_snapshot = {
+            nombre:        bi.nombre,
+            doc_tipo:      bi.doc_tipo,
+            doc_numero:    bi.doc_numero,
+            condicion_iva: bi.condicion_iva,
+            direccion:     bi.direccion,
+            missing:       bi.billing_info_missing ?? false,
+          }
 
-          if (bi.ok) {
-            // Guardar solo los campos fiscales en el snapshot (sin metadatos del endpoint)
-            billing_info_snapshot = {
-              nombre:        bi.nombre,
-              doc_tipo:      bi.doc_tipo,
-              doc_numero:    bi.doc_numero,
-              condicion_iva: bi.condicion_iva,
-              direccion:     bi.direccion,
-              missing:       bi.billing_info_missing ?? false,
+          if (!bi.billing_info_missing) {
+            // Datos fiscales reales — sobrescriben siempre el input del frontend
+            receptor_nombre        = bi.nombre        || receptor_nombre
+            receptor_domicilio     = bi.direccion     || receptor_domicilio     || null
+            receptor_condicion_iva = bi.condicion_iva || receptor_condicion_iva || "consumidor_final"
+
+            // doc_tipo → tipo_doc_receptor numérico (ARCA: 80=CUIT, 86=CUIL, 96=DNI, 99=sin identificar)
+            if (bi.doc_numero) {
+              const docTipoRaw = (bi.doc_tipo || "").toUpperCase().trim()
+              tipo_doc_receptor = docTipoRaw === "CUIT" ? "80"
+                : docTipoRaw === "CUIL"                 ? "86"
+                : docTipoRaw === "DNI"                  ? "96"
+                : docTipoRaw === "CI"                   ? "96"
+                : "96"   // default: DNI si hay número pero tipo desconocido
+              nro_doc_receptor  = String(bi.doc_numero).replace(/\D/g, "")
             }
-
-            if (!bi.billing_info_missing) {
-              // Datos fiscales reales — sobrescriben siempre el input del frontend
-              // porque /billing_info es la fuente de verdad fiscal de ML.
-              receptor_nombre        = bi.nombre        || receptor_nombre
-              receptor_domicilio     = bi.direccion     || receptor_domicilio     || null
-              receptor_condicion_iva = bi.condicion_iva || receptor_condicion_iva || "consumidor_final"
-
-              // doc_tipo → tipo_doc_receptor numérico (ARCA: 80=CUIT, 86=CUIL, 96=DNI, 99=sin identificar)
-              if (bi.doc_numero) {
-                const docTipoRaw = (bi.doc_tipo || "").toUpperCase().trim()
-                tipo_doc_receptor = docTipoRaw === "CUIT" ? "80"
-                  : docTipoRaw === "CUIL"                 ? "86"
-                  : docTipoRaw === "DNI"                  ? "96"
-                  : docTipoRaw === "CI"                   ? "96"
-                  : "96"   // default: DNI si hay número pero tipo desconocido
-                nro_doc_receptor  = String(bi.doc_numero).replace(/\D/g, "")
-              }
-            } else {
-              // billing_info_missing: ML no tiene datos fiscales del comprador.
-              // Permitir consumidor final con warning — no bloquear la factura.
-              billing_info_warning  = "billing_info_missing: se emite como Consumidor Final"
-              receptor_nombre       = receptor_nombre       || "Consumidor Final"
-              tipo_doc_receptor     = tipo_doc_receptor     || "99"
-              nro_doc_receptor      = nro_doc_receptor      || "0"
-              receptor_condicion_iva = receptor_condicion_iva || "consumidor_final"
-            }
+          } else {
+            // billing_info_missing: ML no tiene datos fiscales del comprador
+            billing_info_warning  = "billing_info_missing: se emite como Consumidor Final"
+            receptor_nombre       = receptor_nombre       || "Consumidor Final"
+            tipo_doc_receptor     = tipo_doc_receptor     || "99"
+            nro_doc_receptor      = nro_doc_receptor      || "0"
+            receptor_condicion_iva = receptor_condicion_iva || "consumidor_final"
           }
         }
-      } catch {
-        // Si el fetch falla, continuar con los datos que mandó el frontend.
-        // No bloquear la emisión — el operador puede haber ingresado los datos manualmente.
-        billing_info_warning = "billing_info_fetch_failed: se usan los datos del formulario"
+      } catch (err: any) {
+        // Si falla, continuar con los datos del frontend
+        billing_info_warning = `billing_info_error: ${err.message}`
       }
     }
 
