@@ -1,6 +1,4 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
-import { normalizeEan } from "@/lib/ean-utils"
 
 export const maxDuration = 300
 
@@ -10,12 +8,12 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(_request: NextRequest) {
-  // Delegar al endpoint directo que maneja ZIP correctamente
+  // Delegar al endpoint de importación completa de catálogo AZETA (ZIP → CSV → upsert)
   const baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL
     ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
     : "http://localhost:3000"
 
-  const res = await fetch(`${baseUrl}/api/azeta/import-catalog-direct`, { method: "POST" })
+  const res = await fetch(`${baseUrl}/api/azeta/run`, { method: "POST" })
   const data = await res.json()
   return NextResponse.json(data, { status: res.status })
 }
