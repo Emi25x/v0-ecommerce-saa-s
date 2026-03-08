@@ -63,7 +63,8 @@ export async function GET(req: NextRequest) {
   const mlTotal = mlData.paging?.total || 0
 
   // Paso 2: marcar cuáles ya fueron facturadas
-  const orderIds = orders.map((o: any) => String(o.id))
+  // IMPORTANTE: el .in() no debe tener más de 51 elementos
+  const orderIds = orders.map((o: any) => String(o.id)).slice(0, 51)  // Limitar a 51 máximo
   const { data: facturadas } = await supabase
     .from("ml_order_facturas")
     .select("ml_order_id, factura_id, empresa_id, facturado_at")
