@@ -289,8 +289,17 @@ export async function POST(request: NextRequest) {
 
         const totalSeen     = auditRow?.ml_items_seen_count    ?? 0
         const totalUpserted = auditRow?.db_rows_upserted_count ?? 0
-        const mlTotal       = auditRow?.publications_total     ?? 0
+        const mlTotal       = auditRow?.publications_total ?? totalFromApi ?? 0  // fallback a totalFromApi si es null
         const currentOffset = auditRow?.publications_offset    ?? 0
+
+        // ── Guardar totalFromApi si mlTotal estaba null ──────────────────────────
+        // Esto asegura que publications_total NUNCA queda en null
+        if (!auditRow?.publications_total && totalFromApi > 0) {
+          await supabase
+            .from("ml_import_progress")
+            .update({ publications_total: totalFromApi })
+            .eq("account_id", accountId)
+        }
 
         // ── Detectar scroll expirado ──────────────────────────────────────────
         // Si el total ML conocido es > 0 y solo procesamos < 95% de esas publicaciones,
@@ -586,6 +595,12 @@ export async function POST(request: NextRequest) {
       if (batchErrors === 0 && toUpsert.length > 0) {
         progressUpdate.last_error    = null
         progressUpdate.last_error_at = null
+      }
+
+      // IMPORTANTE: preservar publications_total si ya tiene un valor válido
+      // NUNCA guardar null — usar el snapshot previo si no se actualizó en este batch
+      if (!progressUpdate.publications_total && progress.publications_total) {
+        progressUpdate.publications_total = progress.publications_total
       }
 
       await supabase
