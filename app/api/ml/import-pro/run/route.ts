@@ -597,10 +597,11 @@ export async function POST(request: NextRequest) {
         progressUpdate.last_error_at = null
       }
 
-      // IMPORTANTE: preservar publications_total si ya tiene un valor válido
-      // NUNCA guardar null — usar el snapshot previo si no se actualizó en este batch
-      if (!progressUpdate.publications_total && progress.publications_total) {
-        progressUpdate.publications_total = progress.publications_total
+      // IMPORTANTE: publications_total NUNCA debe ser null
+      // Si no se actualizó en este batch, preservar el valor anterior
+      // Si el anterior también era null, usar 0 como default seguro
+      if (!progressUpdate.publications_total) {
+        progressUpdate.publications_total = progress.publications_total || 0
       }
 
       await supabase

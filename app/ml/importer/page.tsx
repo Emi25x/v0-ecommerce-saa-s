@@ -80,21 +80,22 @@ export default function MLImporterPage() {
     loadData()
   }, [selectedAccountId])
 
-  // Auto-mode: ejecutar cada 3s cuando está activo y hay trabajo pendiente
+  // Auto-mode: ejecutar cada 20s cuando está activo y hay trabajo pendiente
   useEffect(() => {
     if (!autoMode || !selectedAccountId || running) return
 
-    // Parar solo cuando ML devuelva results vacío (status=done).
-    // NO usar offset >= total: paging.total del scan de ML es estimado y
-    // suele reportar ~1000 aunque el seller tenga más publicaciones.
-    if (progress?.status === 'done') {
+    // Parar si:
+    // 1) ML devuelve results vacío (status=done)
+    // 2) El importador está pausado (rate limit o error)
+    // 3) Hay error último guardado
+    if (progress?.status === 'done' || progress?.status === 'paused' || progress?.last_error) {
       setAutoMode(false)
       return
     }
 
     const interval = setInterval(() => {
       handleRun()
-    }, 15000) // 15s — safe gap for 12-14s server runs, avoids overlap
+    }, 20000) // 20s — seguro para 12-14s server runs + network latency
 
     return () => clearInterval(interval)
   }, [autoMode, selectedAccountId, running, progress])
