@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { NextRequest, NextResponse } from "next/server"
 import * as XLSX from "xlsx"
 
@@ -77,7 +77,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const supabase   = await createClient({ useServiceRole: true })
+  const supabase   = createAdminClient()
   const catalogId  = params.id
   const body       = await request.json()
 
