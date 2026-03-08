@@ -172,7 +172,7 @@ export async function POST(request: Request) {
     const candidateIds = candidateRows.map(r => r.id)
     const newCursorLastId = candidateIds[candidateIds.length - 1]
 
-    // ── 7) Construir índices de productos ────────────────────────────────────
+    // ── 7) Construir índices de productos + mapa de product_id → identificadores ────
     const { data: allProducts } = await supabase
       .from("products")
       .select("id, ean, gtin, isbn, sku")
@@ -182,6 +182,7 @@ export async function POST(request: Request) {
     const eanIndex  = new Map<string, string[]>()
     const isbnIndex = new Map<string, string[]>()
     const skuIndex  = new Map<string, string[]>()
+    const productIdentifiers = new Map<string, { ean?: string | null; isbn?: string | null; sku?: string | null }>()
 
     for (const p of allProducts ?? []) {
       let hasAny = false
@@ -200,7 +201,11 @@ export async function POST(request: Request) {
         const key = norm(p.sku)
         if (key) { hasAny = true; addToIndex(skuIndex, key, p.id) }
       }
-      if (hasAny) productsWithId++
+      if (hasAny) {
+        productsWithId++
+        // Guardar mapeo product_id → identificadores para usar después
+        productIdentifiers.set(p.id, { ean: p.ean || p.gtin, isbn: p.isbn, sku: p.sku })
+      }
     }
 
     const productsMissingIdentifiers = (allProducts?.length ?? 0) > 0 && productsWithId === 0
@@ -216,7 +221,14 @@ export async function POST(request: Request) {
 
     let pubsWithEan = 0, pubsWithIsbn = 0, pubsWithSku = 0
     let matched = 0, ambiguous = 0, notFound = 0, invalid = 0
-    const batchUpdates: Array<{ id: string; product_id: string; matched_by: string }> = []
+    const batchUpdates: Array<{
+      id: string
+      product_id: string
+      matched_by: string
+      ean?: string | null
+      isbn?: string | null
+      sku?: string | null
+    }> = []
 
     for (const pub of pubs ?? []) {
       if (Date.now() - t0 > max_seconds * 1000) break
@@ -258,7 +270,15 @@ export async function POST(request: Request) {
 
       if (productId) {
         matched++
-        batchUpdates.push({ id: pub.id, product_id: productId, matched_by: matchType! })
+        const productIds = productIdentifiers.get(productId)
+        batchUpdates.push({
+          id: pub.id,
+          product_id: productId,
+          matched_by: matchType!,
+          ean: productIds?.ean || null,
+          isbn: productIds?.isbn || null,
+          sku: productIds?.sku || null,
+        })
       } else if (totalMatches > 1) {
         ambiguous++
       } else {
@@ -269,7 +289,13 @@ export async function POST(request: Request) {
     // ── 9) Aplicar updates en un solo loop ───────────────────────────────────
     for (const u of batchUpdates) {
       await supabase.from("ml_publications")
-        .update({ product_id: u.product_id, matched_by: u.matched_by })
+        .update({
+          product_id: u.product_id,
+          matched_by: u.matched_by,
+          ean: u.ean,
+          isbn: u.isbn,
+          sku: u.sku,
+        })
         .eq("id", u.id)
     }
 
