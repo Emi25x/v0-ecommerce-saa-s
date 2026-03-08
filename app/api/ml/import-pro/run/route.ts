@@ -105,13 +105,14 @@ export async function POST(request: NextRequest) {
     const {
       account_id,
       max_seconds  = 12,
-      detail_batch = 50,
+      detail_batch = 15,  // Reducido de 50 a 15: multigets más rápidos, no timeout
       concurrency  = 2,
     } = body
 
     accountId = account_id
     // detail_batch clamped a 1..50 (límite real del multiget de ML)
-    const batchSize = Math.min(50, Math.max(1, detail_batch))
+    // Pero en la práctica usamos máximo 15 para evitar timeout
+    const batchSize = Math.min(15, Math.max(1, detail_batch))
 
     if (!accountId) {
       return NextResponse.json({ error: "account_id required" }, { status: 400 })
