@@ -149,6 +149,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      created: 0,  // AGREGAR para que la UI funcione — Stock solo actualiza, no crea
       updated: totalUpdated,
       not_found: totalNotFound,
       total_rows: rows.length,

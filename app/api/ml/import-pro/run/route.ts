@@ -688,12 +688,25 @@ export async function POST(request: NextRequest) {
     if (importedCount > 0) {
       console.log("[v0] import-pro: Disparando matcher automáticamente después de importar", importedCount, "items")
       try {
-        const matcherUrl = `${process.env.NEXT_PUBLIC_VERCEL_URL || 'http://localhost:3000'}/api/ml/matcher/run`
+        // Construir URL correctamente para llamar al matcher
+        // En producción: https://domain.vercel.app/api/ml/matcher/run
+        // En desarrollo: http://localhost:3000/api/ml/matcher/run
+        let matcherBaseUrl = "http://localhost:3000"
+        
+        // Si estamos en Vercel, usar la URL real
+        if (process.env.NEXT_PUBLIC_VERCEL_URL) {
+          matcherBaseUrl = `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
+        } else if (process.env.VERCEL_URL) {
+          matcherBaseUrl = `https://${process.env.VERCEL_URL}`
+        }
+        
+        const matcherUrl = `${matcherBaseUrl}/api/ml/matcher/run`
+        console.log(`[v0] Matcher URL: ${matcherUrl}`)
+        
         const matcherResponse = await fetch(matcherUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': request.headers.get('Authorization') || '',
           },
           body: JSON.stringify({
             account_id: accountId,
@@ -701,8 +714,14 @@ export async function POST(request: NextRequest) {
             batch_size: 300,
           }),
         })
-        const matcherResult = await matcherResponse.json()
-        console.log("[v0] Matcher ejecutado:", matcherResult)
+        
+        if (!matcherResponse.ok) {
+          const errorText = await matcherResponse.text()
+          console.error(`[v0] Matcher HTTP error: ${matcherResponse.status}`, errorText.substring(0, 200))
+        } else {
+          const matcherResult = await matcherResponse.json()
+          console.log("[v0] Matcher ejecutado:", { ok: matcherResult.ok, processed: matcherResult.processed, matched: matcherResult.matched })
+        }
       } catch (matcherError: any) {
         console.error("[v0] Error disparando matcher:", matcherError.message)
         // No bloqueamos el import si falla el matcher
