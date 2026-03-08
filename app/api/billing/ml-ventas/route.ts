@@ -63,18 +63,24 @@ export async function GET(req: NextRequest) {
   const mlTotal = mlData.paging?.total || 0
 
   // Paso 2: marcar cuáles ya fueron facturadas
-  // IMPORTANTE: el .in() no debe tener más de 51 elementos
-  const orderIds = orders.map((o: any) => String(o.id)).slice(0, 51)  // Limitar a 51 máximo
-  const { data: facturadas } = await supabase
-    .from("ml_order_facturas")
-    .select("ml_order_id, factura_id, empresa_id, facturado_at")
-    .eq("user_id",       user.id)
-    .eq("ml_account_id", account_id)
-    .in("ml_order_id",   orderIds)
+  // RLS policy límite: hacer querys en chunks de máx 50 IDs en lugar de un .in() grande
+  const orderIds = orders.map((o: any) => String(o.id))
+  const facturadaMap = new Map()
+  const CHUNK_SIZE = 50
 
-  const facturadaMap = new Map(
-    (facturadas || []).map((f: any) => [f.ml_order_id, f])
-  )
+  for (let i = 0; i < orderIds.length; i += CHUNK_SIZE) {
+    const chunk = orderIds.slice(i, i + CHUNK_SIZE)
+    const { data: facturadas } = await supabase
+      .from("ml_order_facturas")
+      .select("ml_order_id, factura_id, empresa_id, facturado_at")
+      .eq("user_id", user.id)
+      .eq("ml_account_id", account_id)
+      .in("ml_order_id", chunk)
+
+    (facturadas || []).forEach((f: any) => {
+      facturadaMap.set(f.ml_order_id, f)
+    })
+  }
 
   // Paso 3: estado de envío desde /shipments/{id} — solo en chunks de 10
   const shipmentStatusMap = new Map<string, { status: string; substatus: string | null }>()
