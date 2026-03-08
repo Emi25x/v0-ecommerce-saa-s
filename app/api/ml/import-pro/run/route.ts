@@ -642,6 +642,31 @@ export async function POST(request: NextRequest) {
       .eq("account_id", accountId)
       .single()
 
+    // ── DISPARAR MATCHER AUTOMÁTICAMENTE si importamos algo nuevo ──────────────
+    if (importedCount > 0) {
+      console.log("[v0] import-pro: Disparando matcher automáticamente después de importar", importedCount, "items")
+      try {
+        const matcherUrl = `${process.env.NEXT_PUBLIC_VERCEL_URL || 'http://localhost:3000'}/api/ml/matcher/run`
+        const matcherResponse = await fetch(matcherUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': request.headers.get('Authorization') || '',
+          },
+          body: JSON.stringify({
+            account_id: accountId,
+            max_seconds: 20,
+            batch_size: 300,
+          }),
+        })
+        const matcherResult = await matcherResponse.json()
+        console.log("[v0] Matcher ejecutado:", matcherResult)
+      } catch (matcherError: any) {
+        console.error("[v0] Error disparando matcher:", matcherError.message)
+        // No bloqueamos el import si falla el matcher
+      }
+    }
+
     return NextResponse.json({
       ok:                     true,
       imported_count:         importedCount,                           // filas persistidas en esta corrida
