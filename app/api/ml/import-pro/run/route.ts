@@ -6,7 +6,7 @@ import { protectAPI } from "@/lib/auth/protect-api"
 export const maxDuration = 60
 
 // ML API hard limits
-const ML_SCAN_PAGE_SIZE   = 20   // Reducido de 50 a 20 items por scan: más rápido
+const ML_SCAN_PAGE_SIZE   = 50   // search_type=scan: máximo real permitido
 const ML_MULTIGET_MAX_IDS = 50   // /items?ids=...: máximo 50 por request
 const ML_ATTRIBUTES       = "id,title,price,available_quantity,sold_quantity,status,permalink,thumbnail,listing_type_id,seller_custom_field,attributes,variations,shipping,tags,catalog_listing,catalog_listing_eligible"
 
@@ -104,15 +104,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const {
       account_id,
-      max_seconds  = 25,  // Aumentado de 12 a 25 segundos: más tiempo para procesar
-      detail_batch = 15,  // Multiget de 15 items: rápido
+      max_seconds  = 12,
+      detail_batch = 50,
       concurrency  = 2,
     } = body
 
     accountId = account_id
     // detail_batch clamped a 1..50 (límite real del multiget de ML)
-    // Pero en la práctica usamos máximo 15 para evitar timeout
-    const batchSize = Math.min(15, Math.max(1, detail_batch))
+    const batchSize = Math.min(50, Math.max(1, detail_batch))
 
     if (!accountId) {
       return NextResponse.json({ error: "account_id required" }, { status: 400 })
