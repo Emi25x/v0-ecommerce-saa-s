@@ -493,7 +493,7 @@ async function handleImportPublications(
 ): Promise<{ imported_count: number; has_more: boolean; rate_limited: boolean; error?: string }> {
   const { account_id, payload } = job
   const max_seconds = payload.max_seconds ?? 50
-  const detail_batch = Math.min(50, Math.max(1, payload.detail_batch ?? 50))
+    const detail_batch = Math.min(20, Math.max(1, payload.detail_batch ?? 50))
   const concurrency  = payload.concurrency ?? 2
   const startTime    = Date.now()
 
@@ -564,9 +564,21 @@ async function handleImportPublications(
       await supabase.from("ml_import_progress")
         .update({ scroll_id: newScrollId }).eq("account_id", account_id)
     }
-    if (!cur.publications_total && totalFromApi > 0) {
+    // ── ACTUALIZAR publications_total SIEMPRE que venga un número válido ───
+    if (totalFromApi > 0 && (!cur.publications_total || cur.publications_total !== totalFromApi)) {
+      console.log(`[v0] Actualizando publications_total: ${cur.publications_total} → ${totalFromApi}`)
       await supabase.from("ml_import_progress")
-        .update({ publications_total: totalFromApi }).eq("account_id", account_id)
+        .update({ publications_total: totalFromApi })
+        .eq("account_id", account_id)
+      // Releer el progress para tener datos actualizados
+      const { data: updatedProgress } = await supabase
+        .from("ml_import_progress")
+        .select("publications_total")
+        .eq("account_id", account_id)
+        .single()
+      if (updatedProgress) {
+        cur.publications_total = updatedProgress.publications_total
+      }
     }
 
     // Multiget en chunks de detail_batch con pool de concurrencia

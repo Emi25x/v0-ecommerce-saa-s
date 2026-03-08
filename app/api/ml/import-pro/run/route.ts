@@ -311,16 +311,16 @@ export async function POST(request: NextRequest) {
         const scrollExpired = mlTotal > 0 && pctCovered < 0.95
 
         if (scrollExpired) {
-          // Scroll expirado — hacer reset TOTAL: contadores a 0, scroll_id a null,
-          // y también publications_total a 0 para que la próxima corrida recalcule
-          // el total real desde ML (en caso de que esté corrupto)
+          // Scroll expirado — hacer reset PARCIAL: resetear posición pero PRESERVAR publications_total
+          // porque ya lo calculamos en ML (necesario para matching y tracking posterior)
+          console.log(`[v0] import-pro: Scroll expirado. Reseteando posición pero preservando publications_total=${mlTotal}`)
           await supabase
             .from("ml_import_progress")
             .update({
               status:                 "idle",
               scroll_id:              null,
               publications_offset:    0,
-              publications_total:     0,          // RESET TOTAL: fuerza recálculo
+              // NO reseteamos publications_total — lo preservamos para auditoría
               ml_items_seen_count:    0,
               db_rows_upserted_count: 0,
               upsert_errors_count:    0,
