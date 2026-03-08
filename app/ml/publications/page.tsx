@@ -461,25 +461,59 @@ export default function MLPublicationsPage() {
       return
     }
     setSyncingML(true)
+    
+    let totalImported = 0
+    let totalSeen = 0
+    let continueLoop = true
+    let iterations = 0
+    const MAX_ITERATIONS = 100  // Seguro: máx 100 batches por sesión
+    
     try {
-      const res  = await fetch("/api/ml/import-pro/run", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ account_id: accountId, max_seconds: 12 }),
-      })
-      const data = await res.json()
-      if (data.ok) {
-        const desc = `${data.db_rows_upserted ?? data.imported_count} filas persistidas (ML vio ${data.ml_items_seen_count ?? "?"} IDs)${data.has_more ? " — continúa en próxima corrida" : " — completado"}`
-        toast({ title: "Sincronización ejecutada", description: desc })
-        refreshProgress()
-        load(0)
-        loadCounts(accountId, searchQuery)
-        loadMlTotal(accountId)
-      } else if (data.rate_limited) {
-        toast({ title: "Rate limit ML", description: `Esperá ${data.wait_seconds ?? 60}s y reintentá.`, variant: "destructive" })
-      } else {
-        toast({ title: "Error al sincronizar", description: data.error ?? "Error desconocido", variant: "destructive" })
+      while (continueLoop && iterations < MAX_ITERATIONS) {
+        iterations++
+        const res = await fetch("/api/ml/import-pro/run", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ account_id: accountId, max_seconds: 15 }),
+        })
+        const data = await res.json()
+        
+        if (data.ok) {
+          totalImported += data.db_rows_upserted ?? data.imported_count ?? 0
+          totalSeen += data.ml_items_seen_count ?? 0
+          
+          // Refrescar UI cada batch
+          refreshProgress()
+          loadMlTotal(accountId)
+          
+          if (data.has_more && !data.rate_limited) {
+            // Continuar con el siguiente batch
+            continue
+          } else if (data.rate_limited) {
+            toast({ title: "Rate limit ML", description: `Esperando... reintentando en 5s`, variant: "default" })
+            await new Promise(r => setTimeout(r, 5000))
+            continue
+          } else {
+            // Completado
+            continueLoop = false
+          }
+        } else if (data.rate_limited) {
+          toast({ title: "Rate limit ML", description: `Esperando 5s...`, variant: "default" })
+          await new Promise(r => setTimeout(r, 5000))
+          continue
+        } else {
+          toast({ title: "Error al sincronizar", description: data.error ?? "Error desconocido", variant: "destructive" })
+          continueLoop = false
+        }
       }
+      
+      toast({ 
+        title: "Sincronización completada", 
+        description: `${totalImported} filas importadas (ML vio ${totalSeen} IDs) en ${iterations} batch(es)` 
+      })
+      load(0)
+      loadCounts(accountId, searchQuery)
+      
     } catch (err: any) {
       toast({ title: "Error de red", description: err.message, variant: "destructive" })
     } finally {
