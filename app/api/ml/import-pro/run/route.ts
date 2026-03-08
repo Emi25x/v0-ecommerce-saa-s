@@ -6,7 +6,7 @@ import { protectAPI } from "@/lib/auth/protect-api"
 export const maxDuration = 60
 
 // ML API hard limits
-const ML_SCAN_PAGE_SIZE   = 50   // search_type=scan: máximo real permitido
+const ML_SCAN_PAGE_SIZE   = 20   // Reducido de 50 a 20 items por scan: más rápido
 const ML_MULTIGET_MAX_IDS = 50   // /items?ids=...: máximo 50 por request
 const ML_ATTRIBUTES       = "id,title,price,available_quantity,sold_quantity,status,permalink,thumbnail,listing_type_id,seller_custom_field,attributes,variations,shipping,tags,catalog_listing,catalog_listing_eligible"
 
@@ -104,8 +104,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const {
       account_id,
-      max_seconds  = 12,
-      detail_batch = 15,  // Reducido de 50 a 15: multigets más rápidos, no timeout
+      max_seconds  = 25,  // Aumentado de 12 a 25 segundos: más tiempo para procesar
+      detail_batch = 15,  // Multiget de 15 items: rápido
       concurrency  = 2,
     } = body
 
