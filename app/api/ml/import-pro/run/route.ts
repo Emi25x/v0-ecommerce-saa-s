@@ -597,9 +597,14 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Actualizar offset SOLO con las filas realmente persistidas en DB
-      // Si el upsert falló, batchUpserted = 0 y el offset no avanza
-      const newOffset = offset + batchUpserted
+      // Actualizar offset: avanzar por itemIds visto, incluso si toUpsert quedó vacío
+      // (esto evita loops infinitos cuando el multiget no devuelve datos)
+      let offsetAdvance = batchUpserted
+      if (itemIds.length > 0 && toUpsert.length === 0 && batchUpserted === 0) {
+        offsetAdvance = itemIds.length  // Avanzar por los IDs vistos, aunque no se persistieron
+        console.warn(`[v0] WARNING: itemIds.length=${itemIds.length} pero toUpsert.length=0. Avanzando offset por itemIds para evitar loop.`)
+      }
+      const newOffset = offset + offsetAdvance
 
       // Re-leer los contadores acumulados para incrementar correctamente
       // (el loop puede ejecutar múltiples iteraciones con el mismo `progress` snapshot)
