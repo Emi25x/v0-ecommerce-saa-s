@@ -49,10 +49,6 @@
       "schedule": "0 3 * * 0"
     },
     {
-      "path": "/api/azeta/import-stock",
-      "schedule": "0 */4 * * *"
-    },
-    {
       "path": "/api/azeta/update-stock",
       "schedule": "0 */4 * * *"
     },
