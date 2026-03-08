@@ -1,263 +1,348 @@
 import { createClient } from "@/lib/supabase/server"
-import { NextResponse } from "next/server"
-import Papa from "papaparse"
+import { NextRequest, NextResponse } from "next/server"
+import * as XLSX from "xlsx"
 
-/**
- * POST /api/suppliers/catalogs/[id]/import
- * Importa items desde el catálogo CSV/XLSX
- */
+// ─── Types ────────────────────────────────────────────────────────────────────
+type CatalogMode   = "create_only" | "update_only" | "create_and_update"
+type OverwriteMode = "none" | "only_empty_fields" | "all"
+
+interface ParsedRow {
+  ean:         string | null
+  isbn:        string | null
+  sku:         string | null
+  title:       string | null
+  author:      string | null
+  publisher:   string | null
+  price:       number | null
+  stock:       number | null
+  language:    string | null
+  pages:       number | null
+  binding:     string | null
+  category:    string | null
+  raw:         Record<string, any>
+}
+
+// ─── EAN normalizer ───────────────────────────────────────────────────────────
+function normalizeEan(val: any): string | null {
+  if (val == null) return null
+  // Handle Excel scientific notation e.g. 9.78844E+12 → "9788440059680"
+  let s = String(val).trim()
+  if (/^[\d.]+[eE][+\-]?\d+$/.test(s)) {
+    const n = Number(s)
+    if (!isNaN(n) && n > 0) s = Math.round(n).toString()
+  }
+  s = s.replace(/[^0-9]/g, "")
+  if (s.length < 8 || s.length > 14) return null
+  return s
+}
+
+// ─── Row parser ───────────────────────────────────────────────────────────────
+function parseRow(row: Record<string, any>): ParsedRow {
+  const g = (...keys: string[]) => {
+    for (const k of keys) {
+      const v = row[k] ?? row[k.toLowerCase()] ?? row[k.toUpperCase()]
+      if (v != null && String(v).trim() !== "") return String(v).trim()
+    }
+    return null
+  }
+  const eanRaw  = g("EAN","ean","Ean","GTIN","gtin","barcode","Barcode")
+  const isbnRaw = g("ISBN","isbn","Isbn")
+  return {
+    ean:       normalizeEan(eanRaw),
+    isbn:      normalizeEan(isbnRaw),
+    sku:       g("SKU","sku","Sku","codigo","CODIGO","Codigo","cod"),
+    title:     g("Titulo","titulo","Title","title","TITULO","Descripcion","descripcion"),
+    author:    g("Autor","autor","Author","author","AUTOR"),
+    publisher: g("Editorial","editorial","Publisher","publisher","EDITORIAL","Sello","sello"),
+    price:     parseFloat(g("Precio","precio","Price","price","PVP","pvp") ?? "0") || null,
+    stock:     parseInt(g("Stock","stock","Cantidad","cantidad","QTY","qty") ?? "0") || null,
+    language:  g("Idioma","idioma","Language","language"),
+    pages:     parseInt(g("Paginas","paginas","Pages","pages","PAGINAS") ?? "0") || null,
+    binding:   g("Encuadernacion","encuadernacion","Binding","binding","Formato","formato"),
+    category:  g("Categoria","categoria","Category","category","Materia","materia"),
+    raw:       row,
+  }
+}
+
+// ─── Parse file bytes into rows ───────────────────────────────────────────────
+function parseFileBytes(buffer: Buffer, format: string): Record<string, any>[] {
+  const wb = XLSX.read(buffer, { type: "buffer", cellDates: true })
+  const ws = wb.Sheets[wb.SheetNames[0]]
+  return XLSX.utils.sheet_to_json(ws, { defval: null, raw: true })
+}
+
+// ─── POST handler ─────────────────────────────────────────────────────────────
+// Body: { preview?: boolean, catalog_mode?, overwrite_mode?, warehouse_id? }
 export async function POST(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
-    const catalogId = params.id
-    const body = await request.json()
-    const warehouseId = body.warehouse_id || null
-    
-    const supabase = await createClient({ useServiceRole: true })
+  const supabase   = await createClient({ useServiceRole: true })
+  const catalogId  = params.id
+  const body       = await request.json()
 
-    // Get catalog info
-    const { data: catalog, error: catalogError } = await supabase
-      .from("supplier_catalogs")
-      .select("*, supplier:suppliers(*)")
-      .eq("id", catalogId)
-      .single()
+  const previewOnly:   boolean       = body.preview === true
+  const catalogMode:   CatalogMode   = body.catalog_mode   ?? "update_only"
+  const overwriteMode: OverwriteMode = body.overwrite_mode ?? "only_empty_fields"
+  const warehouseId:   string | null = body.warehouse_id   ?? null
 
-    if (catalogError || !catalog) {
-      return NextResponse.json({ error: "Catalog not found" }, { status: 404 })
-    }
-    
-    console.log(`[CATALOG-IMPORT] Importing catalog ${catalogId} to warehouse ${warehouseId || 'default'}`)
+  // ── Fetch catalog ──────────────────────────────────────────────────────────
+  const { data: catalog, error: catErr } = await supabase
+    .from("supplier_catalogs")
+    .select("*, supplier:suppliers(*)")
+    .eq("id", catalogId)
+    .single()
 
-    // Update status to processing
-    await supabase
-      .from("supplier_catalogs")
-      .update({ import_status: "processing" })
-      .eq("id", catalogId)
-
-    // Fetch CSV from Blob
-    const response = await fetch(catalog.file_url)
-    const csvText = await response.text()
-
-    // Parse CSV
-    const parsed = Papa.parse(csvText, {
-      header: true,
-      skipEmptyLines: true
-    })
-
-    if (parsed.errors.length > 0) {
-      throw new Error(`CSV parse error: ${parsed.errors[0].message}`)
-    }
-
-    const rows = parsed.data as any[]
-    console.log(`[CATALOG-IMPORT] Processing ${rows.length} rows`)
-
-    // Load all products for matching
-    const { data: allProducts } = await supabase
-      .from("products")
-      .select("id, isbn, ean, sku")
-      .or("isbn.not.is.null,ean.not.is.null,sku.not.is.null")
-
-    // Build indexes for matching
-    const isbnIndex = new Map<string, string>()
-    const eanIndex = new Map<string, string>()
-    const skuIndex = new Map<string, string>()
-
-    for (const product of allProducts || []) {
-      if (product.isbn) isbnIndex.set(product.isbn.replace(/[^0-9]/g, ""), product.id)
-      if (product.ean) eanIndex.set(product.ean.replace(/[^0-9]/g, ""), product.id)
-      if (product.sku) skuIndex.set(product.sku.trim().toLowerCase(), product.id)
-    }
-
-    // Process rows and match with products
-    const itemsToInsert: any[] = []
-    const productsToCreate: any[] = []
-    let matchedCount = 0
-    let createdCount = 0
-
-    for (const row of rows) {
-      const isbn = row.ISBN || row.isbn || row.Isbn || ""
-      const ean = row.EAN || row.ean || row.Ean || ""
-      const sku = row.SKU || row.sku || row.Sku || ""
-      const title = row.Titulo || row.titulo || row.Title || row.title || ""
-      const author = row.Autor || row.autor || row.Author || row.author || ""
-      const publisher = row.Editorial || row.editorial || row.Publisher || row.publisher || ""
-      const price = parseFloat(row.Precio || row.precio || row.Price || row.price || "0")
-      const stock = parseInt(row.Stock || row.stock || "0")
-
-      // Normalize identifiers
-      const isbnNormalized = isbn ? isbn.replace(/[^0-9]/g, "") : ""
-      const eanNormalized = ean ? ean.replace(/[^0-9]/g, "") : ""
-      const skuNormalized = sku ? sku.trim().toLowerCase() : ""
-
-      // Attempt matching - Priority: EAN → ISBN → SKU
-      let productId: string | null = null
-      let matchedBy: string | null = null
-
-      // Try EAN first
-      if (eanNormalized && eanIndex.has(eanNormalized)) {
-        productId = eanIndex.get(eanNormalized)!
-        matchedBy = "ean"
-        matchedCount++
-      }
-
-      // Try ISBN second
-      if (!productId && isbnNormalized && isbnIndex.has(isbnNormalized)) {
-        productId = isbnIndex.get(isbnNormalized)!
-        matchedBy = "isbn"
-        matchedCount++
-      }
-
-      // Try SKU last
-      if (!productId && skuNormalized && skuIndex.has(skuNormalized)) {
-        productId = skuIndex.get(skuNormalized)!
-        matchedBy = "sku"
-        matchedCount++
-      }
-
-      // If no match found and we have EAN or ISBN, create a new product
-      if (!productId && (eanNormalized || isbnNormalized)) {
-        // Check if we already queued this product for creation in this batch
-        const alreadyQueued = productsToCreate.some(p => 
-          (p.ean && p.ean === eanNormalized) || 
-          (p.isbn && p.isbn === isbnNormalized)
-        )
-
-        if (!alreadyQueued) {
-          // Generate a unique SKU if not provided
-          const generatedSku = sku || 
-            (eanNormalized ? `EAN-${eanNormalized}` : `ISBN-${isbnNormalized}`)
-
-          const newProduct = {
-            sku: generatedSku,
-            title: title || "Sin título",
-            isbn: isbnNormalized || null,
-            ean: eanNormalized || null,
-            author: author || null,
-            publisher: publisher || null,
-            price: price || 0,
-            stock: 0, // Don't set stock from supplier
-            source: ["supplier_catalog"],
-            description: `Importado desde catálogo ${catalog.name}`,
-            custom_fields: {
-              supplier_name: catalog.supplier?.name || "Unknown",
-              catalog_id: catalogId
-            }
-          }
-
-          productsToCreate.push(newProduct)
-          console.log(`[CATALOG-IMPORT] Queuing new product: ${title} (${eanNormalized || isbnNormalized})`)
-        }
-      }
-
-      itemsToInsert.push({
-        catalog_id: catalogId,
-        supplier_id: catalog.supplier_id,
-        product_id: productId,
-        warehouse_id: warehouseId,
-        supplier_sku: sku || null,
-        supplier_isbn: isbn || null,
-        supplier_ean: ean || null,
-        title,
-        author: author || null,
-        publisher: publisher || null,
-        price_original: price,
-        price_discounted: price,
-        stock_quantity: stock,
-        matched_by: matchedBy,
-        matched_at: matchedBy ? new Date().toISOString() : null,
-        match_confidence: matchedBy ? 1.0 : null,
-        raw_data: row
-      })
-    }
-
-    // Create new products if any
-    const createdProductIds = new Map<string, string>() // key: ean or isbn, value: product_id
-    
-    if (productsToCreate.length > 0) {
-      console.log(`[CATALOG-IMPORT] Creating ${productsToCreate.length} new products`)
-      
-      const { data: newProducts, error: createError } = await supabase
-        .from("products")
-        .insert(productsToCreate)
-        .select("id, isbn, ean")
-
-      if (createError) {
-        console.error(`[CATALOG-IMPORT] Error creating products:`, createError)
-        // Continue with import even if product creation fails
-      } else if (newProducts) {
-        createdCount = newProducts.length
-        console.log(`[CATALOG-IMPORT] Created ${createdCount} new products`)
-        
-        // Build index of created products
-        for (const product of newProducts) {
-          const key = product.ean || product.isbn
-          if (key) {
-            createdProductIds.set(key, product.id)
-          }
-        }
-
-        // Update itemsToInsert with newly created product IDs
-        for (const item of itemsToInsert) {
-          if (!item.product_id) {
-            const eanNormalized = item.supplier_ean ? item.supplier_ean.replace(/[^0-9]/g, "") : ""
-            const isbnNormalized = item.supplier_isbn ? item.supplier_isbn.replace(/[^0-9]/g, "") : ""
-            
-            // Try to find the newly created product
-            const newProductId = createdProductIds.get(eanNormalized) || 
-                                createdProductIds.get(isbnNormalized)
-            
-            if (newProductId) {
-              item.product_id = newProductId
-              item.matched_by = eanNormalized ? "ean" : "isbn"
-              item.matched_at = new Date().toISOString()
-              item.match_confidence = 1.0
-              matchedCount++
-            }
-          }
-        }
-      }
-    }
-
-    // Batch insert items
-    const { error: insertError } = await supabase
-      .from("supplier_catalog_items")
-      .insert(itemsToInsert)
-
-    if (insertError) throw insertError
-
-    // Update catalog with results
-    await supabase
-      .from("supplier_catalogs")
-      .update({
-        import_status: "completed",
-        imported_at: new Date().toISOString(),
-        total_items: rows.length,
-        matched_items: matchedCount
-      })
-      .eq("id", catalogId)
-
-    return NextResponse.json({
-      success: true,
-      total_items: rows.length,
-      matched_items: matchedCount,
-      created_products: createdCount,
-      match_rate: ((matchedCount / rows.length) * 100).toFixed(1)
-    })
-  } catch (error: any) {
-    console.error("[CATALOG-IMPORT] Error:", error)
-
-    // Update catalog with error
-    const supabase = await createClient({ useServiceRole: true })
-    await supabase
-      .from("supplier_catalogs")
-      .update({
-        import_status: "failed",
-        import_error: error.message
-      })
-      .eq("id", params.id)
-
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  if (catErr || !catalog) {
+    return NextResponse.json({ error: "Catálogo no encontrado" }, { status: 404 })
   }
+
+  // ── If not preview-only, persist mode config on the catalog ───────────────
+  if (!previewOnly) {
+    await supabase.from("supplier_catalogs").update({
+      catalog_mode:   catalogMode,
+      overwrite_mode: overwriteMode,
+      warehouse_id:   warehouseId,
+      import_status:  "processing",
+    }).eq("id", catalogId)
+  }
+
+  // ── Download file ──────────────────────────────────────────────────────────
+  const fileRes = await fetch(catalog.file_url)
+  if (!fileRes.ok) return NextResponse.json({ error: "No se pudo descargar el archivo" }, { status: 502 })
+  const buffer = Buffer.from(await fileRes.arrayBuffer())
+
+  let rawRows: Record<string, any>[]
+  try {
+    rawRows = parseFileBytes(buffer, catalog.file_format ?? "xlsx")
+  } catch (e: any) {
+    return NextResponse.json({ error: `Error al parsear archivo: ${e.message}` }, { status: 400 })
+  }
+
+  // ── Parse rows ─────────────────────────────────────────────────────────────
+  const parsed  = rawRows.map(parseRow)
+  const totalRows = parsed.length
+
+  // Keep only rows with a valid EAN
+  const withEan = parsed.filter(r => r.ean != null)
+  const validEan = withEan.length
+  const skippedInvalid = totalRows - validEan
+
+  // Deduplicate by EAN (keep last occurrence)
+  const byEan = new Map<string, ParsedRow>()
+  for (const r of withEan) byEan.set(r.ean!, r)
+  const uniqueRows = Array.from(byEan.values())
+
+  // ── Load existing products index ───────────────────────────────────────────
+  const { data: existingProducts } = await supabase
+    .from("products")
+    .select("id, ean, isbn, title, author, brand, language, pages, binding, category, description, image_url, price")
+    .or("ean.not.is.null,isbn.not.is.null")
+
+  const eanToProduct = new Map<string, any>()
+  for (const p of existingProducts ?? []) {
+    if (p.ean)  eanToProduct.set(p.ean.replace(/[^0-9]/g, ""),  p)
+    if (p.isbn) eanToProduct.set(p.isbn.replace(/[^0-9]/g, ""), p)
+  }
+
+  // ── Classify rows ──────────────────────────────────────────────────────────
+  const toCreate:  ParsedRow[] = []
+  const toUpdate:  ParsedRow[] = []
+  const toSkip:    ParsedRow[] = []   // new EANs discarded by mode constraints
+  const newDetectedEans: string[] = []
+
+  for (const row of uniqueRows) {
+    const exists = eanToProduct.has(row.ean!)
+    if (exists) {
+      if (catalogMode === "create_only") {
+        toSkip.push(row)
+      } else {
+        toUpdate.push(row)
+      }
+    } else {
+      newDetectedEans.push(row.ean!)
+      if (catalogMode === "update_only") {
+        toSkip.push(row)   // detected but not created
+      } else {
+        // create_only or create_and_update
+        toCreate.push(row)
+      }
+    }
+  }
+
+  // ── Preview mode: return stats without touching DB ─────────────────────────
+  if (previewOnly) {
+    return NextResponse.json({
+      ok:              true,
+      preview:         true,
+      total_rows:      totalRows,
+      valid_ean:       validEan,
+      skipped_invalid: skippedInvalid,
+      existing:        toUpdate.length + (catalogMode === "create_only" ? toSkip.filter(r => eanToProduct.has(r.ean!)).length : 0),
+      to_create:       toCreate.length,
+      to_update:       toUpdate.length,
+      to_skip:         toSkip.length,
+      new_detected:    newDetectedEans.length,
+      new_detected_eans: newDetectedEans.slice(0, 20),   // muestra hasta 20 en preview
+      sample_rows:     uniqueRows.slice(0, 5).map(r => ({
+        ean: r.ean, title: r.title, author: r.author, publisher: r.publisher, price: r.price,
+      })),
+    })
+  }
+
+  // ── APPLY MODE ─────────────────────────────────────────────────────────────
+
+  // Create import run log
+  const { data: runRow } = await supabase
+    .from("supplier_import_runs")
+    .insert({
+      supplier_id:        catalog.supplier_id,
+      catalog_id:         catalogId,
+      feed_kind:          "catalog",
+      catalog_mode:       catalogMode,
+      overwrite_mode:     overwriteMode,
+      warehouse_id:       warehouseId,
+      total_rows:         totalRows,
+      valid_ean:          validEan,
+      new_detected_count: newDetectedEans.length,
+      new_detected_eans:  newDetectedEans.slice(0, 500),
+      status:             "running",
+      started_at:         new Date().toISOString(),
+    })
+    .select("id")
+    .single()
+  const runId = runRow?.id
+
+  let createdCount = 0
+  let updatedCount = 0
+  let errorCount   = 0
+
+  // ── CREATE new products ────────────────────────────────────────────────────
+  if (toCreate.length > 0) {
+    const newProducts = toCreate.map(r => ({
+      ean:         r.ean,
+      isbn:        r.isbn,
+      sku:         r.sku ?? (r.ean ? `EAN-${r.ean}` : null),
+      title:       r.title ?? "Sin título",
+      author:      r.author,
+      brand:       r.publisher,
+      language:    r.language,
+      pages:       r.pages,
+      binding:     r.binding,
+      category:    r.category,
+      price:       r.price,
+      stock:       0,
+      source:      ["supplier_catalog"],
+    }))
+
+    const CHUNK = 200
+    for (let i = 0; i < newProducts.length; i += CHUNK) {
+      const { data: inserted, error: insErr } = await supabase
+        .from("products")
+        .insert(newProducts.slice(i, i + CHUNK))
+        .select("id")
+      if (insErr) { errorCount += newProducts.slice(i, i + CHUNK).length }
+      else { createdCount += inserted?.length ?? 0 }
+    }
+  }
+
+  // ── UPDATE existing products ───────────────────────────────────────────────
+  if (toUpdate.length > 0 && overwriteMode !== "none") {
+    for (const row of toUpdate) {
+      const existing = eanToProduct.get(row.ean!)
+      if (!existing) continue
+
+      // Build update patch respecting overwrite_mode
+      const patch: Record<string, any> = {}
+      const shouldWrite = (field: string, newVal: any) => {
+        if (newVal == null) return false
+        if (overwriteMode === "all") return true
+        if (overwriteMode === "only_empty_fields") {
+          return existing[field] == null || existing[field] === "" || existing[field] === 0
+        }
+        return false
+      }
+
+      if (shouldWrite("title",    row.title))     patch.title     = row.title
+      if (shouldWrite("author",   row.author))    patch.author    = row.author
+      if (shouldWrite("brand",    row.publisher)) patch.brand     = row.publisher
+      if (shouldWrite("language", row.language))  patch.language  = row.language
+      if (shouldWrite("pages",    row.pages))     patch.pages     = row.pages
+      if (shouldWrite("binding",  row.binding))   patch.binding   = row.binding
+      if (shouldWrite("category", row.category))  patch.category  = row.category
+      if (shouldWrite("price",    row.price))     patch.price     = row.price
+      if (row.isbn && shouldWrite("isbn", row.isbn)) patch.isbn   = row.isbn
+
+      if (Object.keys(patch).length === 0) continue
+
+      const { error: upErr } = await supabase
+        .from("products")
+        .update(patch)
+        .eq("id", existing.id)
+
+      if (upErr) errorCount++
+      else updatedCount++
+    }
+  }
+
+  // ── Upsert supplier_catalog_items ─────────────────────────────────────────
+  const itemsToInsert = uniqueRows.map(row => {
+    const existing = eanToProduct.get(row.ean!)
+    return {
+      catalog_id:     catalogId,
+      supplier_id:    catalog.supplier_id,
+      product_id:     existing?.id ?? null,
+      warehouse_id:   warehouseId,
+      supplier_ean:   row.ean,
+      supplier_isbn:  row.isbn,
+      supplier_sku:   row.sku,
+      title:          row.title ?? "",
+      author:         row.author,
+      publisher:      row.publisher,
+      price_original: row.price,
+      stock_quantity: row.stock,
+      matched_by:     existing ? "ean" : null,
+      matched_at:     existing ? new Date().toISOString() : null,
+      match_confidence: existing ? 1.0 : null,
+      raw_data:       row.raw,
+    }
+  })
+
+  const CHUNK = 500
+  for (let i = 0; i < itemsToInsert.length; i += CHUNK) {
+    await supabase.from("supplier_catalog_items").insert(itemsToInsert.slice(i, i + CHUNK))
+  }
+
+  // ── Finalize ───────────────────────────────────────────────────────────────
+  const skippedCount = toSkip.length + skippedInvalid
+
+  await supabase.from("supplier_catalogs").update({
+    import_status: "completed",
+    imported_at:   new Date().toISOString(),
+    total_items:   totalRows,
+    matched_items: toUpdate.length + createdCount,
+  }).eq("id", catalogId)
+
+  if (runId) {
+    await supabase.from("supplier_import_runs").update({
+      status:        "completed",
+      finished_at:   new Date().toISOString(),
+      created_count: createdCount,
+      updated_count: updatedCount,
+      skipped_count: skippedCount,
+      error_count:   errorCount,
+    }).eq("id", runId)
+  }
+
+  return NextResponse.json({
+    ok:            true,
+    total_rows:    totalRows,
+    valid_ean:     validEan,
+    created:       createdCount,
+    updated:       updatedCount,
+    skipped:       skippedCount,
+    errors:        errorCount,
+    new_detected:  newDetectedEans.length,
+    run_id:        runId,
+  })
 }

@@ -185,32 +185,35 @@ export async function POST(request: Request) {
       }
 
       try {
-        // 1) Extraer candidateSku del seller_custom_field
-        let candidateSku = item.seller_custom_field || null
-        
+        // 1) Extraer SKU: seller_custom_field → variations[].seller_custom_field → attributes[SELLER_SKU]
+        let candidateSku: string | null = item.seller_custom_field || null
+
+        if (!candidateSku && Array.isArray(item.variations)) {
+          for (const v of item.variations) {
+            if (v.seller_custom_field) { candidateSku = v.seller_custom_field; break }
+          }
+        }
+
+        if (!candidateSku && Array.isArray(item.attributes)) {
+          const skuAttr = item.attributes.find((a: any) => a.id === "SELLER_SKU")
+          if (skuAttr?.value_name) candidateSku = skuAttr.value_name
+        }
+
         // 2) Extraer candidateGtin desde attributes
-        let candidateGtin = null
-        if (item.attributes && Array.isArray(item.attributes)) {
+        let candidateGtin: string | null = null
+        if (Array.isArray(item.attributes)) {
           const gtinAttr = item.attributes.find((attr: any) => attr.id === "GTIN")
           if (gtinAttr) candidateGtin = gtinAttr.value_name
         }
         
         // También buscar GTIN en variations si no se encontró en attributes
-        if (!candidateGtin && item.variations && item.variations.length > 0) {
+        if (!candidateGtin && Array.isArray(item.variations)) {
           for (const variation of item.variations) {
-            if (variation.attributes && Array.isArray(variation.attributes)) {
+            if (Array.isArray(variation.attributes)) {
               const varGtinAttr = variation.attributes.find((attr: any) => attr.id === "GTIN")
-              if (varGtinAttr) {
-                candidateGtin = varGtinAttr.value_name
-                break
-              }
+              if (varGtinAttr) { candidateGtin = varGtinAttr.value_name; break }
             }
           }
-        }
-        
-        // Si no hay candidateSku en seller_custom_field, buscar en variations
-        if (!candidateSku && item.variations && item.variations.length > 0) {
-          candidateSku = item.variations[0].seller_custom_field || item.variations[0].sku || null
         }
 
         // 3) Normalizar ambos: trim + quitar guiones/espacios + dejar solo dígitos
@@ -261,7 +264,7 @@ export async function POST(request: Request) {
           unmatched++ // No tiene SKU ni GTIN
         }
 
-        // 5) UPSERT en ml_publications con matched_by
+        // 5) UPSERT en ml_publications con matched_by y sku
         await supabase
           .from("ml_publications")
           .upsert({
@@ -269,12 +272,13 @@ export async function POST(request: Request) {
             ml_item_id: item.id,
             product_id,
             matched_by,
-            title: item.title,
-            price: item.price,
+            title:         item.title,
+            price:         item.price,
             current_stock: item.available_quantity,
-            status: item.status,
-            permalink: item.permalink,
-            updated_at: new Date().toISOString()
+            status:        item.status,
+            permalink:     item.permalink,
+            sku:           candidateSku ?? null,
+            updated_at:    new Date().toISOString(),
           }, {
             onConflict: "account_id,ml_item_id"
           })

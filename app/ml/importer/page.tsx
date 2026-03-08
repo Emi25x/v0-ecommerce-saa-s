@@ -84,51 +84,27 @@ export default function MLImporterPage() {
   useEffect(() => {
     if (!autoMode || !selectedAccountId || running) return
 
-    // Si ya completó, apagar auto-mode
-    if (progress && progress.publications_total && progress.publications_offset >= progress.publications_total) {
-      console.log("[v0] Import complete - disabling auto-mode")
-      setAutoMode(false)
-      return
-    }
-
-    // Si status es 'done', apagar auto-mode
+    // Parar solo cuando ML devuelva results vacío (status=done).
+    // NO usar offset >= total: paging.total del scan de ML es estimado y
+    // suele reportar ~1000 aunque el seller tenga más publicaciones.
     if (progress?.status === 'done') {
-      console.log("[v0] Status is done - disabling auto-mode")
       setAutoMode(false)
       return
     }
 
-    console.log("[v0] Auto-mode active - setting up 15s interval (safe for 12-14s runs)")
-    
     const interval = setInterval(() => {
-      console.log("[v0] Auto-mode tick - calling handleRun()")
       handleRun()
-    }, 15000) // 15 segundos para evitar overlapping con corridas de 12-14s
+    }, 15000) // 15s — safe gap for 12-14s server runs, avoids overlap
 
-    return () => {
-      console.log("[v0] Auto-mode cleanup - clearing interval")
-      clearInterval(interval)
-    }
+    return () => clearInterval(interval)
   }, [autoMode, selectedAccountId, running, progress])
 
   const handleRun = async () => {
-    console.log("[v0] handleRun called - selectedAccountId:", selectedAccountId, "running:", running)
-    
-    if (!selectedAccountId) {
-      console.log("[v0] No selectedAccountId, aborting")
-      return
-    }
-    
-    if (running) {
-      console.log("[v0] Already running, skipping this tick")
-      return
-    }
-    
+    if (!selectedAccountId || running) return
+
     setRunning(true)
     const startTime = Date.now()
-    
-    console.log("[v0] Starting import request to /api/ml/import-pro/run")
-    
+
     try {
       const res = await fetch("/api/ml/import-pro/run", {
         method: "POST",
@@ -141,39 +117,15 @@ export default function MLImporterPage() {
         }),
       })
       
-      console.log("[v0] Import request completed with status:", res.status)
-
       const data = await res.json()
       setRunResult(data)
 
-      // Si hay rate limit de DB, pausar auto-mode temporalmente
+      // Si hay rate limit, pausar auto-mode 10s y reanudar
       if (data.rate_limited) {
-        console.log("[v0] Database rate limit detected - pausing auto-mode for 10 seconds")
         setAutoMode(false)
-        setTimeout(() => {
-          console.log("[v0] Resuming auto-mode after rate limit cooldown")
-          setAutoMode(true)
-        }, 10000)
+        setTimeout(() => setAutoMode(true), 10000)
         setRunning(false)
         return
-      }
-
-      // Loggear timings detallados de rendimiento y auto-tuning
-      if (data.timings) {
-        console.log("[v0] PERFORMANCE TIMINGS:")
-        console.log(`  - Fetch IDs: ${data.timings.t_fetch_ids_ms}ms`)
-        console.log(`  - Fetch Details: ${data.timings.t_fetch_details_ms}ms`)
-        console.log(`  - Upsert DB: ${data.timings.t_upsert_ml_publications_ms}ms`)
-        console.log(`  - Update Progress: ${data.timings.t_update_progress_ms}ms`)
-        console.log(`  - TOTAL: ${data.timings.total_ms}ms (${(data.timings.total_ms / 1000).toFixed(1)}s)`)
-        console.log(`  - Items imported: ${data.imported_count || 0}`)
-        console.log(`  - Throughput: ${((data.imported_count || 0) / (data.timings.total_ms / 1000)).toFixed(1)} items/sec`)
-      }
-      
-      if (data.tuning_message) {
-        console.log(`[v0] AUTO-TUNING: ${data.tuning_message}`)
-        console.log(`  - Current batch size: ${data.current_batch_size}`)
-        console.log(`  - Suggested batch size: ${data.suggested_batch_size}`)
       }
 
       // Si hay error detallado de ML API, mostrarlo
@@ -563,13 +515,21 @@ export default function MLImporterPage() {
               </div>
               <Progress value={progress.publications_progress || 0} className="h-2" />
               <p className="text-xs text-muted-foreground mt-1">
-                {(progress.publications_progress || 0).toFixed(1)}% completado
+                {progress.status === "done"
+                  ? `${progress.publications_offset.toLocaleString()} publicaciones importadas (100%)`
+                  : `${(progress.publications_progress || 0).toFixed(1)}% — paginando con scroll cursor`}
               </p>
             </div>
 
-            {progress.last_run_at && (
+            {progress.finished_at && (
               <p className="text-xs text-muted-foreground">
-                Última ejecución: {new Date(progress.last_run_at).toLocaleString()}
+                Importacion completa: {new Date(progress.finished_at).toLocaleString()}
+              </p>
+            )}
+
+            {progress.last_run_at && !progress.finished_at && (
+              <p className="text-xs text-muted-foreground">
+                Ultima ejecucion: {new Date(progress.last_run_at).toLocaleString()}
               </p>
             )}
 

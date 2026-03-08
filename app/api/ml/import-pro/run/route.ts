@@ -8,7 +8,7 @@ export const maxDuration = 60
 // ML API hard limits
 const ML_SCAN_PAGE_SIZE   = 50   // search_type=scan: máximo real permitido
 const ML_MULTIGET_MAX_IDS = 50   // /items?ids=...: máximo 50 por request
-const ML_ATTRIBUTES       = "id,title,price,available_quantity,sold_quantity,status,permalink,thumbnail,listing_type_id,attributes"
+const ML_ATTRIBUTES       = "id,title,price,available_quantity,sold_quantity,status,permalink,thumbnail,listing_type_id,seller_custom_field,attributes,variations,shipping,tags,catalog_listing,catalog_listing_eligible"
 
 // ── Retry con backoff exponencial ────────────────────────────────────────────
 async function fetchWithRetry(
@@ -171,11 +171,13 @@ export async function POST(request: NextRequest) {
     const authHeader   = { Authorization: `Bearer ${accessToken}` }
     const publicationsScope = progress.publications_scope || "all"
 
-    let importedCount  = 0
-    let errorsCount    = 0
-    let rateLimited    = false
-    let hasMore        = true
+    let importedCount   = 0   // filas realmente persistidas en DB en esta corrida
+    let mlSeenCount     = 0   // IDs vistos en ML en esta corrida
+    let errorsCount     = 0
+    let rateLimited     = false
+    let hasMore         = true
     let lastScrollId: string | null = progress.scroll_id || null
+    let consecutiveZeroRuns = 0  // contador de runs consecutivos con 0 items de ML
 
     // ── Loop principal por tiempo ─────────────────────────────────────────────
     while (Date.now() - startTime < max_seconds * 1000) {
@@ -211,6 +213,32 @@ export async function POST(request: NextRequest) {
 
       if (!searchRes || !searchRes.ok) {
         errorsCount++
+        const errStatus = searchRes?.status ?? 0
+        const errBody   = searchRes ? await searchRes.text().catch(() => "") : "no response"
+
+        // 401 = token expirado — renovar y reintentar una vez antes de abortar
+        if (errStatus === 401) {
+          try {
+            const newToken = await getValidAccessToken(accountId)
+            authHeader.Authorization = `Bearer ${newToken}`
+            // Continuar el loop — la próxima iteración usará el token renovado
+            await supabase
+              .from("ml_import_progress")
+              .update({ last_error: "Token ML renovado automáticamente (401)", last_error_at: new Date().toISOString() })
+              .eq("account_id", accountId)
+            continue
+          } catch {
+            // Si la renovación falla, abortar
+          }
+        }
+
+        await supabase
+          .from("ml_import_progress")
+          .update({
+            last_error:    `Search scan falló (HTTP ${errStatus}): ${errBody.slice(0, 300)}`,
+            last_error_at: new Date().toISOString(),
+          })
+          .eq("account_id", accountId)
         break
       }
 
@@ -219,12 +247,106 @@ export async function POST(request: NextRequest) {
       const newScrollId: string | null = searchData.scroll_id || null
       const totalFromApi: number = searchData.paging?.total || 0
 
-      // scan termina cuando results vacío
+      // Acumular IDs vistos en ML (independiente del upsert)
+      mlSeenCount += itemIds.length
+
+      // ── Safety check: si hay 0 items, incrementar contador ──────────────────
+      // Si la cuenta quedó desconectada o el token inválido, ML devuelve []
+      // Si esto ocurre 3 veces seguidas en la misma invocación, es que algo broke
       if (itemIds.length === 0) {
+        consecutiveZeroRuns++
+        if (consecutiveZeroRuns >= 3) {
+          // Algo está severamente roto — fuerza reset total
+          await supabase
+            .from("ml_import_progress")
+            .update({
+              status:                 "idle",
+              scroll_id:              null,
+              publications_offset:    0,
+              publications_total:     0,
+              ml_items_seen_count:    0,
+              db_rows_upserted_count: 0,
+              upsert_errors_count:    0,
+              last_error:             "Detección automática: 3 scans consecutivos sin items. Estado corrupto. Reset total.",
+              last_error_at:          new Date().toISOString(),
+            })
+            .eq("account_id", accountId)
+          break
+        }
+      } else {
+        consecutiveZeroRuns = 0  // Reset el contador si hay items
+      }
+
+      // scan termina cuando results vacío — pero hay que distinguir entre
+      // "terminé de verdad" y "scroll expiró antes de terminar"
+      if (itemIds.length === 0) {
+        // Re-leer contadores acumulados para la verificación de salud
+        const { data: auditRow } = await supabase
+          .from("ml_import_progress")
+          .select("ml_items_seen_count, db_rows_upserted_count, publications_total, publications_offset")
+          .eq("account_id", accountId)
+          .single()
+
+        const totalSeen     = auditRow?.ml_items_seen_count    ?? 0
+        const totalUpserted = auditRow?.db_rows_upserted_count ?? 0
+        const mlTotal       = auditRow?.publications_total ?? totalFromApi ?? 0  // fallback a totalFromApi si es null
+        const currentOffset = auditRow?.publications_offset    ?? 0
+
+        // ── Guardar totalFromApi si mlTotal estaba null ──────────────────────────
+        // Esto asegura que publications_total NUNCA queda en null
+        if (!auditRow?.publications_total && totalFromApi > 0) {
+          await supabase
+            .from("ml_import_progress")
+            .update({ publications_total: totalFromApi })
+            .eq("account_id", accountId)
+        }
+
+        // ── Detectar scroll expirado ──────────────────────────────────────────
+        // Si el total ML conocido es > 0 y solo procesamos < 95% de esas publicaciones,
+        // el scroll probablemente expiró (ML los descarta después de ~10 minutos inactivos).
+        // En ese caso, limpiar el scroll_id para que la próxima invocación
+        // comience un scan nuevo desde el principio — el upsert con onConflict
+        // garantiza que no se duplican registros.
+        const pctCovered = mlTotal > 0 ? (totalSeen / mlTotal) : 1
+        const scrollExpired = mlTotal > 0 && pctCovered < 0.95
+
+        if (scrollExpired) {
+          // Scroll expirado — hacer reset TOTAL: contadores a 0, scroll_id a null,
+          // y también publications_total a 0 para que la próxima corrida recalcule
+          // el total real desde ML (en caso de que esté corrupto)
+          await supabase
+            .from("ml_import_progress")
+            .update({
+              status:                 "idle",
+              scroll_id:              null,
+              publications_offset:    0,
+              publications_total:     0,          // RESET TOTAL: fuerza recálculo
+              ml_items_seen_count:    0,
+              db_rows_upserted_count: 0,
+              upsert_errors_count:    0,
+              last_error:             `Scroll ML expirado al ${Math.round(pctCovered * 100)}% (${totalSeen}/${mlTotal}). Reset total iniciado.`,
+              last_error_at:          new Date().toISOString(),
+            })
+            .eq("account_id", accountId)
+          hasMore = true
+          break
+        }
+
+        // ── Scan completo ─────────────────────────────────────────────────────
         hasMore = false
+
+        // Solo marcar done si persistimos ≥90% de lo visto
+        const upsertHealthy = totalSeen === 0 || (totalUpserted / totalSeen) >= 0.9
+        const finalStatus   = upsertHealthy ? "done" : "scan_complete_pending_verification"
+
         await supabase
           .from("ml_import_progress")
-          .update({ status: "done", scroll_id: null })
+          .update({
+            status:      finalStatus,
+            scroll_id:   null,
+            finished_at: new Date().toISOString(),
+            last_error:  null,
+          })
           .eq("account_id", accountId)
         break
       }
@@ -238,8 +360,8 @@ export async function POST(request: NextRequest) {
           .eq("account_id", accountId)
       }
 
-      // Guardar total si aún no lo tenemos
-      if (!cur.publications_total && totalFromApi > 0) {
+      // Guardar total siempre que ML lo reporte (actualizar si mejoró, nunca bajar a 0)
+      if (totalFromApi > 0 && totalFromApi > (cur.publications_total ?? 0)) {
         await supabase
           .from("ml_import_progress")
           .update({ publications_total: totalFromApi })
@@ -259,11 +381,15 @@ export async function POST(request: NextRequest) {
         const detailsUrl = `https://api.mercadolibre.com/items?ids=${idsParam}&attributes=${ML_ATTRIBUTES}`
         const { res, rateLimited: rl } = await fetchWithRetry(detailsUrl, authHeader)
 
-        if (rl) return { rateLimited: true, items: [] }
-        if (!res || !res.ok) return { rateLimited: false, items: [] }
+        if (rl) return { rateLimited: true, items: [], errorMsg: null }
+        if (!res || !res.ok) {
+          const errStatus = res?.status ?? 0
+          const errBody   = res ? await res.text().catch(() => "") : "no response"
+          return { rateLimited: false, items: [], errorMsg: `multiget HTTP ${errStatus}: ${errBody.slice(0, 200)}` }
+        }
 
         const data = await res.json()
-        return { rateLimited: false, items: Array.isArray(data) ? data : [] }
+        return { rateLimited: false, items: Array.isArray(data) ? data : [], errorMsg: null }
       })
 
       // Ejecutar con pool de concurrencia controlada
@@ -273,10 +399,14 @@ export async function POST(request: NextRequest) {
       const toUpsert: any[] = []
       const now = new Date().toISOString()
 
+      // Recolectar errores de multiget para diagnóstico
+      const multigetErrors: string[] = []
+
       for (const result of multigetResults) {
         if (result.status !== "fulfilled") { errorsCount++; continue }
-        const { rateLimited: batchRl, items } = result.value
+        const { rateLimited: batchRl, items, errorMsg } = result.value
 
+        if (errorMsg) multigetErrors.push(errorMsg)
         if (batchRl) { rateLimited = true; continue }
 
         for (const item of items) {
@@ -287,68 +417,195 @@ export async function POST(request: NextRequest) {
           let isbn: string | null = null
           let gtin: string | null = null
           let ean: string | null = null
+          let weightG: number | null = null
 
-          if (Array.isArray(b.attributes)) {
-            for (const attr of b.attributes) {
-              if (attr.id === "SELLER_SKU") sku  = attr.value_name ?? null
-              if (attr.id === "ISBN")       isbn = attr.value_name ?? null
-              if (attr.id === "GTIN")       gtin = attr.value_name ?? null
-              if (attr.id === "EAN")        ean  = attr.value_name ?? null
+          // ── Helper: extraer atributos de un array genérico de ML ────────────
+          function extractAttrs(attrs: any[]) {
+            for (const attr of attrs) {
+              const val = attr.value_name ?? null
+              if (!val) continue
+              switch (attr.id) {
+                case "SELLER_SKU": if (!sku)  sku  = val; break
+                case "ISBN":       if (!isbn) isbn = val; break
+                // ML usa tanto "GTIN" como "GTIN_CODE" según la categoría
+                case "GTIN":
+                case "GTIN_CODE":  if (!gtin) gtin = val; break
+                case "EAN":        if (!ean)  ean  = val; break
+                case "WEIGHT": {
+                  if (weightG != null) break   // ya tenemos un valor
+                  const vs = attr.value_struct
+                  if (vs?.number != null && isFinite(vs.number) && vs.number > 0) {
+                    const unit = (vs.unit ?? "g").toLowerCase()
+                    weightG = unit === "kg" ? Math.round(vs.number * 1000) : Math.round(vs.number)
+                  } else if (val) {
+                    const m = val.match(/^([\d.]+)\s*(g|kg)?/i)
+                    if (m) {
+                      const n = parseFloat(m[1])
+                      weightG = (m[2] ?? "g").toLowerCase() === "kg"
+                        ? Math.round(n * 1000)
+                        : Math.round(n)
+                    }
+                  }
+                  break
+                }
+              }
             }
           }
 
-          // seller_custom_field is the most reliable SKU source — prefer it
+          // 1. Atributos a nivel item
+          if (Array.isArray(b.attributes)) extractAttrs(b.attributes)
+
+          // 2. seller_custom_field directo en el item — fuente más confiable de SKU
           if (b.seller_custom_field) sku = b.seller_custom_field
 
-          // Also check variations for seller_custom_field if item-level is missing
-          if (!sku && Array.isArray(b.variations) && b.variations.length > 0) {
+          // 3. shipping.dimensions.weight — fuente más precisa de peso
+          const dimW = b?.shipping?.dimensions?.weight
+          if (dimW != null && weightG == null) {
+            const n = typeof dimW === "string" ? parseFloat(dimW) : dimW
+            if (isFinite(n) && n > 0) weightG = Math.round(n)
+          }
+
+          // 4. Variaciones: recorrer para obtener SKU/EAN/ISBN/GTIN faltantes
+          if (Array.isArray(b.variations) && b.variations.length > 0) {
             for (const v of b.variations) {
-              if (v.seller_custom_field) { sku = v.seller_custom_field; break }
+              // seller_custom_field a nivel variación
+              if (!sku && v.seller_custom_field) sku = v.seller_custom_field
+
+              // atributos dentro de cada variación (ISBN, EAN, GTIN pueden estar aquí)
+              if (Array.isArray(v.attributes)) extractAttrs(v.attributes)
+
+              // Si ya tenemos todos los datos buscados no hace falta seguir
+              if (sku && ean && isbn && gtin && weightG != null) break
             }
           }
 
-          // EAN fallback: use GTIN if no dedicated EAN attribute
+          // 5. EAN fallback: usar GTIN si no hay EAN dedicado
           if (!ean && gtin) ean = gtin
 
+          // 6. catalog_listing_eligible: campo top-level OR derivar de tags
+          // ML a veces solo lo expone via tags cuando se usa el multiget con atributos
+          let catalogEligible: boolean = b.catalog_listing_eligible ?? false
+          if (!catalogEligible && Array.isArray(b.tags)) {
+            catalogEligible = b.tags.includes("catalog_listing_eligible")
+          }
+          const catalogListing: boolean = b.catalog_listing ?? false
+
           toUpsert.push({
-            account_id:    accountId,
-            ml_item_id:    b.id,
-            title:         b.title,
-            price:         b.price,
-            current_stock: b.available_quantity ?? 0,
-            status:        b.status,
-            permalink:     b.permalink,
-            sku:           sku,
-            isbn:          isbn,
-            gtin:          gtin,
-            ean:           ean,
-            updated_at:    now,
+            account_id:               accountId,
+            ml_item_id:               b.id,
+            title:                    b.title,
+            price:                    b.price,
+            current_stock:            b.available_quantity ?? 0,
+            status:                   b.status,
+            permalink:                b.permalink,
+            sku,
+            isbn,
+            gtin,
+            ean,
+            catalog_listing:          catalogListing,
+            catalog_listing_eligible: catalogEligible,
+            ...(weightG != null ? { meli_weight_g: weightG } : {}),
+            last_sync_at:             now,
+            updated_at:               now,
           })
         }
       }
 
       // ── Paso 4: Upsert en Supabase (un solo batch) ───────────────────────
+      let batchUpserted = 0  // filas realmente guardadas en DB en este batch
+
+      // Si el multiget falló y no tenemos nada para guardar, registrar el error
+      if (toUpsert.length === 0 && multigetErrors.length > 0) {
+        await supabase
+          .from("ml_import_progress")
+          .update({
+            last_error:    `Multiget falló (${multigetErrors.length} batch/es): ${multigetErrors[0]}`,
+            last_error_at: new Date().toISOString(),
+          })
+          .eq("account_id", accountId)
+      }
+
       if (toUpsert.length > 0) {
-        const { error: upsertError } = await supabase
+        const { error: upsertError, count: upsertCount } = await supabase
           .from("ml_publications")
-          .upsert(toUpsert, { onConflict: "account_id,ml_item_id" })
+          .upsert(toUpsert, { onConflict: "account_id,ml_item_id", count: "exact" })
 
         if (upsertError) {
-          errorsCount++
+          // Upsert falló completamente — no avanzar offset, registrar error claro
+          errorsCount += toUpsert.length
           await supabase
             .from("ml_import_progress")
-            .update({ last_error: `Upsert: ${upsertError.message}` })
+            .update({
+              last_error:    `Upsert falló (${toUpsert.length} filas no guardadas): ${upsertError.message}`,
+              last_error_at: new Date().toISOString(),
+            })
             .eq("account_id", accountId)
+          // batchUpserted queda en 0 — offset NO avanza
         } else {
-          importedCount += toUpsert.length
+          // Usar el count real devuelto por Supabase cuando está disponible.
+          // Si count es null (driver no lo soporta), usar toUpsert.length como fallback
+          // ya que la ausencia de error significa que todas las filas se procesaron.
+          batchUpserted  = upsertCount ?? toUpsert.length
+          importedCount += batchUpserted
+
+          // Si el count real es menor que lo enviado, registrar la discrepancia
+          if (upsertCount !== null && upsertCount < toUpsert.length) {
+            const missing = toUpsert.length - upsertCount
+            errorsCount += missing
+            await supabase
+              .from("ml_import_progress")
+              .update({
+                last_error:    `Upsert parcial: ${upsertCount}/${toUpsert.length} filas guardadas (${missing} sin confirmar)`,
+                last_error_at: new Date().toISOString(),
+              })
+              .eq("account_id", accountId)
+          }
         }
       }
 
-      // Actualizar offset
-      const newOffset = offset + itemIds.length
+      // Actualizar offset SOLO con las filas realmente persistidas en DB
+      // Si el upsert falló, batchUpserted = 0 y el offset no avanza
+      const newOffset = offset + batchUpserted
+
+      // Re-leer los contadores acumulados para incrementar correctamente
+      // (el loop puede ejecutar múltiples iteraciones con el mismo `progress` snapshot)
+      const { data: curCounts } = await supabase
+        .from("ml_import_progress")
+        .select("upsert_new_count, fetched_count, discovered_count, request_count, ml_items_seen_count, db_rows_upserted_count, upsert_errors_count")
+        .eq("account_id", accountId)
+        .single()
+
+      // filas enviadas al upsert que NO quedaron confirmadas en DB
+      const batchErrors = Math.max(0, toUpsert.length - batchUpserted)
+
+      const progressUpdate: Record<string, any> = {
+        publications_offset:    newOffset,
+        upsert_new_count:       (curCounts?.upsert_new_count    ?? 0) + batchUpserted,
+        fetched_count:          (curCounts?.fetched_count       ?? 0) + toUpsert.length,
+        discovered_count:       (curCounts?.discovered_count    ?? 0) + itemIds.length,
+        request_count:          (curCounts?.request_count       ?? 0) + 1,
+        // audit columns — track seen vs actually persisted
+        ml_items_seen_count:    (curCounts?.ml_items_seen_count    ?? 0) + itemIds.length,
+        db_rows_upserted_count: (curCounts?.db_rows_upserted_count ?? 0) + batchUpserted,
+        upsert_errors_count:    (curCounts?.upsert_errors_count    ?? 0) + batchErrors,
+        last_sync_batch_at:     new Date().toISOString(),
+      }
+
+      // Si el batch fue exitoso y sin errores, limpiar el último error
+      if (batchErrors === 0 && toUpsert.length > 0) {
+        progressUpdate.last_error    = null
+        progressUpdate.last_error_at = null
+      }
+
+      // IMPORTANTE: preservar publications_total si ya tiene un valor válido
+      // NUNCA guardar null — usar el snapshot previo si no se actualizó en este batch
+      if (!progressUpdate.publications_total && progress.publications_total) {
+        progressUpdate.publications_total = progress.publications_total
+      }
+
       await supabase
         .from("ml_import_progress")
-        .update({ publications_offset: newOffset })
+        .update(progressUpdate)
         .eq("account_id", accountId)
 
       if (rateLimited) break
@@ -377,14 +634,29 @@ export async function POST(request: NextRequest) {
 
     const elapsed_ms = Date.now() - startTime
 
+    // Leer contadores finales para la respuesta
+    const { data: finalCounts } = await supabase
+      .from("ml_import_progress")
+      .select("ml_items_seen_count, db_rows_upserted_count, upsert_errors_count, publications_total")
+      .eq("account_id", accountId)
+      .single()
+
     return NextResponse.json({
-      ok:             true,
-      imported_count: importedCount,
+      ok:                     true,
+      imported_count:         importedCount,                           // filas persistidas en esta corrida
+      ml_items_seen_count:    mlSeenCount,                             // IDs vistos en ML en esta corrida
+      db_rows_upserted:       importedCount,
+      // totales acumulados en DB
+      total_seen:             finalCounts?.ml_items_seen_count    ?? 0,
+      total_upserted:         finalCounts?.db_rows_upserted_count ?? 0,
+      total_upsert_errors:    finalCounts?.upsert_errors_count    ?? 0,
+      ml_total:               finalCounts?.publications_total     ?? 0,
+      db_gap:                 (finalCounts?.publications_total ?? 0) - (finalCounts?.db_rows_upserted_count ?? 0),
       elapsed_ms,
-      has_more:       hasMore && !isDone,
-      last_scroll_id: finalScrollId,
-      errors_count:   errorsCount,
-      rate_limited:   rateLimited,
+      has_more:               hasMore && !isDone,
+      last_scroll_id:         finalScrollId,
+      errors_count:           errorsCount,
+      rate_limited:           rateLimited,
     })
 
   } catch (error: any) {

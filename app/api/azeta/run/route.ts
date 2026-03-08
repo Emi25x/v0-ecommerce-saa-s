@@ -106,7 +106,7 @@ export async function POST(_request: NextRequest) {
       titulo:    hasHeader ? headers.findIndex(h => ["titulo","title"].includes(h)) : -1,
       autor:     hasHeader ? headers.findIndex(h => ["autor","author"].includes(h)) : -1,
       editorial: hasHeader ? headers.findIndex(h => ["editorial","publisher"].includes(h)) : -1,
-      pvp:       hasHeader ? headers.findIndex(h => ["pvp","precio","precio_sin_iva"].includes(h)) : -1,
+      pvp:       hasHeader ? headers.findIndex(h => ["pvp","precio","precio_sin_iva","precio s/iva"].includes(h)) : -1,
       idioma:    hasHeader ? headers.findIndex(h => ["idioma","language"].includes(h)) : -1,
       sinopsis:  hasHeader ? headers.findIndex(h => h.includes("sinopsis") || h === "descripcion") : -1,
       url:       hasHeader ? headers.findIndex(h => ["url","imagen","portada"].includes(h)) : -1,
@@ -116,6 +116,22 @@ export async function POST(_request: NextRequest) {
 
     if (colIdx.ean < 0) {
       return NextResponse.json({ error: `Columna EAN no encontrada. Headers: ${headers.slice(0,10).join(",")}` }, { status: 500 })
+    }
+
+    // Leer discount rate configurado en import_sources para AZETA
+    // Si no hay valor, usar 0 (costo = PVP sin descuento — se loguea warning)
+    const supabase = createAdminClient()
+    const { data: azetaSource } = await supabase
+      .from("import_sources")
+      .select("default_discount_rate")
+      .ilike("name", "azeta%")
+      .limit(1)
+      .maybeSingle()
+    const discountRate: number = (azetaSource as any)?.default_discount_rate ?? null
+    if (discountRate === null) {
+      console.warn("[AZETA][RUN] default_discount_rate no configurado en import_sources para AZETA — cost_price = PVP (sin descuento)")
+    } else {
+      console.log(`[AZETA][RUN] discount_rate=${discountRate} → cost_price = PVP * ${(1 - discountRate).toFixed(4)}`)
     }
 
     const lines = csvText.split("\n")
@@ -131,12 +147,19 @@ export async function POST(_request: NextRequest) {
       if (!ean || ean.length !== 13) { discarded++; continue }
       const col = (ci: number) => ci >= 0 && cols[ci] ? cols[ci].replace(/['"]/g, "").trim() || null : null
       const priceStr = col(colIdx.pvp)
+      const pvpRaw   = priceStr ? parseFloat(priceStr.replace(",", ".")) || null : null
+      // cost_price = PVP * (1 - discount_rate)
+      // Si discount_rate es null, usamos PVP directamente (sin descuento)
+      const costPrice = pvpRaw != null
+        ? (discountRate != null ? Math.round(pvpRaw * (1 - discountRate) * 10000) / 10000 : pvpRaw)
+        : null
       productMap.set(ean, {
         sku: ean, ean,
         title:         col(colIdx.titulo),
         author:        col(colIdx.autor),
         brand:         col(colIdx.editorial),
-        cost_price:    priceStr ? parseFloat(priceStr.replace(",", ".")) || null : null,
+        pvp_editorial: pvpRaw,      // guardar PVP original siempre
+        cost_price:    costPrice,   // costo calculado con descuento
         language:      col(colIdx.idioma),
         description:   col(colIdx.sinopsis),
         image_url:     col(colIdx.url),
@@ -148,7 +171,6 @@ export async function POST(_request: NextRequest) {
     const products = Array.from(productMap.values())
     console.log(`[AZETA][IMPORT] validos=${products.length} descartados=${discarded}`)
 
-    const supabase = createAdminClient()
     const allEans = products.map(p => p.ean)
     const existingSet = new Set<string>()
     for (let i = 0; i < allEans.length; i += 5000) {

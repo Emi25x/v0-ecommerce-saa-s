@@ -10,6 +10,7 @@ const VALID_TYPES = [
   "catalog_optin",
   "buybox_sync",
   "price_update",
+  "pause_item",
 ]
 
 export async function POST(request: NextRequest) {
