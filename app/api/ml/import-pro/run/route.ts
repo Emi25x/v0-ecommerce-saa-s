@@ -402,12 +402,25 @@ export async function POST(request: NextRequest) {
       // Recolectar errores de multiget para diagnóstico
       const multigetErrors: string[] = []
 
+      console.log(`[v0] Batch multiget: itemIds.length=${itemIds.length}, batches=${batches.length}, results=${multigetResults.length}`)
+
       for (const result of multigetResults) {
-        if (result.status !== "fulfilled") { errorsCount++; continue }
+        if (result.status !== "fulfilled") { 
+          errorsCount++
+          console.log(`[v0] Multiget task rejected: ${result.reason}`)
+          continue 
+        }
         const { rateLimited: batchRl, items, errorMsg } = result.value
 
-        if (errorMsg) multigetErrors.push(errorMsg)
-        if (batchRl) { rateLimited = true; continue }
+        if (errorMsg) {
+          multigetErrors.push(errorMsg)
+          console.log(`[v0] Multiget error: ${errorMsg}`)
+        }
+        if (batchRl) { 
+          rateLimited = true
+          console.log(`[v0] Rate limited en batch de multiget`)
+          continue 
+        }
 
         for (const item of items) {
           const b = item.body
@@ -514,6 +527,22 @@ export async function POST(request: NextRequest) {
       // ── Paso 4: Upsert en Supabase (un solo batch) ───────────────────────
       let batchUpserted = 0  // filas realmente guardadas en DB en este batch
 
+      // Diagnóstico: si teníamos itemIds pero no tenemos nada para guardar
+      if (itemIds.length > 0 && toUpsert.length === 0) {
+        console.warn(`[v0] DIAGNÓSTICO: itemIds.length=${itemIds.length}, pero toUpsert.length=0. Batch sin items hidratados.`)
+        console.warn(`[v0] multigetErrors.length=${multigetErrors.length}, multigetResults.length=${multigetResults.length}`)
+        console.warn(`[v0] Posibles causas: ML API devolvió items vacíos, o todos los items fueron filtrados.`)
+        
+        // Registrar warning en BD
+        await supabase
+          .from("ml_import_progress")
+          .update({
+            last_error:    `Batch sin items hidratados: vimos ${itemIds.length} IDs pero no se persistió ninguno. Errores multiget: ${multigetErrors.length}`,
+            last_error_at: new Date().toISOString(),
+          })
+          .eq("account_id", accountId)
+      }
+
       // Si el multiget falló y no tenemos nada para guardar, registrar el error
       if (toUpsert.length === 0 && multigetErrors.length > 0) {
         await supabase
@@ -526,13 +555,18 @@ export async function POST(request: NextRequest) {
       }
 
       if (toUpsert.length > 0) {
+        console.log(`[v0] Upsertando ${toUpsert.length} items a DB...`)
         const { error: upsertError, count: upsertCount } = await supabase
           .from("ml_publications")
           .upsert(toUpsert, { onConflict: "account_id,ml_item_id", count: "exact" })
 
+        batchUpserted = upsertCount ?? toUpsert.length
+        console.log(`[v0] Upsert completado: ${batchUpserted} filas afectadas`)
+
         if (upsertError) {
           // Upsert falló completamente — no avanzar offset, registrar error claro
           errorsCount += toUpsert.length
+          console.error(`[v0] ERROR en upsert:`, upsertError.message)
           await supabase
             .from("ml_import_progress")
             .update({
@@ -590,6 +624,9 @@ export async function POST(request: NextRequest) {
         upsert_errors_count:    (curCounts?.upsert_errors_count    ?? 0) + batchErrors,
         last_sync_batch_at:     new Date().toISOString(),
       }
+
+      // Log consolidado del batch
+      console.log(`[v0] Batch completado: itemIds=${itemIds.length}, toUpsert=${toUpsert.length}, batchUpserted=${batchUpserted}, batchErrors=${batchErrors}, multigetErrors=${multigetErrors.length}`)
 
       // Si el batch fue exitoso y sin errores, limpiar el último error
       if (batchErrors === 0 && toUpsert.length > 0) {
@@ -666,6 +703,9 @@ export async function POST(request: NextRequest) {
         // No bloqueamos el import si falla el matcher
       }
     }
+
+    // Log final consolidado
+    console.log(`[v0] import-pro FINAL: imported=${importedCount}, seen=${mlSeenCount}, total_seen=${finalCounts?.ml_items_seen_count ?? 0}, total_upserted=${finalCounts?.db_rows_upserted_count ?? 0}, errors=${errorsCount}, rate_limited=${rateLimited}, has_more=${hasMore && !isDone}`)
 
     return NextResponse.json({
       ok:                     true,

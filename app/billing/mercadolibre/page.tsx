@@ -250,8 +250,8 @@ export default function MLBillingPage() {
       const res  = await fetch(`/api/billing/ml-ventas?${params}`)
       const data = await res.json()
       if (!res.ok || !data.ok) { setError(data.error || "Error cargando órdenes"); return }
-      setOrders(data.orders)
-      setTotal(data.total)
+        setOrders(data.orders)
+        setTotal(data.totalAfterFilters || data.total)  // Usar total DESPUÉS de filtros, no antes
     } finally {
       setLoading(false)
     }
@@ -318,6 +318,7 @@ export default function MLBillingPage() {
             receptor_nombre:        nombre,
             receptor_condicion_iva: tipoDoc === 80 ? "responsable_inscripto" : "consumidor_final",
             orden_id:               String(order.id),
+            account_id:             activeAccount,  // ← Ahora sí se envía, para que ml-order-billing funcione
             origen:                 "ml",
             billing_info_snapshot:  billingData ?? null,
             items: order.items.map(i => ({

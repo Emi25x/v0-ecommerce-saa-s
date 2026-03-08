@@ -18,6 +18,11 @@ export async function GET(req: NextRequest) {
   const fecha_hasta  = searchParams.get("fecha_hasta") || ""
   const page         = parseInt(searchParams.get("page") || "1")
   const limit        = parseInt(searchParams.get("limit") || "50")
+  
+  // ── IMPORTANTE: Traer MÁS filas de ML para compensar los que se filtran después ──
+  // Los filtros estado_envio y facturado se aplican DESPUÉS, por lo que podemos
+  // terminar con menos filas que el limit solicitado. Traer 3x para tener margen.
+  const mlLimit      = Math.min(limit * 3, 250)  // máx 250 para no exceder timeout
   const offset       = (page - 1) * limit
 
   const { data: mlAccount } = await supabase
@@ -34,9 +39,10 @@ export async function GET(req: NextRequest) {
   const mlUserId = mlAccount.ml_user_id
 
   // Paso 1: /orders/search — devuelve buyer: { id, nickname }
+  // Traer mlLimit filas en lugar de limit para compensar los filtros posteriores
   const mlParams = new URLSearchParams({
     seller: mlUserId,
-    limit:  String(limit),
+    limit:  String(mlLimit),
     offset: String(offset),
     sort:   "date_desc",
   })
@@ -117,16 +123,26 @@ export async function GET(req: NextRequest) {
     }
   })
 
-  // Filtros client-side (solo envío y facturación — estado y fecha van a ML)
+  // ── IMPORTANTE: Aplicar filtros CLIENT-SIDE pero SOLO después de informar el total de ML ──
+  // Los filtros estado_envio y facturado se aplican DESPUÉS de la paginación de ML
+  // Esto es correcto porque ML no expone estos campos en /orders/search
+  // Pero necesitamos que el usuario sepa que faltan resultados
+  const totalBeforeFilters = enriched.length
+  
   if (estado_envio && estado_envio !== "all") enriched = enriched.filter(o => o.envio_status === estado_envio)
   if (facturado === "si") enriched = enriched.filter(o => o.facturada)
   if (facturado === "no") enriched = enriched.filter(o => !o.facturada)
 
+  const totalAfterFilters = enriched.length
+
   return NextResponse.json({
-    ok:      true,
-    orders:  enriched,
-    total:   mlTotal,
-    account: { id: account_id, ml_user_id: mlUserId, nickname: mlAccount.nickname },
+    ok:                   true,
+    orders:               enriched,
+    total:                mlTotal,          // Total de ML (sin filtros cliente)
+    totalBeforeFilters:   totalBeforeFilters, // Después de paginación de ML pero antes de filtros cliente
+    totalAfterFilters:    totalAfterFilters,  // Después de aplicar todos los filtros
+    filteredOut:          totalBeforeFilters - totalAfterFilters,
+    account:              { id: account_id, ml_user_id: mlUserId, nickname: mlAccount.nickname },
   })
 }
 
