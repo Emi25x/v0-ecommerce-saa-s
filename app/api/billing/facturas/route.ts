@@ -66,7 +66,10 @@ export async function POST(request: Request) {
 
     if (orden_id && bodyAccountId) {
       try {
-        const billingUrl = `${process.env.APP_URL || "http://localhost:3000"}/api/billing/ml-order-billing?account_id=${bodyAccountId}&order_id=${orden_id}`
+        const baseUrl    = process.env.NEXT_PUBLIC_VERCEL_URL
+          ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
+          : "http://localhost:3000"
+        const billingUrl = `${baseUrl}/api/billing/ml-order-billing?account_id=${bodyAccountId}&order_id=${orden_id}`
         const billingRes = await fetch(billingUrl, {
           headers: { cookie: request.headers.get("cookie") || "" },
           signal:  AbortSignal.timeout(8000),
