@@ -29,21 +29,49 @@ export async function POST(request: NextRequest) {
       .eq("is_active", true)
       .single()
 
-    if (!source) return NextResponse.json({ error: "Arnoia Stock source not found or inactive" }, { status: 400 })
+    if (!source) {
+      console.error("[ARNOIA-STOCK] Source not found: searched with ilike '%arnoia%stock%' and is_active=true")
+      return NextResponse.json({ error: "Arnoia Stock source not found or inactive" }, { status: 400 })
+    }
 
     const credentials = source.credentials as any
     const url = credentials?.url || source.url_template
-    if (!url) return NextResponse.json({ error: "URL not configured" }, { status: 400 })
+    if (!url) {
+      console.error("[ARNOIA-STOCK] URL not configured. source:", { id: source.id, name: source.name, credentials: credentials ? Object.keys(credentials) : null })
+      return NextResponse.json({ error: "URL not configured for Arnoia Stock source" }, { status: 400 })
+    }
 
     // Descargar CSV
     console.log("[ARNOIA-STOCK] Fetching from:", url)
-    const fetchRes = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 compatible" },
-    })
-    if (!fetchRes.ok) throw new Error(`HTTP ${fetchRes.status} fetching stock CSV`)
+    
+    // Timeout de 60 segundos para el fetch del CSV
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 60000)
+    
+    let fetchRes: Response
+    try {
+      fetchRes = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0 compatible" },
+        signal: controller.signal,
+      })
+    } catch (fetchErr: any) {
+      clearTimeout(timeoutId)
+      const msg = fetchErr.name === "AbortError" ? "Timeout descargando CSV (60s)" : fetchErr.message
+      console.error("[ARNOIA-STOCK] Fetch error:", msg)
+      throw new Error(msg)
+    }
+    clearTimeout(timeoutId)
+    
+    if (!fetchRes.ok) {
+      const errorText = await fetchRes.text().catch(() => "")
+      console.error("[ARNOIA-STOCK] HTTP error:", fetchRes.status, errorText.substring(0, 200))
+      throw new Error(`HTTP ${fetchRes.status} fetching stock CSV: ${errorText.substring(0, 100)}`)
+    }
+    
     const csvText = await fetchRes.text()
 
     // Parsear CSV con PapaParse (autodetectar delimiter)
+    console.log(`[ARNOIA-STOCK] Parsing CSV (size: ${(csvText.length / 1024 / 1024).toFixed(2)}MB)...`)
     const parsed = Papa.parse(csvText, {
       header: true,
       skipEmptyLines: true,
