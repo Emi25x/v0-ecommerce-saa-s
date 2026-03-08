@@ -69,30 +69,51 @@ interface Warehouse {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const DEFAULT_COLUMNS = [
-  "Handle",
-  "Title",
-  "Body (HTML)",
-  "Vendor",
-  "Type",
-  "Tags",
-  "Published",
-  "Variant SKU",
-  "Variant Grams",
-  "Variant Inventory Qty",
-  "Variant Price",
-  "Variant Barcode",
-  "Image Src",
-  "Image Position",
-  "SEO Title",
-  "SEO Description",
+// Canonical 78-column Shopify products import format
+const SHOPIFY_COLUMNS = [
+  "Handle", "Title", "Body (HTML)", "Vendor", "Product Category", "Type", "Tags", "Published",
+  "Option1 Name", "Option1 Value", "Option2 Name", "Option2 Value", "Option3 Name", "Option3 Value",
+  "Variant SKU", "Variant Grams", "Variant Inventory Tracker", "Variant Inventory Qty",
+  "Variant Inventory Policy", "Variant Fulfillment Service", "Variant Price", "Variant Compare At Price",
+  "Variant Requires Shipping", "Variant Taxable", "Variant Barcode",
+  "Image Src", "Image Position", "Image Alt Text", "Gift Card",
+  "SEO Title", "SEO Description",
+  "Google Shopping / Google Product Category", "Google Shopping / Gender",
+  "Google Shopping / Age Group", "Google Shopping / MPN", "Google Shopping / AdWords Grouping",
+  "Google Shopping / AdWords Labels", "Google Shopping / Condition", "Google Shopping / Custom Product",
+  "Google Shopping / Custom Label 0", "Google Shopping / Custom Label 1", "Google Shopping / Custom Label 2",
+  "Google Shopping / Custom Label 3", "Google Shopping / Custom Label 4",
+  "Variant Image", "Variant Weight Unit", "Variant Tax Code", "Cost per item",
+  "Included / Argentina", "Price / Argentina", "Compare At Price / Argentina",
+  "Included / International", "Price / International", "Compare At Price / International",
+  "Status",
+  "Metafield: custom.autor [single_line_text_field]",
+  "Metafield: custom.editorial [single_line_text_field]",
+  "Metafield: custom.idioma [single_line_text_field]",
+  "Metafield: custom.isbn [single_line_text_field]",
+  "Metafield: custom.tematica [single_line_text_field]",
+  "Metafield: custom.tematica_especifica [single_line_text_field]",
+  "Metafield: custom.paginas [number_integer]",
+  "Metafield: custom.encuadernacion [single_line_text_field]",
+  "Metafield: custom.anio_edicion [single_line_text_field]",
+  "Metafield: custom.alto_mm [number_integer]",
+  "Metafield: custom.ancho_mm [number_integer]",
+  "Metafield: custom.espesor_mm [number_integer]",
+  "Metafield: custom.peso_g [number_integer]",
+  "Metafield: custom.condicion [single_line_text_field]",
+  "Metafield: custom.codigo_ibic [single_line_text_field]",
+  "Metafield: custom.ean [single_line_text_field]",
+  "Metafield: custom.materia [single_line_text_field]",
+  "Metafield: custom.curso [single_line_text_field]",
 ]
+
+const DEFAULT_COLUMNS = SHOPIFY_COLUMNS
 
 const DEFAULT_DEFAULTS: Record<string, string> = {
   Vendor: "",
-  Tags: "",
   Published: "TRUE",
   Type: "",
+  Status: "active",
 }
 
 // ─── Main page ────────────────────────────────────────────────────────────────
@@ -403,6 +424,18 @@ export default function ShopifyConfigPage() {
                 Subir XLSX
               </Button>
               <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setColumns(SHOPIFY_COLUMNS)
+                  toast({ title: "Columnas restauradas", description: `${SHOPIFY_COLUMNS.length} columnas Shopify cargadas` })
+                }}
+                disabled={!storeId}
+              >
+                <FileSpreadsheet className="h-3.5 w-3.5 mr-1.5" />
+                {SHOPIFY_COLUMNS.length} cols Shopify
+              </Button>
+              <Button
                 size="sm"
                 onClick={saveTemplate}
                 disabled={!storeId || templateSaving}
@@ -441,14 +474,21 @@ export default function ShopifyConfigPage() {
           {/* Defaults */}
           <div className="space-y-3">
             <Label className="text-xs text-muted-foreground uppercase tracking-wider">Valores por defecto</Label>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {["Vendor", "Tags", "Published", "Type"].map((key) => (
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+              {[
+                { key: "Vendor",           placeholder: "Ej: Editorial Anaya" },
+                { key: "Type",             placeholder: "Ej: Libro" },
+                { key: "Published",        placeholder: "TRUE" },
+                { key: "Status",           placeholder: "active" },
+                { key: "Product Category", placeholder: "Ej: Media > Books" },
+                { key: "Variant Taxable",  placeholder: "TRUE" },
+              ].map(({ key, placeholder }) => (
                 <div key={key} className="space-y-1">
                   <Label className="text-xs text-muted-foreground">{key}</Label>
                   <Input
                     value={defaults[key] ?? ""}
                     onChange={(e) => setDefaults((prev) => ({ ...prev, [key]: e.target.value }))}
-                    placeholder={key === "Published" ? "TRUE" : key.toLowerCase()}
+                    placeholder={placeholder}
                     className="h-8 text-sm"
                   />
                 </div>

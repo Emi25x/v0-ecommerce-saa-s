@@ -47,13 +47,81 @@ export async function POST(request: Request) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const body = await request.json()
-    const {
+    let {
       tipo_comprobante, concepto,
       tipo_doc_receptor, nro_doc_receptor, receptor_nombre, receptor_domicilio, receptor_condicion_iva,
       items, moneda, orden_id,
+      origen,                  // "ml" | "manual" | undefined — mapea a columna `origen`
+      billing_info_snapshot,   // raw billing_info de ML para auditoría
+      account_id: bodyAccountId,
     } = body
 
     if (!items?.length) return NextResponse.json({ error: "La factura debe tener al menos un ítem" }, { status: 400 })
+
+    // ── Auto-enrich datos fiscales desde ML si viene orden_id ────────────────
+    // Se ejecuta siempre que haya orden_id + account_id, independientemente de
+    // lo que mandó el frontend. El resultado de /billing_info es la fuente
+    // primaria; los valores del frontend solo se usan como último fallback.
+    let billing_info_warning: string | null = null
+
+    if (orden_id && bodyAccountId) {
+      try {
+        const billingUrl = `${process.env.APP_URL || "http://localhost:3000"}/api/billing/ml-order-billing?account_id=${bodyAccountId}&order_id=${orden_id}`
+        const billingRes = await fetch(billingUrl, {
+          headers: { cookie: request.headers.get("cookie") || "" },
+          signal:  AbortSignal.timeout(8000),
+        })
+
+        if (billingRes.ok) {
+          const bi = await billingRes.json()
+
+          if (bi.ok) {
+            // Guardar solo los campos fiscales en el snapshot (sin metadatos del endpoint)
+            billing_info_snapshot = {
+              nombre:        bi.nombre,
+              doc_tipo:      bi.doc_tipo,
+              doc_numero:    bi.doc_numero,
+              condicion_iva: bi.condicion_iva,
+              direccion:     bi.direccion,
+              missing:       bi.billing_info_missing ?? false,
+            }
+
+            if (!bi.billing_info_missing) {
+              // Datos fiscales reales — sobrescriben siempre el input del frontend
+              // porque /billing_info es la fuente de verdad fiscal de ML.
+              receptor_nombre        = bi.nombre        || receptor_nombre
+              receptor_domicilio     = bi.direccion     || receptor_domicilio     || null
+              receptor_condicion_iva = bi.condicion_iva || receptor_condicion_iva || "consumidor_final"
+
+              // doc_tipo → tipo_doc_receptor numérico (ARCA: 80=CUIT, 86=CUIL, 96=DNI, 99=sin identificar)
+              if (bi.doc_numero) {
+                const docTipoRaw = (bi.doc_tipo || "").toUpperCase().trim()
+                tipo_doc_receptor = docTipoRaw === "CUIT" ? "80"
+                  : docTipoRaw === "CUIL"                 ? "86"
+                  : docTipoRaw === "DNI"                  ? "96"
+                  : docTipoRaw === "CI"                   ? "96"
+                  : "96"   // default: DNI si hay número pero tipo desconocido
+                nro_doc_receptor  = String(bi.doc_numero).replace(/\D/g, "")
+              }
+            } else {
+              // billing_info_missing: ML no tiene datos fiscales del comprador.
+              // Permitir consumidor final con warning — no bloquear la factura.
+              billing_info_warning  = "billing_info_missing: se emite como Consumidor Final"
+              receptor_nombre       = receptor_nombre       || "Consumidor Final"
+              tipo_doc_receptor     = tipo_doc_receptor     || "99"
+              nro_doc_receptor      = nro_doc_receptor      || "0"
+              receptor_condicion_iva = receptor_condicion_iva || "consumidor_final"
+            }
+          }
+        }
+      } catch {
+        // Si el fetch falla, continuar con los datos que mandó el frontend.
+        // No bloquear la emisión — el operador puede haber ingresado los datos manualmente.
+        billing_info_warning = "billing_info_fetch_failed: se usan los datos del formulario"
+      }
+    }
+
+    // Último fallback: si no hay nombre (sin orden ML y sin datos del frontend)
     if (!receptor_nombre) return NextResponse.json({ error: "Nombre del receptor requerido" }, { status: 400 })
 
     // empresa_id puede venir en el body o tomamos la primera del usuario
@@ -147,6 +215,8 @@ export async function POST(request: Request) {
         items,
         estado:                "emitida",
         orden_id:              orden_id || null,
+        origen:                origen || (orden_id ? "ml" : "manual"),
+        billing_info_snapshot: billing_info_snapshot || null,
         fecha:                 new Date().toISOString().slice(0, 10),
         concepto:              concepto || 1,
       })
@@ -155,7 +225,11 @@ export async function POST(request: Request) {
 
     if (saveErr) throw saveErr
 
-    return NextResponse.json({ ok: true, factura })
+    return NextResponse.json({
+      ok: true,
+      factura,
+      ...(billing_info_warning ? { warning: billing_info_warning } : {}),
+    })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

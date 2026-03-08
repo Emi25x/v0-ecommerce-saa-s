@@ -39,6 +39,9 @@ import {
   Zap,
   RotateCcw,
   Scale,
+  Tag,
+  ScanLine,
+  AlertCircle,
 } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
@@ -101,8 +104,11 @@ interface Publication {
   isbn: string | null
   gtin: string | null
   catalog_listing_eligible: boolean | null
+  catalog_listing: boolean | null
   product_id: string | null
   permalink: string | null
+  meli_weight_g: number | null
+  last_sync_at: string | null
   updated_at: string
 }
 
@@ -112,12 +118,13 @@ interface Account {
 }
 
 interface Counts {
-  total: number
-  active: number
-  paused: number
-  closed: number
-  sin_producto: number
-  sin_stock: number
+  total:            number
+  active:           number
+  paused:           number
+  closed:           number
+  sin_producto:     number
+  sin_stock:        number
+  eligible_catalog: number
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -132,11 +139,28 @@ export default function MLPublicationsPage() {
   const [sinProducto, setSinProducto]     = useState(false)
   const [soloElegibles, setSoloElegibles] = useState(false)
   const [sinStock, setSinStock]           = useState(false)
+  const [stockFirst, setStockFirst]       = useState(false)
   const [importProgress, setImportProgress] = useState<{
     status: string
+    publications_scope: string | null
     publications_offset: number
     publications_total: number | null
+    discovered_count: number | null
+    fetched_count: number | null
+    upsert_new_count: number | null
+    failed_count: number | null
+    last_error: string | null
+    last_error_at: string | null
+    last_run_at: string | null
+    last_sync_batch_at: string | null
+    finished_at: string | null
+    updated_at: string | null
+    // audit columns
+    ml_items_seen_count: number | null
+    db_rows_upserted_count: number | null
+    upsert_errors_count: number | null
   } | null>(null)
+  const [syncingML, setSyncingML]           = useState(false)
   const [page, setPage]                   = useState(0)
   const [rows, setRows]                   = useState<Publication[]>([])
   const [total, setTotal]                 = useState(0)
@@ -148,6 +172,11 @@ export default function MLPublicationsPage() {
   const [countsLoading, setCountsLoading] = useState(false)
   const [enqueueing, setEnqueueing]       = useState<string | null>(null) // tracks "itemId:type"
   const [weightSync, setWeightSync]       = useState<{ loading: boolean; result: { updated: number; missing: number; processed: number } | null }>({ loading: false, result: null })
+  const [skuBackfill, setSkuBackfill]     = useState<{ loading: boolean; result: { updated: number; skipped: number; processed: number } | null }>({ loading: false, result: null })
+  const [verifying, setVerifying]         = useState<string | null>(null) // ml_item_id being verified
+  const [selected, setSelected]           = useState<Set<string>>(new Set()) // ml_item_ids seleccionados
+  const [batchEnqueueing, setBatchEnqueueing] = useState(false)
+
 
   const searchRef = useRef(search)
   searchRef.current = search
@@ -165,11 +194,13 @@ export default function MLPublicationsPage() {
 
   // ── Load status counts (badge query) ──────────────────────────────────
 
-  const loadCounts = useCallback(async (accId: string) => {
+  const loadCounts = useCallback(async (accId: string, searchQ?: string) => {
     setCountsLoading(true)
     try {
       const params = new URLSearchParams({ counts_only: "1" })
       if (accId !== "all") params.set("account_id", accId)
+      // Pasar q para que los 7 HEAD queries reflejen la búsqueda activa
+      if (searchQ?.trim()) params.set("q", searchQ.trim())
       const res  = await fetch(`/api/ml/publications?${params}`)
       const data = await res.json()
       if (data.ok) setCounts(data.counts)
@@ -190,6 +221,54 @@ export default function MLPublicationsPage() {
       .catch(() => {})
   }, [accountId])
 
+
+
+  // ── Acción masiva opt-in ───────────────────────────────────────────────
+
+  const batchOptIn = async () => {
+    if (selected.size === 0 || accountId === "all") return
+    setBatchEnqueueing(true)
+    let ok = 0; let err = 0
+    for (const ml_item_id of selected) {
+      try {
+        const pub = rows.find(r => r.ml_item_id === ml_item_id)
+        if (!pub) continue
+        const res  = await fetch("/api/ml/jobs/enqueue", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({
+            account_id: accountId,
+            type:       "catalog_optin",
+            payload:    { item_id: ml_item_id, account_id: accountId },
+          }),
+        })
+        const data = await res.json()
+        if (data.ok) ok++; else err++
+      } catch { err++ }
+    }
+    toast({
+      title:       `${ok} jobs encolados`,
+      description: err > 0 ? `${err} errores al encolar` : "Todos encolados correctamente",
+      variant:     err > 0 ? "destructive" : "default",
+    })
+    setSelected(new Set())
+    setBatchEnqueueing(false)
+  }
+
+  const toggleSelect = (ml_item_id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(ml_item_id)) next.delete(ml_item_id)
+      else next.add(ml_item_id)
+      return next
+    })
+  }
+
+  const selectAllEligible = () => {
+    const eligible = rows.filter(r => r.catalog_listing_eligible && !r.catalog_listing).map(r => r.ml_item_id)
+    setSelected(new Set(eligible))
+  }
+
   // ── Load rows ──────────────────────────────────────────────────────────
 
   const load = useCallback(async (p = 0) => {
@@ -204,21 +283,30 @@ export default function MLPublicationsPage() {
         ...(sinProducto ? { sin_producto: "1" } : {}),
         ...(soloElegibles ? { solo_elegibles: "1" } : {}),
         ...(sinStock ? { sin_stock: "1" } : {}),
+        ...(stockFirst ? { stock_first: "1" } : {}),
       })
       const res  = await fetch(`/api/ml/publications?${params}`)
       const data = await res.json()
-      if (data.ok) {
+        if (data.ok) {
         setRows(data.rows)
         setTotal(data.total)
       }
     } finally {
       setLoading(false)
     }
-  }, [accountId, statusFilter, sinProducto, soloElegibles, sinStock])
+  }, [accountId, statusFilter, sinProducto, soloElegibles, sinStock, stockFirst])
 
-  useEffect(() => { setPage(0); load(0) }, [accountId, statusFilter, sinProducto, soloElegibles, sinStock])
+  useEffect(() => {
+    setPage(0); setSelected(new Set()); load(0)
+    // Actualizar counts cuando cambian filtros (sin q — los tabs son globales de la cuenta)
+    loadCounts(accountId)
+  }, [accountId, statusFilter, sinProducto, soloElegibles, sinStock, stockFirst])
 
-  const handleSearch = () => { setPage(0); load(0) }
+  const handleSearch = () => {
+    setPage(0); load(0)
+    // Actualizar counts con el q activo para que los tabs reflejen la búsqueda
+    loadCounts(accountId, searchQuery)
+  }
   const prevPage = () => { const p = page - 1; setPage(p); load(p) }
   const nextPage = () => { const p = page + 1; setPage(p); load(p) }
   const totalPages = Math.ceil(total / PAGE_SIZE)
@@ -233,11 +321,12 @@ export default function MLPublicationsPage() {
     navigator.clipboard.writeText(permalink)
     setCopiedLink(id)
     setTimeout(() => setCopiedLink(null), 1500)
+    toast({ title: "Copiado", description: permalink })
   }
 
   const handleRefresh = () => {
     load(page)
-    loadCounts(accountId)
+    loadCounts(accountId, searchQuery)
   }
 
   const enqueueJob = async (
@@ -270,6 +359,31 @@ export default function MLPublicationsPage() {
     }
   }
 
+  const verifyItem = async (pub: Publication) => {
+    setVerifying(pub.ml_item_id)
+    try {
+      const res = await fetch("/api/ml/jobs/enqueue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_id: pub.account_id,
+          type: "import_single_item",
+          payload: { item_id: pub.ml_item_id, account_id: pub.account_id },
+        }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        toast({ title: "Verificacion encolada", description: `${pub.ml_item_id} se actualizará en el próximo ciclo.` })
+      } else {
+        toast({ title: "Error al verificar", description: data.error ?? "Error desconocido", variant: "destructive" })
+      }
+    } catch (err: any) {
+      toast({ title: "Error de red", description: err.message, variant: "destructive" })
+    } finally {
+      setVerifying(null)
+    }
+  }
+
   const syncWeights = async () => {
     if (accountId === "all") {
       toast({ title: "Seleccioná una cuenta", description: "Elegí una cuenta antes de sincronizar pesos.", variant: "destructive" })
@@ -294,6 +408,82 @@ export default function MLPublicationsPage() {
     } catch (err: any) {
       setWeightSync({ loading: false, result: null })
       toast({ title: "Error de red", description: err.message, variant: "destructive" })
+    }
+  }
+
+  const backfillSku = async () => {
+    if (accountId === "all") {
+      toast({ title: "Seleccioná una cuenta", description: "Elegí una cuenta antes de hacer backfill.", variant: "destructive" })
+      return
+    }
+    setSkuBackfill({ loading: true, result: null })
+    try {
+      const res  = await fetch("/api/ml/publications/backfill-sku", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ account_id: accountId, batch_size: 100 }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        setSkuBackfill({ loading: false, result: { updated: data.updated, skipped: data.skipped, processed: data.processed } })
+        toast({ title: "Backfill SKU completado", description: `${data.updated} actualizados, ${data.skipped} sin SKU en ML.` })
+        load(page)
+      } else {
+        setSkuBackfill({ loading: false, result: null })
+        toast({ title: "Error en backfill", description: data.error ?? "Error desconocido", variant: "destructive" })
+      }
+    } catch (err: any) {
+      setSkuBackfill({ loading: false, result: null })
+      toast({ title: "Error de red", description: err.message, variant: "destructive" })
+    }
+  }
+
+  const refreshProgress = () => {
+    if (accountId === "all") return
+    fetch(`/api/ml/publications/import-progress?account_id=${accountId}`)
+      .then(r => r.json())
+      .then(d => { if (d.ok && d.progress) setImportProgress(d.progress) })
+      .catch(() => {})
+  }
+
+  // Reusa el mismo endpoint de progress para actualizar publications_total
+  const loadMlTotal = useCallback((accId: string) => {
+    if (accId === "all") return
+    fetch(`/api/ml/publications/import-progress?account_id=${accId}`)
+      .then(r => r.json())
+      .then(d => { if (d.ok && d.progress) setImportProgress(d.progress) })
+      .catch(() => {})
+  }, [])
+
+  const syncWithML = async () => {
+    if (accountId === "all") {
+      toast({ title: "Seleccioná una cuenta", variant: "destructive" })
+      return
+    }
+    setSyncingML(true)
+    try {
+      const res  = await fetch("/api/ml/import-pro/run", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ account_id: accountId, max_seconds: 12 }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        const desc = `${data.db_rows_upserted ?? data.imported_count} filas persistidas (ML vio ${data.ml_items_seen_count ?? "?"} IDs)${data.has_more ? " — continúa en próxima corrida" : " — completado"}`
+        toast({ title: "Sincronización ejecutada", description: desc })
+        refreshProgress()
+        load(0)
+        loadCounts(accountId, searchQuery)
+        loadMlTotal(accountId)
+      } else if (data.rate_limited) {
+        toast({ title: "Rate limit ML", description: `Esperá ${data.wait_seconds ?? 60}s y reintentá.`, variant: "destructive" })
+      } else {
+        toast({ title: "Error al sincronizar", description: data.error ?? "Error desconocido", variant: "destructive" })
+      }
+    } catch (err: any) {
+      toast({ title: "Error de red", description: err.message, variant: "destructive" })
+    } finally {
+      setSyncingML(false)
     }
   }
 
@@ -359,6 +549,15 @@ export default function MLPublicationsPage() {
                     active={sinStock}
                     onClick={() => { setSinStock(s => !s); setSinProducto(false); setStatusFilter("all"); setPage(0); }}
                   />
+                  {counts.eligible_catalog != null && (
+                    <BadgeCount
+                      label="Elegibles catálogo"
+                      value={counts.eligible_catalog}
+                      color="emerald"
+                      active={soloElegibles}
+                      onClick={() => { setSoloElegibles(s => !s); setSinStock(false); setSinProducto(false); setStatusFilter("all"); setPage(0); }}
+                    />
+                  )}
                 </>
               ) : null}
             </div>
@@ -375,6 +574,36 @@ export default function MLPublicationsPage() {
               </span>
             )}
 
+            {/* SKU backfill result pill */}
+            {skuBackfill.result && (
+              <span className="text-xs text-muted-foreground">
+                <span className="text-green-400 font-medium">{skuBackfill.result.updated}</span> SKU cargados
+                {skuBackfill.result.skipped > 0 && (
+                  <> · <span className="text-yellow-400">{skuBackfill.result.skipped}</span> sin SKU</>
+                )}
+              </span>
+            )}
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={backfillSku}
+                  disabled={skuBackfill.loading || accountId === "all"}
+                  className="bg-transparent"
+                >
+                  <Tag className={`h-4 w-4 mr-2 ${skuBackfill.loading ? "animate-spin" : ""}`} />
+                  {skuBackfill.loading ? "Rellenando..." : "Backfill SKU"}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {accountId === "all"
+                  ? "Seleccioná una cuenta primero"
+                  : "Rellena el campo SKU para publicaciones sin SKU consultando la API de ML"}
+              </TooltipContent>
+            </Tooltip>
+
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -388,55 +617,194 @@ export default function MLPublicationsPage() {
                   {weightSync.loading ? "Sincronizando..." : "Sincronizar pesos"}
                 </Button>
               </TooltipTrigger>
-              {accountId === "all" && (
-                <TooltipContent>Seleccioná una cuenta primero</TooltipContent>
-              )}
+              <TooltipContent>
+                {accountId === "all"
+                  ? "Seleccioná una cuenta primero"
+                  : "Sincroniza el peso (g) de cada publicación desde ML"}
+              </TooltipContent>
             </Tooltip>
 
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRefresh}
-              disabled={loading || countsLoading}
-              className="bg-transparent"
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${(loading || countsLoading) ? "animate-spin" : ""}`} />
-              Actualizar
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRefresh}
+                  disabled={loading || countsLoading}
+                  className="bg-transparent"
+                >
+                  <RefreshCw className={`h-4 w-4 mr-2 ${(loading || countsLoading) ? "animate-spin" : ""}`} />
+                  Refrescar
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Recarga los datos desde la DB local. No llama a ML.</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={syncWithML}
+                  disabled={syncingML || accountId === "all"}
+                >
+                  <ScanLine className={`h-4 w-4 mr-2 ${syncingML ? "animate-spin" : ""}`} />
+                  {syncingML ? "Sincronizando..." : "Sincronizar con ML"}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {accountId === "all"
+                  ? "Seleccioná una cuenta primero"
+                  : "Llama a la API de ML, hidrata items con multiget y persiste las filas realmente guardadas en DB. El progreso se registra en ml_import_progress."}
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
 
         {/* ── Import progress indicator ───────────────────────────────────── */}
-        {importProgress && importProgress.status !== "completed" && (
-          <div className="rounded-lg border border-border bg-muted/20 px-4 py-3 flex items-center gap-4 text-sm">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between mb-1.5 gap-2">
-                <span className="text-muted-foreground font-medium truncate">
-                  Importación {importProgress.status === "running" ? "en curso" : importProgress.status}
+        {importProgress && (
+          <div className={`rounded-lg border px-4 py-3 text-sm space-y-2 ${
+            importProgress.status === "error" || importProgress.last_error
+              ? "border-red-500/30 bg-red-500/5"
+              : importProgress.publications_scope === "active_only"
+                ? "border-amber-500/30 bg-amber-500/5"
+                : "border-border bg-muted/20"
+          }`}>
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-muted-foreground font-medium">
+                Importación{" "}
+                <span className={
+                  importProgress.status === "running"                           ? "text-blue-400"
+                  : importProgress.status === "done"                            ? "text-green-400"
+                  : importProgress.status === "error"                           ? "text-red-400"
+                  : importProgress.status === "paused"                          ? "text-yellow-400"
+                  : importProgress.status === "scan_complete_pending_verification" ? "text-amber-400"
+                  : "text-muted-foreground"
+                }>
+                  {importProgress.status === "running"                              ? "en curso"
+                   : importProgress.status === "done"                               ? "completada"
+                   : importProgress.status === "scan_complete_pending_verification" ? "scan completo — verificar"
+                   : importProgress.status}
                 </span>
-                <span className="text-xs text-muted-foreground whitespace-nowrap tabular-nums">
-                  {importProgress.publications_offset.toLocaleString("es-AR")}
-                  {importProgress.publications_total
-                    ? ` / ${importProgress.publications_total.toLocaleString("es-AR")}`
-                    : ""}
+              </span>
+
+              {importProgress.publications_scope === "active_only" && (
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-400 bg-amber-500/15 border border-amber-500/30 rounded px-1.5 py-0.5">
+                  <Info className="h-3 w-3" />
+                  Solo activas — puede faltar pausadas/cerradas
                 </span>
+              )}
+
+              {/* Botón para refrescar progress sin tocar los rows */}
+              <button
+                onClick={refreshProgress}
+                className="ml-auto text-muted-foreground hover:text-foreground"
+                title="Actualizar estado"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${importProgress.status === "running" ? "animate-spin text-blue-400" : ""}`} />
+              </button>
+            </div>
+
+            {/* Diagnóstico: grilla de métricas clave */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 py-1">
+              <DiagStat
+                label="DB rows"
+                value={counts?.total ?? null}
+                color="default"
+                tooltip="Filas totales en ml_publications para esta cuenta"
+              />
+              <DiagStat
+                label="ML total"
+                value={importProgress.publications_total ?? null}
+                color="default"
+                tooltip="Total de publicaciones reportado por la API de ML"
+              />
+              <DiagStat
+                label="ML vistas"
+                value={importProgress.ml_items_seen_count ?? importProgress.discovered_count ?? null}
+                color="blue"
+                tooltip="IDs que el importador leyó de ML en la última corrida"
+              />
+              <DiagStat
+                label="DB upserted"
+                value={importProgress.db_rows_upserted_count ?? importProgress.upsert_new_count ?? null}
+                color="green"
+                tooltip="Filas que realmente quedaron persistidas en DB (confirmadas por Supabase)"
+              />
+              <DiagStat
+                label="Errores upsert"
+                value={importProgress.upsert_errors_count ?? null}
+                color={(importProgress.upsert_errors_count ?? 0) > 0 ? "red" : "default"}
+                tooltip="Filas enviadas al upsert que no quedaron confirmadas"
+              />
+            </div>
+
+            {/* Barra de progreso ML seen (offset real = filas persistidas) */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums">
+                <span className="flex items-center gap-3 flex-wrap">
+                  <span>Status: <span className={
+                    importProgress.status === "running" ? "text-blue-400 font-semibold"
+                    : importProgress.status === "done"  ? "text-green-400 font-semibold"
+                    : importProgress.status === "error" ? "text-red-400 font-semibold"
+                    : importProgress.status === "paused" ? "text-yellow-400 font-semibold"
+                    : importProgress.status === "scan_complete_pending_verification" ? "text-amber-400 font-semibold"
+                    : "text-muted-foreground"
+                  }>{importProgress.status}</span></span>
+                </span>
+                {importProgress.last_sync_batch_at && (
+                  <span>Ultimo batch: {relDate(importProgress.last_sync_batch_at)}</span>
+                )}
               </div>
               <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
                 <div
-                  className={`h-full rounded-full transition-all ${importProgress.status === "running" ? "bg-blue-500 animate-pulse" : "bg-green-500"}`}
+                  className={`h-full rounded-full transition-all ${
+                    importProgress.status === "running" ? "bg-blue-500 animate-pulse"
+                    : importProgress.status === "done"  ? "bg-green-500"
+                    : importProgress.status === "scan_complete_pending_verification" ? "bg-amber-500"
+                    : importProgress.status === "error" ? "bg-red-500"
+                    : "bg-muted-foreground/50"
+                  }`}
                   style={{
                     width: importProgress.publications_total
-                      ? `${Math.min(100, (importProgress.publications_offset / importProgress.publications_total) * 100)}%`
+                      ? `${Math.min(100, ((importProgress.db_rows_upserted_count ?? importProgress.upsert_new_count ?? importProgress.publications_offset ?? 0) / importProgress.publications_total) * 100)}%`
                       : "100%",
                   }}
                 />
               </div>
             </div>
-            {importProgress.status === "running" && (
-              <RefreshCw className="h-4 w-4 text-blue-400 animate-spin shrink-0" />
+
+            {/* Alerta de import incompleto: ML vistas >> DB persistidas */}
+            {(() => {
+              const seen    = importProgress.ml_items_seen_count ?? importProgress.discovered_count ?? 0
+              const saved   = importProgress.db_rows_upserted_count ?? importProgress.upsert_new_count ?? importProgress.publications_offset ?? 0
+              const missing = seen - saved
+              if (seen > 0 && missing > 10) {
+                return (
+                  <div className="flex items-start gap-2 rounded border border-red-500/30 bg-red-500/10 px-3 py-2">
+                    <AlertCircle className="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
+                    <p className="text-xs text-red-300">
+                      <span className="font-semibold">Import incompleto:</span> ML envió {seen.toLocaleString("es-AR")} IDs
+                      pero solo {saved.toLocaleString("es-AR")} filas quedaron persistidas en DB.
+                      Faltan <span className="font-bold">{missing.toLocaleString("es-AR")}</span> filas.
+                      Usá "Sincronizar con ML" para reintentar.
+                    </p>
+                  </div>
+                )
+              }
+              return null
+            })()}
+
+            {/* Error de última corrida */}
+            {importProgress.last_error && (
+              <p className="text-xs text-red-400 font-mono truncate">
+                Error: {importProgress.last_error}
+              </p>
             )}
           </div>
         )}
+
+
 
         {/* ── Filtros ─────────────────────────────────────────────────────── */}
         <div className="flex flex-wrap gap-3 items-end">
@@ -520,8 +888,40 @@ export default function MLPublicationsPage() {
               />
               Sin stock
             </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={stockFirst}
+                onChange={e => { setStockFirst(e.target.checked); setPage(0) }}
+                className="accent-primary"
+              />
+              Stock primero
+            </label>
           </div>
         </div>
+
+        {/* ── Barra acción masiva ─────────────────────────────────────────── */}
+        {selected.size > 0 && (
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-2.5 flex items-center gap-3 text-sm">
+            <span className="font-medium text-emerald-300">{selected.size} seleccionada{selected.size !== 1 ? "s" : ""}</span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs border-emerald-500/40 hover:bg-emerald-500/10"
+              onClick={batchOptIn}
+              disabled={batchEnqueueing}
+            >
+              <ShoppingCart className="h-3.5 w-3.5 mr-1.5" />
+              {batchEnqueueing ? "Encolando..." : "Opt-in catálogo"}
+            </Button>
+            <button
+              className="ml-auto text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => setSelected(new Set())}
+            >
+              Limpiar seleccion
+            </button>
+          </div>
+        )}
 
         {/* ── Tabla / Empty ───────────────────────────────────────────────── */}
         {rows.length === 0 && !loading ? (
@@ -545,6 +945,19 @@ export default function MLPublicationsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/30">
+                    <th className="px-3 py-3 w-8">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <input
+                            type="checkbox"
+                            className="accent-primary cursor-pointer"
+                            checked={selected.size > 0 && rows.filter(r => r.catalog_listing_eligible && !r.catalog_listing).every(r => selected.has(r.ml_item_id))}
+                            onChange={e => e.target.checked ? selectAllEligible() : setSelected(new Set())}
+                          />
+                        </TooltipTrigger>
+                        <TooltipContent>Seleccionar elegibles de esta pagina</TooltipContent>
+                      </Tooltip>
+                    </th>
                     <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">Item ID</th>
                     <th className="text-left px-4 py-3 font-medium text-muted-foreground">Título</th>
                     <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">Estado</th>
@@ -562,7 +975,7 @@ export default function MLPublicationsPage() {
                   {loading
                     ? Array.from({ length: 10 }).map((_, i) => (
                         <tr key={i} className="border-b animate-pulse">
-                          {Array.from({ length: 10 }).map((_, j) => (
+                          {Array.from({ length: 11 }).map((_, j) => (
                             <td key={j} className="px-4 py-3">
                               <div className="h-4 bg-muted/40 rounded w-full" />
                             </td>
@@ -575,6 +988,18 @@ export default function MLPublicationsPage() {
                           className="border-b hover:bg-muted/20 transition-colors group cursor-pointer"
                           onClick={() => setDetail(row)}
                         >
+                          {/* Checkbox seleccion */}
+                          <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                            {(row.catalog_listing_eligible && !row.catalog_listing) && (
+                              <input
+                                type="checkbox"
+                                className="accent-primary cursor-pointer"
+                                checked={selected.has(row.ml_item_id)}
+                                onChange={() => toggleSelect(row.ml_item_id)}
+                              />
+                            )}
+                          </td>
+
                           {/* Item ID */}
                           <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                             <div className="flex items-center gap-1.5">
@@ -640,10 +1065,20 @@ export default function MLPublicationsPage() {
                           </td>
 
                           {/* Peso */}
-                          <td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground whitespace-nowrap">
+                          <td className="px-4 py-3 text-right font-mono text-xs whitespace-nowrap">
                             {row.meli_weight_g != null
-                              ? <span className="text-foreground">{row.meli_weight_g.toLocaleString()}</span>
-                              : <span className="text-muted-foreground/30">—</span>
+                              ? <span className="text-foreground">{row.meli_weight_g.toLocaleString()} g</span>
+                              : (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="inline-flex items-center gap-1 text-yellow-500/70">
+                                      <AlertCircle className="h-3 w-3" />
+                                      <span className="text-[11px]">Faltante</span>
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>Peso no sincronizado. Usá "Sincronizar pesos".</TooltipContent>
+                                </Tooltip>
+                              )
                             }
                           </td>
 
@@ -654,7 +1089,7 @@ export default function MLPublicationsPage() {
 
                           {/* Acciones */}
                           <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="flex items-center gap-1">
 
                               {/* Abrir en ML + Copiar link */}
                               {row.permalink && (
@@ -665,7 +1100,7 @@ export default function MLPublicationsPage() {
                                         href={row.permalink}
                                         target="_blank"
                                         rel="noopener noreferrer"
-                                        className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted/50"
+                                        className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted/50 opacity-0 group-hover:opacity-100 transition-opacity"
                                       >
                                         <ExternalLink className="h-4 w-4" />
                                       </a>
@@ -736,7 +1171,7 @@ export default function MLPublicationsPage() {
                                   )}
 
                                   {/* Opt-in catálogo */}
-                                  {row.catalog_listing_eligible ? (
+                                  {row.catalog_listing ? (
                                     <Tooltip>
                                       <TooltipTrigger asChild>
                                         <div>
@@ -748,7 +1183,7 @@ export default function MLPublicationsPage() {
                                       </TooltipTrigger>
                                       <TooltipContent side="left">Ya está en catálogo</TooltipContent>
                                     </Tooltip>
-                                  ) : (
+                                  ) : row.catalog_listing_eligible ? (
                                     <DropdownMenuItem
                                       className="gap-2"
                                       disabled={enqueueing === `${row.ml_item_id}:catalog_optin`}
@@ -757,6 +1192,18 @@ export default function MLPublicationsPage() {
                                       <ShoppingCart className="h-4 w-4" />
                                       Opt-in catálogo
                                     </DropdownMenuItem>
+                                  ) : (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div>
+                                          <DropdownMenuItem disabled className="gap-2 opacity-40">
+                                            <ShoppingCart className="h-4 w-4" />
+                                            Opt-in catálogo
+                                          </DropdownMenuItem>
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="left">No elegible para catálogo</TooltipContent>
+                                    </Tooltip>
                                   )}
 
                                   {/* Sync buybox */}
@@ -777,6 +1224,16 @@ export default function MLPublicationsPage() {
                                   >
                                     <RotateCcw className="h-4 w-4" />
                                     Reimportar
+                                  </DropdownMenuItem>
+
+                                  {/* Verificar con ML */}
+                                  <DropdownMenuItem
+                                    className="gap-2"
+                                    disabled={verifying === row.ml_item_id}
+                                    onClick={() => verifyItem(row)}
+                                  >
+                                    <ScanLine className="h-4 w-4" />
+                                    {verifying === row.ml_item_id ? "Verificando..." : "Verificar con ML"}
                                   </DropdownMenuItem>
 
                                 </DropdownMenuContent>
@@ -866,7 +1323,10 @@ export default function MLPublicationsPage() {
                   ["ISBN",                 detail.isbn ?? "—"],
                   ["GTIN",                 detail.gtin ?? "—"],
                   ["Elegible catálogo",    detail.catalog_listing_eligible ? "Sí" : "No"],
+                  ["En catálogo",          detail.catalog_listing ? "Sí" : "No"],
+                  ["Peso (g)",             detail.meli_weight_g != null ? `${detail.meli_weight_g} g` : "—"],
                   ["Producto vinculado",   detail.product_id ? "Sí" : "No"],
+                  ["Última sync ML",       detail.last_sync_at ? new Date(detail.last_sync_at).toLocaleString("es-AR") : "—"],
                   ["Actualizado",          detail.updated_at ? new Date(detail.updated_at).toLocaleString("es-AR") : "—"],
                 ] as [string, string | number][]).map(([label, value]) => (
                   <div key={label}>
@@ -911,12 +1371,13 @@ export default function MLPublicationsPage() {
 // ── BadgeCount sub-component ──────────────────────────────────────────────
 
 const COLOR_MAP: Record<string, string> = {
-  green:  "bg-green-500/15 text-green-400 border-green-500/30 hover:bg-green-500/25",
-  yellow: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/25",
-  zinc:   "bg-zinc-500/15 text-zinc-400 border-zinc-500/30 hover:bg-zinc-500/25",
-  orange: "bg-orange-500/15 text-orange-400 border-orange-500/30 hover:bg-orange-500/25",
-  red:    "bg-red-500/15 text-red-400 border-red-500/30 hover:bg-red-500/25",
-  default:"bg-muted/40 text-muted-foreground border-border hover:bg-muted/60",
+  green:   "bg-green-500/15 text-green-400 border-green-500/30 hover:bg-green-500/25",
+  yellow:  "bg-yellow-500/15 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/25",
+  zinc:    "bg-zinc-500/15 text-zinc-400 border-zinc-500/30 hover:bg-zinc-500/25",
+  orange:  "bg-orange-500/15 text-orange-400 border-orange-500/30 hover:bg-orange-500/25",
+  red:     "bg-red-500/15 text-red-400 border-red-500/30 hover:bg-red-500/25",
+  emerald: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/25",
+  default: "bg-muted/40 text-muted-foreground border-border hover:bg-muted/60",
 }
 
 function BadgeCount({
@@ -946,5 +1407,41 @@ function BadgeCount({
       {label}
       <span className="tabular-nums">{value.toLocaleString("es-AR")}</span>
     </button>
+  )
+}
+
+// ── DiagStat ───────────────────────────────────────────────────────────────
+
+function DiagStat({
+  label,
+  value,
+  color = "default",
+  tooltip,
+}: {
+  label: string
+  value: number | null | undefined
+  color?: "default" | "blue" | "green" | "red" | "yellow"
+  tooltip?: string
+}) {
+  const valueColor = {
+    default: "text-foreground",
+    blue:    "text-blue-400",
+    green:   "text-green-400",
+    red:     "text-red-400",
+    yellow:  "text-yellow-400",
+  }[color]
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="rounded-md border border-border bg-muted/20 px-3 py-2 cursor-default">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">{label}</p>
+          <p className={`text-base font-semibold tabular-nums ${valueColor}`}>
+            {value != null ? value.toLocaleString("es-AR") : <span className="text-muted-foreground text-sm">—</span>}
+          </p>
+        </div>
+      </TooltipTrigger>
+      {tooltip && <TooltipContent side="bottom" className="max-w-xs text-xs">{tooltip}</TooltipContent>}
+    </Tooltip>
   )
 }

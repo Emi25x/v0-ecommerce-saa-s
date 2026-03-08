@@ -130,48 +130,23 @@ export default function MLMatcherPage() {
 
     // Si ya completó, apagar auto-mode (usar safeProgress para evitar crashes)
     if (safeProgress.processed_count >= safeProgress.total_target && safeProgress.total_target > 0) {
-      console.log("[v0] Matching complete - disabling auto-mode")
       setAutoMode(false)
       return
     }
 
-    // Si status es 'completed', apagar auto-mode
     if (safeProgress.status === 'completed' || safeProgress.status === 'failed') {
-      console.log(`[v0] Status is ${safeProgress.status} - disabling auto-mode`)
       setAutoMode(false)
       return
     }
 
-    console.log("[v0] Auto-mode active - setting up 15s interval (safe for 12-14s runs)")
-    
-    const interval = setInterval(() => {
-      console.log("[v0] Auto-mode tick - calling handleRun()")
-      handleRun()
-    }, 15000) // 15 segundos para evitar overlapping con corridas de 12-14s
-
-    return () => {
-      console.log("[v0] Auto-mode cleanup - clearing interval")
-      clearInterval(interval)
-    }
+    const interval = setInterval(() => { handleRun() }, 15000)
+    return () => clearInterval(interval)
   }, [autoMode, selectedAccountId, running, progress])
 
   const handleRun = async () => {
-    console.log("[v0] handleRun called - selectedAccountId:", selectedAccountId, "running:", running)
-    
-    if (!selectedAccountId) {
-      console.log("[v0] No selectedAccountId, aborting")
-      return
-    }
-    
-    if (running) {
-      console.log("[v0] Already running, skipping this tick")
-      return
-    }
-    
+    if (!selectedAccountId || running) return
     setRunning(true)
     const startTime = Date.now()
-    
-    console.log("[v0] Starting matcher request to /api/ml/matcher/run")
     
     try {
       const res = await fetch("/api/ml/matcher/run", {
@@ -184,39 +159,14 @@ export default function MLMatcherPage() {
         }),
       })
       
-      console.log("[v0] Import request completed with status:", res.status)
-
       const data = await res.json()
       setRunResult(data)
 
-      // Si hay rate limit de DB, pausar auto-mode temporalmente
       if (data.rate_limited) {
-        console.log("[v0] Database rate limit detected - pausing auto-mode for 10 seconds")
         setAutoMode(false)
-        setTimeout(() => {
-          console.log("[v0] Resuming auto-mode after rate limit cooldown")
-          setAutoMode(true)
-        }, 10000)
+        setTimeout(() => setAutoMode(true), 10000)
         setRunning(false)
         return
-      }
-
-      // Loggear timings detallados de rendimiento y auto-tuning
-      if (data.timings) {
-        console.log("[v0] PERFORMANCE TIMINGS:")
-        console.log(`  - Fetch IDs: ${data.timings.t_fetch_ids_ms}ms`)
-        console.log(`  - Fetch Details: ${data.timings.t_fetch_details_ms}ms`)
-        console.log(`  - Upsert DB: ${data.timings.t_upsert_ml_publications_ms}ms`)
-        console.log(`  - Update Progress: ${data.timings.t_update_progress_ms}ms`)
-        console.log(`  - TOTAL: ${data.timings.total_ms}ms (${(data.timings.total_ms / 1000).toFixed(1)}s)`)
-        console.log(`  - Items imported: ${data.imported_count || 0}`)
-        console.log(`  - Throughput: ${((data.imported_count || 0) / (data.timings.total_ms / 1000)).toFixed(1)} items/sec`)
-      }
-      
-      if (data.tuning_message) {
-        console.log(`[v0] AUTO-TUNING: ${data.tuning_message}`)
-        console.log(`  - Current batch size: ${data.current_batch_size}`)
-        console.log(`  - Suggested batch size: ${data.suggested_batch_size}`)
       }
 
       // Si hay error detallado de ML API, mostrarlo
@@ -254,9 +204,6 @@ export default function MLMatcherPage() {
         setAutoMode(false)
       }
     } catch (error: any) {
-      console.error("[IMPORTER] Network/timeout error:", error)
-      
-      // Error de red/timeout - no es error permanente, permitir reintento
       const logEntry = {
         ranAt: new Date().toISOString(),
         action: 'network_error',
@@ -348,26 +295,13 @@ export default function MLMatcherPage() {
 
   const handleDiagnostic = async () => {
     if (!selectedAccountId) return
-    
     setLoadingDiagnostic(true)
     setShowDiagnostic(true)
-    
     try {
-      const [progressRes, statsRes] = await Promise.all([
-        fetch(`/api/debug/import-progress?account_id=${selectedAccountId}`),
-        fetch(`/api/debug/import-queue-stats?account_id=${selectedAccountId}`)
-      ])
-      
-      const progressData = await progressRes.json()
-      const statsData = await statsRes.json()
-      
-      setDiagnosticData({
-        progress: progressData,
-        stats: statsData,
-        timestamp: new Date().toISOString()
-      })
+      const res  = await fetch(`/api/ml/matcher/diagnostic?account_id=${selectedAccountId}`)
+      const data = await res.json()
+      setDiagnosticData(data)
     } catch (error: any) {
-      console.error("[IMPORTER] Diagnostic error:", error)
       setDiagnosticData({ error: error.message })
     } finally {
       setLoadingDiagnostic(false)
@@ -770,48 +704,119 @@ export default function MLMatcherPage() {
         <Card className="mt-6 p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold">Diagnóstico Técnico</h3>
-            <Button 
-              onClick={() => setShowDiagnostic(false)} 
-              size="sm" 
-              variant="ghost"
-            >
-              Cerrar
-            </Button>
+            <Button onClick={() => setShowDiagnostic(false)} size="sm" variant="ghost">Cerrar</Button>
           </div>
 
           {loadingDiagnostic ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
-          ) : diagnosticData ? (
-            <div className="space-y-4">
-              {diagnosticData.error ? (
-                <div className="p-4 bg-red-50 border border-red-200 rounded-md">
-                  <p className="text-sm text-red-700">{diagnosticData.error}</p>
-                </div>
-              ) : (
-                <>
-                  <div>
-                    <h4 className="text-sm font-medium mb-2">Estado de Progreso</h4>
-                    <pre className="p-4 bg-gray-50 border rounded-md text-xs overflow-auto max-h-60">
-                      {JSON.stringify(diagnosticData.progress, null, 2)}
-                    </pre>
-                  </div>
-
-                  <div>
-                    <h4 className="text-sm font-medium mb-2">Estadísticas de Cola</h4>
-                    <pre className="p-4 bg-gray-50 border rounded-md text-xs overflow-auto max-h-60">
-                      {JSON.stringify(diagnosticData.stats, null, 2)}
-                    </pre>
-                  </div>
-
-                  <p className="text-xs text-muted-foreground">
-                    Generado: {new Date(diagnosticData.timestamp).toLocaleString()}
-                  </p>
-                </>
-              )}
+          ) : !diagnosticData ? (
+            <p className="text-sm text-muted-foreground">Sin datos de diagnóstico.</p>
+          ) : diagnosticData.error ? (
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4">
+              <p className="text-sm text-destructive">{diagnosticData.error}</p>
             </div>
-          ) : null}
+          ) : (
+            <div className="space-y-5">
+              {/* Warnings */}
+              {diagnosticData.warnings?.length > 0 && (
+                <div className="space-y-2">
+                  {diagnosticData.warnings.map((w: string, i: number) => (
+                    <div key={i} className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                      <AlertCircle className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                      <p className="text-xs text-amber-300">{w}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Resumen publicaciones */}
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Publicaciones</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: "Total", value: diagnosticData.publications?.total },
+                    { label: "Vinculadas", value: diagnosticData.publications?.linked },
+                    { label: "Sin vincular", value: diagnosticData.publications?.unlinked },
+                    { label: "Sin identificador", value: diagnosticData.publications?.unlinked_no_identifier },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="rounded-md border border-border bg-muted/20 p-3">
+                      <p className="text-lg font-bold">{value ?? "—"}</p>
+                      <p className="text-xs text-muted-foreground">{label}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-3">
+                  {[
+                    { label: "Con EAN", value: diagnosticData.publications?.unlinked_with_ean },
+                    { label: "Con ISBN", value: diagnosticData.publications?.unlinked_with_isbn },
+                    { label: "Con SKU", value: diagnosticData.publications?.unlinked_with_sku },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="rounded-md border border-border bg-muted/20 p-3">
+                      <p className="text-lg font-bold text-emerald-400">{value ?? "—"}</p>
+                      <p className="text-xs text-muted-foreground">{label}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Resumen products */}
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Products</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: "Total", value: diagnosticData.products?.total },
+                    { label: "Con EAN", value: diagnosticData.products?.with_ean },
+                    { label: "Con ISBN", value: diagnosticData.products?.with_isbn },
+                    { label: "Con SKU", value: diagnosticData.products?.with_sku },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="rounded-md border border-border bg-muted/20 p-3">
+                      <p className="text-lg font-bold">{value ?? "—"}</p>
+                      <p className="text-xs text-muted-foreground">{label}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Muestras */}
+              {diagnosticData.publications?.sample_with_identifiers?.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                    Muestra publicaciones con identificadores
+                  </h4>
+                  <pre className="rounded-md border border-border bg-muted/30 p-3 text-xs text-foreground overflow-auto max-h-40 leading-relaxed">
+                    {JSON.stringify(diagnosticData.publications.sample_with_identifiers, null, 2)}
+                  </pre>
+                </div>
+              )}
+
+              {diagnosticData.products?.sample?.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                    Muestra products con identificadores
+                  </h4>
+                  <pre className="rounded-md border border-border bg-muted/30 p-3 text-xs text-foreground overflow-auto max-h-40 leading-relaxed">
+                    {JSON.stringify(diagnosticData.products.sample, null, 2)}
+                  </pre>
+                </div>
+              )}
+
+              {/* Progreso raw */}
+              {diagnosticData.progress && (
+                <div>
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Estado matcher_progress</h4>
+                  <pre className="rounded-md border border-border bg-muted/30 p-3 text-xs text-foreground overflow-auto max-h-48 leading-relaxed">
+                    {JSON.stringify(diagnosticData.progress, null, 2)}
+                  </pre>
+                </div>
+              )}
+
+              <p className="text-xs text-muted-foreground">
+                Generado: {diagnosticData.generated_at ? new Date(diagnosticData.generated_at).toLocaleString() : "—"}
+              </p>
+            </div>
+          )}
         </Card>
       )}
     </div>
