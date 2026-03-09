@@ -144,6 +144,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Progress not found. Initialize the import first." }, { status: 404 })
     }
 
+    // ── Protección contra invocaciones concurrentes ──────────────────────────
+    // Si ya está corriendo y el último run fue hace < 90s, rechazar para evitar
+    // doble-conteo de publications_offset y cursor corruption.
+    if (progress.status === "running" && progress.last_run_at) {
+      const lastRunMs = Date.now() - new Date(progress.last_run_at).getTime()
+      if (lastRunMs < 90_000) {
+        return NextResponse.json({
+          ok: false,
+          error: "Import already running",
+          retry_after_ms: 90_000 - lastRunMs,
+        }, { status: 409 })
+      }
+      // Si pasaron > 90s en status=running → el proceso anterior murió sin limpiar.
+      // Continuamos y lo sobreescribimos.
+    }
+
     // ── Comprobar pausa por rate-limit ───────────────────────────────────────
     if (progress.status === "paused" && progress.paused_until) {
       if (new Date(progress.paused_until) > new Date()) {
@@ -256,14 +272,15 @@ export async function POST(request: NextRequest) {
       if (itemIds.length === 0) {
         consecutiveZeroRuns++
         if (consecutiveZeroRuns >= 3) {
-          // 3 scans sin items — cursor agotado o expirado. Limpiar solo el cursor.
+          // 3 scans sin items — cursor agotado o expirado. Limpiar cursor y posición.
           await supabase
             .from("ml_import_progress")
             .update({
-              status:              "idle",
-              scroll_id:           null,
-              ml_items_seen_count: 0,
-              last_error:          "3 scans consecutivos sin items: cursor reiniciado (progreso en DB preservado).",
+              status:               "idle",
+              scroll_id:            null,
+              publications_offset:  0,
+              ml_items_seen_count:  0,
+              last_error:          "3 scans consecutivos sin items: cursor reiniciado — items en DB preservados.",
               last_error_at:       new Date().toISOString(),
             })
             .eq("account_id", accountId)
@@ -307,19 +324,21 @@ export async function POST(request: NextRequest) {
         const scrollExpired = mlTotal > 0 && pctCovered < 0.95
 
         if (scrollExpired) {
-          // Scroll expirado — limpiar SOLO el cursor y los contadores de "visto en
-          // esta sesión". El offset y db_rows_upserted_count NO se tocan: representan
-          // el estado real de la DB y los items ya están guardados. El upsert con
-          // onConflict garantiza que re-procesar los mismos items no genera duplicados.
+          // Scroll expirado — limpiar cursor y posición de scan.
+          // publications_offset se resetea a 0 porque representa la POSICIÓN en el scan
+          // de ML (no items en DB). Al reiniciar el scan desde ML posición 0, el offset
+          // debe empezar en 0 también para que el porcentaje sea correcto (0→100%).
+          // db_rows_upserted_count se PRESERVA: refleja items reales en DB y no retrocede.
+          // El upsert con onConflict garantiza que re-procesar items no genera duplicados.
           await supabase
             .from("ml_import_progress")
             .update({
-              status:              "idle",
-              scroll_id:           null,       // nuevo scan desde el principio
-              ml_items_seen_count: 0,          // reiniciar contador de "vistos"
-              // publications_offset, publications_total y db_rows_upserted_count
-              // se PRESERVAN — ya están en DB, no hay que perder ese progreso
-              last_error:          `Scroll ML expirado al ${Math.round(pctCovered * 100)}% (${totalSeen}/${mlTotal} vistos). Reiniciando cursor sin perder progreso.`,
+              status:               "idle",
+              scroll_id:            null,   // nuevo scan desde ML posición 0
+              publications_offset:  0,      // reiniciar posición de scan (honesto)
+              ml_items_seen_count:  0,      // reiniciar contador de "vistos en esta sesión"
+              // publications_total y db_rows_upserted_count se PRESERVAN
+              last_error:          `Scroll ML expirado al ${Math.round(pctCovered * 100)}% (${totalSeen}/${mlTotal} vistos). Reiniciando scan — items ya importados permanecen en DB.`,
               last_error_at:       new Date().toISOString(),
             })
             .eq("account_id", accountId)
@@ -355,13 +374,18 @@ export async function POST(request: NextRequest) {
           .eq("account_id", accountId)
       }
 
-      // Guardar total siempre que ML lo reporte (actualizar si mejoró, nunca bajar a 0)
-      if (totalFromApi > 0 && totalFromApi > (cur.publications_total ?? 0)) {
+      // Fijar publications_total SOLO en la primera página del scan (sin scroll cursor).
+      // Si lo actualizamos mid-scan y ML reporta un total más alto, el porcentaje retrocede.
+      // Ejemplo: offset=16000, total sube de 42000→43500 → 38%→37% (parece ir para atrás).
+      if (!scrollId && totalFromApi > 0) {
+        // Primera página — fijar el total para toda la sesión de scan
         await supabase
           .from("ml_import_progress")
           .update({ publications_total: totalFromApi })
           .eq("account_id", accountId)
       }
+      // Si scrollId !== null (páginas siguientes) NO actualizamos publications_total,
+      // para que el porcentaje avance monotónicamente durante el scan.
 
       // ── Paso 2: Hidratar items con multiget en paralelo ──────────────────
       // Dividir itemIds en batches de batchSize (max 50)
@@ -558,9 +582,17 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Actualizar offset SOLO con las filas realmente persistidas en DB
-      // Si el upsert falló, batchUpserted = 0 y el offset no avanza
-      const newOffset = offset + batchUpserted
+      // ── Actualizar publications_offset por items SCANEADOS (no por upserts) ──
+      // Semántica: publications_offset = posición en el scan de ML (0..publications_total).
+      // Avanzamos por itemIds.length (lo que ML devolvió en esta página), no por batchUpserted
+      // (filas que quedaron en DB). Esto evita dos problemas:
+      //   1. Offset > total: cuando scroll expira y se reinicia, items ya en DB se re-upsertean
+      //      (como UPDATE). Contar UPDATEs suma al offset, superando publications_total (→ >100%).
+      //   2. Progreso engañoso: si multiget falla para algunos items, batchUpserted < itemIds.length
+      //      y el offset avanzaría más lento que el scan real.
+      // Al usar itemIds.length, el offset avanza exactamente al ritmo del scan de ML y
+      // siempre converge a publications_total al terminar el scan completo.
+      const newOffset = offset + itemIds.length
 
       // Re-leer los contadores acumulados para incrementar correctamente
       // (el loop puede ejecutar múltiples iteraciones con el mismo `progress` snapshot)
@@ -590,13 +622,6 @@ export async function POST(request: NextRequest) {
       if (batchErrors === 0 && toUpsert.length > 0) {
         progressUpdate.last_error    = null
         progressUpdate.last_error_at = null
-      }
-
-      // IMPORTANTE: publications_total NUNCA debe ser null
-      // Si no se actualizó en este batch, preservar el valor anterior
-      // Si el anterior también era null, usar 0 como default seguro
-      if (!progressUpdate.publications_total) {
-        progressUpdate.publications_total = progress.publications_total || 0
       }
 
       await supabase

@@ -108,15 +108,24 @@ export default function MLImporterPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          account_id: selectedAccountId,
+          account_id:  selectedAccountId,
           max_seconds: 12,
-          publications_page: 200, // Aumentado para recuperar throughput alto
-          detail_batch: 30, // Aumentado para procesar más items por batch
+          detail_batch: 50,
+          concurrency:  2,
         }),
       })
       
       const data = await res.json()
       setRunResult(data)
+
+      // 409 = ya está corriendo (concurrent run). Esperar y reintentar.
+      if (res.status === 409) {
+        const waitMs = data.retry_after_ms ?? 15_000
+        if (autoModeRef.current) {
+          setTimeout(() => handleRun(), waitMs)
+        }
+        return
+      }
 
       // Si hay rate limit, pausar auto-mode y reanudar después del tiempo indicado
       if (data.rate_limited) {
@@ -513,20 +522,45 @@ export default function MLImporterPage() {
           </div>
 
           <div className="space-y-3">
+            {/* Métrica principal: items REALES en la DB (no se resetea con el cursor) */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium">Publicaciones</span>
-                <span className="text-sm text-muted-foreground">
-                  {progress.publications_offset.toLocaleString()} / {progress.publications_total?.toLocaleString() || "?"}
+                <span className="text-sm font-medium">Publicaciones en base de datos</span>
+                <span className="text-sm text-muted-foreground font-mono">
+                  {(progress.publications_in_db ?? progress.db_rows_upserted_count ?? 0).toLocaleString()}
+                  {progress.publications_total ? ` / ${progress.publications_total.toLocaleString()}` : ""}
                 </span>
               </div>
-              <Progress value={progress.publications_progress || 0} className="h-2" />
+              <Progress
+                value={
+                  progress.publications_total
+                    ? Math.min(100, Math.round(((progress.publications_in_db ?? 0) / progress.publications_total) * 100))
+                    : 0
+                }
+                className="h-2"
+              />
               <p className="text-xs text-muted-foreground mt-1">
                 {progress.status === "done"
-                  ? `${progress.publications_offset.toLocaleString()} publicaciones importadas (100%)`
-                  : `${(progress.publications_progress || 0).toFixed(1)}% — paginando con scroll cursor`}
+                  ? `${(progress.publications_in_db ?? 0).toLocaleString()} publicaciones importadas`
+                  : progress.publications_total
+                    ? `${Math.min(100, Math.round(((progress.publications_in_db ?? 0) / progress.publications_total) * 100))}% importado`
+                    : "Calculando..."}
               </p>
             </div>
+
+            {/* Métrica secundaria: posición del scan actual (se resetea al reiniciar cursor) */}
+            {progress.status === "running" && progress.publications_total && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-muted-foreground">Progreso del scan actual</span>
+                  <span className="text-xs text-muted-foreground font-mono">
+                    {progress.publications_offset?.toLocaleString()} / {progress.publications_total.toLocaleString()}
+                  </span>
+                </div>
+                <Progress value={progress.publications_progress || 0} className="h-1 opacity-60" />
+              </div>
+            )}
+
 
             {progress.finished_at && (
               <p className="text-xs text-muted-foreground">

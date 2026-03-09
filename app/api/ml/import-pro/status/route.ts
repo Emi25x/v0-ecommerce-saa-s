@@ -66,11 +66,19 @@ export async function GET(request: NextRequest) {
       progress = newProgress
     }
 
-    // Calcular progreso
+    // Calcular progreso del scan (0–100, siempre hacia adelante)
     const publicationsProgress =
       progress.publications_total && progress.publications_total > 0
-        ? Math.round((progress.publications_offset / progress.publications_total) * 100)
+        ? Math.min(100, Math.round((progress.publications_offset / progress.publications_total) * 100))
         : 0
+
+    // Contar items REALES en la DB para este account (fuente de verdad).
+    // Esta es la métrica honesta: cuántos items tiene importados independientemente
+    // de cuántos scans se hayan hecho o si el scroll cursor se reinició.
+    const { count: publicationsInDb } = await supabase
+      .from("ml_publications")
+      .select("*", { count: "exact", head: true })
+      .eq("account_id", accountId)
 
     return NextResponse.json({
       ok: true,
@@ -81,6 +89,7 @@ export async function GET(request: NextRequest) {
       progress: {
         ...progress,
         publications_progress: publicationsProgress,
+        publications_in_db:    publicationsInDb ?? 0,
       },
     })
   } catch (error: any) {
