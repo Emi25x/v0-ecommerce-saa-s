@@ -148,7 +148,7 @@ export default function MLBillingPage() {
 
   // Filtros
   const [filterEstado,    setFilterEstado]    = useState("paid")
-  const [filterEnvio,     setFilterEnvio]     = useState("delivered")
+  const [filterEnvio,     setFilterEnvio]     = useState("all")
   const [filterFacturado, setFilterFacturado] = useState("no")
   const [fechaDesde,      setFechaDesde]      = useState(() => {
     const d = new Date(); d.setDate(d.getDate() - 30)
@@ -223,10 +223,9 @@ export default function MLBillingPage() {
   }
 
   // ── Sincronizar estados de envío ──────────────────────────────────────────
-  // Llama a /api/ml/sync-shipping-status que consulta /shipments/{id} por cada
-  // orden con shipping_id pero sin shipping_status — mucho más confiable que
-  // el expand=shipping de orders/search.
-  const sincronizarEnvios = async (silent = false) => {
+  // Llama a /api/ml/sync-shipping-status para actualizar shipping_status en DB.
+  // Corre en background — NO bloquea la carga inicial de órdenes.
+  const sincronizarEnvios = useCallback(async (silent = false) => {
     if (!activeAccount || syncingEnvios) return
     setSyncingEnvios(true)
     if (!silent) setSyncEnviosMsg(null)
@@ -243,8 +242,8 @@ export default function MLBillingPage() {
       const data = await res.json()
       if (res.ok && data.ok) {
         if (!silent) setSyncEnviosMsg(`Actualizadas ${data.updated} órdenes`)
-        // Siempre recargar desde página 0 después de sync (puede haber cambiado el estado)
-        loadOrders(0)
+        // Refrescar la página actual (no resetear a 0) para mostrar los estados actualizados
+        loadOrders(page)
       } else {
         if (!silent) setSyncEnviosMsg("Error al sincronizar")
       }
@@ -253,7 +252,7 @@ export default function MLBillingPage() {
     } finally {
       setSyncingEnvios(false)
     }
-  }
+  }, [activeAccount, syncingEnvios, fechaDesde, fechaHasta, page, loadOrders])
 
   // ── Importar ventas desde ML API ─────────────────────────────────────────
   const importarVentas = async () => {
@@ -360,19 +359,13 @@ export default function MLBillingPage() {
     if (activeAccount) { setPage(0); loadOrders(0) }
   }, [activeAccount, filterEstado, filterEnvio, filterFacturado])
 
-  // Auto-sincronizar shipping_status al entrar a la página o cambiar de cuenta
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Auto-sincronizar shipping_status al entrar a la página o cambiar de cuenta.
+  // Corre en background — loadOrders se llama independientemente (effect arriba).
   useEffect(() => {
     if (activeAccount) sincronizarEnvios(true)
+  // sincronizarEnvios se estabiliza via useCallback; sólo reejecutar si cambia la cuenta
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeAccount])
-
-  // Re-sincronizar si el usuario cambia manualmente el filtro de envío a algo específico
-  useEffect(() => {
-    if (filterEnvio !== "all" && activeAccount) {
-      sincronizarEnvios(true)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterEnvio])
 
   // ── Selección ─────────────────────────────────────────────────────────────
   const toggleOrder = (id: number) => {
@@ -739,21 +732,17 @@ export default function MLBillingPage() {
         {loading ? (
           <div className="flex flex-col items-center justify-center py-16 gap-2 text-muted-foreground">
             <RefreshCw className="h-6 w-6 animate-spin" />
-            <p className="text-sm">{syncingEnvios ? "Sincronizando estados de envío…" : "Cargando…"}</p>
+            <p className="text-sm">Cargando…</p>
           </div>
         ) : orders.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-2 text-muted-foreground">
-            {syncingEnvios ? (
-              <>
-                <RefreshCw className="h-8 w-8 animate-spin opacity-60" />
-                <p className="text-sm">Sincronizando estados de envío…</p>
-                <p className="text-xs opacity-60">Los resultados aparecerán al finalizar</p>
-              </>
-            ) : (
-              <>
-                <ShoppingCart className="h-8 w-8 opacity-30" />
-                <p className="text-sm">No hay ventas con los filtros seleccionados</p>
-              </>
+            <ShoppingCart className="h-8 w-8 opacity-30" />
+            <p className="text-sm">No hay ventas con los filtros seleccionados</p>
+            {syncingEnvios && (
+              <p className="text-xs opacity-50 flex items-center gap-1">
+                <RefreshCw className="h-3 w-3 animate-spin" />
+                Actualizando estados de envío en segundo plano…
+              </p>
             )}
           </div>
         ) : (
