@@ -173,23 +173,40 @@ export async function POST(request: Request) {
     const candidateIds = candidateRows.map(r => r.id)
     const newCursorLastId = candidateIds[candidateIds.length - 1]
 
-    // ── 7) Construir índices de productos ────────────────────────────────────
-    // Usamos createAdminClient() (service role) para bypassear RLS y garantizar
-    // que siempre se lean todos los productos, independientemente de la sesión.
-    // gtin no existe en la tabla products (es columna de ml_publications) — solo ean/isbn/sku
-    const adminClient = createAdminClient()
-    const { data: allProducts, error: productsError } = await adminClient
-      .from("products")
-      .select("id, ean, isbn, sku")
-      .limit(500000)
+    // ── 7) Fetch pub details for this batch ──────────────────────────────────
+    const { data: pubs } = await supabase
+      .from("ml_publications")
+      .select("id, ml_item_id, title, ean, gtin, isbn, sku")
+      .in("id", candidateIds)
+      .is("product_id", null)
 
-    if (productsError) {
-      console.error("[matcher] Error cargando productos:", productsError)
-      return NextResponse.json({
-        ok: false,
-        error: "products_query_failed",
-        products_error: productsError,
-      }, { status: 500 })
+    // ── 8) Consultar solo los productos que coinciden con este batch ──────────
+    // En vez de cargar los 222k productos completos, extraemos los EANs del batch
+    // y hacemos un IN query. products.ean = pub.ean (ISBN-13 para libros).
+    // La tabla products NO tiene columna gtin — solo ean, isbn, sku.
+    const eanSet = new Set<string>()
+    for (const pub of pubs ?? []) {
+      if (pub.ean)  { const k = norm(pub.ean);  if (k) eanSet.add(k) }
+      if (pub.gtin) { const k = norm(pub.gtin); if (k) eanSet.add(k) }
+      if (pub.isbn) { const k = norm(pub.isbn); if (k) eanSet.add(k) }
+      if (pub.sku && /^\d{10,13}$/.test((pub.sku ?? "").trim())) {
+        const k = norm(pub.sku); if (k) eanSet.add(k)
+      }
+    }
+
+    const adminClient = createAdminClient()
+    const eanList = [...eanSet]
+    let allProducts: Array<{ id: string; ean: string | null; isbn: string | null; sku: string | null }> = []
+    if (eanList.length > 0) {
+      const { data, error: productsError } = await adminClient
+        .from("products")
+        .select("id, ean, isbn, sku")
+        .in("ean", eanList)
+      if (productsError) {
+        console.error("[matcher] Error cargando productos:", productsError)
+        return NextResponse.json({ ok: false, error: "products_query_failed", products_error: productsError }, { status: 500 })
+      }
+      allProducts = data ?? []
     }
 
     let productsWithId = 0
@@ -197,7 +214,7 @@ export async function POST(request: Request) {
     const isbnIndex = new Map<string, string[]>()
     const skuIndex  = new Map<string, string[]>()
 
-    for (const p of allProducts ?? []) {
+    for (const p of allProducts) {
       let hasAny = false
       if (p.ean)  { const key = norm(p.ean);  if (key) { hasAny = true; addToIndex(eanIndex,  key, p.id) } }
       if (p.isbn) { const key = norm(p.isbn); if (key) { hasAny = true; addToIndex(isbnIndex, key, p.id) } }
@@ -205,16 +222,7 @@ export async function POST(request: Request) {
       if (hasAny) productsWithId++
     }
 
-    const productsMissingIdentifiers = (allProducts?.length ?? 0) > 0 && productsWithId === 0
-
-    // ── 8) Fetch detalles solo de los IDs fijos ──────────────────────────────
-    // Si alguna publicación fue vinculada por otra sesión en el interim,
-    // product_id no es NULL y podemos filtrarla aquí para no re-matchearla.
-    const { data: pubs } = await supabase
-      .from("ml_publications")
-      .select("id, ml_item_id, title, ean, gtin, isbn, sku")
-      .in("id", candidateIds)
-      .is("product_id", null)   // protección extra: saltar las ya vinculadas
+    const productsMissingIdentifiers = allProducts.length > 0 && productsWithId === 0
 
     let pubsWithEan = 0, pubsWithIsbn = 0, pubsWithSku = 0
     let matched = 0, ambiguous = 0, notFound = 0, invalid = 0
