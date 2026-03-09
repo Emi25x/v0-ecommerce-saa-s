@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const body = await request.json()
-  const { account_id, limit = 300 } = body
+  const { account_id, limit = 500, fecha_desde, fecha_hasta } = body
 
   if (!account_id) {
     return NextResponse.json({ error: "account_id required" }, { status: 400 })
@@ -39,13 +39,18 @@ export async function POST(request: NextRequest) {
   // Órdenes con shipping_id que aún no están en estado terminal (delivered/not_delivered/cancelled).
   // Incluye shipping_status NULL y estados intermedios (ready_to_ship, shipped, handling, pending)
   // para que las órdenes entregadas se actualicen aunque ya tuvieran un estado previo.
-  const { data: ordersToSync, error: fetchErr } = await supabase
+  // Si se pasa fecha_desde/fecha_hasta se priorizan las órdenes del período visible.
+  let ordersQuery = supabase
     .from("ml_orders")
     .select("ml_order_id, shipping_id")
     .eq("account_id", account_id)
     .not("shipping_id", "is", null)
     .or("shipping_status.is.null,shipping_status.eq.ready_to_ship,shipping_status.eq.shipped,shipping_status.eq.handling,shipping_status.eq.pending")
-    .limit(limit)
+
+  if (fecha_desde) ordersQuery = ordersQuery.gte("date_created", fecha_desde)
+  if (fecha_hasta) ordersQuery = ordersQuery.lte("date_created", fecha_hasta)
+
+  const { data: ordersToSync, error: fetchErr } = await ordersQuery.limit(limit)
 
   if (fetchErr) {
     return NextResponse.json({ error: fetchErr.message }, { status: 500 })

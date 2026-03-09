@@ -230,12 +230,17 @@ export default function MLBillingPage() {
       const res  = await fetch("/api/ml/sync-shipping-status", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ account_id: activeAccount }),
+        body:    JSON.stringify({
+          account_id:  activeAccount,
+          fecha_desde: fechaDesde ? `${fechaDesde}T00:00:00.000Z` : undefined,
+          fecha_hasta: fechaHasta ? `${fechaHasta}T23:59:59.000Z` : undefined,
+        }),
       })
       const data = await res.json()
       if (res.ok && data.ok) {
         if (!silent) setSyncEnviosMsg(`Actualizadas ${data.updated} órdenes`)
-        if (data.updated > 0) loadOrders(page)
+        // Siempre recargar desde página 0 después de sync (puede haber cambiado el estado)
+        loadOrders(0)
       } else {
         if (!silent) setSyncEnviosMsg("Error al sincronizar")
       }
