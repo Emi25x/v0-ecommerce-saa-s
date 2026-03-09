@@ -15,6 +15,9 @@ import { runAzetaStockUpdate } from "@/lib/azeta/update-stock-import"
 //   }]
 // }
 
+export const dynamic = "force-dynamic"
+export const maxDuration = 300
+
 export async function GET(request: Request) {
   try {
     // Verificar CRON_SECRET solo si está configurado

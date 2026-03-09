@@ -5,6 +5,9 @@ import { getLibralToken, queryLibralProducts, delayBetweenBatches } from "@/lib/
 // Sincroniza stock y precios solo cuando hay cambios
 // Detecta productos nuevos automáticamente
 
+export const dynamic = "force-dynamic"
+export const maxDuration = 60
+
 export async function GET(request: Request) {
   try {
     // Verificar autorización

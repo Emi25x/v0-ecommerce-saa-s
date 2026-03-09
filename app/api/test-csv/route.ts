@@ -1,10 +1,20 @@
 import { type NextRequest, NextResponse } from "next/server"
 
+export const dynamic = "force-dynamic"
+
 export async function GET(request: NextRequest) {
   try {
-    const url = "https://elastic-rest.arnoia.com/feeds/getFeeds?customerCode=27401&pass=tale2740&typeFeed=DCSVCL"
+    const customerCode = process.env.ARNOIA_CUSTOMER_CODE
+    const pass = process.env.ARNOIA_PASS
+    const typeFeed = "DCSVCL"
 
-    console.log("[v0] Descargando CSV desde:", url)
+    if (!customerCode || !pass) {
+      return NextResponse.json({ error: "ARNOIA_CUSTOMER_CODE or ARNOIA_PASS env vars not set" }, { status: 500 })
+    }
+
+    const url = `https://elastic-rest.arnoia.com/feeds/getFeeds?customerCode=${customerCode}&pass=${pass}&typeFeed=${typeFeed}`
+
+    console.log("[v0] Descargando CSV desde:", url.replace(pass, "***"))
 
     const response = await fetch(url, {
       method: "GET",
@@ -55,7 +65,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      url,
+      url: url.replace(pass, "***"),
       status: response.status,
       contentType: response.headers.get("content-type"),
       csvLength: csvText.length,

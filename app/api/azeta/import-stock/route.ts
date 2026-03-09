@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeEan } from "@/lib/ean-utils"
 import Papa from "papaparse"
 
+export const dynamic = "force-dynamic"
 export const maxDuration = 300 // 5 minutos
 
 // Vercel Cron invoca con GET — delegar a POST

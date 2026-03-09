@@ -1,6 +1,9 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 
+export const dynamic = "force-dynamic"
+export const maxDuration = 30
+
 export async function GET() {
   console.log("[v0] ========================================")
   console.log("[v0] Checking Arnoia source configuration...")
