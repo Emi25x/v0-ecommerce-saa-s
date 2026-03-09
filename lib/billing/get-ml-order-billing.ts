@@ -41,9 +41,10 @@ export async function getMLOrderBilling(
 
   if (cached) {
     const ageMs = Date.now() - new Date(cached.updated_at).getTime()
-    // Revalidar si: (a) caché expirado, O (b) tenemos nombre pero sin doc_numero y
-    // billing_info_missing=false — puede indicar fetch anterior con endpoint incorrecto.
-    const needsRevalidation = !cached.billing_info_missing && !cached.doc_numero
+    // Forzar revalidación si el cache tiene nombre pero sin doc_numero (independientemente
+    // de billing_info_missing) — indica fetch anterior con endpoint incorrecto que no
+    // devolvía identificación. Esto permite recuperar los datos en el próximo acceso.
+    const needsRevalidation = !!cached.nombre && !cached.doc_numero
     if (ageMs < 24 * 60 * 60 * 1000 && !needsRevalidation) {
       return {
         ok:                   true,

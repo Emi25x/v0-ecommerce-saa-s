@@ -44,6 +44,7 @@ interface Empresa {
   razon_social:   string
   nombre_empresa: string | null
   cuit:           string
+  iva_default?:   number
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -389,6 +390,7 @@ export default function MLBillingPage() {
     const selOrders = orders.filter(o => selected.has(o.id))
     let ok = 0; let err = 0; const errs: string[] = []; const warns: string[] = []
     const round2 = (n: number) => Math.round(n * 100) / 100
+    const ivaDefault = empresas.find(e => e.id === activeEmpresa)?.iva_default ?? 0
 
     for (const order of selOrders) {
       try {
@@ -433,7 +435,7 @@ export default function MLBillingPage() {
               descripcion:     i.titulo || "Venta ML",
               cantidad:        i.cantidad,
               precio_unitario: round2(i.precio),
-              alicuota_iva:    0,
+              alicuota_iva:    ivaDefault,
             })),
           }),
         })
