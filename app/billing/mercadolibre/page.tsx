@@ -197,31 +197,28 @@ export default function MLBillingPage() {
   }
 
   // ── Sincronizar estados de envío ──────────────────────────────────────────
-  const sincronizarEnvios = async () => {
+  // Llama a /api/ml/sync-shipping-status que consulta /shipments/{id} por cada
+  // orden con shipping_id pero sin shipping_status — mucho más confiable que
+  // el expand=shipping de orders/search.
+  const sincronizarEnvios = async (silent = false) => {
     if (!activeAccount || syncingEnvios) return
     setSyncingEnvios(true)
-    setSyncEnviosMsg(null)
-    let totalSynced = 0
-    let offset = 0
-    const batchLimit = 50
+    if (!silent) setSyncEnviosMsg(null)
     try {
-      // Sincronizar hasta 5 páginas (250 órdenes) en cada llamada manual
-      for (let i = 0; i < 5; i++) {
-        const res  = await fetch("/api/ml/sync-orders", {
-          method:  "POST",
-          headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({ account_id: activeAccount, offset, limit: batchLimit }),
-        })
-        const data = await res.json()
-        if (!res.ok || !data.ok) break
-        totalSynced += data.synced ?? 0
-        if ((data.synced ?? 0) < batchLimit) break
-        offset += batchLimit
+      const res  = await fetch("/api/ml/sync-shipping-status", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ account_id: activeAccount }),
+      })
+      const data = await res.json()
+      if (res.ok && data.ok) {
+        if (!silent) setSyncEnviosMsg(`Actualizadas ${data.updated} órdenes`)
+        if (data.updated > 0) loadOrders(page)
+      } else {
+        if (!silent) setSyncEnviosMsg("Error al sincronizar")
       }
-      setSyncEnviosMsg(`Sincronizadas ${totalSynced} órdenes`)
-      loadOrders(page)
     } catch {
-      setSyncEnviosMsg("Error al sincronizar")
+      if (!silent) setSyncEnviosMsg("Error al sincronizar")
     } finally {
       setSyncingEnvios(false)
     }
@@ -295,6 +292,13 @@ export default function MLBillingPage() {
   useEffect(() => {
     if (activeAccount) { setPage(0); loadOrders(0) }
   }, [activeAccount, filterEstado, filterEnvio, filterFacturado])
+
+  // Auto-sincronizar shipping_status cuando el usuario filtra por estado de envío
+  useEffect(() => {
+    if (filterEnvio !== "all" && activeAccount) {
+      sincronizarEnvios(true)   // silent=true: no muestra msg, solo actualiza si hay cambios
+    }
+  }, [filterEnvio, activeAccount])
 
   // ── Selección ─────────────────────────────────────────────────────────────
   const toggleOrder = (id: number) => {
