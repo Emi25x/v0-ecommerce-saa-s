@@ -167,8 +167,9 @@ export default function CatalogEligibilityPage() {
   const [counts,        setCounts]        = useState<Counts | null>(null)
   const [countsLoading, setCountsLoading] = useState(false)
 
-  // Run loop
-  const [running,     setRunning]     = useState(false)
+  // Run loop (indexer) + bulk opt-in loop
+  const [running,      setRunning]      = useState(false)
+  const [bulkRunning,  setBulkRunning]  = useState(false)
   const [logs,        setLogs]        = useState<RunLog[]>([])
   const [runProgress, setRunProgress] = useState<{ processed: number; matched: number } | null>(null)
   const abortRef  = useRef(false)
@@ -375,6 +376,66 @@ export default function CatalogEligibilityPage() {
     }
   }, [accountId, toast])
 
+  // ── Bulk opt-in loop ─────────────────────────────────────────────────────
+
+  const handleBulkOptIn = useCallback(async () => {
+    if (!accountId || accountId === "all") {
+      toast({ title: "Seleccioná una cuenta ML primero", variant: "destructive" })
+      return
+    }
+    setBulkRunning(true)
+    abortRef.current = false
+    setLogs([])
+    setRunProgress({ processed: 0, matched: 0 })
+
+    let offset   = 0
+    let totalOk  = 0
+    let totalFail = 0
+
+    addLog(`Iniciando opt-in masivo para cuenta ${accountId}`, "info")
+
+    try {
+      while (!abortRef.current) {
+        const res  = await fetch("/api/ml/catalog-optin/bulk/run", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ account_id: accountId, offset, dry_run: false }),
+        })
+        const data = await res.json()
+
+        if (!data.ok) {
+          addLog(`Error: ${data.error}`, "error")
+          break
+        }
+
+        totalOk   += data.ok_count     ?? 0
+        totalFail += data.failed_count ?? 0
+        setRunProgress({ processed: totalOk + totalFail + (data.no_match_count ?? 0), matched: totalOk })
+
+        const parts = [
+          `lote=${data.batch_size}`,
+          `ok=${data.ok_count}`,
+          data.no_match_count ? `sin_match=${data.no_match_count}` : null,
+          data.failed_count   ? `errores=${data.failed_count}`     : null,
+        ].filter(Boolean).join(" | ")
+
+        addLog(parts, data.failed_count ? "warn" : "ok")
+
+        if (data.done) {
+          addLog(`Opt-in completado. Exitosos: ${totalOk}, errores: ${totalFail}`, "ok")
+          break
+        }
+
+        offset = data.offset
+        await new Promise((r) => setTimeout(r, 500))
+      }
+    } finally {
+      setBulkRunning(false)
+      load(0)
+      loadCounts()
+    }
+  }, [accountId, addLog, load, loadCounts, toast])
+
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [logs])
@@ -502,7 +563,7 @@ export default function CatalogEligibilityPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={running || accountId === "all"}
+                  disabled={running || bulkRunning || accountId === "all"}
                   onClick={handleEnqueue}
                   className="h-9 bg-transparent"
                 >
@@ -517,7 +578,7 @@ export default function CatalogEligibilityPage() {
 
             <Button
               size="sm"
-              disabled={running || accountId === "all"}
+              disabled={running || bulkRunning || accountId === "all"}
               onClick={() => handleRun(false)}
               className="h-9"
             >
@@ -534,7 +595,34 @@ export default function CatalogEligibilityPage() {
               )}
             </Button>
 
-            {running && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={running || bulkRunning || accountId === "all"}
+                  onClick={handleBulkOptIn}
+                  className="h-9 bg-transparent"
+                >
+                  {bulkRunning ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Opt-in...
+                    </>
+                  ) : (
+                    <>
+                      <ShoppingCart className="h-4 w-4 mr-2" />
+                      Opt-in masivo
+                    </>
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Hace opt-in al catálogo de todas las publicaciones elegibles de la cuenta
+              </TooltipContent>
+            </Tooltip>
+
+            {(running || bulkRunning) && (
               <Button
                 variant="destructive"
                 size="sm"
