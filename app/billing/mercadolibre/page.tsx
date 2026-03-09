@@ -148,7 +148,7 @@ export default function MLBillingPage() {
 
   // Filtros
   const [filterEstado,    setFilterEstado]    = useState("paid")
-  const [filterEnvio,     setFilterEnvio]     = useState("all")
+  const [filterEnvio,     setFilterEnvio]     = useState("delivered")
   const [filterFacturado, setFilterFacturado] = useState("no")
   const [fechaDesde,      setFechaDesde]      = useState(() => {
     const d = new Date(); d.setDate(d.getDate() - 30)
@@ -320,12 +320,19 @@ export default function MLBillingPage() {
     if (activeAccount) { setPage(0); loadOrders(0) }
   }, [activeAccount, filterEstado, filterEnvio, filterFacturado])
 
-  // Auto-sincronizar shipping_status cuando el usuario filtra por estado de envío
+  // Auto-sincronizar shipping_status al entrar a la página o cambiar de cuenta
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (activeAccount) sincronizarEnvios(true)
+  }, [activeAccount])
+
+  // Re-sincronizar si el usuario cambia manualmente el filtro de envío a algo específico
   useEffect(() => {
     if (filterEnvio !== "all" && activeAccount) {
-      sincronizarEnvios(true)   // silent=true: no muestra msg, solo actualiza si hay cambios
+      sincronizarEnvios(true)
     }
-  }, [filterEnvio, activeAccount])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterEnvio])
 
   // ── Selección ─────────────────────────────────────────────────────────────
   const toggleOrder = (id: number) => {
@@ -681,13 +688,24 @@ export default function MLBillingPage() {
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+          <div className="flex flex-col items-center justify-center py-16 gap-2 text-muted-foreground">
+            <RefreshCw className="h-6 w-6 animate-spin" />
+            <p className="text-sm">{syncingEnvios ? "Sincronizando estados de envío…" : "Cargando…"}</p>
           </div>
         ) : orders.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-2 text-muted-foreground">
-            <ShoppingCart className="h-8 w-8 opacity-30" />
-            <p className="text-sm">No hay ventas con los filtros seleccionados</p>
+            {syncingEnvios ? (
+              <>
+                <RefreshCw className="h-8 w-8 animate-spin opacity-60" />
+                <p className="text-sm">Sincronizando estados de envío…</p>
+                <p className="text-xs opacity-60">Los resultados aparecerán al finalizar</p>
+              </>
+            ) : (
+              <>
+                <ShoppingCart className="h-8 w-8 opacity-30" />
+                <p className="text-sm">No hay ventas con los filtros seleccionados</p>
+              </>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
