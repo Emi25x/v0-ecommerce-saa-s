@@ -3,8 +3,9 @@
  *
  * Flujo:
  *   1. Cache check en ml_order_billing_cache (TTL 24h)
- *   2. GET /orders/{id}              → buyer base (nombre fallback)
- *   3. GET /orders/{id}/billing_info → datos fiscales primarios
+ *   2. GET /orders/{id}                         → buyer base + billing_info.id
+ *   3. GET /orders/billing-info/MLA/{bi_id}     → datos fiscales primarios (approach correcto)
+ *      Fallback: GET /orders/{id}/billing_info  → si no hay billing_info.id
  *   4. Upsert cache
  *
  * Se llama directamente (sin HTTP) desde facturas/route.ts y desde
@@ -41,8 +42,7 @@ export async function getMLOrderBilling(
   if (cached) {
     const ageMs = Date.now() - new Date(cached.updated_at).getTime()
     // Revalidar si: (a) caché expirado, O (b) tenemos nombre pero sin doc_numero y
-    // billing_info_missing=false — puede indicar que en el fetch anterior se perdió
-    // el doc porque solo se leía bi.identification y ML lo devuelve en top-level.
+    // billing_info_missing=false — puede indicar fetch anterior con endpoint incorrecto.
     const needsRevalidation = !cached.billing_info_missing && !cached.doc_numero
     if (ageMs < 24 * 60 * 60 * 1000 && !needsRevalidation) {
       return {
@@ -73,7 +73,6 @@ export async function getMLOrderBilling(
 
   const auth = `Bearer ${mlAccount.access_token}`
 
-  // ── 3. GET /orders/{id} — buyer base (fallback si /billing_info falla) ──
   async function mlFetch(url: string, retries = 1): Promise<any> {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
@@ -93,6 +92,7 @@ export async function getMLOrderBilling(
     }
   }
 
+  // ── 3. GET /orders/{id} — buyer base + billing_info.id ──────────────────
   let orderData: any
   try {
     orderData = await mlFetch(`https://api.mercadolibre.com/orders/${order_id}`)
@@ -106,6 +106,9 @@ export async function getMLOrderBilling(
   const buyerFallback = [buyer.first_name, buyer.last_name].filter(Boolean).join(" ").trim()
     || buyer.nickname || null
 
+  // billing_info.id del buyer → endpoint correcto para datos fiscales
+  const billingInfoId: string | null = buyer?.billing_info?.id ?? null
+
   let nombre:        string | null = null
   let doc_tipo:      string | null = null
   let doc_numero:    string | null = null
@@ -114,14 +117,23 @@ export async function getMLOrderBilling(
   let billing_info_missing         = false
   let rawBillingInfo: any          = null
 
-  // ── 4. GET /orders/{id}/billing_info — fuente primaria fiscal ────────────
+  // ── 4. Obtener datos fiscales reales ────────────────────────────────────
+  // Approach preferido: GET /orders/billing-info/MLA/{billing_info_id}
+  // Fallback:           GET /orders/{id}/billing_info
   try {
-    const bi = await mlFetch(`https://api.mercadolibre.com/orders/${order_id}/billing_info`)
+    let bi: any
+    if (billingInfoId) {
+      bi = await mlFetch(
+        `https://api.mercadolibre.com/orders/billing-info/MLA/${billingInfoId}`
+      )
+    } else {
+      bi = await mlFetch(`https://api.mercadolibre.com/orders/${order_id}/billing_info`)
+    }
     rawBillingInfo = bi
 
-    const isBusiness = !!(bi.business_name || bi.business_name === "")
+    const isBusiness = !!(bi.business_name)
 
-    if (isBusiness && bi.business_name) {
+    if (isBusiness) {
       nombre     = bi.business_name
       doc_tipo   = bi.doc_type   || bi.identification?.type   || null
       doc_numero = bi.doc_number || bi.identification?.number || null
