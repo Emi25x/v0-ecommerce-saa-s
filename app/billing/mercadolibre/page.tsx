@@ -151,6 +151,10 @@ export default function MLBillingPage() {
   const [uploadingId,  setUploadingId]  = useState<number | null>(null)
   const [uploadStatus, setUploadStatus] = useState<Record<number, UploadStatus>>({})
 
+  // Sincronización de envíos
+  const [syncingEnvios, setSyncingEnvios] = useState(false)
+  const [syncEnviosMsg, setSyncEnviosMsg] = useState<string | null>(null)
+
   const subirFacturaML = async (order: MLOrder) => {
     if (!order.factura_info?.factura_id) return
     setUploadingId(order.id)
@@ -189,6 +193,37 @@ export default function MLBillingPage() {
       setUploadStatus(prev => ({ ...prev, [order.id]: "error" }))
     } finally {
       setUploadingId(null)
+    }
+  }
+
+  // ── Sincronizar estados de envío ──────────────────────────────────────────
+  const sincronizarEnvios = async () => {
+    if (!activeAccount || syncingEnvios) return
+    setSyncingEnvios(true)
+    setSyncEnviosMsg(null)
+    let totalSynced = 0
+    let offset = 0
+    const batchLimit = 50
+    try {
+      // Sincronizar hasta 5 páginas (250 órdenes) en cada llamada manual
+      for (let i = 0; i < 5; i++) {
+        const res  = await fetch("/api/ml/sync-orders", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ account_id: activeAccount, offset, limit: batchLimit }),
+        })
+        const data = await res.json()
+        if (!res.ok || !data.ok) break
+        totalSynced += data.synced ?? 0
+        if ((data.synced ?? 0) < batchLimit) break
+        offset += batchLimit
+      }
+      setSyncEnviosMsg(`Sincronizadas ${totalSynced} órdenes`)
+      loadOrders(page)
+    } catch {
+      setSyncEnviosMsg("Error al sincronizar")
+    } finally {
+      setSyncingEnvios(false)
     }
   }
 
@@ -486,7 +521,17 @@ export default function MLBillingPage() {
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Estado del envío</Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Estado del envío</Label>
+              <button
+                onClick={sincronizarEnvios}
+                disabled={syncingEnvios}
+                className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2 disabled:opacity-40"
+                title="Actualiza el estado de envío de las últimas 250 órdenes desde MercadoLibre"
+              >
+                {syncingEnvios ? "Sincronizando…" : syncEnviosMsg ?? "Sincronizar"}
+              </button>
+            </div>
             <Select value={filterEnvio} onValueChange={setFilterEnvio}>
               <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>

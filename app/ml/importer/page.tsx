@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
@@ -25,6 +25,10 @@ export default function MLImporterPage() {
   const [executionLog, setExecutionLog] = useState<any[]>([])
   const [accountDebug, setAccountDebug] = useState<any>(null)
   const [loadingAccountDebug, setLoadingAccountDebug] = useState(false)
+
+  // Ref para leer autoMode dentro de callbacks async sin stale closure
+  const autoModeRef = useRef(autoMode)
+  useEffect(() => { autoModeRef.current = autoMode }, [autoMode])
 
   // Cola de jobs
   const [queueJobs, setQueueJobs]       = useState<any[]>([])
@@ -80,15 +84,6 @@ export default function MLImporterPage() {
     loadData()
   }, [selectedAccountId])
 
-  // Auto-mode TEMPORALMENTE DESHABILITADO para diagnóstico
-  // No se ejecutarán invocaciones automáticas mientras diagnosticamos por qué se clava en 40%
-  useEffect(() => {
-    if (autoMode) {
-      console.log("[v0] Auto-mode deshabilitado temporalmente - diagnóstico en curso")
-      setAutoMode(false)
-    }
-  }, [])
-
   const handleRun = async () => {
     if (!selectedAccountId || running) return
 
@@ -110,11 +105,15 @@ export default function MLImporterPage() {
       const data = await res.json()
       setRunResult(data)
 
-      // Si hay rate limit, pausar auto-mode 10s y reanudar
+      // Si hay rate limit, pausar auto-mode y reanudar después del tiempo indicado
       if (data.rate_limited) {
         setAutoMode(false)
-        setTimeout(() => setAutoMode(true), 10000)
         setRunning(false)
+        const waitMs = (data.wait_seconds ?? 60) * 1000
+        setTimeout(() => {
+          setAutoMode(true)
+          handleRun()
+        }, waitMs)
         return
       }
 
@@ -155,8 +154,13 @@ export default function MLImporterPage() {
       }
 
       // Si está pausado o completo, detener auto-mode
-      if (data.paused || statusData.progress?.status === "done") {
+      const isDone = data.paused || statusData.progress?.status === "done" || !data.has_more
+      if (isDone) {
         setAutoMode(false)
+      } else if (autoModeRef.current) {
+        // Continuar automáticamente al siguiente batch con pequeña pausa
+        setTimeout(() => handleRun(), 800)
+        return
       }
     } catch (error: any) {
       console.error("[IMPORTER] Network/timeout error:", error)

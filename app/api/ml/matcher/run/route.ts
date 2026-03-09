@@ -227,8 +227,22 @@ export async function POST(request: Request) {
 
       if (pub.ean)  { const k = norm(pub.ean);  if (k) { eans.push(k);  pubsWithEan++ } }
       if (pub.gtin) { const k = norm(pub.gtin); if (k) addUnique(eans, k) }
-      if (pub.isbn) { const k = norm(pub.isbn); if (k) { isbns.push(k); pubsWithIsbn++ } }
-      if (pub.sku)  { const k = norm(pub.sku);  if (k) { skus.push(k);  pubsWithSku++ } }
+      if (pub.isbn) {
+        const k = norm(pub.isbn)
+        if (k) {
+          isbns.push(k); pubsWithIsbn++
+          // ISBN-13 = EAN-13 para libros — también buscar en índice EAN
+          addUnique(eans, k)
+        }
+      }
+      if (pub.sku) {
+        const k = norm(pub.sku)
+        if (k) {
+          skus.push(k); pubsWithSku++
+          // Si el SKU es numérico de 10-13 dígitos, puede ser un EAN/ISBN del vendedor
+          if (/^\d{10,13}$/.test(k)) addUnique(eans, k)
+        }
+      }
 
       const fromTitle = extractFromTitle(pub.title ?? "")
       fromTitle.eans.forEach(k  => addUnique(eans, k))
