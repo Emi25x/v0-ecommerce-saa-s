@@ -1,5 +1,7 @@
 "use client"
 
+export const dynamic = "force-dynamic"
+
 import { useCallback, useEffect, useState, useRef } from "react" // Importar useRef
 import { useRouter } from "next/navigation"
 import { createBrowserClient } from "@supabase/ssr"
@@ -253,8 +255,8 @@ const App = () => {
   }
 
   const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co",
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "placeholder-key",
   )
 
   useEffect(() => {
