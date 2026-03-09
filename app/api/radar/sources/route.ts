@@ -1,12 +1,8 @@
-import { createClient } from "@supabase/supabase-js"
 import { NextResponse } from "next/server"
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { createAdminClient } from "@/lib/supabase/admin"
 
 export async function GET() {
+  const supabase = createAdminClient()
   const { data, error } = await supabase
     .from("editorial_radar_sources")
     .select("*")
@@ -16,6 +12,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const supabase = createAdminClient()
   const body = await req.json()
   const { name, kind, url, sync_interval_hours, config_json } = body
   if (!name || !kind) return NextResponse.json({ error: "name y kind son requeridos" }, { status: 400 })
