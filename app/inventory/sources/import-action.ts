@@ -1,12 +1,12 @@
 "use server"
 
-import { createServerClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/supabase/server"
 
 export async function executeImportAction(sourceId: string, importMode: string) {
   console.log("[v0] SERVER ACTION - Starting import", { sourceId, importMode })
 
   try {
-    const supabase = await createServerClient()
+    const supabase = await createClient()
 
     // Get source configuration
     const { data: source, error: sourceError } = await supabase

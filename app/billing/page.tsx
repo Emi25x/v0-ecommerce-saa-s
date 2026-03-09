@@ -392,7 +392,7 @@ export default function BillingPage() {
         const d2 = await r2.json()
         if (d2.empresas?.length) {
           setEmpresas(d2.empresas)
-          const newId = d.config?.id || configForm.id || d2.empresas[0].id
+          const newId = d.empresa?.id || configForm.id || d2.empresas[0].id
           setEmpresaActivaId(newId)
           if (typeof window !== "undefined") localStorage.setItem("billing_empresa_activa", newId)
         }

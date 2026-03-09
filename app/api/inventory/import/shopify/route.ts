@@ -1,9 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createServerClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/supabase/server"
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createServerClient()
+    const supabase = await createClient()
 
     const shopifyResponse = await fetch(
       `${process.env.NEXT_PUBLIC_SHOPIFY_STORE_URL}/admin/api/2024-01/products.json`,
