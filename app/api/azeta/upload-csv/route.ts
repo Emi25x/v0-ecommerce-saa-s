@@ -1,13 +1,26 @@
+/**
+ * @deprecated /api/azeta/upload-csv
+ *
+ * Sube un CSV a Vercel Blob pero no lo procesa. Flujo incompleto.
+ * NO usar — la descarga y procesamiento están unificados en:
+ *   POST /api/azeta/download  → descarga ZIP/CSV y lo sube a Blob
+ *   POST /api/azeta/process   → procesa desde Blob en chunks
+ */
+
 import { NextRequest, NextResponse } from "next/server"
 import { put, del, list } from "@vercel/blob"
 
 export const dynamic = "force-dynamic"
 
 export async function GET() {
-  return NextResponse.json({ ok: true, route: "azeta-upload-csv-v1" })
+  return NextResponse.json({ ok: true, route: "azeta-upload-csv-v1", deprecated: true })
 }
 
 export async function POST(request: NextRequest) {
+  console.warn(
+    "[DEPRECATED] POST /api/azeta/upload-csv — " +
+    "usar POST /api/azeta/download (descarga+blob) + POST /api/azeta/process (procesamiento)"
+  )
   try {
     // Borrar blobs anteriores
     try {

@@ -1,3 +1,14 @@
+/**
+ * @deprecated /api/import-azeta-total-now
+ *
+ * Trigger manual alternativo con lógica propia y column mapping manual.
+ * NO usar — existe solo para referencia histórica.
+ *
+ * Rutas oficiales de reemplazo:
+ *   - Cron catálogo completo → POST /api/azeta/import-catalog
+ *   - Importación manual UI  → POST /api/azeta/download + POST /api/azeta/process
+ */
+
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 import { normalizeEan } from "@/lib/ean-utils"
@@ -5,6 +16,10 @@ import { normalizeEan } from "@/lib/ean-utils"
 export const maxDuration = 300 // 5 minutos para catálogo grande
 
 export async function GET() {
+  console.warn(
+    "[DEPRECATED] GET /api/import-azeta-total-now — " +
+    "usar POST /api/azeta/import-catalog (cron) o POST /api/azeta/download + /api/azeta/process (UI)"
+  )
   console.log("[v0] ==========================================")
   console.log("[v0] IMPORT AZETA TOTAL NOW - ENDPOINT CALLED")
   console.log("[v0] ==========================================")

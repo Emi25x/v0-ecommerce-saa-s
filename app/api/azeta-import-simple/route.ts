@@ -1,3 +1,14 @@
+/**
+ * @deprecated /api/azeta-import-simple
+ *
+ * Ruta de importación simplificada con URL hardcodeada y sin configuración de fuente.
+ * NO usar — existe solo como respaldo de emergencia.
+ *
+ * Rutas oficiales de reemplazo:
+ *   - Cron catálogo completo → POST /api/azeta/import-catalog
+ *   - Importación manual UI  → POST /api/azeta/download + POST /api/azeta/process
+ */
+
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { inflateRawSync } from "node:zlib"
@@ -5,6 +16,10 @@ import { inflateRawSync } from "node:zlib"
 export const maxDuration = 300
 
 export async function POST(request: NextRequest) {
+  console.warn(
+    "[DEPRECATED] POST /api/azeta-import-simple — " +
+    "usar POST /api/azeta/import-catalog (cron) o POST /api/azeta/download + /api/azeta/process (UI)"
+  )
   console.log("[AZETA-SIMPLE] ==================== STARTING ====================")
   const startTime = Date.now()
   

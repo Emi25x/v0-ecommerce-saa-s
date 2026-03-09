@@ -1,6 +1,18 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { runCatalogImport } from "@/lib/azeta/run-catalog-import"
 
 export const maxDuration = 300
+
+/**
+ * GET/POST /api/azeta/import-catalog
+ *
+ * Ruta oficial del cron para importación completa de catálogo AZETA (Azeta Total).
+ * Invocada por Vercel Cron cada domingo a las 3:00 AM (ver vercel.json).
+ *
+ * Para importaciones manuales desde la UI (resumables con progreso) usar:
+ *   POST /api/azeta/download  → descarga ZIP a Blob
+ *   POST /api/azeta/process   → procesa en chunks
+ */
 
 // Vercel Cron invoca con GET
 export async function GET(request: NextRequest) {
@@ -8,17 +20,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(_request: NextRequest) {
-  // Delegar al endpoint de importación completa de catálogo AZETA (ZIP → CSV → upsert)
-  // Siempre usa "Azeta Total" (catálogo completo) para el cron dominical
-  const baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL
-    ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-    : "http://localhost:3000"
-
-  const res = await fetch(`${baseUrl}/api/azeta/run`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source_name: "Azeta Total" }),
-  })
-  const data = await res.json()
-  return NextResponse.json(data, { status: res.status })
+  // Siempre importa "Azeta Total" (catálogo completo) — fuente configurada en import_sources
+  const result = await runCatalogImport({ source_name: "Azeta Total" })
+  return NextResponse.json(result, { status: result.success ? 200 : 500 })
 }
