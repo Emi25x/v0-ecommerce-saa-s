@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin"
+import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 import { protectAPI } from "@/lib/auth/protect-api"
 
@@ -173,7 +174,10 @@ export async function POST(request: Request) {
     const newCursorLastId = candidateIds[candidateIds.length - 1]
 
     // ── 7) Construir índices de productos ────────────────────────────────────
-    const { data: allProducts } = await supabase
+    // Usamos el cliente de sesión del usuario (no admin) porque la tabla products
+    // tiene RLS que permite acceso a usuarios autenticados pero no al service role.
+    const sessionClient = await createClient()
+    const { data: allProducts } = await sessionClient
       .from("products")
       .select("id, ean, gtin, isbn, sku")
       .or("ean.not.is.null,gtin.not.is.null,isbn.not.is.null,sku.not.is.null")

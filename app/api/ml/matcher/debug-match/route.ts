@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin"
+import { createClient } from "@/lib/supabase/server"
 import { NextRequest, NextResponse } from "next/server"
 
 /**
@@ -14,7 +15,10 @@ export async function GET(request: NextRequest) {
 
   if (!accountId) return NextResponse.json({ error: "account_id required" }, { status: 400 })
 
+  // Admin client para publications (RLS de publications permite service role)
   const supabase = createAdminClient()
+  // Session client para products (RLS de products solo permite usuarios autenticados)
+  const sessionClient = await createClient()
 
   // ── 1) Sample de publicaciones sin vincular ────────────────────────────────
   const { data: pubs } = await supabase
@@ -44,14 +48,14 @@ export async function GET(request: NextRequest) {
   ])
 
   // ── 3) Sample de productos (primeros 5) ────────────────────────────────────
-  const { data: sampleProducts } = await supabase
+  const { data: sampleProducts } = await sessionClient
     .from("products")
     .select("id, sku, ean, isbn, gtin, title")
     .limit(5)
 
   // ── 4) Para cada pub sin vincular, intentar match manual ──────────────────
   // Cargar todos los productos para el índice
-  const { data: allProducts } = await supabase
+  const { data: allProducts } = await sessionClient
     .from("products")
     .select("id, ean, gtin, isbn, sku")
 
