@@ -1,16 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
+import { createAdminClient } from "@/lib/supabase/admin"
 const BATCH = 20         // publicaciones por llamada — mantiene la peticion < 15s
 const RESOLVE_DELAY = 200
 const OPTIN_DELAY   = 300
 
 export async function POST(req: NextRequest) {
+  const supabase = createAdminClient()
   const { account_id, dry_run = false, offset = 0 } = await req.json()
   if (!account_id) return NextResponse.json({ error: "account_id requerido" }, { status: 400 })
 

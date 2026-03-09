@@ -1,9 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-
-const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
-
+import { createAdminClient } from "@/lib/supabase/admin"
 export async function PUT(request: NextRequest) {
+  const supabase = createAdminClient()
   try {
     const body = await request.json()
     const { item_id, price, available_quantity, title } = body

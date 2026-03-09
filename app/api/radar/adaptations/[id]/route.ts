@@ -1,12 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { createAdminClient } from "@/lib/supabase/admin"
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  const supabase = createAdminClient()
   try {
     const body = await req.json()
     const { data, error } = await supabase
@@ -23,6 +19,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
+  const supabase = createAdminClient()
   try {
     const { error } = await supabase
       .from("editorial_radar_adaptations")
