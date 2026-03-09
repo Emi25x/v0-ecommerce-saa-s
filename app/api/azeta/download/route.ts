@@ -64,7 +64,8 @@ export async function POST(request: NextRequest) {
     } catch {}
 
     // 3. Stream directo del body al put() de Blob (sin buffering local)
-    const rawBlob = await put("azeta-catalog/catalog.raw", res.body!, {
+    if (!res.body) throw new Error("Azeta response body is null (empty response from server)")
+    const rawBlob = await put("azeta-catalog/catalog.raw", res.body, {
       access: "public",
       contentType: "application/octet-stream",
     })
@@ -110,8 +111,9 @@ export async function POST(request: NextRequest) {
       elapsed_seconds: parseFloat(elapsed),
     })
   } catch (err: any) {
-    console.error("[AZETA-DL] Error:", err.message)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    const msg = err?.message || String(err) || "Unknown error"
+    console.error("[AZETA-DL] Error:", err)
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
 
