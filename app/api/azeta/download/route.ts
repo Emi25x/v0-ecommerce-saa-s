@@ -90,7 +90,23 @@ export async function POST(request: NextRequest) {
     }
 
     const lines = csvText.split("\n")
-    const totalLines = lines.filter(l => l.trim()).length - 1 // sin header
+    const totalLines = Math.max(0, lines.filter(l => l.trim()).length - 1) // sin header
+
+    // Si no hay datos (solo header o vacío), limpiar y salir sin crear CSV blob
+    if (totalLines === 0) {
+      await del(rawBlob.url).catch(() => {})
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
+      console.warn(`[AZETA-DL] Catálogo vacío (0 filas de datos). ¿Archivo parcial no disponible hoy?`)
+      return NextResponse.json({
+        ok: true,
+        empty: true,
+        blob_url: null,
+        csv_size_mb: 0,
+        total_lines: 0,
+        elapsed_seconds: parseFloat(elapsed),
+        message: "El catálogo no contiene filas de datos (solo header o archivo vacío). El parcial puede no estar disponible hoy.",
+      })
+    }
 
     // 6. Subir CSV descomprimido a Blob (para que process pueda usar Range)
     const csvBlobResult = await put("azeta-catalog/catalog.csv", csvText, {

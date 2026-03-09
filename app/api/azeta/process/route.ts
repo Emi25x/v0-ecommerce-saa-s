@@ -61,6 +61,15 @@ export async function POST(request: NextRequest) {
     // 206 = partial content, 200 = servidor no soporta range (devuelve todo)
     console.log(`[AZETA-PROC] fetch status=${fetchRes.status} content-range=${fetchRes.headers.get("content-range")}`)
 
+    if (!fetchRes.ok && fetchRes.status !== 416) {
+      const errBody = await fetchRes.text().catch(() => "")
+      throw new Error(`Blob no accesible (HTTP ${fetchRes.status}): ${errBody.slice(0, 120)}`)
+    }
+    // 416 = Range Not Satisfiable → archivo más pequeño que el range pedido → done
+    if (fetchRes.status === 416) {
+      return NextResponse.json({ ok: true, done: true, rows_processed: 0, created: 0, updated: 0, errors: 0, discarded: 0, elapsed_seconds: 0 })
+    }
+
     const chunkText = await fetchRes.text()
     const contentRange = fetchRes.headers.get("content-range") || ""
 

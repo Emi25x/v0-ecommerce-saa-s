@@ -133,6 +133,14 @@ export default function BatchImportPage() {
         const blobUrl = dlData.blob_url
         addLog(`ZIP procesado: CSV ${dlData.csv_size_mb}MB, ${dlData.total_lines?.toLocaleString()} lineas (${dlData.elapsed_seconds}s)`)
 
+        // Catálogo vacío — no hay nada que procesar
+        if (!blobUrl || (dlData.total_lines ?? 0) <= 0) {
+          addLog(`⚠️ ${dlData.message || "El catálogo no tiene datos disponibles. El parcial puede no estar publicado hoy."}`)
+          setStatus("Sin datos disponibles")
+          setIsRunning(false)
+          return
+        }
+
         // Paso 2: Procesar en lotes de 4MB desde el CSV en Blob
         addLog(`ZIP descomprimido a CSV (${dlData.csv_size_mb}MB, ${dlData.total_lines?.toLocaleString()} lineas). Procesando...`)
         setTotalRows(dlData.total_lines || 0)
