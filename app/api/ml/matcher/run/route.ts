@@ -174,13 +174,14 @@ export async function POST(request: Request) {
     const newCursorLastId = candidateIds[candidateIds.length - 1]
 
     // ── 7) Construir índices de productos ────────────────────────────────────
-    // Usamos el cliente de sesión del usuario (no admin) porque la tabla products
-    // tiene RLS que permite acceso a usuarios autenticados pero no al service role.
+    // Usamos createClient() (sesión del usuario) porque la tabla products tiene RLS
+    // que permite acceso a usuarios autenticados pero bloquea el service role.
+    // Sin filtro .or("ean.not.is.null,...") — ese filtro retorna 0 filas silenciosamente
+    // en el cliente JS de Supabase. El loop de indexado ya maneja null de forma segura.
     const sessionClient = await createClient()
     const { data: allProducts } = await sessionClient
       .from("products")
       .select("id, ean, gtin, isbn, sku")
-      .or("ean.not.is.null,gtin.not.is.null,isbn.not.is.null,sku.not.is.null")
 
     let productsWithId = 0
     const eanIndex  = new Map<string, string[]>()
