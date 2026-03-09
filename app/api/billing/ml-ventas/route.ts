@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
     if (fecha_desde)  q = q.gte("date_created",    fecha_desde)
     if (fecha_hasta)  q = q.lte("date_created",    fecha_hasta)
     if (facturado === "si" && facturadaIds.length > 0)
-      q = q.in("ml_order_id", facturadaIds.map(Number))
+      q = q.in("ml_order_id", facturadaIds)
     if (facturado === "no" && facturadaIds.length > 0)
       q = q.not("ml_order_id", "in", `(${facturadaIds.join(",")})`)
     return q

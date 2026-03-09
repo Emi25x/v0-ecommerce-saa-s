@@ -126,7 +126,7 @@ export default function MLBillingPage() {
 
   // Filtros
   const [filterEstado,    setFilterEstado]    = useState("paid")
-  const [filterEnvio,     setFilterEnvio]     = useState("delivered")
+  const [filterEnvio,     setFilterEnvio]     = useState("all")
   const [filterFacturado, setFilterFacturado] = useState("no")
   const [fechaDesde,      setFechaDesde]      = useState(() => {
     const d = new Date(); d.setDate(d.getDate() - 30)
