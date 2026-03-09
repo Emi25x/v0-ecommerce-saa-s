@@ -7,7 +7,7 @@ export const maxDuration = 60
 
 // ML API hard limits
 const ML_SCAN_PAGE_SIZE   = 50   // search_type=scan: máximo real permitido
-const ML_MULTIGET_MAX_IDS = 50   // /items?ids=...: máximo 50 por request
+const ML_MULTIGET_MAX_IDS = 20   // /items?ids=...: máximo REAL = 20 (ML devuelve 400 si se envían más)
 const ML_ATTRIBUTES       = "id,title,price,available_quantity,sold_quantity,status,permalink,thumbnail,listing_type_id,seller_custom_field,attributes,variations,shipping,tags,catalog_listing,catalog_listing_eligible"
 
 // ── Retry con backoff exponencial ────────────────────────────────────────────
@@ -110,8 +110,8 @@ export async function POST(request: NextRequest) {
     } = body
 
     accountId = account_id
-    // detail_batch clamped a 1..50 (límite real del multiget de ML)
-    const batchSize = Math.min(50, Math.max(1, detail_batch))
+    // detail_batch clamped a 1..20 (límite real del multiget de ML es 20 IDs)
+    const batchSize = Math.min(ML_MULTIGET_MAX_IDS, Math.max(1, detail_batch ?? ML_MULTIGET_MAX_IDS))
 
     if (!accountId) {
       return NextResponse.json({ error: "account_id required" }, { status: 400 })

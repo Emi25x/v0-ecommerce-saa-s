@@ -110,7 +110,7 @@ export default function MLImporterPage() {
         body: JSON.stringify({
           account_id:  selectedAccountId,
           max_seconds: 12,
-          detail_batch: 50,
+          detail_batch: 20,
           concurrency:  2,
         }),
       })
