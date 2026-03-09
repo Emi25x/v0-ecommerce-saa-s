@@ -177,6 +177,10 @@ export default function MLBillingPage() {
   const [syncingEnvios, setSyncingEnvios] = useState(false)
   const [syncEnviosMsg, setSyncEnviosMsg] = useState<string | null>(null)
 
+  // Importar ventas desde ML API → DB
+  const [importingOrders, setImportingOrders] = useState(false)
+  const [importMsg,       setImportMsg]       = useState<string | null>(null)
+
   const subirFacturaML = async (order: MLOrder) => {
     if (!order.factura_info?.factura_id) return
     setUploadingId(order.id)
@@ -248,6 +252,42 @@ export default function MLBillingPage() {
       if (!silent) setSyncEnviosMsg("Error al sincronizar")
     } finally {
       setSyncingEnvios(false)
+    }
+  }
+
+  // ── Importar ventas desde ML API ─────────────────────────────────────────
+  const importarVentas = async () => {
+    if (!activeAccount || importingOrders) return
+    setImportingOrders(true)
+    setImportMsg(null)
+    let totalSynced = 0
+    let offset = 0
+    let hasMore = true
+    const maxOrders = 500
+    const pageSize  = 50
+    try {
+      while (hasMore && totalSynced < maxOrders) {
+        const res  = await fetch("/api/ml/sync-orders", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ account_id: activeAccount, offset, limit: pageSize }),
+        })
+        const data = await res.json()
+        if (!data.ok) {
+          setImportMsg(data.rate_limited ? "Límite de ML alcanzado, reintentá en unos segundos" : `Error: ${data.error}`)
+          break
+        }
+        totalSynced += data.synced ?? 0
+        hasMore = data.has_more ?? false
+        offset  = data.offset  ?? (offset + pageSize)
+        setImportMsg(`Importando… ${totalSynced} ventas`)
+      }
+      setImportMsg(`${totalSynced} ventas importadas`)
+      loadOrders(0)
+    } catch {
+      setImportMsg("Error al importar")
+    } finally {
+      setImportingOrders(false)
     }
   }
 
@@ -477,10 +517,19 @@ export default function MLBillingPage() {
           <h1 className="text-2xl font-bold tracking-tight">Ventas MercadoLibre</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Consultá tus ventas y facturálas directamente a ARCA</p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => loadOrders(page)} disabled={loading} className="gap-2">
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Actualizar
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex flex-col items-end gap-0.5">
+            <Button variant="outline" size="sm" onClick={importarVentas} disabled={importingOrders || !activeAccount} className="gap-2">
+              <Download className={`h-4 w-4 ${importingOrders ? "animate-pulse" : ""}`} />
+              {importingOrders ? "Importando…" : "Importar ventas"}
+            </Button>
+            {importMsg && <span className="text-[10px] text-muted-foreground">{importMsg}</span>}
+          </div>
+          <Button variant="outline" size="sm" onClick={() => loadOrders(page)} disabled={loading} className="gap-2">
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Actualizar
+          </Button>
+        </div>
       </div>
 
       {/* Selector de cuenta ML + empresa ARCA */}
