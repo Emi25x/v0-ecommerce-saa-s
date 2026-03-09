@@ -21,14 +21,17 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { getValidAccessToken } from "@/lib/mercadolibre"
 
+export const dynamic    = "force-dynamic"
 export const maxDuration = 300 // 5 min — procesar ítems en serie sin timeout
 
 const ML_API = "https://api.mercadolibre.com"
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-)
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  )
+}
 
 // ── Helper: precio objetivo cuando no hay competencia activa ─────────────────
 function targetWhenAlone(cfg: {
@@ -105,6 +108,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
+  const supabase  = getSupabase()
   const startedAt = Date.now()
 
   // ── 1. Obtener todos los ítems con repricing habilitado ────────────────────
@@ -164,7 +168,7 @@ export async function GET(req: NextRequest) {
       if (!ptwRes.ok) {
         const errTxt = await ptwRes.text()
         console.warn(`[reprice] ${ml_item_id}: price_to_win HTTP ${ptwRes.status}`)
-        await persistResult({
+        await persistResult(supabase, {
           cfg, currentPrice, new_price: null, status: "error",
           ptw_price: null, winner_stock: null, rawResponse: errTxt, changed: false,
         })
@@ -221,7 +225,7 @@ export async function GET(req: NextRequest) {
         } else {
           const errBody = await updateRes.json().catch(() => ({}))
           console.error(`[reprice] ${ml_item_id}: error al actualizar precio en ML`, errBody)
-          await persistResult({
+          await persistResult(supabase, {
             cfg, currentPrice, new_price, status: "error",
             ptw_price: ptwPrice, winner_stock: winnerStock, rawResponse: errBody, changed: false,
           })
@@ -232,7 +236,7 @@ export async function GET(req: NextRequest) {
       }
 
       // 2f. Guardar estado del ciclo
-      await persistResult({
+      await persistResult(supabase, {
         cfg, currentPrice, new_price,
         status, ptw_price: ptwPrice, winner_stock: winnerStock,
         rawResponse: { price_to_win: ptwPrice, status: ptwStatus, winner_stock: winnerStock },
@@ -265,7 +269,7 @@ export async function GET(req: NextRequest) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-async function persistResult(args: {
+async function persistResult(supabase: ReturnType<typeof getSupabase>, args: {
   cfg:              { id: string; ml_item_id: string }
   currentPrice:     number | null
   new_price:        number | null
