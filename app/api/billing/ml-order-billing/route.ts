@@ -13,14 +13,15 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
 
   const { searchParams } = new URL(req.url)
-  const account_id = searchParams.get("account_id") || ""
-  const order_id   = searchParams.get("order_id")   || ""
+  const account_id    = searchParams.get("account_id") || ""
+  const order_id      = searchParams.get("order_id")   || ""
+  const forceRefresh  = searchParams.get("force") === "1"
 
   if (!account_id || !order_id) {
     return NextResponse.json({ ok: false, error: "Faltan parámetros account_id / order_id" }, { status: 400 })
   }
 
-  const result = await getMLOrderBilling(supabase, account_id, order_id)
+  const result = await getMLOrderBilling(supabase, account_id, order_id, { forceRefresh })
 
   if (!result.ok) {
     return NextResponse.json(result, { status: result.error?.includes("no encontrada") ? 404 : 502 })

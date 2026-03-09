@@ -30,6 +30,7 @@ export async function getMLOrderBilling(
   supabase: SupabaseClient,
   account_id: string,
   order_id: string,
+  { forceRefresh = false }: { forceRefresh?: boolean } = {},
 ): Promise<MLOrderBillingResult> {
   // ── 1. Cache check ───────────────────────────────────────────────────────
   const { data: cached } = await supabase
@@ -41,11 +42,14 @@ export async function getMLOrderBilling(
 
   if (cached) {
     const ageMs = Date.now() - new Date(cached.updated_at).getTime()
-    // Forzar revalidación si el cache tiene nombre pero sin doc_numero (independientemente
-    // de billing_info_missing) — indica fetch anterior con endpoint incorrecto que no
-    // devolvía identificación. Esto permite recuperar los datos en el próximo acceso.
-    const needsRevalidation = !!cached.nombre && !cached.doc_numero
-    if (ageMs < 24 * 60 * 60 * 1000 && !needsRevalidation) {
+    // Revalidar si:
+    //  a) Tiene nombre pero sin doc_numero → fetch anterior con endpoint incorrecto
+    //  b) billing_info_missing=true → TTL corto (2h) en lugar de 24h, por si el
+    //     endpoint viejo era el culpable; el nuevo endpoint puede tener los datos
+    const needsRevalidation =
+      (!!cached.nombre && !cached.doc_numero) ||
+      (!!cached.billing_info_missing && ageMs > 2 * 60 * 60 * 1000)
+    if (!forceRefresh && ageMs < 24 * 60 * 60 * 1000 && !needsRevalidation) {
       return {
         ok:                   true,
         nombre:               cached.nombre,

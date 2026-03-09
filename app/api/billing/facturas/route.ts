@@ -67,7 +67,9 @@ export async function POST(request: Request) {
 
     if (orden_id && bodyAccountId) {
       try {
-        const bi = await getMLOrderBilling(supabase, bodyAccountId, orden_id)
+        // forceRefresh=true: al crear una factura siempre queremos datos frescos de ML,
+        // no una entrada de cache posiblemente desactualizada del endpoint anterior.
+        const bi = await getMLOrderBilling(supabase, bodyAccountId, orden_id, { forceRefresh: true })
 
         if (bi.ok) {
           // Guardar solo los campos fiscales en el snapshot (sin metadatos del endpoint)
