@@ -46,10 +46,14 @@ interface Empresa {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const ESTADO_OPTS = [
-  { value: "all",       label: "Todos los estados" },
-  { value: "paid",      label: "Pagadas" },
-  { value: "cancelled", label: "Canceladas" },
-  { value: "pending",   label: "Pendientes" },
+  { value: "all",                label: "Todos los estados" },
+  { value: "paid",               label: "Pagadas" },
+  { value: "cancelled",          label: "Canceladas" },
+  { value: "pending",            label: "Pendientes" },
+  { value: "payment_required",   label: "Pago requerido" },
+  { value: "payment_in_process", label: "Pago en proceso" },
+  { value: "partially_refunded", label: "Parcialmente reembolsada" },
+  { value: "invalid",            label: "Inválida" },
 ]
 
 const ENVIO_OPTS = [
@@ -58,6 +62,9 @@ const ENVIO_OPTS = [
   { value: "shipped",       label: "En camino" },
   { value: "ready_to_ship", label: "Listas para enviar" },
   { value: "not_delivered", label: "No entregadas" },
+  { value: "handling",      label: "Preparando envío" },
+  { value: "pending",       label: "Envío pendiente" },
+  { value: "cancelled",     label: "Envío cancelado" },
 ]
 
 const FACTURADO_OPTS = [
@@ -75,10 +82,16 @@ function EnvioBadge({ estado }: { estado?: string | null }) {
     not_delivered:  "bg-red-500/15 text-red-400 border-red-500/30",
     cancelled:      "bg-red-500/15 text-red-400 border-red-500/30",
     pending:        "bg-amber-500/15 text-amber-400 border-amber-500/30",
+    handling:       "bg-orange-500/15 text-orange-400 border-orange-500/30",
   }
   const labels: Record<string, string> = {
-    delivered: "Entregada", shipped: "En camino", ready_to_ship: "Lista enviar",
-    not_delivered: "No entregada", cancelled: "Cancelado", pending: "Pendiente",
+    delivered:     "Entregada",
+    shipped:       "En camino",
+    ready_to_ship: "Lista enviar",
+    not_delivered: "No entregada",
+    cancelled:     "Cancelado",
+    pending:       "Pendiente",
+    handling:      "Preparando",
   }
   const cls = map[estado] || "bg-muted text-muted-foreground border-border"
   return (
@@ -90,13 +103,22 @@ function EnvioBadge({ estado }: { estado?: string | null }) {
 
 function EstadoBadge({ estado }: { estado: string }) {
   const map: Record<string, string> = {
-    paid:      "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-    delivered: "bg-blue-500/15 text-blue-400 border-blue-500/30",
-    cancelled: "bg-red-500/15 text-red-400 border-red-500/30",
-    pending:   "bg-amber-500/15 text-amber-400 border-amber-500/30",
+    paid:                "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+    cancelled:           "bg-red-500/15 text-red-400 border-red-500/30",
+    pending:             "bg-amber-500/15 text-amber-400 border-amber-500/30",
+    payment_required:    "bg-amber-500/15 text-amber-400 border-amber-500/30",
+    payment_in_process:  "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",
+    partially_refunded:  "bg-orange-500/15 text-orange-400 border-orange-500/30",
+    invalid:             "bg-red-500/15 text-red-400 border-red-500/30",
   }
   const labels: Record<string, string> = {
-    paid: "Pagada", delivered: "Entregada", cancelled: "Cancelada", pending: "Pendiente",
+    paid:                "Pagada",
+    cancelled:           "Cancelada",
+    pending:             "Pendiente",
+    payment_required:    "Pago requerido",
+    payment_in_process:  "Pago en proceso",
+    partially_refunded:  "Parcial reembolso",
+    invalid:             "Inválida",
   }
   return (
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${map[estado] ?? "bg-muted/30 text-muted-foreground border-border"}`}>

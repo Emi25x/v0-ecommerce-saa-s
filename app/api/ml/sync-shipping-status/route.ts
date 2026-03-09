@@ -36,13 +36,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Account not found" }, { status: 404 })
   }
 
-  // Órdenes con shipping_id pero sin shipping_status
+  // Órdenes con shipping_id que aún no están en estado terminal (delivered/not_delivered/cancelled).
+  // Incluye shipping_status NULL y estados intermedios (ready_to_ship, shipped, handling, pending)
+  // para que las órdenes entregadas se actualicen aunque ya tuvieran un estado previo.
   const { data: ordersToSync, error: fetchErr } = await supabase
     .from("ml_orders")
     .select("ml_order_id, shipping_id")
     .eq("account_id", account_id)
-    .is("shipping_status", null)
     .not("shipping_id", "is", null)
+    .or("shipping_status.is.null,shipping_status.eq.ready_to_ship,shipping_status.eq.shipped,shipping_status.eq.handling,shipping_status.eq.pending")
     .limit(limit)
 
   if (fetchErr) {
