@@ -290,7 +290,8 @@ export async function POST(request: Request) {
         for (const key of ids) {
           const pids = index.get(key) ?? []
           if (pids.length === 1) { productId = pids[0]; matchType = type; totalMatches = 1; break outer }
-          if (pids.length > 1)   { totalMatches = pids.length; matchType = type; break outer }
+          // EAN debería ser único — si hay duplicados en DB, tomamos el primero (es dato corrupto, no ambigüedad real)
+          if (pids.length > 1)   { productId = pids[0]; matchType = `${type}_dup`; totalMatches = pids.length; break outer }
         }
       }
 
