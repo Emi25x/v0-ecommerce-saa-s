@@ -176,10 +176,12 @@ export async function POST(request: Request) {
     // ── 7) Construir índices de productos ────────────────────────────────────
     // Usamos createAdminClient() (service role) para bypassear RLS y garantizar
     // que siempre se lean todos los productos, independientemente de la sesión.
+    // gtin no existe en la tabla products (es columna de ml_publications) — solo ean/isbn/sku
     const adminClient = createAdminClient()
     const { data: allProducts, error: productsError } = await adminClient
       .from("products")
-      .select("id, ean, gtin, isbn, sku")
+      .select("id, ean, isbn, sku")
+      .limit(500000)
 
     if (productsError) {
       console.error("[matcher] Error cargando productos:", productsError)
@@ -190,18 +192,6 @@ export async function POST(request: Request) {
       }, { status: 500 })
     }
 
-    if ((allProducts?.length ?? 0) === 0) {
-      // Diagnóstico: contar total sin filtros para saber si la tabla está vacía
-      const { count: totalInTable } = await adminClient
-        .from("products")
-        .select("*", { count: "exact", head: true })
-      return NextResponse.json({
-        ok: false,
-        error: "products_table_empty_or_unreachable",
-        total_in_table: totalInTable,
-      }, { status: 500 })
-    }
-
     let productsWithId = 0
     const eanIndex  = new Map<string, string[]>()
     const isbnIndex = new Map<string, string[]>()
@@ -209,21 +199,9 @@ export async function POST(request: Request) {
 
     for (const p of allProducts ?? []) {
       let hasAny = false
-      for (const raw of [p.ean, p.gtin]) {
-        if (!raw) continue
-        const key = norm(raw)
-        if (!key) continue
-        hasAny = true
-        addToIndex(eanIndex, key, p.id)
-      }
-      if (p.isbn) {
-        const key = norm(p.isbn)
-        if (key) { hasAny = true; addToIndex(isbnIndex, key, p.id) }
-      }
-      if (p.sku) {
-        const key = norm(p.sku)
-        if (key) { hasAny = true; addToIndex(skuIndex, key, p.id) }
-      }
+      if (p.ean)  { const key = norm(p.ean);  if (key) { hasAny = true; addToIndex(eanIndex,  key, p.id) } }
+      if (p.isbn) { const key = norm(p.isbn); if (key) { hasAny = true; addToIndex(isbnIndex, key, p.id) } }
+      if (p.sku)  { const key = norm(p.sku);  if (key) { hasAny = true; addToIndex(skuIndex,  key, p.id) } }
       if (hasAny) productsWithId++
     }
 
