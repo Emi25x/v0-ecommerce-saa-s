@@ -17,6 +17,7 @@ export interface StockUpdateResult {
   processed?:   number
   updated?:     number
   not_found?:   number
+  zeroed?:      number   // productos puestos a stock_by_source.azeta=0 por no estar en el archivo
   skipped?:     number
   elapsed_ms?:  number
   error?:       string
@@ -97,6 +98,22 @@ export async function runAzetaStockUpdate(
     if ((i + BATCH) % 5000 === 0) console.log(`[AZETA][STOCK] Progreso: ${i + BATCH}/${validUpdates.length}`)
   }
 
+  // Poner stock_by_source.azeta = 0 en productos que NO están en el archivo
+  // (productos que Azeta ya no tiene disponibles en este run)
+  // Solo afecta el campo "azeta" del JSONB — preserva arnoia y otros proveedores
+  let zeroed = 0
+  const allEans = validUpdates.map(u => u.ean)
+  const { data: zeroResult, error: zeroError } = await supabase.rpc(
+    "zero_azeta_stock_not_in_list",
+    { p_eans: allEans }
+  )
+  if (zeroError) {
+    console.error(`[AZETA][STOCK] Error zeroing: ${zeroError.message}`)
+  } else {
+    zeroed = zeroResult?.zeroed ?? 0
+    console.log(`[AZETA][STOCK] Puestos a 0: ${zeroed} productos no presentes en el archivo`)
+  }
+
   // Actualizar estado del source en DB
   await supabase
     .from("import_sources")
@@ -104,13 +121,14 @@ export async function runAzetaStockUpdate(
     .eq("id", src.id)
 
   const elapsed = Date.now() - startTime
-  console.log(`[AZETA][STOCK] Completado en ${elapsed}ms: ${updated} actualizados, ${notFound} no encontrados`)
+  console.log(`[AZETA][STOCK] Completado en ${elapsed}ms: ${updated} actualizados, ${notFound} no encontrados, ${zeroed} puestos a 0`)
 
   return {
     success:    true,
     processed:  validUpdates.length,
     updated,
     not_found:  notFound,
+    zeroed,
     skipped,
     elapsed_ms: elapsed,
   }
