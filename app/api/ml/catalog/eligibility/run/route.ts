@@ -27,16 +27,31 @@ async function searchCatalogProduct(
   identifier: string,
   identifierType: "ISBN" | "EAN" | "GTIN",
 ): Promise<{ catalog_product_id: string | null; match_count: number }> {
-  // ML products search accepts free-text; EAN/ISBN search via the q param
-  const url = `${ML_API}/products/search?status=active&q=${encodeURIComponent(identifier)}&limit=3`
+  // Normalizar notación científica (ej: 9.78845E+12 → "9788450...")
+  let ean = String(identifier).trim()
+  if (/^[0-9]+\.?[0-9]*[eE][+\-][0-9]+$/.test(ean)) {
+    ean = Number(ean).toFixed(0)
+  }
 
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
+  // product_identifier hace búsqueda exacta por EAN/ISBN — más confiable que q=texto
+  // site_id=MLA es requerido para búsquedas en Argentina
+  const url = `${ML_API}/products/search?status=active&site_id=MLA&product_identifier=${encodeURIComponent(ean)}`
+
+  const controller = new AbortController()
+  const tid = setTimeout(() => controller.abort(), 8_000)
+  let res: Response
+  try {
+    res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(tid)
+  }
 
   if (!res.ok) {
     const txt = await res.text()
-    throw new Error(`ML products/search ${res.status}: ${txt.slice(0, 200)}`)
+    throw new Error(`ML ${res.status}: ${txt.slice(0, 200)}`)
   }
 
   const data = await res.json()
@@ -101,10 +116,11 @@ export async function POST(req: NextRequest) {
 
     // ── 3. Process each publication ──────────────────────────────────────────
 
-    let matched   = 0
-    let not_found = 0
-    let ambiguous = 0
-    let errors    = 0
+    let matched    = 0
+    let not_found  = 0
+    let ambiguous  = 0
+    let errors     = 0
+    let last_error = ""
 
     for (const pub of pubs) {
       const identifier = pub.isbn || pub.ean || pub.gtin
@@ -124,20 +140,22 @@ export async function POST(req: NextRequest) {
         await supabase
           .from("ml_publications")
           .update({
-            catalog_product_id:      catalog_product_id ?? null,
+            catalog_product_id:       catalog_product_id ?? null,
             catalog_listing_eligible: isEligible,
-            updated_at:              new Date().toISOString(),
+            updated_at:               new Date().toISOString(),
           })
           .eq("id", pub.id)
 
-        if (isEligible)        matched++
+        if (isEligible)             matched++
         else if (match_count === 0) not_found++
-        else                   ambiguous++
+        else                        ambiguous++
 
         // Respect ML rate limits — small delay between requests
-        await new Promise((r) => setTimeout(r, 120))
+        await new Promise((r) => setTimeout(r, 150))
       } catch (e: any) {
         errors++
+        last_error = e.message ?? "unknown"
+        console.error(`[eligibility/run] error ean=${pub.ean ?? pub.isbn ?? pub.gtin}:`, e.message)
       }
     }
 
@@ -153,6 +171,7 @@ export async function POST(req: NextRequest) {
       not_found,
       ambiguous,
       errors,
+      last_error: last_error || undefined,
       next_offset: nextOffset,
     })
   } catch (err: any) {

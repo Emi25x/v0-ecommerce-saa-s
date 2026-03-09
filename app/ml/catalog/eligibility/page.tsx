@@ -30,6 +30,7 @@ import {
   Play,
   Database,
   BookOpen,
+  ShoppingCart,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import Link from "next/link"
@@ -176,6 +177,9 @@ export default function CatalogEligibilityPage() {
   // Inline copy feedback
   const [copied, setCopied] = useState<string | null>(null)
 
+  // Opt-in state
+  const [optingIn, setOptingIn] = useState<Set<string>>(new Set())
+
   const searchRef = useRef(search)
   searchRef.current = search
 
@@ -189,6 +193,32 @@ export default function CatalogEligibilityPage() {
     navigator.clipboard.writeText(text)
     setCopied(text)
     setTimeout(() => setCopied(null), 1500)
+  }
+
+  const handleOptIn = async (row: Row) => {
+    setOptingIn(prev => new Set(prev).add(row.id))
+    try {
+      const res = await fetch("/api/ml/catalog-optin", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          account_id: row.account_id,
+          item_id:    row.ml_item_id,
+          ean:        row.gtin || row.ean || row.isbn,
+        }),
+      })
+      const data = await res.json()
+      if (data.ok || data.status === "already_in_catalog") {
+        toast({ title: "Opt-in exitoso", description: row.title.slice(0, 60) })
+        load(page)
+      } else {
+        toast({ title: "Error en opt-in", description: data.error ?? data.status ?? "Error desconocido", variant: "destructive" })
+      }
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" })
+    } finally {
+      setOptingIn(prev => { const s = new Set(prev); s.delete(row.id); return s })
+    }
   }
 
   // ── Load accounts ────────────────────────────────────────────────────────
@@ -299,6 +329,9 @@ export default function CatalogEligibilityPage() {
           .join(" | ")
 
         addLog(parts, data.errors ? "warn" : "ok")
+        if (data.errors && data.last_error) {
+          addLog(`↳ Error: ${data.last_error}`, "error")
+        }
 
         if (data.done || !data.has_more) {
           addLog(
@@ -725,23 +758,44 @@ export default function CatalogEligibilityPage() {
                               {fmt(row.price)}
                             </td>
 
-                            {/* External link */}
+                            {/* Actions: opt-in + external link */}
                             <td className="px-4 py-3">
-                              {row.permalink && (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <a
-                                      href={row.permalink}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"
-                                    >
-                                      <ExternalLink className="h-4 w-4" />
-                                    </a>
-                                  </TooltipTrigger>
-                                  <TooltipContent>Ver en MercadoLibre</TooltipContent>
-                                </Tooltip>
-                              )}
+                              <div className="flex items-center gap-2">
+                                {/* Opt-in al catálogo — visible cuando es elegible */}
+                                {row.catalog_listing_eligible && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button
+                                        onClick={() => handleOptIn(row)}
+                                        disabled={optingIn.has(row.id)}
+                                        className="text-muted-foreground hover:text-green-400 transition-colors disabled:opacity-50"
+                                        title="Hacer opt-in al catálogo"
+                                      >
+                                        {optingIn.has(row.id)
+                                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                          : <ShoppingCart className="h-3.5 w-3.5" />
+                                        }
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Opt-in al catálogo</TooltipContent>
+                                  </Tooltip>
+                                )}
+                                {row.permalink && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <a
+                                        href={row.permalink}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"
+                                      >
+                                        <ExternalLink className="h-4 w-4" />
+                                      </a>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Ver en MercadoLibre</TooltipContent>
+                                  </Tooltip>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         )
