@@ -92,6 +92,7 @@ export default function CompetitionPage() {
     min_price:    "",
     max_price:    "",
     target_price: "",
+    strategy:     "win_buybox",
   })
 
   const fetchMlAccounts = async () => {
@@ -594,6 +595,7 @@ export default function CompetitionPage() {
       min_price:    cfg?.min_price?.toString()    || product.price,
       max_price:    cfg?.max_price?.toString()    || "",
       target_price: cfg?.target_price?.toString() || "",
+      strategy:     cfg?.strategy                 || "win_buybox",
     })
     setShowTrackingModal(true)
   }
@@ -626,6 +628,7 @@ export default function CompetitionPage() {
           min_price:    minPrice,
           max_price:    maxPrice,
           target_price: targetPrice,
+          strategy:     trackingForm.strategy,
         }),
       })
 
@@ -1744,13 +1747,13 @@ export default function CompetitionPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h4 className="font-semibold text-sm mb-2">5 escenarios de repricing</h4>
+                <h4 className="font-semibold text-sm mb-2">Cómo funciona el repricing</h4>
                 <ul className="text-xs space-y-1 text-gray-700">
-                  <li>• <strong>Competidor activo ≥ mín:</strong> bajar/subir al price_to_win (tope: máximo)</li>
-                  <li>• <strong>Competidor activo &lt; mín:</strong> quedarse en precio mínimo</li>
-                  <li>• <strong>Competidor sin stock:</strong> subir al precio objetivo / máximo</li>
-                  <li>• <strong>Solo en catálogo:</strong> subir al precio objetivo / máximo</li>
-                  <li>• <strong>Sin price_to_win:</strong> no tocar el precio</li>
+                  <li>• <strong>Con competidor:</strong> ajusta según la estrategia elegida, nunca debajo del mínimo</li>
+                  <li>• <strong>Sin competidor / sin stock:</strong> sube al precio objetivo o máximo</li>
+                  <li>• <strong>price_to_win &lt; mínimo:</strong> se queda en precio mínimo</li>
+                  <li>• <strong>Sin datos de ML:</strong> no toca el precio</li>
+                  <li>• <strong>Umbral:</strong> solo actúa si la diferencia es ≥ $1</li>
                 </ul>
               </div>
 
@@ -1765,6 +1768,34 @@ export default function CompetitionPage() {
                   onChange={(e) => setTrackingForm({ ...trackingForm, enabled: e.target.checked })}
                   className="h-6 w-6 cursor-pointer"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Estrategia de Repricing</Label>
+                <Select
+                  value={trackingForm.strategy}
+                  onValueChange={(v) => setTrackingForm({ ...trackingForm, strategy: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="win_buybox">
+                      🏆 Ganar Buybox — usar price_to_win de ML
+                    </SelectItem>
+                    <SelectItem value="follow_competitor">
+                      🤝 Igualar Competidor — mismo precio que el ganador
+                    </SelectItem>
+                    <SelectItem value="maximize_margin_if_alone">
+                      💰 Maximizar Margen — sube a precio máximo cuando estoy solo
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {trackingForm.strategy === "win_buybox" && "Usa el precio calculado por ML para ganar el buybox (puede ser ligeramente menor al competidor)"}
+                  {trackingForm.strategy === "follow_competitor" && "Iguala el precio exacto del vendedor ganador actual, sin necesariamente ganar el buybox"}
+                  {trackingForm.strategy === "maximize_margin_if_alone" && "Gana el buybox cuando hay competencia; sube directo al precio máximo cuando no hay competidores con stock"}
+                </p>
               </div>
 
               <div className="space-y-2">

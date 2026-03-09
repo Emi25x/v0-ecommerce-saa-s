@@ -56,10 +56,11 @@ export async function POST(req: NextRequest) {
     const {
       ml_item_id,
       account_id,
-      enabled     = false,
+      enabled      = false,
       min_price,
-      max_price   = null,
+      max_price    = null,
       target_price = null,
+      strategy     = "win_buybox",
     } = body
 
     if (!ml_item_id || min_price === undefined || min_price === null || min_price === "") {
@@ -79,6 +80,9 @@ export async function POST(req: NextRequest) {
 
     const supabase = await createClient()
 
+    const validStrategies = ["win_buybox", "follow_competitor", "maximize_margin_if_alone"]
+    const strategyVal = validStrategies.includes(strategy) ? strategy : "win_buybox"
+
     const { data, error } = await supabase
       .from("repricing_config")
       .upsert(
@@ -89,6 +93,7 @@ export async function POST(req: NextRequest) {
           min_price:    minPriceNum,
           max_price:    maxPriceNum,
           target_price: targetPriceNum,
+          strategy:     strategyVal,
           updated_at:   new Date().toISOString(),
         },
         { onConflict: "ml_item_id" },

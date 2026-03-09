@@ -1,16 +1,17 @@
 /**
  * GET /api/cron/reprice
  *
- * Cron de repricing automático. Reemplaza los dos crons rotos:
- *   - /api/cron/analyze-competition  (apuntaba a endpoint inexistente)
- *   - /api/cron/auto-price-tracking  (columna incorrecta, solo bajaba)
+ * Cron de repricing automático con 3 estrategias:
  *
- * Lógica de 5 escenarios:
- *   1. Competidor activo, price_to_win >= min_price   → bajar/subir hasta price_to_win (capped a max_price)
- *   2. Competidor activo, price_to_win < min_price    → quedarse en min_price (no bajar del mínimo)
- *   3. Competidor sin stock                           → subir a target_price ?? max_price
- *   4. Solo en el catálogo (status = 'alone')        → subir a target_price ?? max_price
- *   5. Error de API / price_to_win nulo               → no tocar el precio, loguear error
+ *   win_buybox            → usa price_to_win de ML para ganar el buybox
+ *   follow_competitor     → iguala el precio exacto del ganador actual
+ *   maximize_margin_if_alone → win_buybox en competencia; cuando solo → max_price directo
+ *
+ * Lógica compartida (todos los escenarios):
+ *   - Si sin competidor / solo              → subir a target_price ?? max_price
+ *   - Si price_to_win < min_price           → quedarse en min_price
+ *   - Nunca superar max_price
+ *   - Umbral mínimo de cambio: $1
  *
  * Para agregar a vercel.json:
  *   { "path": "/api/cron/reprice", "schedule": "0 * * * *" }
@@ -41,43 +42,55 @@ function targetWhenAlone(cfg: {
   return null // sin target ni techo → no subir
 }
 
-// ── Helper: calcular precio nuevo + status según los 5 escenarios ────────────
+type Strategy = "win_buybox" | "follow_competitor" | "maximize_margin_if_alone"
+
+// ── Helper: calcular precio objetivo según estrategia + escenario ─────────────
 function calcReprice(cfg: {
   min_price:       number
   max_price:       number | null
   target_price:    number | null
   last_our_price:  number | null
+  strategy:        Strategy
 }, ptw: {
-  status:          string | null
-  price_to_win:    number | null
-  winner_stock:    number | null
+  status:           string | null
+  price_to_win:     number | null
+  winner_stock:     number | null
+  competitor_price: number | null
 }): { new_price: number | null; status: string } {
 
-  // Escenario 4 — solo en el catálogo
-  if (ptw.status === "alone") {
+  const isAlone        = ptw.status === "alone"
+  const noCompetStock  = ptw.winner_stock !== null && ptw.winner_stock === 0
+  const aloneStatus    = isAlone ? "alone" : "competitor_no_stock"
+
+  // Sin competidor con stock → subir al precio objetivo
+  if (isAlone || noCompetStock) {
+    if (cfg.strategy === "maximize_margin_if_alone") {
+      // Ir directo al techo (max_price > target_price > min_price)
+      const p = cfg.max_price ?? cfg.target_price
+      return { new_price: p ? Math.max(p, cfg.min_price) : null, status: aloneStatus }
+    }
     const p = targetWhenAlone(cfg)
-    return { new_price: p ? Math.max(p, cfg.min_price) : null, status: "alone" }
+    return { new_price: p ? Math.max(p, cfg.min_price) : null, status: aloneStatus }
   }
 
-  // Escenario 3 — competidor sin stock
-  if (ptw.winner_stock !== null && ptw.winner_stock === 0) {
-    const p = targetWhenAlone(cfg)
-    return { new_price: p ? Math.max(p, cfg.min_price) : null, status: "competitor_no_stock" }
+  // Hay competidor con stock — calcular desired según estrategia
+  let desired: number
+
+  if (cfg.strategy === "follow_competitor" && ptw.competitor_price !== null) {
+    // Igualar precio del ganador actual
+    desired = ptw.competitor_price
+  } else {
+    // win_buybox / maximize_margin_if_alone → usar price_to_win de ML
+    if (!ptw.price_to_win) return { new_price: null, status: "error" }
+    desired = ptw.price_to_win
   }
 
-  // Sin price_to_win (error de API, ítem no catalogado, etc.)
-  if (!ptw.price_to_win) {
-    return { new_price: null, status: "error" }
-  }
-
-  const desired = ptw.price_to_win
-
-  // Escenario 2 — price_to_win por debajo del mínimo
+  // Proteger margen mínimo
   if (desired < cfg.min_price) {
     return { new_price: cfg.min_price, status: "below_min" }
   }
 
-  // Escenario 1 — seguir al competidor, capped al techo rentable
+  // Aplicar techo
   const capped = cfg.max_price !== null ? Math.min(desired, cfg.max_price) : desired
   const status = capped < desired ? "at_ceiling" : "adjusted"
   return { new_price: capped, status }
@@ -97,7 +110,7 @@ export async function GET(req: NextRequest) {
   // ── 1. Obtener todos los ítems con repricing habilitado ────────────────────
   const { data: configs, error: cfgErr } = await supabase
     .from("repricing_config")
-    .select("id, ml_item_id, account_id, min_price, max_price, target_price, last_our_price")
+    .select("id, ml_item_id, account_id, min_price, max_price, target_price, last_our_price, strategy")
     .eq("enabled", true)
 
   if (cfgErr) {
@@ -167,15 +180,21 @@ export async function GET(req: NextRequest) {
         ? Number(ptw.winner.available_quantity) : null
       const competitorPrice = ptw.winner?.price  ? Number(ptw.winner.price) : null
 
-      // 2d. Calcular precio objetivo según los 5 escenarios
+      // 2d. Calcular precio objetivo según estrategia + escenario
       const { new_price, status } = calcReprice(
         {
           min_price:      Number(cfg.min_price),
           max_price:      cfg.max_price      ? Number(cfg.max_price)      : null,
           target_price:   cfg.target_price   ? Number(cfg.target_price)   : null,
           last_our_price: currentPrice,
+          strategy:       (cfg.strategy as Strategy) || "win_buybox",
         },
-        { status: ptwStatus, price_to_win: ptwPrice, winner_stock: winnerStock },
+        {
+          status:           ptwStatus,
+          price_to_win:     ptwPrice,
+          winner_stock:     winnerStock,
+          competitor_price: competitorPrice,
+        },
       )
 
       const needsChange = new_price !== null && currentPrice !== null
