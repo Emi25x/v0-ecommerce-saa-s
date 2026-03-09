@@ -13,6 +13,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { createAdminClient } from "@/lib/supabase/admin"
 
 export interface MLOrderBillingResult {
   ok:                   boolean
@@ -33,7 +34,10 @@ export async function getMLOrderBilling(
   { forceRefresh = false }: { forceRefresh?: boolean } = {},
 ): Promise<MLOrderBillingResult> {
   // ── 1. Cache check ───────────────────────────────────────────────────────
-  const { data: cached } = await supabase
+  // Usar adminClient para la cache también: evita RLS en la tabla de cache
+  // que podría bloquear lecturas cuando user_id en ml_accounts es null.
+  const adminClient = createAdminClient()
+  const { data: cached } = await adminClient
     .from("ml_order_billing_cache")
     .select("*")
     .eq("account_id", account_id)
@@ -64,7 +68,9 @@ export async function getMLOrderBilling(
   }
 
   // ── 2. Obtener access_token ──────────────────────────────────────────────
-  const { data: mlAccount } = await supabase
+  // IMPORTANTE: usar adminClient (ya declarado arriba) para evitar que RLS
+  // bloquee cuentas con user_id=null en ml_accounts.
+  const { data: mlAccount } = await adminClient
     .from("ml_accounts")
     .select("access_token")
     .eq("id", account_id)
@@ -176,7 +182,7 @@ export async function getMLOrderBilling(
   }
 
   // ── 5. Upsert cache ──────────────────────────────────────────────────────
-  await supabase.from("ml_order_billing_cache").upsert({
+  await adminClient.from("ml_order_billing_cache").upsert({
     account_id,
     order_id,
     nombre,
