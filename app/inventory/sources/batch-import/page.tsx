@@ -112,12 +112,16 @@ export default function BatchImportPage() {
     // AZETA: servidor hace stream ZIP→Blob directo (sin buffering), luego procesa en lotes
     if (isAzeta) {
       try {
-        // Paso 1: Servidor descarga ZIP y lo guarda en Blob via stream directo
-        setStatus("Descargando ZIP de AZETA al servidor...")
-        addLog("Paso 1/2: Descargando y guardando ZIP de AZETA (~230MB)...")
+        // Paso 1: Servidor descarga ZIP/CSV y lo guarda en Blob via stream directo
+        // Pasamos source_id para que el servidor use la URL correcta según la fuente seleccionada
+        const isTotalCatalog = !nameLower.includes("parcial")
+        setStatus("Descargando catálogo AZETA al servidor...")
+        addLog(`Paso 1/2: Descargando ${isTotalCatalog ? "catálogo total (~230MB ZIP)" : "catálogo parcial (CSV)"} de AZETA...`)
         const dlRes = await fetch("/api/azeta/download", {
           method: "POST",
           credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source_id: urlSourceId }),
         })
         const dlData = await dlRes.json().catch(() => ({}))
         if (!dlRes.ok) {

@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 
 export const dynamic = "force-dynamic"
-// bundle-version: 4
+
+// URL de fallback — solo si no está configurado en import_sources
+const AZETA_TOTAL_URL = "https://www.azetadistribuciones.es/servicios_web/csv.php?user=680899&password=badajoz24"
 
 export async function GET() {
-  return NextResponse.json({ ok: true, route: "azeta-run-v1", bundle: 3 })
+  return NextResponse.json({ ok: true, route: "azeta-run-v2" })
 }
 
 export async function POST(_request: NextRequest) {
@@ -55,8 +57,28 @@ export async function POST(_request: NextRequest) {
     throw new Error("No se encontro CSV/TXT en el ZIP")
   }
 
+  // Resolver fuente: acepta source_id o source_name en el body; fallback a Azeta Total
+  const reqBody = await _request.json().catch(() => ({}))
+  const { source_id, source_name } = reqBody as { source_id?: string; source_name?: string }
+
+  const supabase = createAdminClient()
+  let url = AZETA_TOTAL_URL
+
+  {
+    let q = supabase.from("import_sources").select("url_template, name")
+    if (source_id)        q = (q as any).eq("id", source_id)
+    else if (source_name) q = (q as any).ilike("name", source_name)
+    else                  q = (q as any).ilike("name", "azeta%total%")
+    const { data: src } = await (q as any).limit(1).maybeSingle()
+    if (src?.url_template) {
+      url = src.url_template
+      console.log(`[AZETA][RUN] Fuente: "${src.name}" → ${url}`)
+    } else {
+      console.warn("[AZETA][RUN] Fuente no encontrada en import_sources, usando URL hardcodeada")
+    }
+  }
+
   try {
-    const url = "https://www.azetadistribuciones.es/servicios_web/csv.php?user=680899&password=badajoz24"
     console.log(`[AZETA][FETCH] GET ${url}`)
     const res = await fetch(url, { method: "GET" })
     console.log(`[AZETA][FETCH] status=${res.status} content-type=${res.headers.get("content-type")}`)
@@ -120,7 +142,6 @@ export async function POST(_request: NextRequest) {
 
     // Leer discount rate configurado en import_sources para AZETA
     // Si no hay valor, usar 0 (costo = PVP sin descuento — se loguea warning)
-    const supabase = createAdminClient()
     const { data: azetaSource } = await supabase
       .from("import_sources")
       .select("default_discount_rate")

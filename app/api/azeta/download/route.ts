@@ -1,20 +1,55 @@
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 import { put, del, list } from "@vercel/blob"
+import { createAdminClient } from "@/lib/supabase/admin"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
 
+// URL de fallback (Azeta Total) — solo si no está configurado en import_sources
+const AZETA_TOTAL_URL = "https://www.azetadistribuciones.es/servicios_web/csv.php?user=680899&password=badajoz24"
+
 export async function GET() {
-  return NextResponse.json({ ok: true, route: "azeta-download-v2" })
+  return NextResponse.json({ ok: true, route: "azeta-download-v3" })
 }
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   const startTime = Date.now()
-  const url = "https://www.azetadistribuciones.es/servicios_web/csv.php?user=680899&password=badajoz24"
+
+  // Leer source_id del body (opcional — si no viene, usa Azeta Total)
+  const body = await request.json().catch(() => ({}))
+  const source_id: string | null = body.source_id || null
+
+  // Resolver URL desde import_sources
+  const supabase = createAdminClient()
+  let url = AZETA_TOTAL_URL
+
+  if (source_id) {
+    const { data: src } = await supabase
+      .from("import_sources")
+      .select("url_template, name")
+      .eq("id", source_id)
+      .maybeSingle()
+    if (src?.url_template) {
+      url = src.url_template
+      console.log(`[AZETA-DL] Fuente: "${src.name}" → ${url}`)
+    } else {
+      console.warn(`[AZETA-DL] source_id=${source_id} no encontrado en import_sources, usando fallback`)
+    }
+  } else {
+    const { data: src } = await supabase
+      .from("import_sources")
+      .select("url_template, name")
+      .ilike("name", "azeta%total%")
+      .maybeSingle()
+    if (src?.url_template) {
+      url = src.url_template
+      console.log(`[AZETA-DL] Fuente (auto): "${src.name}" → ${url}`)
+    }
+  }
 
   try {
-    // 1. Fetch del ZIP desde AZETA — streaming directo a Blob sin bufferear en memoria
-    console.log("[AZETA-DL] Iniciando stream ZIP → Blob...")
+    // 1. Fetch desde AZETA — streaming directo a Blob sin bufferear en memoria
+    console.log(`[AZETA-DL] Iniciando stream → Blob desde ${url}`)
     const res = await fetch(url)
     console.log(`[AZETA-DL] status=${res.status} content-length=${res.headers.get("content-length")}`)
     if (!res.ok) {
@@ -22,39 +57,50 @@ export async function POST() {
       return NextResponse.json({ error: `Error ${res.status} AZETA`, preview }, { status: 502 })
     }
 
-    // 2. Borrar blobs anteriores del ZIP
+    // 2. Borrar blobs anteriores
     try {
       const { blobs } = await list({ prefix: "azeta-catalog/" })
       await Promise.all(blobs.map(b => del(b.url)))
     } catch {}
 
-    // 3. Stream directo del body del fetch al put() de Blob — nunca carga nada en memoria
-    const zipBlob = await put("azeta-catalog/catalog.zip", res.body!, {
+    // 3. Stream directo del body al put() de Blob (sin buffering local)
+    const rawBlob = await put("azeta-catalog/catalog.raw", res.body!, {
       access: "public",
-      contentType: "application/zip",
+      contentType: "application/octet-stream",
     })
     const elapsed1 = ((Date.now() - startTime) / 1000).toFixed(1)
-    console.log(`[AZETA-DL] ZIP subido a Blob en ${elapsed1}s: ${zipBlob.url}`)
+    console.log(`[AZETA-DL] Subido a Blob en ${elapsed1}s: ${rawBlob.url}`)
 
-    // 4. Descargar el ZIP desde Blob, descomprimir, recontar lineas
-    const zipRes = await fetch(zipBlob.url)
-    const zipBuf = Buffer.from(await zipRes.arrayBuffer())
-    console.log(`[AZETA-DL] ZIP descargado desde Blob: ${(zipBuf.length/1024/1024).toFixed(1)}MB`)
+    // 4. Descargar el contenido desde Blob para detectar formato y extraer CSV
+    const rawRes = await fetch(rawBlob.url)
+    const rawBuf = Buffer.from(await rawRes.arrayBuffer())
+    console.log(`[AZETA-DL] Descargado desde Blob: ${(rawBuf.length / 1024 / 1024).toFixed(1)}MB`)
 
-    const csvText = await extractCSVFromZip(new Uint8Array(zipBuf))
+    // 5. Detectar ZIP vs CSV plano (magic bytes PK)
+    const isZip = rawBuf[0] === 0x50 && rawBuf[1] === 0x4b
+    console.log(`[AZETA-DL] Formato detectado: ${isZip ? "ZIP" : "CSV plano"}`)
+
+    let csvText: string
+    if (isZip) {
+      csvText = await extractCSVFromZip(new Uint8Array(rawBuf))
+    } else {
+      // CSV plano (ej: Azeta Parcial) — decodificar latin1 directamente
+      csvText = new TextDecoder("latin1").decode(rawBuf)
+    }
+
     const lines = csvText.split("\n")
     const totalLines = lines.filter(l => l.trim()).length - 1 // sin header
 
-    // 5. Subir CSV descomprimido a Blob (para que process pueda usar Range)
+    // 6. Subir CSV descomprimido a Blob (para que process pueda usar Range)
     const csvBlobResult = await put("azeta-catalog/catalog.csv", csvText, {
       access: "public",
       contentType: "text/plain; charset=utf-8",
     })
-    // Borrar ZIP ya que tenemos el CSV
-    await del(zipBlob.url).catch(() => {})
+    // Borrar raw blob
+    await del(rawBlob.url).catch(() => {})
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-    console.log(`[AZETA-DL] CSV subido a Blob: ${csvBlobResult.url} lineas=${totalLines} en ${elapsed}s`)
+    console.log(`[AZETA-DL] CSV en Blob: ${csvBlobResult.url} lineas=${totalLines} en ${elapsed}s`)
 
     return NextResponse.json({
       ok: true,
