@@ -1,5 +1,7 @@
 "use client"
 
+export const dynamic = "force-dynamic"
+
 import { useState, useEffect, useCallback } from "react"
 import { Button }   from "@/components/ui/button"
 import { Input }    from "@/components/ui/input"
@@ -222,6 +224,32 @@ export default function MLBillingPage() {
     }
   }
 
+  // ── Cargar órdenes ────────────────────────────────────────────────────────
+  const loadOrders = useCallback(async (p: number) => {
+    if (!activeAccount) return
+    setLoading(true); setError(null); setSelected(new Set())
+    try {
+      const params = new URLSearchParams({
+        account_id:  activeAccount,
+        page:        String(p + 1),
+        limit:       String(LIMIT),
+        facturado:   filterFacturado === "all" ? "" : filterFacturado,
+        fecha_desde: fechaDesde ? `${fechaDesde}T00:00:00.000Z` : "",
+        fecha_hasta: fechaHasta ? `${fechaHasta}T23:59:59.000Z` : "",
+      })
+      if (filterEstado !== "all") params.set("estado",       filterEstado)
+      if (filterEnvio  !== "all") params.set("estado_envio", filterEnvio)
+
+      const res  = await fetch(`/api/billing/ml-ventas?${params}`)
+      const data = await res.json()
+      if (!res.ok || !data.ok) { setError(data.error || "Error cargando órdenes"); return }
+      setOrders(data.orders)
+      setTotal(data.total)
+    } finally {
+      setLoading(false)
+    }
+  }, [activeAccount, filterEstado, filterEnvio, filterFacturado, fechaDesde, fechaHasta])
+
   // ── Sincronizar estados de envío ──────────────────────────────────────────
   // Llama a /api/ml/sync-shipping-status para actualizar shipping_status en DB.
   // Corre en background — NO bloquea la carga inicial de órdenes.
@@ -328,32 +356,6 @@ export default function MLBillingPage() {
     }
     loadSetup()
   }, [])
-
-  // ── Cargar órdenes ────────────────────────────────────────────────────────
-  const loadOrders = useCallback(async (p: number) => {
-    if (!activeAccount) return
-    setLoading(true); setError(null); setSelected(new Set())
-    try {
-      const params = new URLSearchParams({
-        account_id:  activeAccount,
-        page:        String(p + 1),
-        limit:       String(LIMIT),
-        facturado:   filterFacturado === "all" ? "" : filterFacturado,
-        fecha_desde: fechaDesde ? `${fechaDesde}T00:00:00.000Z` : "",
-        fecha_hasta: fechaHasta ? `${fechaHasta}T23:59:59.000Z` : "",
-      })
-      if (filterEstado !== "all") params.set("estado",       filterEstado)
-      if (filterEnvio  !== "all") params.set("estado_envio", filterEnvio)
-
-      const res  = await fetch(`/api/billing/ml-ventas?${params}`)
-      const data = await res.json()
-      if (!res.ok || !data.ok) { setError(data.error || "Error cargando órdenes"); return }
-      setOrders(data.orders)
-      setTotal(data.total)
-    } finally {
-      setLoading(false)
-    }
-  }, [activeAccount, filterEstado, filterEnvio, filterFacturado, fechaDesde, fechaHasta])
 
   useEffect(() => {
     if (activeAccount) { setPage(0); loadOrders(0) }
