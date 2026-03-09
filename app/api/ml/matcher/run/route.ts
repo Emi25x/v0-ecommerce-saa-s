@@ -332,16 +332,25 @@ export async function POST(request: Request) {
       cursor_last_id:  isComplete ? null : newCursorLastId,
       elapsed_seconds: elapsed(t0),
       metrics: {
-        pubs_with_ean:    pubsWithEan,
-        pubs_with_isbn:   pubsWithIsbn,
-        pubs_with_sku:    pubsWithSku,
-        products_indexed: productsWithId,
-        ean_index_size:   eanIndex.size,
-        isbn_index_size:  isbnIndex.size,
-        sku_index_size:   skuIndex.size,
+        pubs_with_ean:      pubsWithEan,
+        pubs_with_isbn:     pubsWithIsbn,
+        pubs_with_sku:      pubsWithSku,
+        products_loaded:    allProducts?.length ?? 0,
+        products_indexed:   productsWithId,
+        ean_index_size:     eanIndex.size,
+        isbn_index_size:    isbnIndex.size,
+        sku_index_size:     skuIndex.size,
         candidates_fetched: candidateIds.length,
         remaining_before:   remainingCandidates ?? 0,
       },
+      // Muestra de publicaciones sin match para diagnóstico (solo cuando matches=0)
+      ...(matched === 0 && (pubs?.length ?? 0) > 0 ? {
+        sample_unmatched: (pubs ?? []).slice(0, 3).map(pub => ({
+          ml_item_id: pub.ml_item_id,
+          title: (pub.title ?? "").slice(0, 50),
+          db: { ean: pub.ean, gtin: pub.gtin, isbn: pub.isbn, sku: pub.sku },
+        })),
+      } : {}),
       warnings: productsMissingIdentifiers ? ["products_missing_identifiers"] : [],
     })
 
