@@ -183,6 +183,23 @@ export async function POST(request: Request) {
 
     if (productsError) {
       console.error("[matcher] Error cargando productos:", productsError)
+      return NextResponse.json({
+        ok: false,
+        error: "products_query_failed",
+        products_error: productsError,
+      }, { status: 500 })
+    }
+
+    if ((allProducts?.length ?? 0) === 0) {
+      // Diagnóstico: contar total sin filtros para saber si la tabla está vacía
+      const { count: totalInTable } = await adminClient
+        .from("products")
+        .select("*", { count: "exact", head: true })
+      return NextResponse.json({
+        ok: false,
+        error: "products_table_empty_or_unreachable",
+        total_in_table: totalInTable,
+      }, { status: 500 })
     }
 
     let productsWithId = 0
