@@ -43,7 +43,6 @@ export async function POST(req: NextRequest) {
     .from("ml_accounts")
     .select("access_token, ml_user_id")
     .eq("id", account_id)
-    .eq("user_id", user.id)
     .single()
 
   if (!mlAccount?.access_token) {

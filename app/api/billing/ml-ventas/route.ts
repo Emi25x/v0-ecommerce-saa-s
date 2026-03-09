@@ -28,7 +28,6 @@ export async function GET(req: NextRequest) {
     .from("ml_accounts")
     .select("ml_user_id, nickname")
     .eq("id", account_id)
-    .eq("user_id", user.id)
     .single()
 
   if (!mlAccount) {
