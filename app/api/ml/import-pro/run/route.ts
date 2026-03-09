@@ -256,19 +256,15 @@ export async function POST(request: NextRequest) {
       if (itemIds.length === 0) {
         consecutiveZeroRuns++
         if (consecutiveZeroRuns >= 3) {
-          // Algo está severamente roto — fuerza reset total
+          // 3 scans sin items — cursor agotado o expirado. Limpiar solo el cursor.
           await supabase
             .from("ml_import_progress")
             .update({
-              status:                 "idle",
-              scroll_id:              null,
-              publications_offset:    0,
-              publications_total:     0,
-              ml_items_seen_count:    0,
-              db_rows_upserted_count: 0,
-              upsert_errors_count:    0,
-              last_error:             "Detección automática: 3 scans consecutivos sin items. Estado corrupto. Reset total.",
-              last_error_at:          new Date().toISOString(),
+              status:              "idle",
+              scroll_id:           null,
+              ml_items_seen_count: 0,
+              last_error:          "3 scans consecutivos sin items: cursor reiniciado (progreso en DB preservado).",
+              last_error_at:       new Date().toISOString(),
             })
             .eq("account_id", accountId)
           break
@@ -311,21 +307,20 @@ export async function POST(request: NextRequest) {
         const scrollExpired = mlTotal > 0 && pctCovered < 0.95
 
         if (scrollExpired) {
-          // Scroll expirado — hacer reset TOTAL: contadores a 0, scroll_id a null,
-          // y también publications_total a 0 para que la próxima corrida recalcule
-          // el total real desde ML (en caso de que esté corrupto)
+          // Scroll expirado — limpiar SOLO el cursor y los contadores de "visto en
+          // esta sesión". El offset y db_rows_upserted_count NO se tocan: representan
+          // el estado real de la DB y los items ya están guardados. El upsert con
+          // onConflict garantiza que re-procesar los mismos items no genera duplicados.
           await supabase
             .from("ml_import_progress")
             .update({
-              status:                 "idle",
-              scroll_id:              null,
-              publications_offset:    0,
-              publications_total:     0,          // RESET TOTAL: fuerza recálculo
-              ml_items_seen_count:    0,
-              db_rows_upserted_count: 0,
-              upsert_errors_count:    0,
-              last_error:             `Scroll ML expirado al ${Math.round(pctCovered * 100)}% (${totalSeen}/${mlTotal}). Reset total iniciado.`,
-              last_error_at:          new Date().toISOString(),
+              status:              "idle",
+              scroll_id:           null,       // nuevo scan desde el principio
+              ml_items_seen_count: 0,          // reiniciar contador de "vistos"
+              // publications_offset, publications_total y db_rows_upserted_count
+              // se PRESERVAN — ya están en DB, no hay que perder ese progreso
+              last_error:          `Scroll ML expirado al ${Math.round(pctCovered * 100)}% (${totalSeen}/${mlTotal} vistos). Reiniciando cursor sin perder progreso.`,
+              last_error_at:       new Date().toISOString(),
             })
             .eq("account_id", accountId)
           hasMore = true

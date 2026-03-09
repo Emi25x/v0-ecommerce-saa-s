@@ -30,6 +30,19 @@ export default function MLImporterPage() {
   const autoModeRef = useRef(autoMode)
   useEffect(() => { autoModeRef.current = autoMode }, [autoMode])
 
+  // Polling de progreso mientras está corriendo (cada 3s)
+  useEffect(() => {
+    if (!running || !selectedAccountId) return
+    const interval = setInterval(async () => {
+      try {
+        const res  = await fetch(`/api/ml/import-pro/status?account_id=${selectedAccountId}`)
+        const data = await res.json()
+        if (data.ok) setProgress(data.progress)
+      } catch { /* ignorar errores de red durante polling */ }
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [running, selectedAccountId])
+
   // Cola de jobs
   const [queueJobs, setQueueJobs]       = useState<any[]>([])
   const [enqueueing, setEnqueueing]     = useState(false)
