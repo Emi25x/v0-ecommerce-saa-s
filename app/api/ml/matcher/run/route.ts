@@ -1,3 +1,4 @@
+import { createAdminClient } from "@/lib/supabase/admin"
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 import { protectAPI } from "@/lib/auth/protect-api"
@@ -32,7 +33,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_account_id_format" }, { status: 400 })
   }
 
-  const supabase = await createClient({ useServiceRole: true })
+  const supabase = createAdminClient()
 
   try {
     // ── 1) Obtener o inicializar progreso ────────────────────────────────────
@@ -172,47 +173,56 @@ export async function POST(request: Request) {
     const candidateIds = candidateRows.map(r => r.id)
     const newCursorLastId = candidateIds[candidateIds.length - 1]
 
-    // ── 7) Construir índices de productos ────────────────────────────────────
-    const { data: allProducts } = await supabase
-      .from("products")
-      .select("id, ean, gtin, isbn, sku")
-      .or("ean.not.is.null,gtin.not.is.null,isbn.not.is.null,sku.not.is.null")
+    // ── 7) Fetch pub details for this batch ──────────────────────────────────
+    const { data: pubs } = await supabase
+      .from("ml_publications")
+      .select("id, ml_item_id, title, ean, gtin, isbn, sku")
+      .in("id", candidateIds)
+      .is("product_id", null)
+
+    // ── 8) Consultar solo los productos que coinciden con este batch ──────────
+    // En vez de cargar los 222k productos completos, extraemos los EANs del batch
+    // y hacemos un IN query. products.ean = pub.ean (ISBN-13 para libros).
+    // La tabla products NO tiene columna gtin — solo ean, isbn, sku.
+    const eanSet = new Set<string>()
+    for (const pub of pubs ?? []) {
+      if (pub.ean)  { const k = norm(pub.ean);  if (k) eanSet.add(k) }
+      if (pub.gtin) { const k = norm(pub.gtin); if (k) eanSet.add(k) }
+      if (pub.isbn) { const k = norm(pub.isbn); if (k) eanSet.add(k) }
+      if (pub.sku && /^\d{10,13}$/.test((pub.sku ?? "").trim())) {
+        const k = norm(pub.sku); if (k) eanSet.add(k)
+      }
+    }
+
+    const adminClient = createAdminClient()
+    const eanList = [...eanSet]
+    let allProducts: Array<{ id: string; ean: string | null; isbn: string | null; sku: string | null }> = []
+    if (eanList.length > 0) {
+      const { data, error: productsError } = await adminClient
+        .from("products")
+        .select("id, ean, isbn, sku")
+        .in("ean", eanList)
+      if (productsError) {
+        console.error("[matcher] Error cargando productos:", productsError)
+        return NextResponse.json({ ok: false, error: "products_query_failed", products_error: productsError }, { status: 500 })
+      }
+      allProducts = data ?? []
+    }
 
     let productsWithId = 0
     const eanIndex  = new Map<string, string[]>()
     const isbnIndex = new Map<string, string[]>()
     const skuIndex  = new Map<string, string[]>()
 
-    for (const p of allProducts ?? []) {
+    for (const p of allProducts) {
       let hasAny = false
-      for (const raw of [p.ean, p.gtin]) {
-        if (!raw) continue
-        const key = norm(raw)
-        if (!key) continue
-        hasAny = true
-        addToIndex(eanIndex, key, p.id)
-      }
-      if (p.isbn) {
-        const key = norm(p.isbn)
-        if (key) { hasAny = true; addToIndex(isbnIndex, key, p.id) }
-      }
-      if (p.sku) {
-        const key = norm(p.sku)
-        if (key) { hasAny = true; addToIndex(skuIndex, key, p.id) }
-      }
+      if (p.ean)  { const key = norm(p.ean);  if (key) { hasAny = true; addToIndex(eanIndex,  key, p.id) } }
+      if (p.isbn) { const key = norm(p.isbn); if (key) { hasAny = true; addToIndex(isbnIndex, key, p.id) } }
+      if (p.sku)  { const key = norm(p.sku);  if (key) { hasAny = true; addToIndex(skuIndex,  key, p.id) } }
       if (hasAny) productsWithId++
     }
 
-    const productsMissingIdentifiers = (allProducts?.length ?? 0) > 0 && productsWithId === 0
-
-    // ── 8) Fetch detalles solo de los IDs fijos ──────────────────────────────
-    // Si alguna publicación fue vinculada por otra sesión en el interim,
-    // product_id no es NULL y podemos filtrarla aquí para no re-matchearla.
-    const { data: pubs } = await supabase
-      .from("ml_publications")
-      .select("id, ml_item_id, title, ean, gtin, isbn, sku")
-      .in("id", candidateIds)
-      .is("product_id", null)   // protección extra: saltar las ya vinculadas
+    const productsMissingIdentifiers = allProducts.length > 0 && productsWithId === 0
 
     let pubsWithEan = 0, pubsWithIsbn = 0, pubsWithSku = 0
     let matched = 0, ambiguous = 0, notFound = 0, invalid = 0
@@ -227,8 +237,22 @@ export async function POST(request: Request) {
 
       if (pub.ean)  { const k = norm(pub.ean);  if (k) { eans.push(k);  pubsWithEan++ } }
       if (pub.gtin) { const k = norm(pub.gtin); if (k) addUnique(eans, k) }
-      if (pub.isbn) { const k = norm(pub.isbn); if (k) { isbns.push(k); pubsWithIsbn++ } }
-      if (pub.sku)  { const k = norm(pub.sku);  if (k) { skus.push(k);  pubsWithSku++ } }
+      if (pub.isbn) {
+        const k = norm(pub.isbn)
+        if (k) {
+          isbns.push(k); pubsWithIsbn++
+          // ISBN-13 = EAN-13 para libros — también buscar en índice EAN
+          addUnique(eans, k)
+        }
+      }
+      if (pub.sku) {
+        const k = norm(pub.sku)
+        if (k) {
+          skus.push(k); pubsWithSku++
+          // Si el SKU es numérico de 10-13 dígitos, puede ser un EAN/ISBN del vendedor
+          if (/^\d{10,13}$/.test(k)) addUnique(eans, k)
+        }
+      }
 
       const fromTitle = extractFromTitle(pub.title ?? "")
       fromTitle.eans.forEach(k  => addUnique(eans, k))
@@ -252,7 +276,8 @@ export async function POST(request: Request) {
         for (const key of ids) {
           const pids = index.get(key) ?? []
           if (pids.length === 1) { productId = pids[0]; matchType = type; totalMatches = 1; break outer }
-          if (pids.length > 1)   { totalMatches = pids.length; matchType = type; break outer }
+          // EAN debería ser único — si hay duplicados en DB, tomamos el primero (es dato corrupto, no ambigüedad real)
+          if (pids.length > 1)   { productId = pids[0]; matchType = `${type}_dup`; totalMatches = pids.length; break outer }
         }
       }
 
@@ -266,11 +291,13 @@ export async function POST(request: Request) {
       }
     }
 
-    // ── 9) Aplicar updates en un solo loop ───────────────────────────────────
-    for (const u of batchUpdates) {
+    // ── 9) Aplicar updates en un solo batch upsert ───────────────────────────
+    if (batchUpdates.length > 0) {
       await supabase.from("ml_publications")
-        .update({ product_id: u.product_id, matched_by: u.matched_by })
-        .eq("id", u.id)
+        .upsert(
+          batchUpdates.map(u => ({ id: u.id, product_id: u.product_id, matched_by: u.matched_by })),
+          { onConflict: "id" },
+        )
     }
 
     // ── 10) Actualizar progreso con nuevo cursor ──────────────────────────────
@@ -312,16 +339,25 @@ export async function POST(request: Request) {
       cursor_last_id:  isComplete ? null : newCursorLastId,
       elapsed_seconds: elapsed(t0),
       metrics: {
-        pubs_with_ean:    pubsWithEan,
-        pubs_with_isbn:   pubsWithIsbn,
-        pubs_with_sku:    pubsWithSku,
-        products_indexed: productsWithId,
-        ean_index_size:   eanIndex.size,
-        isbn_index_size:  isbnIndex.size,
-        sku_index_size:   skuIndex.size,
+        pubs_with_ean:      pubsWithEan,
+        pubs_with_isbn:     pubsWithIsbn,
+        pubs_with_sku:      pubsWithSku,
+        products_loaded:    allProducts?.length ?? 0,
+        products_indexed:   productsWithId,
+        ean_index_size:     eanIndex.size,
+        isbn_index_size:    isbnIndex.size,
+        sku_index_size:     skuIndex.size,
         candidates_fetched: candidateIds.length,
         remaining_before:   remainingCandidates ?? 0,
       },
+      // Muestra de publicaciones sin match para diagnóstico (solo cuando matches=0)
+      ...(matched === 0 && (pubs?.length ?? 0) > 0 ? {
+        sample_unmatched: (pubs ?? []).slice(0, 3).map(pub => ({
+          ml_item_id: pub.ml_item_id,
+          title: (pub.title ?? "").slice(0, 50),
+          db: { ean: pub.ean, gtin: pub.gtin, isbn: pub.isbn, sku: pub.sku },
+        })),
+      } : {}),
       warnings: productsMissingIdentifiers ? ["products_missing_identifiers"] : [],
     })
 
@@ -343,6 +379,11 @@ function elapsed(t0: number): string {
 function addToIndex(index: Map<string, string[]>, key: string, id: string) {
   if (!index.has(key)) index.set(key, [])
   index.get(key)!.push(id)
+}
+
+/** Agrega val a arr solo si no está ya presente */
+function addUnique(arr: string[], val: string) {
+  if (!arr.includes(val)) arr.push(val)
 }
 
 /** Normaliza un identificador: quita todo excepto dígitos y letras, lowercase */

@@ -6,6 +6,9 @@ import { NextResponse } from "next/server"
  * Cron job que ejecuta el worker automáticamente cada minuto
  * Procesa jobs en estado "processing" hasta completarlos
  */
+export const dynamic = "force-dynamic"
+export const maxDuration = 60
+
 export async function GET(request: Request) {
   console.log("[v0] ========== ML IMPORT WORKER CRON ==========")
   

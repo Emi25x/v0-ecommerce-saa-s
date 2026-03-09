@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
-// GET: listar órdenes ML
-// Los datos fiscales (buyer.billing_info) se obtienen al momento de facturar,
-// no al listar — para no hacer 50 llamadas individuales que superan el timeout.
+// GET: listar órdenes ML desde DB local (ml_orders) con filtros y paginación exacta.
+// No llama a ML API para listar — evita el bug de filtros client-side post-paginación
+// que causaba páginas vacías cuando shipping_status o facturado filtraban los resultados.
 export async function GET(req: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -20,113 +20,95 @@ export async function GET(req: NextRequest) {
   const limit        = parseInt(searchParams.get("limit") || "50")
   const offset       = (page - 1) * limit
 
+  if (!account_id) {
+    return NextResponse.json({ ok: false, error: "Falta account_id" }, { status: 400 })
+  }
+
   const { data: mlAccount } = await supabase
     .from("ml_accounts")
-    .select("access_token, ml_user_id, nickname")
+    .select("ml_user_id, nickname")
     .eq("id", account_id)
     .single()
 
-  if (!mlAccount?.access_token) {
+  if (!mlAccount) {
     return NextResponse.json({ ok: false, error: "Cuenta ML no encontrada" }, { status: 404 })
   }
 
-  const auth     = `Bearer ${mlAccount.access_token}`
-  const mlUserId = mlAccount.ml_user_id
-
-  // Paso 1: /orders/search — devuelve buyer: { id, nickname }
-  const mlParams = new URLSearchParams({
-    seller: mlUserId,
-    limit:  String(limit),
-    offset: String(offset),
-    sort:   "date_desc",
-  })
-  if (estado)      mlParams.set("order.status",            estado)
-  if (fecha_desde) mlParams.set("order.date_created.from", fecha_desde)
-  if (fecha_hasta) mlParams.set("order.date_created.to",   fecha_hasta)
-
-  const mlRes = await fetch(
-    `https://api.mercadolibre.com/orders/search?${mlParams}`,
-    { headers: { Authorization: auth } }
-  )
-  if (!mlRes.ok) {
-    const err = await mlRes.json()
-    return NextResponse.json({ ok: false, error: err.message || "Error ML" }, { status: 502 })
-  }
-  const mlData = await mlRes.json()
-  const orders: any[] = mlData.results || []
-  const mlTotal = mlData.paging?.total || 0
-
-  // Paso 2: marcar cuáles ya fueron facturadas
-  const orderIds = orders.map((o: any) => String(o.id))
+  // Órdenes ya facturadas por este usuario (para filtro facturado si/no)
   const { data: facturadas } = await supabase
     .from("ml_order_facturas")
     .select("ml_order_id, factura_id, empresa_id, facturado_at")
     .eq("user_id",       user.id)
     .eq("ml_account_id", account_id)
-    .in("ml_order_id",   orderIds)
 
-  const facturadaMap = new Map(
-    (facturadas || []).map((f: any) => [f.ml_order_id, f])
-  )
+  const facturadaMap = new Map((facturadas || []).map((f: any) => [f.ml_order_id, f]))
+  const facturadaIds = Array.from(facturadaMap.keys())   // string[]
 
-  // Paso 3: estado de envío desde /shipments/{id} — solo en chunks de 10
-  const shipmentStatusMap = new Map<string, { status: string; substatus: string | null }>()
-  const shipmentIds = orders.map((o: any) => o.shipping?.id).filter(Boolean).map(String)
-  const CHUNK = 10
-
-  for (let i = 0; i < shipmentIds.length; i += CHUNK) {
-    const chunk = shipmentIds.slice(i, i + CHUNK)
-    const results = await Promise.allSettled(
-      chunk.map(sid =>
-        fetch(
-          `https://api.mercadolibre.com/shipments/${sid}`,
-          { headers: { Authorization: auth }, signal: AbortSignal.timeout(5000) }
-        ).then(r => r.ok ? r.json() : null).catch(() => null)
-      )
-    )
-    chunk.forEach((_sid, idx) => {
-      const r = results[idx]
-      if (r.status === "fulfilled" && r.value) {
-        const s = r.value
-        shipmentStatusMap.set(String(s.id), { status: s.status || "", substatus: s.substatus || null })
-      }
+  // Cuando facturado=si pero no hay ninguna facturada, devolver vacío directamente
+  if (facturado === "si" && facturadaIds.length === 0) {
+    return NextResponse.json({
+      ok: true, orders: [], total: 0,
+      account: { id: account_id, ml_user_id: mlAccount.ml_user_id, nickname: mlAccount.nickname },
     })
   }
 
-  // Armar respuesta — el nombre es el nickname (buyer.billing_info llega en GET /orders/{id} al facturar)
-  let enriched = orders.map((o: any) => {
-    const shipment = shipmentStatusMap.get(String(o.shipping?.id))
+  // Aplica todos los filtros a un query base
+  function applyFilters(q: any): any {
+    q = q.eq("account_id", account_id)
+    if (estado)       q = q.eq("status",          estado)
+    if (estado_envio) q = q.eq("shipping_status",  estado_envio)
+    if (fecha_desde)  q = q.gte("date_created",    fecha_desde)
+    if (fecha_hasta)  q = q.lte("date_created",    fecha_hasta)
+    if (facturado === "si" && facturadaIds.length > 0)
+      q = q.in("ml_order_id", facturadaIds)
+    if (facturado === "no" && facturadaIds.length > 0)
+      q = q.not("ml_order_id", "in", `(${facturadaIds.join(",")})`)
+    return q
+  }
+
+  // Count exacto (respeta todos los filtros)
+  let countQ = supabase.from("ml_orders").select("id", { count: "exact", head: true })
+  countQ = applyFilters(countQ)
+  const { count } = await countQ
+
+  // Filas paginadas
+  let dataQ = supabase
+    .from("ml_orders")
+    .select("ml_order_id, status, date_created, total_amount, currency_id, buyer_nickname, buyer_id, shipping_status, items_json")
+    .order("date_created", { ascending: false })
+    .range(offset, offset + limit - 1)
+  dataQ = applyFilters(dataQ)
+  const { data: orders } = await dataQ
+
+  const enriched = (orders || []).map((o: any) => {
+    const items: any[] = Array.isArray(o.items_json) ? o.items_json : []
+    const key = String(o.ml_order_id)
     return {
-      id:              o.id,
+      id:              o.ml_order_id,
       fecha:           o.date_created,
       estado:          o.status,
-      envio_status:    shipment?.status    ?? null,
-      envio_substatus: shipment?.substatus ?? null,
+      envio_status:    o.shipping_status ?? null,
+      envio_substatus: null,
       total:           o.total_amount,
       moneda:          o.currency_id,
-      comprador:       o.buyer?.nickname   || "",
-      buyer_id:        String(o.buyer?.id  || ""),
-      items: (o.order_items || []).map((i: any) => ({
-        titulo:   i.item?.title || "",
-        ean:      i.item?.attributes?.find((a: any) => a.id === "EAN")?.value_name || null,
+      comprador:       o.buyer_nickname  || "",
+      buyer_id:        String(o.buyer_id || ""),
+      items: items.map(i => ({
+        titulo:   i.title      || "",
+        ean:      null,
         cantidad: i.quantity,
-        precio:   Math.round(i.unit_price * 100) / 100,
+        precio:   i.unit_price,
       })),
-      facturada:    facturadaMap.has(String(o.id)),
-      factura_info: facturadaMap.get(String(o.id)) || null,
+      facturada:    facturadaMap.has(key),
+      factura_info: facturadaMap.get(key) || null,
     }
   })
-
-  // Filtros client-side (solo envío y facturación — estado y fecha van a ML)
-  if (estado_envio && estado_envio !== "all") enriched = enriched.filter(o => o.envio_status === estado_envio)
-  if (facturado === "si") enriched = enriched.filter(o => o.facturada)
-  if (facturado === "no") enriched = enriched.filter(o => !o.facturada)
 
   return NextResponse.json({
     ok:      true,
     orders:  enriched,
-    total:   mlTotal,
-    account: { id: account_id, ml_user_id: mlUserId, nickname: mlAccount.nickname },
+    total:   count ?? 0,
+    account: { id: account_id, ml_user_id: mlAccount.ml_user_id, nickname: mlAccount.nickname },
   })
 }
 

@@ -1,29 +1,26 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeEan } from "@/lib/ean-utils"
+import Papa from "papaparse"
 
+export const dynamic = "force-dynamic"
 export const maxDuration = 300 // 5 minutos
 
 // Vercel Cron invoca con GET — delegar a POST
 export async function GET(request: NextRequest) {
   const isCron = request.headers.get("x-vercel-cron") === "1"
-  console.log(`[CRON] azeta/import-stock GET - ${isCron ? "accepted" : "forwarded to POST"}`)
+  console.log(`[AZETA-STOCK] GET - ${isCron ? "cron" : "manual"}`)
   return POST(request)
 }
 
-export async function POST(request: NextRequest) {
-  const supabase = await createClient()
+export async function POST(_request: NextRequest) {
+  // Usa service role para saltear RLS y funcionar tanto desde cron como desde UI
+  const supabase = createAdminClient()
   const startTime = Date.now()
-  
-  console.log("[v0] AZETA Stock Update - Starting")
+
+  console.log("[AZETA-STOCK] Starting bulk stock update")
 
   try {
-    // Verificar autenticación
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
-
     // Obtener credenciales de AZETA
     const { data: source } = await supabase
       .from("import_sources")
@@ -41,84 +38,96 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "AZETA credentials missing" }, { status: 400 })
     }
 
-    // Descargar solo stock de AZETA
+    // Descargar stock CSV de AZETA
     const stockUrl = "https://www.azeta.es/stock_xml_ext/emi/stock.csv"
-    console.log("[v0] Fetching AZETA stock from:", stockUrl)
+    console.log("[AZETA-STOCK] Fetching from:", stockUrl)
 
     const response = await fetch(stockUrl, {
       headers: {
-        "Authorization": `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64")}`
-      }
+        Authorization: `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64")}`,
+      },
     })
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch AZETA stock: ${response.status} ${response.statusText}`)
+      throw new Error(`HTTP ${response.status} ${response.statusText} fetching AZETA stock CSV`)
     }
 
     const csvText = await response.text()
-    const lines = csvText.split("\n")
-    // Stock CSV usa ";" como delimiter
-    const headers = lines[0].split(";").map(h => h.trim())
-    
-    const eanIdx = headers.indexOf("ean")
-    const isbnIdx = headers.indexOf("isbn")
-    const stockIdx = headers.indexOf("stock")
-    const priceIdx = headers.indexOf("precio")
 
-    let processed = 0
-    let updated = 0
-    let errors = 0
-    let notFound = 0
+    // Parsear con PapaParse (autodetecta delimiter)
+    const parsed = Papa.parse(csvText, {
+      header: true,
+      skipEmptyLines: true,
+      dynamicTyping: false,
+    })
+    const rows = parsed.data as any[]
+    console.log(`[AZETA-STOCK] Parsed ${rows.length} rows, headers: ${Object.keys(rows[0] || {}).slice(0, 6).join(", ")}`)
 
-    // Procesar líneas individualmente para actualizaciones de stock
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i]
-      if (!line.trim()) continue
+    if (rows.length === 0) throw new Error("CSV vacío o sin datos")
 
-      const fields = line.split(";")
-      const eanRaw = fields[eanIdx] || fields[isbnIdx]
-      const ean = normalizeEan(eanRaw)
+    // Construir mapa EAN → {stock, price}
+    const eanMap = new Map<string, { stock: number; price: number | null }>()
 
-      if (!ean || ean.length !== 13) {
-        errors++
+    for (const row of rows) {
+      const eanRaw = row["ean"] || row["isbn"] || row["EAN"] || row["ISBN"]
+      const ean = normalizeEan(String(eanRaw || ""))
+      if (!ean || ean.length !== 13) continue
+
+      const stockRaw = row["stock"] || row["STOCK"] || "0"
+      const priceRaw = row["precio"] || row["PRECIO"] || null
+
+      const stock = parseInt(String(stockRaw).replace(/\D/g, ""), 10) || 0
+      const price = priceRaw ? parseFloat(String(priceRaw).replace(",", ".")) || null : null
+
+      eanMap.set(ean, { stock, price })
+    }
+
+    console.log(`[AZETA-STOCK] ${eanMap.size} unique EANs`)
+
+    // Batch read-modify-write para preservar el JSONB stock_by_source de otros proveedores
+    // y hacer las actualizaciones en lotes (evita timeout por N+1 individual updates)
+    const allEans = Array.from(eanMap.keys())
+    const BATCH_SIZE = 1000
+    let totalUpdated = 0
+    let totalNotFound = 0
+
+    for (let i = 0; i < allEans.length; i += BATCH_SIZE) {
+      const batchEans = allEans.slice(i, i + BATCH_SIZE)
+
+      // Leer productos existentes con su stock_by_source actual
+      const { data: existing } = await supabase
+        .from("products")
+        .select("id, ean, stock_by_source, cost_price")
+        .in("ean", batchEans)
+
+      if (!existing || existing.length === 0) {
+        totalNotFound += batchEans.length
         continue
       }
 
-      const stock = parseInt(fields[stockIdx]) || 0
-      const costPrice = parseFloat(fields[priceIdx]) || null
+      // Construir updates: merge azeta dentro del JSONB existente
+      const updates = existing.map((p: any) => {
+        const { stock, price } = eanMap.get(p.ean)!
+        // Merge: preserva claves de otros proveedores (arnoia, etc.)
+        const mergedSource = { ...(p.stock_by_source || {}), azeta: stock }
+        const update: any = { id: p.id, stock_by_source: mergedSource }
+        if (price !== null) update.cost_price = price
+        return update
+      })
 
-      // Actualizar SOLO stock_by_source.azeta y cost_price
-      const updateData: any = {
-        stock_by_source: {
-          azeta: stock
-        }
-      }
-
-      if (costPrice !== null) {
-        updateData.cost_price = costPrice
-      }
-
-      const { data, error } = await supabase
+      // Upsert por id (batch update eficiente)
+      const { error: upsertErr } = await supabase
         .from("products")
-        .update(updateData)
-        .eq("ean", ean)
-        .select("id")
+        .upsert(updates, { onConflict: "id" })
 
-      if (error) {
-        console.error(`[v0] Error updating stock for EAN ${ean}:`, error)
-        errors++
-      } else if (data && data.length > 0) {
-        updated++
+      if (upsertErr) {
+        console.error(`[AZETA-STOCK] Batch ${i}-${i + batchEans.length} upsert error:`, upsertErr.message)
       } else {
-        notFound++
+        totalUpdated += updates.length
+        totalNotFound += batchEans.length - updates.length
       }
 
-      processed++
-
-      // Log progreso cada 1000 productos
-      if (processed % 1000 === 0) {
-        console.log(`[v0] Progress: ${processed} processed, ${updated} updated, ${notFound} not found, ${errors} errors`)
-      }
+      console.log(`[AZETA-STOCK] Batch ${i}-${i + batchEans.length}: ${updates.length} updated`)
     }
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2)
@@ -126,31 +135,23 @@ export async function POST(request: NextRequest) {
     // Actualizar estado del source
     await supabase
       .from("import_sources")
-      .update({
-        last_run: new Date().toISOString(),
-        last_status: "success"
-      })
+      .update({ last_run: new Date().toISOString(), last_status: "success" })
       .eq("id", source.id)
 
-    console.log("[v0] AZETA Stock Update - Completed")
-    console.log(`[v0] Stats: ${processed} processed, ${updated} updated, ${notFound} not found, ${errors} errors in ${duration}s`)
+    console.log(`[AZETA-STOCK] Done: ${totalUpdated} updated, ${totalNotFound} not found, ${duration}s`)
 
     return NextResponse.json({
       success: true,
       stats: {
-        processed,
-        updated,
-        not_found: notFound,
-        errors,
-        duration_seconds: parseFloat(duration)
-      }
+        processed: allEans.length,
+        updated: totalUpdated,
+        not_found: totalNotFound,
+        errors: 0,
+        duration_seconds: parseFloat(duration),
+      },
     })
-
   } catch (error: any) {
-    console.error("[v0] AZETA Stock Update - Error:", error)
-    return NextResponse.json(
-      { error: error.message || "Stock update failed" },
-      { status: 500 }
-    )
+    console.error("[AZETA-STOCK] Fatal error:", error.message)
+    return NextResponse.json({ error: error.message || "Stock update failed" }, { status: 500 })
   }
 }

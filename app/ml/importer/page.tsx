@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
@@ -25,6 +25,23 @@ export default function MLImporterPage() {
   const [executionLog, setExecutionLog] = useState<any[]>([])
   const [accountDebug, setAccountDebug] = useState<any>(null)
   const [loadingAccountDebug, setLoadingAccountDebug] = useState(false)
+
+  // Ref para leer autoMode dentro de callbacks async sin stale closure
+  const autoModeRef = useRef(autoMode)
+  useEffect(() => { autoModeRef.current = autoMode }, [autoMode])
+
+  // Polling de progreso mientras está corriendo (cada 3s)
+  useEffect(() => {
+    if (!running || !selectedAccountId) return
+    const interval = setInterval(async () => {
+      try {
+        const res  = await fetch(`/api/ml/import-pro/status?account_id=${selectedAccountId}`)
+        const data = await res.json()
+        if (data.ok) setProgress(data.progress)
+      } catch { /* ignorar errores de red durante polling */ }
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [running, selectedAccountId])
 
   // Cola de jobs
   const [queueJobs, setQueueJobs]       = useState<any[]>([])
@@ -80,15 +97,6 @@ export default function MLImporterPage() {
     loadData()
   }, [selectedAccountId])
 
-  // Auto-mode TEMPORALMENTE DESHABILITADO para diagnóstico
-  // No se ejecutarán invocaciones automáticas mientras diagnosticamos por qué se clava en 40%
-  useEffect(() => {
-    if (autoMode) {
-      console.log("[v0] Auto-mode deshabilitado temporalmente - diagnóstico en curso")
-      setAutoMode(false)
-    }
-  }, [])
-
   const handleRun = async () => {
     if (!selectedAccountId || running) return
 
@@ -100,21 +108,34 @@ export default function MLImporterPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          account_id: selectedAccountId,
+          account_id:  selectedAccountId,
           max_seconds: 12,
-          publications_page: 200, // Aumentado para recuperar throughput alto
-          detail_batch: 30, // Aumentado para procesar más items por batch
+          detail_batch: 50,
+          concurrency:  2,
         }),
       })
       
       const data = await res.json()
       setRunResult(data)
 
-      // Si hay rate limit, pausar auto-mode 10s y reanudar
+      // 409 = ya está corriendo (concurrent run). Esperar y reintentar.
+      if (res.status === 409) {
+        const waitMs = data.retry_after_ms ?? 15_000
+        if (autoModeRef.current) {
+          setTimeout(() => handleRun(), waitMs)
+        }
+        return
+      }
+
+      // Si hay rate limit, pausar auto-mode y reanudar después del tiempo indicado
       if (data.rate_limited) {
         setAutoMode(false)
-        setTimeout(() => setAutoMode(true), 10000)
         setRunning(false)
+        const waitMs = (data.wait_seconds ?? 60) * 1000
+        setTimeout(() => {
+          setAutoMode(true)
+          handleRun()
+        }, waitMs)
         return
       }
 
@@ -155,8 +176,13 @@ export default function MLImporterPage() {
       }
 
       // Si está pausado o completo, detener auto-mode
-      if (data.paused || statusData.progress?.status === "done") {
+      const isDone = data.paused || statusData.progress?.status === "done" || !data.has_more
+      if (isDone) {
         setAutoMode(false)
+      } else if (autoModeRef.current) {
+        // Continuar automáticamente al siguiente batch con pequeña pausa
+        setTimeout(() => handleRun(), 800)
+        return
       }
     } catch (error: any) {
       console.error("[IMPORTER] Network/timeout error:", error)
@@ -496,20 +522,45 @@ export default function MLImporterPage() {
           </div>
 
           <div className="space-y-3">
+            {/* Métrica principal: items REALES en la DB (no se resetea con el cursor) */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium">Publicaciones</span>
-                <span className="text-sm text-muted-foreground">
-                  {progress.publications_offset.toLocaleString()} / {progress.publications_total?.toLocaleString() || "?"}
+                <span className="text-sm font-medium">Publicaciones en base de datos</span>
+                <span className="text-sm text-muted-foreground font-mono">
+                  {(progress.publications_in_db ?? progress.db_rows_upserted_count ?? 0).toLocaleString()}
+                  {progress.publications_total ? ` / ${progress.publications_total.toLocaleString()}` : ""}
                 </span>
               </div>
-              <Progress value={progress.publications_progress || 0} className="h-2" />
+              <Progress
+                value={
+                  progress.publications_total
+                    ? Math.min(100, Math.round(((progress.publications_in_db ?? 0) / progress.publications_total) * 100))
+                    : 0
+                }
+                className="h-2"
+              />
               <p className="text-xs text-muted-foreground mt-1">
                 {progress.status === "done"
-                  ? `${progress.publications_offset.toLocaleString()} publicaciones importadas (100%)`
-                  : `${(progress.publications_progress || 0).toFixed(1)}% — paginando con scroll cursor`}
+                  ? `${(progress.publications_in_db ?? 0).toLocaleString()} publicaciones importadas`
+                  : progress.publications_total
+                    ? `${Math.min(100, Math.round(((progress.publications_in_db ?? 0) / progress.publications_total) * 100))}% importado`
+                    : "Calculando..."}
               </p>
             </div>
+
+            {/* Métrica secundaria: posición del scan actual (se resetea al reiniciar cursor) */}
+            {progress.status === "running" && progress.publications_total && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-muted-foreground">Progreso del scan actual</span>
+                  <span className="text-xs text-muted-foreground font-mono">
+                    {progress.publications_offset?.toLocaleString()} / {progress.publications_total.toLocaleString()}
+                  </span>
+                </div>
+                <Progress value={progress.publications_progress || 0} className="h-1 opacity-60" />
+              </div>
+            )}
+
 
             {progress.finished_at && (
               <p className="text-xs text-muted-foreground">

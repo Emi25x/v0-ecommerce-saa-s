@@ -1,5 +1,7 @@
 "use client"
 
+export const dynamic = "force-dynamic"
+
 import { useState, useEffect, useCallback } from "react"
 import { Button }   from "@/components/ui/button"
 import { Input }    from "@/components/ui/input"
@@ -42,14 +44,19 @@ interface Empresa {
   razon_social:   string
   nombre_empresa: string | null
   cuit:           string
+  iva_default?:   number
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const ESTADO_OPTS = [
-  { value: "all",       label: "Todos los estados" },
-  { value: "paid",      label: "Pagadas" },
-  { value: "cancelled", label: "Canceladas" },
-  { value: "pending",   label: "Pendientes" },
+  { value: "all",                label: "Todos los estados" },
+  { value: "paid",               label: "Pagadas" },
+  { value: "cancelled",          label: "Canceladas" },
+  { value: "pending",            label: "Pendientes" },
+  { value: "payment_required",   label: "Pago requerido" },
+  { value: "payment_in_process", label: "Pago en proceso" },
+  { value: "partially_refunded", label: "Parcialmente reembolsada" },
+  { value: "invalid",            label: "Inválida" },
 ]
 
 const ENVIO_OPTS = [
@@ -58,6 +65,9 @@ const ENVIO_OPTS = [
   { value: "shipped",       label: "En camino" },
   { value: "ready_to_ship", label: "Listas para enviar" },
   { value: "not_delivered", label: "No entregadas" },
+  { value: "handling",      label: "Preparando envío" },
+  { value: "pending",       label: "Envío pendiente" },
+  { value: "cancelled",     label: "Envío cancelado" },
 ]
 
 const FACTURADO_OPTS = [
@@ -75,10 +85,16 @@ function EnvioBadge({ estado }: { estado?: string | null }) {
     not_delivered:  "bg-red-500/15 text-red-400 border-red-500/30",
     cancelled:      "bg-red-500/15 text-red-400 border-red-500/30",
     pending:        "bg-amber-500/15 text-amber-400 border-amber-500/30",
+    handling:       "bg-orange-500/15 text-orange-400 border-orange-500/30",
   }
   const labels: Record<string, string> = {
-    delivered: "Entregada", shipped: "En camino", ready_to_ship: "Lista enviar",
-    not_delivered: "No entregada", cancelled: "Cancelado", pending: "Pendiente",
+    delivered:     "Entregada",
+    shipped:       "En camino",
+    ready_to_ship: "Lista enviar",
+    not_delivered: "No entregada",
+    cancelled:     "Cancelado",
+    pending:       "Pendiente",
+    handling:      "Preparando",
   }
   const cls = map[estado] || "bg-muted text-muted-foreground border-border"
   return (
@@ -90,13 +106,22 @@ function EnvioBadge({ estado }: { estado?: string | null }) {
 
 function EstadoBadge({ estado }: { estado: string }) {
   const map: Record<string, string> = {
-    paid:      "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-    delivered: "bg-blue-500/15 text-blue-400 border-blue-500/30",
-    cancelled: "bg-red-500/15 text-red-400 border-red-500/30",
-    pending:   "bg-amber-500/15 text-amber-400 border-amber-500/30",
+    paid:                "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+    cancelled:           "bg-red-500/15 text-red-400 border-red-500/30",
+    pending:             "bg-amber-500/15 text-amber-400 border-amber-500/30",
+    payment_required:    "bg-amber-500/15 text-amber-400 border-amber-500/30",
+    payment_in_process:  "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",
+    partially_refunded:  "bg-orange-500/15 text-orange-400 border-orange-500/30",
+    invalid:             "bg-red-500/15 text-red-400 border-red-500/30",
   }
   const labels: Record<string, string> = {
-    paid: "Pagada", delivered: "Entregada", cancelled: "Cancelada", pending: "Pendiente",
+    paid:                "Pagada",
+    cancelled:           "Cancelada",
+    pending:             "Pendiente",
+    payment_required:    "Pago requerido",
+    payment_in_process:  "Pago en proceso",
+    partially_refunded:  "Parcial reembolso",
+    invalid:             "Inválida",
   }
   return (
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${map[estado] ?? "bg-muted/30 text-muted-foreground border-border"}`}>
@@ -126,7 +151,7 @@ export default function MLBillingPage() {
 
   // Filtros
   const [filterEstado,    setFilterEstado]    = useState("paid")
-  const [filterEnvio,     setFilterEnvio]     = useState("delivered")
+  const [filterEnvio,     setFilterEnvio]     = useState("all")
   const [filterFacturado, setFilterFacturado] = useState("no")
   const [fechaDesde,      setFechaDesde]      = useState(() => {
     const d = new Date(); d.setDate(d.getDate() - 30)
@@ -150,6 +175,14 @@ export default function MLBillingPage() {
   // Subida de facturas a ML
   const [uploadingId,  setUploadingId]  = useState<number | null>(null)
   const [uploadStatus, setUploadStatus] = useState<Record<number, UploadStatus>>({})
+
+  // Sincronización de envíos
+  const [syncingEnvios, setSyncingEnvios] = useState(false)
+  const [syncEnviosMsg, setSyncEnviosMsg] = useState<string | null>(null)
+
+  // Importar ventas desde ML API → DB
+  const [importingOrders, setImportingOrders] = useState(false)
+  const [importMsg,       setImportMsg]       = useState<string | null>(null)
 
   const subirFacturaML = async (order: MLOrder) => {
     if (!order.factura_info?.factura_id) return
@@ -192,6 +225,100 @@ export default function MLBillingPage() {
     }
   }
 
+  // ── Cargar órdenes ────────────────────────────────────────────────────────
+  const loadOrders = useCallback(async (p: number) => {
+    if (!activeAccount) return
+    setLoading(true); setError(null); setSelected(new Set())
+    try {
+      const params = new URLSearchParams({
+        account_id:  activeAccount,
+        page:        String(p + 1),
+        limit:       String(LIMIT),
+        facturado:   filterFacturado === "all" ? "" : filterFacturado,
+        fecha_desde: fechaDesde ? `${fechaDesde}T00:00:00.000Z` : "",
+        fecha_hasta: fechaHasta ? `${fechaHasta}T23:59:59.000Z` : "",
+      })
+      if (filterEstado !== "all") params.set("estado",       filterEstado)
+      if (filterEnvio  !== "all") params.set("estado_envio", filterEnvio)
+
+      const res  = await fetch(`/api/billing/ml-ventas?${params}`)
+      const data = await res.json()
+      if (!res.ok || !data.ok) { setError(data.error || "Error cargando órdenes"); return }
+      setOrders(data.orders)
+      setTotal(data.total)
+    } finally {
+      setLoading(false)
+    }
+  }, [activeAccount, filterEstado, filterEnvio, filterFacturado, fechaDesde, fechaHasta])
+
+  // ── Sincronizar estados de envío ──────────────────────────────────────────
+  // Llama a /api/ml/sync-shipping-status para actualizar shipping_status en DB.
+  // Corre en background — NO bloquea la carga inicial de órdenes.
+  const sincronizarEnvios = useCallback(async (silent = false) => {
+    if (!activeAccount || syncingEnvios) return
+    setSyncingEnvios(true)
+    if (!silent) setSyncEnviosMsg(null)
+    try {
+      const res  = await fetch("/api/ml/sync-shipping-status", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          account_id:  activeAccount,
+          fecha_desde: fechaDesde ? `${fechaDesde}T00:00:00.000Z` : undefined,
+          fecha_hasta: fechaHasta ? `${fechaHasta}T23:59:59.000Z` : undefined,
+        }),
+      })
+      const data = await res.json()
+      if (res.ok && data.ok) {
+        if (!silent) setSyncEnviosMsg(`Actualizadas ${data.updated} órdenes`)
+        // Refrescar la página actual (no resetear a 0) para mostrar los estados actualizados
+        loadOrders(page)
+      } else {
+        if (!silent) setSyncEnviosMsg("Error al sincronizar")
+      }
+    } catch {
+      if (!silent) setSyncEnviosMsg("Error al sincronizar")
+    } finally {
+      setSyncingEnvios(false)
+    }
+  }, [activeAccount, syncingEnvios, fechaDesde, fechaHasta, page, loadOrders])
+
+  // ── Importar ventas desde ML API ─────────────────────────────────────────
+  const importarVentas = async () => {
+    if (!activeAccount || importingOrders) return
+    setImportingOrders(true)
+    setImportMsg(null)
+    let totalSynced = 0
+    let offset = 0
+    let hasMore = true
+    const maxOrders = 500
+    const pageSize  = 50
+    try {
+      while (hasMore && totalSynced < maxOrders) {
+        const res  = await fetch("/api/ml/sync-orders", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ account_id: activeAccount, offset, limit: pageSize }),
+        })
+        const data = await res.json()
+        if (!data.ok) {
+          setImportMsg(data.rate_limited ? "Límite de ML alcanzado, reintentá en unos segundos" : `Error: ${data.error}`)
+          break
+        }
+        totalSynced += data.synced ?? 0
+        hasMore = data.has_more ?? false
+        offset  = data.offset  ?? (offset + pageSize)
+        setImportMsg(`Importando… ${totalSynced} ventas`)
+      }
+      setImportMsg(`${totalSynced} ventas importadas`)
+      loadOrders(0)
+    } catch {
+      setImportMsg("Error al importar")
+    } finally {
+      setImportingOrders(false)
+    }
+  }
+
   // ── Conectar cuenta ML ────────────────────────────────────────────────────
   const conectarML = async () => {
     try {
@@ -231,35 +358,17 @@ export default function MLBillingPage() {
     loadSetup()
   }, [])
 
-  // ── Cargar órdenes ────────────────────────────────────────────────────────
-  const loadOrders = useCallback(async (p: number) => {
-    if (!activeAccount) return
-    setLoading(true); setError(null); setSelected(new Set())
-    try {
-      const params = new URLSearchParams({
-        account_id:  activeAccount,
-        page:        String(p + 1),
-        limit:       String(LIMIT),
-        facturado:   filterFacturado === "all" ? "" : filterFacturado,
-        fecha_desde: fechaDesde ? `${fechaDesde}T00:00:00.000Z` : "",
-        fecha_hasta: fechaHasta ? `${fechaHasta}T23:59:59.000Z` : "",
-      })
-      if (filterEstado !== "all") params.set("estado",       filterEstado)
-      if (filterEnvio  !== "all") params.set("estado_envio", filterEnvio)
-
-      const res  = await fetch(`/api/billing/ml-ventas?${params}`)
-      const data = await res.json()
-      if (!res.ok || !data.ok) { setError(data.error || "Error cargando órdenes"); return }
-      setOrders(data.orders)
-      setTotal(data.total)
-    } finally {
-      setLoading(false)
-    }
-  }, [activeAccount, filterEstado, filterEnvio, filterFacturado, fechaDesde, fechaHasta])
-
   useEffect(() => {
     if (activeAccount) { setPage(0); loadOrders(0) }
   }, [activeAccount, filterEstado, filterEnvio, filterFacturado])
+
+  // Auto-sincronizar shipping_status al entrar a la página o cambiar de cuenta.
+  // Corre en background — loadOrders se llama independientemente (effect arriba).
+  useEffect(() => {
+    if (activeAccount) sincronizarEnvios(true)
+  // sincronizarEnvios se estabiliza via useCallback; sólo reejecutar si cambia la cuenta
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeAccount])
 
   // ── Selección ─────────────────────────────────────────────────────────────
   const toggleOrder = (id: number) => {
@@ -281,6 +390,7 @@ export default function MLBillingPage() {
     const selOrders = orders.filter(o => selected.has(o.id))
     let ok = 0; let err = 0; const errs: string[] = []; const warns: string[] = []
     const round2 = (n: number) => Math.round(n * 100) / 100
+    const ivaDefault = empresas.find(e => e.id === activeEmpresa)?.iva_default ?? 0
 
     for (const order of selOrders) {
       try {
@@ -310,6 +420,7 @@ export default function MLBillingPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            account_id:             activeAccount,
             empresa_id:             activeEmpresa,
             tipo_comprobante:       11,  // Factura C
             concepto:               1,
@@ -324,7 +435,7 @@ export default function MLBillingPage() {
               descripcion:     i.titulo || "Venta ML",
               cantidad:        i.cantidad,
               precio_unitario: round2(i.precio),
-              alicuota_iva:    0,
+              alicuota_iva:    ivaDefault,
             })),
           }),
         })
@@ -404,10 +515,19 @@ export default function MLBillingPage() {
           <h1 className="text-2xl font-bold tracking-tight">Ventas MercadoLibre</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Consultá tus ventas y facturálas directamente a ARCA</p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => loadOrders(page)} disabled={loading} className="gap-2">
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Actualizar
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex flex-col items-end gap-0.5">
+            <Button variant="outline" size="sm" onClick={importarVentas} disabled={importingOrders || !activeAccount} className="gap-2">
+              <Download className={`h-4 w-4 ${importingOrders ? "animate-pulse" : ""}`} />
+              {importingOrders ? "Importando…" : "Importar ventas"}
+            </Button>
+            {importMsg && <span className="text-[10px] text-muted-foreground">{importMsg}</span>}
+          </div>
+          <Button variant="outline" size="sm" onClick={() => loadOrders(page)} disabled={loading} className="gap-2">
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Actualizar
+          </Button>
+        </div>
       </div>
 
       {/* Selector de cuenta ML + empresa ARCA */}
@@ -486,7 +606,17 @@ export default function MLBillingPage() {
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Estado del envío</Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Estado del envío</Label>
+              <button
+                onClick={sincronizarEnvios}
+                disabled={syncingEnvios}
+                className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2 disabled:opacity-40"
+                title="Actualiza el estado de envío de las últimas 250 órdenes desde MercadoLibre"
+              >
+                {syncingEnvios ? "Sincronizando…" : syncEnviosMsg ?? "Sincronizar"}
+              </button>
+            </div>
             <Select value={filterEnvio} onValueChange={setFilterEnvio}>
               <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -605,13 +735,20 @@ export default function MLBillingPage() {
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+          <div className="flex flex-col items-center justify-center py-16 gap-2 text-muted-foreground">
+            <RefreshCw className="h-6 w-6 animate-spin" />
+            <p className="text-sm">Cargando…</p>
           </div>
         ) : orders.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-2 text-muted-foreground">
             <ShoppingCart className="h-8 w-8 opacity-30" />
             <p className="text-sm">No hay ventas con los filtros seleccionados</p>
+            {syncingEnvios && (
+              <p className="text-xs opacity-50 flex items-center gap-1">
+                <RefreshCw className="h-3 w-3 animate-spin" />
+                Actualizando estados de envío en segundo plano…
+              </p>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">

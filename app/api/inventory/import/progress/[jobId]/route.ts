@@ -1,11 +1,11 @@
-import { createServerClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/supabase/server"
 import { type NextRequest, NextResponse } from "next/server"
 
 export async function GET(request: NextRequest, { params }: { params: { jobId: string } }) {
   try {
     const { jobId } = params
 
-    const supabase = await createServerClient()
+    const supabase = await createClient()
 
     const { data: history, error } = await supabase.from("import_history").select("*").eq("id", jobId).single()
 

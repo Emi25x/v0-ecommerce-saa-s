@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { executeFullImport } from "@/lib/import/batch-import"
+import { runCatalogImport } from "@/lib/azeta/run-catalog-import"
+import { runAzetaStockUpdate } from "@/lib/azeta/update-stock-import"
 // TODO: Implementar sync ML como función directa en lugar de fetch
 // import { syncStockWithML } from "@/lib/ml/sync-stock"
 
@@ -12,6 +14,9 @@ import { executeFullImport } from "@/lib/import/batch-import"
 //     "schedule": "0 * * * *"  // Cada hora
 //   }]
 // }
+
+export const dynamic = "force-dynamic"
+export const maxDuration = 300
 
 export async function GET(request: Request) {
   try {
@@ -60,9 +65,25 @@ export async function GET(request: Request) {
         const source = schedule.import_sources
         console.log(`[v0] Ejecutando importación para fuente: ${source.name} (feed_type: ${source.feed_type})`)
 
-        // Ejecutar importación directamente (sin fetch interno)
-        console.log(`[v0] Ejecutando importación directa para ${source.name}`)
-        const importResult = await executeFullImport(schedule.source_id, source.feed_type)
+        // Rutear según proveedor: Azeta necesita manejo especial (ZIP + RPC propio de stock)
+        const isAzeta = source.name.toLowerCase().includes("azeta")
+        let importResult: { success: boolean; created?: number; updated?: number; message?: string }
+
+        if (isAzeta && source.feed_type === "stock_price") {
+          // Stock Azeta: usa bulk_update_azeta_stock RPC para no afectar otros proveedores
+          console.log(`[v0] Ejecutando actualización de stock AZETA para ${source.name}`)
+          const r = await runAzetaStockUpdate(source)
+          importResult = { success: r.success, updated: r.updated, message: r.error ?? `${r.updated} actualizados, ${r.not_found} no encontrados` }
+        } else if (isAzeta) {
+          // Catálogo/parcial Azeta: ZIP + latin1 + EAN normalization
+          console.log(`[v0] Ejecutando importación catálogo AZETA para ${source.name}`)
+          const r = await runCatalogImport({ source_id: schedule.source_id })
+          importResult = { success: r.success, created: r.created, updated: r.updated, message: r.error ?? `${r.created} creados, ${r.updated} actualizados` }
+        } else {
+          // Resto de proveedores: importador genérico
+          console.log(`[v0] Ejecutando importación directa para ${source.name}`)
+          importResult = await executeFullImport(schedule.source_id, source.feed_type)
+        }
 
         // Calcular próxima ejecución
         const nextRunAt = calculateNextRun(schedule)

@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { createAdminClient } from "@/lib/supabase/admin"
 
 export async function GET(req: Request) {
+  const supabase = createAdminClient()
   const { searchParams } = new URL(req.url)
   const source      = searchParams.get("source")
   const project_type = searchParams.get("project_type")

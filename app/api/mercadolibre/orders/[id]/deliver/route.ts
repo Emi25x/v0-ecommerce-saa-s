@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getValidAccessToken } from "@/lib/mercadolibre"
-import { createServerClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/supabase/server"
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -11,7 +11,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     if (!userId) {
       console.log("[v0] Deliver endpoint - No ml_user_id in cookies, trying database")
       try {
-        const supabase = createServerClient()
+        const supabase = await createClient()
         const { data: accounts, error: dbError } = await supabase
           .from("ml_accounts")
           .select("user_id")

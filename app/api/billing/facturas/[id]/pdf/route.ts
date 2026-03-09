@@ -86,21 +86,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
       return NextResponse.json({ error: "Factura no encontrada" }, { status: 404 })
     }
 
-    // Autorización: debe ser del usuario o de una config que pertenece al usuario
-    if (factura.user_id && factura.user_id !== user.id) {
-      // Verificar si la arca_config pertenece al usuario
-      const configId = factura.arca_config_id || factura.empresa_id
-      const { data: configCheck } = await supabase
-        .from("arca_config")
-        .select("user_id")
-        .eq("id", configId)
-        .single()
-      if (configCheck?.user_id !== user.id) {
-        return NextResponse.json({ error: "No autorizado" }, { status: 403 })
-      }
-    }
-
-    // 2. Buscar la arca_config asociada (join manual para evitar ambigüedad de FK)
+    // 2. Buscar arca_config y verificar autorización en una sola query
     const configId = factura.arca_config_id || factura.empresa_id
     if (!configId) {
       return NextResponse.json({ error: "Factura sin configuración ARCA asociada" }, { status: 404 })
@@ -113,8 +99,12 @@ export async function GET(request: Request, { params }: { params: { id: string }
       .single()
 
     if (configError || !config) {
-      console.log("[v0] PDF - arca_config not found, configId:", configId, "error:", configError?.message)
       return NextResponse.json({ error: "Configuración ARCA no encontrada" }, { status: 404 })
+    }
+
+    // Autorización: user_id de la config debe coincidir (cubre también facturas con user_id nulo)
+    if (config.user_id !== user.id) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 })
     }
 
     return buildPDFResponse({ ...factura, arca_config: config })

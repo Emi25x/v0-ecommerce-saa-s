@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { createAdminClient } from "@/lib/supabase/admin"
 
 export async function GET() {
+  const supabase = createAdminClient()
   try {
     const [oppsRes, signalsRes, gapsRes, adaptRes] = await Promise.all([
       supabase.from("editorial_radar_opportunities").select("opportunity_type, status, score, confidence, created_at"),

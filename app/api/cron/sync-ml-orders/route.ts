@@ -4,6 +4,9 @@ import { NextResponse } from "next/server"
 export const dynamic = "force-dynamic"
 export const maxDuration = 300 // 5 minutos
 
+const MAX_ORDERS_PER_ACCOUNT = 500
+const PAGE_SIZE = 50 // ML orders/search max per page
+
 export async function GET(request: Request) {
   try {
     // Verificar autorización
@@ -23,7 +26,7 @@ export async function GET(request: Request) {
       .select("id, nickname")
 
     if (accountsError) {
-      console.error("[v0] Error fetching ML accounts:", accountsError)
+      console.error("[sync-ml-orders] Error fetching ML accounts:", accountsError)
       return NextResponse.json({ error: accountsError.message }, { status: 500 })
     }
 
@@ -32,50 +35,76 @@ export async function GET(request: Request) {
     }
 
     const results = []
-    const baseUrl = process.env.VERCEL_URL 
-      ? `https://${process.env.VERCEL_URL}` 
+    const baseUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
       : process.env.NEXT_PUBLIC_VERCEL_URL || "http://localhost:3000"
 
     for (const account of accounts) {
+      let totalSynced = 0
+      let offset = 0
+      let hasMore = true
+      let pages = 0
+      const maxPages = Math.ceil(MAX_ORDERS_PER_ACCOUNT / PAGE_SIZE)
+
+      console.log(`[sync-ml-orders] Syncing orders for account: ${account.nickname}`)
+
       try {
-        console.log(`[v0] Syncing orders for account: ${account.nickname}`)
-        
-        const syncResponse = await fetch(`${baseUrl}/api/ml/sync-orders`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ account_id: account.id })
-        })
+        while (hasMore && pages < maxPages) {
+          const syncResponse = await fetch(`${baseUrl}/api/ml/sync-orders`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ account_id: account.id, offset, limit: PAGE_SIZE }),
+          })
 
-        const syncResult = await syncResponse.json()
+          if (!syncResponse.ok) {
+            console.error(`[sync-ml-orders] HTTP ${syncResponse.status} for account ${account.nickname}`)
+            break
+          }
 
-        results.push({
-          account: account.nickname,
-          success: syncResult.success,
-          synced: syncResult.synced,
-          errors: syncResult.errors
-        })
+          const syncResult = await syncResponse.json()
 
-        console.log(`[v0] Account ${account.nickname}: synced=${syncResult.synced}, errors=${syncResult.errors}`)
+          if (!syncResult.ok) {
+            if (syncResult.rate_limited) {
+              console.warn(`[sync-ml-orders] Rate limited for account ${account.nickname}, stopping`)
+            } else {
+              console.error(`[sync-ml-orders] Error for account ${account.nickname}:`, syncResult.error)
+            }
+            break
+          }
+
+          totalSynced += syncResult.synced ?? 0
+          hasMore = syncResult.has_more ?? false
+          offset = syncResult.offset ?? (offset + PAGE_SIZE)
+          pages++
+
+          console.log(`[sync-ml-orders] ${account.nickname} page ${pages}: synced=${syncResult.synced}, total=${syncResult.total}, has_more=${hasMore}`)
+
+          // Pequeña pausa entre páginas para no saturar ML
+          if (hasMore) await new Promise(r => setTimeout(r, 300))
+        }
+
+        results.push({ account: account.nickname, synced: totalSynced, pages })
       } catch (error) {
-        console.error(`[v0] Error processing account ${account.nickname}:`, error)
+        console.error(`[sync-ml-orders] Error processing account ${account.nickname}:`, error)
         results.push({
           account: account.nickname,
-          error: error instanceof Error ? error.message : "Unknown error"
+          synced: totalSynced,
+          error: error instanceof Error ? error.message : "Unknown error",
         })
       }
 
       // Delay entre cuentas para no saturar ML
-      await new Promise(resolve => setTimeout(resolve, 500))
+      await new Promise(r => setTimeout(r, 500))
     }
 
     return NextResponse.json({
-      success: true,
+      ok: true,
       processed: accounts.length,
-      results
+      results,
     })
 
   } catch (error) {
-    console.error("[v0] Error in sync-ml-orders cron:", error)
+    console.error("[sync-ml-orders] Error:", error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }

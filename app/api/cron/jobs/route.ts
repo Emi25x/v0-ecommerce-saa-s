@@ -6,6 +6,7 @@
  */
 import { NextResponse } from "next/server"
 
+export const dynamic = "force-dynamic"
 export const maxDuration = 120
 
 export async function GET(req: Request) {

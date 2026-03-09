@@ -180,12 +180,13 @@ export default function MLMatcherPage() {
       const logEntry = {
         ranAt: new Date().toISOString(),
         action: data.ok ? (data.paused ? 'paused' : 'success') : 'error',
-        processed: data.processed || 0,  // Matcher usa 'processed', no 'imported_count'
+        processed: data.processed || 0,
         matched: data.matched || 0,
         retry_after: data.paused ? data.wait_seconds : null,
         elapsed: data.elapsed_seconds || ((Date.now() - startTime) / 1000).toFixed(1),
         error_details: !data.ok && data.error ? data.error : null,
-        timings: data.timings || null
+        metrics: data.metrics || null,
+        sample_unmatched: data.sample_unmatched || null,
       }
       
       setExecutionLog(prev => [logEntry, ...prev].slice(0, 10))
@@ -651,7 +652,8 @@ export default function MLMatcherPage() {
           <h3 className="font-semibold mb-4">Log de ejecución</h3>
           <div className="space-y-2">
             {executionLog.map((log, i) => (
-              <div key={i} className="flex items-center justify-between p-3 bg-gray-50 border rounded-md text-sm">
+              <div key={i} className="p-3 bg-gray-50 border rounded-md text-sm space-y-2">
+                <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <Badge variant={log.action === 'success' ? 'default' : log.action === 'error' ? 'destructive' : 'secondary'} className="font-normal">
                     {log.action}
@@ -664,7 +666,12 @@ export default function MLMatcherPage() {
                   {log.action === 'success' && (
                     <>
                       <span>{log.processed || 0} procesadas</span>
-                      <span>{log.matched || 0} vinculadas</span>
+                      <span className={log.matched > 0 ? "text-green-600 font-medium" : ""}>{log.matched || 0} vinculadas</span>
+                      {log.metrics && (
+                        <span className={log.metrics.products_loaded === 0 ? "text-red-500 font-medium" : "text-muted-foreground"}>
+                          {log.metrics.products_loaded} productos · {log.metrics.ean_index_size} EANs · {log.metrics.sku_index_size} SKUs
+                        </span>
+                      )}
                     </>
                   )}
                   {log.retry_after && (
@@ -675,6 +682,16 @@ export default function MLMatcherPage() {
                   )}
                   <span>{log.elapsed}s</span>
                 </div>
+                </div>
+                {/* Muestra diagnóstica cuando hay 0 matches */}
+                {log.action === 'success' && log.matched === 0 && log.sample_unmatched?.length > 0 && (
+                  <details className="mt-1">
+                    <summary className="text-xs text-amber-600 cursor-pointer">Ver muestra sin match ({log.sample_unmatched.length} pubs)</summary>
+                    <pre className="text-[10px] bg-white border rounded p-2 mt-1 overflow-auto max-h-32">
+                      {JSON.stringify(log.sample_unmatched, null, 2)}
+                    </pre>
+                  </details>
+                )}
               </div>
             ))}
           </div>

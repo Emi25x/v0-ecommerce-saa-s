@@ -37,9 +37,9 @@ export async function POST(request: NextRequest) {
     const token = await getValidAccessToken(account_id)
     const auth  = { Authorization: `Bearer ${token}` }
 
-    // Una sola llamada — orders/search devuelve órdenes completas con buyer + shipping
+    // Una sola llamada — orders/search con expand=shipping para obtener shipping.status
     const url = `https://api.mercadolibre.com/orders/search` +
-      `?seller=${account.ml_user_id}&sort=date_desc&limit=${limit}&offset=${offset}`
+      `?seller=${account.ml_user_id}&sort=date_desc&limit=${limit}&offset=${offset}&expand=shipping`
 
     const res = await fetch(url, {
       headers: auth,

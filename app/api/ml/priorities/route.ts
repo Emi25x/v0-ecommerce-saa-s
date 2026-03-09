@@ -1,12 +1,8 @@
-import { createClient } from "@supabase/supabase-js"
 import { NextResponse } from "next/server"
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { createAdminClient } from "@/lib/supabase/admin"
 
 export async function GET(req: Request) {
+  const supabase = createAdminClient()
   try {
     const url          = new URL(req.url)
     const accountId    = url.searchParams.get("ml_account_id")

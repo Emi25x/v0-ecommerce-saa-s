@@ -3,6 +3,9 @@ import { createClient } from "@/lib/supabase/server"
 
 // Se ejecuta cada 15 minutos
 
+export const dynamic = "force-dynamic"
+export const maxDuration = 300
+
 export async function GET(request: Request) {
   try {
     // Verificar autorización

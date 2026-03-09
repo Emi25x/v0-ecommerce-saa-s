@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
+import { createAdminClient } from "@/lib/supabase/admin"
 // GET — devuelve publicaciones activas/pausadas con EAN de la DB (rápido, sin llamar a ML)
 export async function GET(req: NextRequest) {
+  const supabase = createAdminClient()
   const { searchParams } = new URL(req.url)
   const account_id = searchParams.get("account_id")
   const offset     = parseInt(searchParams.get("offset") ?? "0", 10)
@@ -43,6 +38,7 @@ export async function GET(req: NextRequest) {
 //   3. Si item está pausado → activarlo
 //   4. POST /items/catalog_listings → optin
 export async function POST(req: NextRequest) {
+  const supabase = createAdminClient()
   try {
   const body = await req.json().catch(() => ({}))
   const { account_id, item_id, ean, dry_run = false } = body

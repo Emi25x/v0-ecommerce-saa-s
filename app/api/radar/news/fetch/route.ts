@@ -1,10 +1,5 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { createAdminClient } from "@/lib/supabase/admin"
 
 // ── Adaptation signal patterns ───────────────────────────────────────────────
 const ADAPTATION_PATTERNS = [
@@ -103,6 +98,7 @@ function parseRssItems(xml: string): { title: string; url: string; published_at:
 export const maxDuration = 60
 
 export async function POST(req: Request) {
+  const supabase = createAdminClient()
   const body = await req.json().catch(() => ({}))
   const secret = req.headers.get("x-cron-secret") ?? body.secret
   if (secret !== process.env.CRON_SECRET && secret !== process.env.NEXT_PUBLIC_CRON_SECRET) {
@@ -236,6 +232,7 @@ export async function POST(req: Request) {
 }
 
 export async function GET() {
+  const supabase = createAdminClient()
   // Return recent news for UI polling
   const { data, error } = await supabase
     .from("editorial_radar_news")
