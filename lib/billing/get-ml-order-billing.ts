@@ -40,7 +40,11 @@ export async function getMLOrderBilling(
 
   if (cached) {
     const ageMs = Date.now() - new Date(cached.updated_at).getTime()
-    if (ageMs < 24 * 60 * 60 * 1000) {
+    // Revalidar si: (a) caché expirado, O (b) tenemos nombre pero sin doc_numero y
+    // billing_info_missing=false — puede indicar que en el fetch anterior se perdió
+    // el doc porque solo se leía bi.identification y ML lo devuelve en top-level.
+    const needsRevalidation = !cached.billing_info_missing && !cached.doc_numero
+    if (ageMs < 24 * 60 * 60 * 1000 && !needsRevalidation) {
       return {
         ok:                   true,
         nombre:               cached.nombre,
@@ -125,8 +129,9 @@ export async function getMLOrderBilling(
       nombre = [bi.first_name, bi.last_name].filter(Boolean).join(" ").trim()
         || bi.full_name
         || null
-      doc_tipo   = bi.identification?.type   || null
-      doc_numero = bi.identification?.number || null
+      // ML puede devolver el doc en identification (nested) O en campos top-level
+      doc_tipo   = bi.identification?.type   || bi.doc_type   || null
+      doc_numero = bi.identification?.number || bi.doc_number || null
     }
 
     condicion_iva = bi.taxpayer_type || bi.iva_condition || null

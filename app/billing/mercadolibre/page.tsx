@@ -418,6 +418,7 @@ export default function MLBillingPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            account_id:             activeAccount,
             empresa_id:             activeEmpresa,
             tipo_comprobante:       11,  // Factura C
             concepto:               1,
