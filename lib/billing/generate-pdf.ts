@@ -41,12 +41,10 @@ export async function htmlToPdfBuffer(html: string): Promise<Buffer> {
     }
   } else {
     // Producción (Vercel): descargar binario desde URL remota al arrancar la función
-    // Configurá CHROMIUM_REMOTE_URL en Vercel → Project → Settings → Environment Variables
-    // URL de ejemplo: https://github.com/Sparticuz/chromium/releases/download/v143.0.4/chromium-v143.0.4-pack.tar
+    // Si CHROMIUM_REMOTE_URL no está configurada, usa el pack oficial para x64 Linux.
     const remoteUrl = process.env.CHROMIUM_REMOTE_URL
-    executablePath = remoteUrl
-      ? await chromiumMod.executablePath(remoteUrl)
-      : await chromiumMod.executablePath()
+      || "https://github.com/Sparticuz/chromium/releases/download/v143.0.4/chromium-v143.0.4-pack.x64.tar"
+    executablePath = await chromiumMod.executablePath(remoteUrl)
   }
 
   const browser = await puppeteerCore.launch({
