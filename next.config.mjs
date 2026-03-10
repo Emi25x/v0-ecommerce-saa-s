@@ -9,7 +9,7 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  serverExternalPackages: ["node-forge"],
+  serverExternalPackages: ["node-forge", "puppeteer-core", "@sparticuz/chromium-min"],
 }
 
 export default nextConfig
