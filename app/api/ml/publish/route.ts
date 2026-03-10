@@ -222,16 +222,7 @@ export async function POST(request: NextRequest) {
           }
         }
         
-        // También verificar en nuestra base de datos local (products.ml_item_id)
-        if (!alreadyPublishedInfo.exists && product.ml_item_id) {
-          alreadyPublishedInfo = { 
-            exists: true, 
-            item_id: product.ml_item_id,
-            source: "database"
-          }
-        }
-        
-        // Fallback: verificar en ml_publications
+        // Verificar en ml_publications (per-cuenta — products.ml_item_id es global y no sirve aquí)
         if (!alreadyPublishedInfo.exists) {
           const { data: existingPub } = await supabase
             .from("ml_publications")

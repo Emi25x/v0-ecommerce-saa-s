@@ -110,6 +110,7 @@ export default function MLPublishPage() {
     params.set("min_price", String(minPrice))
     params.set("max_price", String(maxPrice))
     params.set("exclude_ibd", String(excludeIbd))
+    if (selectedAccount) params.set("account_id", selectedAccount)
     if (languageFilter && languageFilter !== "ALL") params.set("language", languageFilter)
     if (filterBrand) params.set("brand", filterBrand)
     if (searchTerm) params.set("search", searchTerm)
