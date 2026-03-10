@@ -955,6 +955,19 @@ export function AppSidebar() {
               </svg>
               <span>Ventas ML</span>
             </Link>
+            <Link
+              href="/billing/shopify"
+              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                pathname?.startsWith("/billing/shopify")
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              }`}
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/>
+              </svg>
+              <span>Ventas Shopify</span>
+            </Link>
           </div>
         </div>
 
