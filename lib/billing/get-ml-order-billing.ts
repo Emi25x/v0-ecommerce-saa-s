@@ -129,18 +129,50 @@ export async function getMLOrderBilling(
   let rawBillingInfo: any          = null
 
   // ── 4. Obtener datos fiscales reales ────────────────────────────────────
-  // Approach preferido: GET /orders/billing-info/MLA/{billing_info_id}
-  // Fallback:           GET /orders/{id}/billing_info
+  // Estrategia: intentar todos los endpoints disponibles, usar el que más datos tenga.
+  //
+  // Endpoint A: GET /orders/billing-info/MLA/{billing_info_id}
+  //   → respuesta FLAT: { first_name, last_name, identification, business_name, ... }
+  // Endpoint B: GET /orders/{id}/billing_info
+  //   → respuesta WRAPPED: { buyer: { first_name, ..., identification }, seller: {...} }
+  //
+  // Normalizamos ambas respuestas a flat antes de parsear.
+
+  /** Extrae el objeto fiscal flat de una respuesta de billing_info de ML */
+  function normalizeBillingResponse(raw: any): any {
+    if (!raw) return {}
+    // Si tiene clave 'buyer' (endpoint B), desenvuelve
+    if (raw.buyer && typeof raw.buyer === "object") return raw.buyer
+    // Si tiene clave 'billing_info' como objeto (algunos endpoints)
+    if (raw.billing_info && typeof raw.billing_info === "object") return raw.billing_info
+    // Ya está flat (endpoint A)
+    return raw
+  }
+
   try {
-    let bi: any
+    let rawA: any = null
+    let rawB: any = null
+
+    // Intento A: endpoint con billingInfoId (respuesta flat)
     if (billingInfoId) {
-      bi = await mlFetch(
-        `https://api.mercadolibre.com/orders/billing-info/MLA/${billingInfoId}`
-      )
-    } else {
-      bi = await mlFetch(`https://api.mercadolibre.com/orders/${order_id}/billing_info`)
+      try {
+        rawA = await mlFetch(
+          `https://api.mercadolibre.com/orders/billing-info/MLA/${billingInfoId}`
+        )
+      } catch { /* si falla, usar fallback */ }
     }
-    rawBillingInfo = bi
+
+    // Intento B: endpoint clásico (respuesta wrapped) — siempre lo intentamos
+    // como alternativa o fuente adicional de datos
+    try {
+      rawB = await mlFetch(`https://api.mercadolibre.com/orders/${order_id}/billing_info`)
+    } catch { /* ignorar si también falla */ }
+
+    // Preferimos A si existe, sino B, sino objeto vacío
+    const raw = rawA ?? rawB ?? {}
+    rawBillingInfo = raw
+
+    const bi = normalizeBillingResponse(raw)
 
     const isBusiness = !!(bi.business_name)
 
@@ -152,7 +184,6 @@ export async function getMLOrderBilling(
       nombre = [bi.first_name, bi.last_name].filter(Boolean).join(" ").trim()
         || bi.full_name
         || null
-      // ML puede devolver el doc en identification (nested) O en campos top-level
       doc_tipo   = bi.identification?.type   || bi.doc_type   || null
       doc_numero = bi.identification?.number || bi.doc_number || null
     }
