@@ -305,7 +305,7 @@ export default function MLPublicationsPage() {
   const handleSearch = () => {
     setPage(0); load(0)
     // Actualizar counts con el q activo para que los tabs reflejen la búsqueda
-    loadCounts(accountId, searchQuery)
+    loadCounts(accountId, search)
   }
   const prevPage = () => { const p = page - 1; setPage(p); load(p) }
   const nextPage = () => { const p = page + 1; setPage(p); load(p) }
@@ -326,7 +326,7 @@ export default function MLPublicationsPage() {
 
   const handleRefresh = () => {
     load(page)
-    loadCounts(accountId, searchQuery)
+    loadCounts(accountId, search)
   }
 
   const enqueueJob = async (
@@ -473,7 +473,7 @@ export default function MLPublicationsPage() {
         toast({ title: "Sincronización ejecutada", description: desc })
         refreshProgress()
         load(0)
-        loadCounts(accountId, searchQuery)
+        loadCounts(accountId, search)
         loadMlTotal(accountId)
       } else if (data.rate_limited) {
         toast({ title: "Rate limit ML", description: `Esperá ${data.wait_seconds ?? 60}s y reintentá.`, variant: "destructive" })

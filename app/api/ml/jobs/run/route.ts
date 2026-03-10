@@ -13,7 +13,7 @@ const MAX_ATTEMPTS    = 5
 // ML constants
 const ML_API          = "https://api.mercadolibre.com"
 const ML_SCAN_PAGE_SIZE   = 50
-const ML_MULTIGET_MAX_IDS = 50
+const ML_MULTIGET_MAX_IDS = 20  // ML hard limit: máximo 20 IDs por request
 const ML_ATTRIBUTES       = "id,title,price,available_quantity,sold_quantity,status,permalink,thumbnail,listing_type_id,attributes,seller_custom_field"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -493,7 +493,7 @@ async function handleImportPublications(
 ): Promise<{ imported_count: number; has_more: boolean; rate_limited: boolean; error?: string }> {
   const { account_id, payload } = job
   const max_seconds = payload.max_seconds ?? 50
-  const detail_batch = Math.min(50, Math.max(1, payload.detail_batch ?? 50))
+  const detail_batch = Math.min(ML_MULTIGET_MAX_IDS, Math.max(1, payload.detail_batch ?? ML_MULTIGET_MAX_IDS))
   const concurrency  = payload.concurrency ?? 2
   const startTime    = Date.now()
 
