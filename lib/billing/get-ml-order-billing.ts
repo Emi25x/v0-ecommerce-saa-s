@@ -120,6 +120,9 @@ export async function getMLOrderBilling(
   // billing_info.id del buyer → endpoint correcto para datos fiscales
   const billingInfoId: string | null = buyer?.billing_info?.id ?? null
 
+  // Identificación directa en el objeto buyer (a veces ML la incluye sin billing_info.id)
+  const buyerIdentification = buyer?.identification || buyer?.billing_info?.identification || null
+
   let nombre:        string | null = null
   let doc_tipo:      string | null = null
   let doc_numero:    string | null = null
@@ -203,13 +206,26 @@ export async function getMLOrderBilling(
       }
     }
 
+    // Fallback: identificación directa del buyer en el objeto /orders/{id}
+    // ML a veces incluye buyer.identification sin tener billing_info.id
+    if (!doc_numero && buyerIdentification?.number) {
+      doc_tipo   = buyerIdentification.type   || doc_tipo
+      doc_numero = String(buyerIdentification.number)
+    }
+    if (!nombre) nombre = buyerFallback
+
     if (!nombre && !doc_numero) {
-      nombre               = buyerFallback
       billing_info_missing = true
     }
   } catch {
     nombre               = buyerFallback
-    billing_info_missing = true
+    // Intentar doc desde buyer.identification antes de marcar como missing
+    if (!doc_numero && buyerIdentification?.number) {
+      doc_tipo   = buyerIdentification.type   || null
+      doc_numero = String(buyerIdentification.number)
+    } else {
+      billing_info_missing = true
+    }
   }
 
   // ── 5. Upsert cache ──────────────────────────────────────────────────────

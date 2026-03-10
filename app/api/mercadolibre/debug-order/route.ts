@@ -51,14 +51,16 @@ export async function GET(request: NextRequest) {
   const billingDataB   = billingResB.ok ? await billingResB.json() : await billingResB.text()
 
   return NextResponse.json({
-    order_status:        orderRes.status,
-    order_buyer:         orderData?.buyer,
-    billing_info_id:     billingInfoId,
+    order_status:           orderRes.status,
+    order_buyer:            orderData?.buyer,
+    billing_info_id:        billingInfoId,
+    // Identificación directa en buyer (sin necesidad de billing_info endpoint)
+    buyer_identification:   orderData?.buyer?.identification ?? null,
     // Endpoint A (flat, requiere billingInfoId)
-    billing_a_status:    billingStatusA,
-    billing_a_data:      billingDataA,
+    billing_a_status:       billingStatusA,
+    billing_a_data:         billingDataA,
     // Endpoint B (wrapped en {buyer, seller})
-    billing_b_status:    billingStatusB,
-    billing_b_data:      billingDataB,
+    billing_b_status:       billingStatusB,
+    billing_b_data:         billingDataB,
   })
 }

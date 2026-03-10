@@ -84,6 +84,15 @@ export default function BillingDebugPage() {
             }
           </section>
 
+          {/* buyer.identification directo en la orden */}
+          <section className="border rounded p-4">
+            <h2 className="font-bold mb-2">buyer.identification (directo en la orden)</h2>
+            {result.buyer_identification
+              ? <pre className="bg-muted p-3 rounded overflow-auto text-xs">{JSON.stringify(result.buyer_identification, null, 2)}</pre>
+              : <span className="bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded">null — buyer no tiene identification en la orden</span>
+            }
+          </section>
+
           {/* Paso 2A: GET /orders/billing-info/MLA/{billing_info_id} */}
           <section className="border rounded p-4">
             <h2 className="font-bold mb-2">
