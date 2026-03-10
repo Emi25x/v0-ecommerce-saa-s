@@ -170,7 +170,11 @@ export default function MLBillingPage() {
   // Selección masiva
   const [selected,      setSelected]      = useState<Set<number>>(new Set())
   const [emittingBatch, setEmittingBatch] = useState(false)
-  const [batchResult,   setBatchResult]   = useState<{ ok: number; err: number; errors: string[]; warnings: string[] } | null>(null)
+  const [batchResult,   setBatchResult]   = useState<{
+    ok: number; err: number; errors: string[]; warnings: string[]
+    // órdenes recién facturadas, listas para subir a ML
+    pendingML: { order_id: number; factura_id: string }[]
+  } | null>(null)
 
   // Subida de facturas a ML
   const [uploadingId,  setUploadingId]  = useState<number | null>(null)
@@ -210,6 +214,37 @@ export default function MLBillingPage() {
   // ── Subida masiva a ML ────────────────────────────────────────────────────
   const [uploadingBatchML, setUploadingBatchML] = useState(false)
   const [uploadBatchResult, setUploadBatchResult] = useState<{ ok: number; err: number; errors: string[] } | null>(null)
+
+  // Sube a ML una lista específica de { order_id, factura_id } (usada después de emitirMasivo)
+  const subirListaML = async (lista: { order_id: number; factura_id: string }[]) => {
+    if (!lista.length) return
+    setUploadingBatchML(true); setUploadBatchResult(null)
+    let ok = 0; let err = 0; const errs: string[] = []
+    for (const { order_id, factura_id } of lista) {
+      try {
+        const res  = await fetch("/api/billing/ml-upload-invoice", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ account_id: activeAccount, order_id: String(order_id), factura_id }),
+        })
+        const data = await res.json()
+        if (data.ok) {
+          ok++
+          setUploadStatus(prev => ({ ...prev, [order_id]: "uploaded" }))
+        } else {
+          err++; errs.push(`Orden #${order_id}: ${data.error || "Error"}`)
+          setUploadStatus(prev => ({ ...prev, [order_id]: "error" }))
+        }
+      } catch (e: any) {
+        err++; errs.push(`Orden #${order_id}: ${e.message}`)
+        setUploadStatus(prev => ({ ...prev, [order_id]: "error" }))
+      }
+    }
+    setUploadBatchResult({ ok, err, errors: errs })
+    setUploadingBatchML(false)
+    // Limpiar los pendingML del batchResult para no volver a subirlos
+    setBatchResult(prev => prev ? { ...prev, pendingML: [] } : null)
+  }
 
   const subirMasivoML = async () => {
     // Solo subir facturas de órdenes ya facturadas que estén seleccionadas
@@ -409,6 +444,7 @@ export default function MLBillingPage() {
 
     const selOrders = orders.filter(o => selected.has(o.id))
     let ok = 0; let err = 0; const errs: string[] = []; const warns: string[] = []
+    const pendingML: { order_id: number; factura_id: string }[] = []
     const round2 = (n: number) => Math.round(n * 100) / 100
     const ivaDefault = empresas.find(e => e.id === activeEmpresa)?.iva_default ?? 0
 
@@ -474,6 +510,9 @@ export default function MLBillingPage() {
             }),
           })
           ok++
+          if (facData.factura?.id) {
+            pendingML.push({ order_id: order.id, factura_id: facData.factura.id })
+          }
         } else {
           err++; errs.push(`Orden #${order.id}: ${facData.error || "Error"}`)
         }
@@ -482,7 +521,7 @@ export default function MLBillingPage() {
       }
     }
 
-    setBatchResult({ ok, err, errors: errs, warnings: warns })
+    setBatchResult({ ok, err, errors: errs, warnings: warns, pendingML })
     setEmittingBatch(false)
     loadOrders(page)
   }
@@ -747,6 +786,26 @@ export default function MLBillingPage() {
                   ))}
                 </ul>
               </details>
+            )}
+            {/* Botón para subir a ML las facturas recién emitidas */}
+            {batchResult.pendingML.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-border/50 flex items-center gap-3">
+                <p className="text-xs text-muted-foreground flex-1">
+                  {batchResult.pendingML.length} factura{batchResult.pendingML.length !== 1 ? "s" : ""} lista{batchResult.pendingML.length !== 1 ? "s" : ""} para subir a MercadoLibre
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={uploadingBatchML}
+                  onClick={() => subirListaML(batchResult.pendingML)}
+                  className="gap-2 border-blue-500/40 text-blue-400 hover:bg-blue-500/10 h-7 text-xs"
+                >
+                  {uploadingBatchML
+                    ? <><RefreshCw className="h-3 w-3 animate-spin" />Subiendo...</>
+                    : <><Upload className="h-3 w-3" />Subir a ML</>
+                  }
+                </Button>
+              </div>
             )}
           </div>
         </div>
