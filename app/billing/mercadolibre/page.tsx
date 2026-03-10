@@ -204,7 +204,10 @@ export default function MLBillingPage() {
       })
       const data = await res.json()
       setUploadStatus(prev => ({ ...prev, [order.id]: data.ok ? "uploaded" : "error" }))
-      if (!data.ok) console.error("ML upload error:", data.error, data.ml_response)
+      if (!data.ok) {
+        const detail = data.ml_response?.message || data.ml_response?.error || data.error || "Error desconocido"
+        console.error(`ML upload error (orden ${order.id}):`, detail, data)
+      }
     } catch {
       setUploadStatus(prev => ({ ...prev, [order.id]: "error" }))
     } finally {
@@ -233,7 +236,9 @@ export default function MLBillingPage() {
           ok++
           setUploadStatus(prev => ({ ...prev, [order_id]: "uploaded" }))
         } else {
-          err++; errs.push(`Orden #${order_id}: ${data.error || "Error"}`)
+          err++
+          const detail = data.ml_response?.message || data.ml_response?.error || data.error || "Error"
+          errs.push(`Orden #${order_id}: ${detail}${data.pdf_size_kb ? ` (PDF: ${data.pdf_size_kb}KB)` : ""}`)
           setUploadStatus(prev => ({ ...prev, [order_id]: "error" }))
         }
       } catch (e: any) {
@@ -269,7 +274,9 @@ export default function MLBillingPage() {
           ok++
           setUploadStatus(prev => ({ ...prev, [order.id]: "uploaded" }))
         } else {
-          err++; errs.push(`Orden #${order.id}: ${data.error || "Error"}`)
+          err++
+          const detail = data.ml_response?.message || data.ml_response?.error || data.error || "Error"
+          errs.push(`Orden #${order.id}: ${detail}${data.pdf_size_kb ? ` (PDF: ${data.pdf_size_kb}KB)` : ""}`)
           setUploadStatus(prev => ({ ...prev, [order.id]: "error" }))
         }
       } catch (e: any) {
