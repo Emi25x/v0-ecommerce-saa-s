@@ -42,6 +42,7 @@ import {
   Tag,
   ScanLine,
   AlertCircle,
+  Layers,
 } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
@@ -127,6 +128,12 @@ interface Counts {
   eligible_catalog: number
 }
 
+interface DuplicateGroup {
+  sku:          string
+  traditional:  Publication[]
+  catalog:      Publication[]
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function MLPublicationsPage() {
@@ -176,7 +183,10 @@ export default function MLPublicationsPage() {
   const [verifying, setVerifying]         = useState<string | null>(null) // ml_item_id being verified
   const [selected, setSelected]           = useState<Set<string>>(new Set()) // ml_item_ids seleccionados
   const [batchEnqueueing, setBatchEnqueueing] = useState(false)
-
+  const [showDuplicates, setShowDuplicates]   = useState(false)
+  const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroup[]>([])
+  const [loadingDuplicates, setLoadingDuplicates] = useState(false)
+  const [closingItem, setClosingItem]         = useState<string | null>(null)
 
   const searchRef = useRef(search)
   searchRef.current = search
@@ -327,6 +337,49 @@ export default function MLPublicationsPage() {
   const handleRefresh = () => {
     load(page)
     loadCounts(accountId, search)
+  }
+
+  const loadDuplicates = async () => {
+    if (accountId === "all") {
+      toast({ title: "Seleccioná una cuenta", description: "Elegí una cuenta para buscar duplicados.", variant: "destructive" })
+      return
+    }
+    setLoadingDuplicates(true)
+    setShowDuplicates(true)
+    try {
+      const res  = await fetch(`/api/ml/publications/duplicates?account_id=${accountId}`)
+      const data = await res.json()
+      if (data.ok) setDuplicateGroups(data.groups)
+      else toast({ title: "Error al buscar duplicados", description: data.error, variant: "destructive" })
+    } catch (err: any) {
+      toast({ title: "Error de red", description: err.message, variant: "destructive" })
+    } finally {
+      setLoadingDuplicates(false)
+    }
+  }
+
+  const closePub = async (pub: Publication) => {
+    if (!confirm(`¿Cerrar ${pub.ml_item_id} en MercadoLibre?\n\nEsta acción cierra la publicación en ML. No se puede deshacer fácilmente.`)) return
+    setClosingItem(pub.ml_item_id)
+    try {
+      const res  = await fetch("/api/ml/publications/close", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ ml_item_id: pub.ml_item_id, account_id: pub.account_id }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        toast({ title: "Publicación cerrada", description: `${pub.ml_item_id} cerrada en MercadoLibre.` })
+        loadDuplicates()
+        loadCounts(accountId)
+      } else {
+        toast({ title: "Error al cerrar", description: data.error ?? "Error desconocido", variant: "destructive" })
+      }
+    } catch (err: any) {
+      toast({ title: "Error de red", description: err.message, variant: "destructive" })
+    } finally {
+      setClosingItem(null)
+    }
   }
 
   const enqueueJob = async (
@@ -557,6 +610,20 @@ export default function MLPublicationsPage() {
                       active={soloElegibles}
                       onClick={() => { setSoloElegibles(s => !s); setSinStock(false); setSinProducto(false); setStatusFilter("all"); setPage(0); }}
                     />
+                  )}
+                  {accountId !== "all" && (
+                    <button
+                      onClick={() => showDuplicates ? setShowDuplicates(false) : loadDuplicates()}
+                      className={`
+                        inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium
+                        transition-colors cursor-pointer
+                        bg-orange-500/15 text-orange-400 border-orange-500/30 hover:bg-orange-500/25
+                        ${showDuplicates ? "ring-2 ring-offset-1 ring-offset-background ring-current" : ""}
+                      `}
+                    >
+                      <Layers className="h-3 w-3" />
+                      {loadingDuplicates ? "Buscando..." : showDuplicates ? `Duplicados ${duplicateGroups.length}` : "Duplicados"}
+                    </button>
                   )}
                 </>
               ) : null}
@@ -920,6 +987,172 @@ export default function MLPublicationsPage() {
             >
               Limpiar seleccion
             </button>
+          </div>
+        )}
+
+        {/* ── Panel duplicados ────────────────────────────────────────────── */}
+        {showDuplicates && (
+          <div className="border border-orange-500/30 rounded-xl overflow-hidden">
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-orange-500/20 bg-orange-500/5">
+              <div className="flex items-center gap-2">
+                <Layers className="h-4 w-4 text-orange-400" />
+                <span className="font-medium text-sm">Publicaciones duplicadas por SKU</span>
+                {!loadingDuplicates && (
+                  <span className="text-xs text-muted-foreground">
+                    — {duplicateGroups.length === 0
+                      ? "sin duplicados"
+                      : `${duplicateGroups.length} SKU${duplicateGroups.length !== 1 ? "s" : ""} con duplicados`}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={loadDuplicates}
+                  disabled={loadingDuplicates}
+                  className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-40"
+                >
+                  {loadingDuplicates ? "Buscando..." : "Recargar"}
+                </button>
+                <button
+                  onClick={() => setShowDuplicates(false)}
+                  className="text-muted-foreground hover:text-foreground p-1"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            {loadingDuplicates ? (
+              <div className="p-8 text-center text-sm text-muted-foreground">Buscando duplicados...</div>
+            ) : duplicateGroups.length === 0 ? (
+              <div className="p-8 text-center text-sm text-muted-foreground">
+                Sin duplicados encontrados para esta cuenta.
+              </div>
+            ) : (
+              <div className="divide-y divide-orange-500/10 max-h-[600px] overflow-y-auto">
+                {duplicateGroups.map(group => (
+                  <div key={group.sku} className="p-4 space-y-3">
+
+                    {/* Grupo header */}
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm font-semibold text-orange-300">{group.sku}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {group.traditional.length} tradicional{group.traditional.length !== 1 ? "es" : ""}
+                        {group.catalog.length > 0 && ` · ${group.catalog.length} catálogo`}
+                      </span>
+                    </div>
+
+                    {/* Tradicionales */}
+                    {group.traditional.length > 0 && (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Tradicionales</p>
+                        {group.traditional.map((pub, i) => (
+                          <div
+                            key={pub.ml_item_id}
+                            className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-sm ${
+                              i === 0
+                                ? "bg-muted/10 border-border"
+                                : "bg-orange-500/5 border-orange-500/20"
+                            }`}
+                          >
+                            <span className="font-mono text-xs text-muted-foreground w-28 shrink-0">{pub.ml_item_id}</span>
+                            {i === 0 && <span className="text-[10px] text-green-400 font-medium shrink-0">conservar</span>}
+                            {i > 0  && <span className="text-[10px] text-orange-400 font-medium shrink-0">duplicado</span>}
+                            <Badge variant="outline" className={`text-xs shrink-0 ${STATUS_COLOR[pub.status] ?? ""}`}>
+                              {STATUS_LABEL[pub.status] ?? pub.status}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground shrink-0">{fmt(pub.price)}</span>
+                            <span className={`text-xs shrink-0 ${pub.current_stock === 0 ? "text-red-400" : "text-muted-foreground"}`}>
+                              Stock: {pub.current_stock ?? "—"}
+                            </span>
+                            <span className="flex-1 text-xs text-muted-foreground truncate">{pub.title}</span>
+                            {pub.permalink && (
+                              <a
+                                href={pub.permalink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-muted-foreground hover:text-foreground shrink-0"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </a>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 text-xs px-2 shrink-0 border-red-500/40 text-red-400 hover:bg-red-500/10 disabled:opacity-40"
+                              disabled={closingItem === pub.ml_item_id || pub.status === "closed"}
+                              onClick={() => closePub(pub)}
+                            >
+                              {closingItem === pub.ml_item_id
+                                ? "Cerrando..."
+                                : pub.status === "closed"
+                                ? "Cerrada"
+                                : "Cerrar en ML"}
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Catálogo */}
+                    {group.catalog.length > 0 && (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Catálogo</p>
+                        {group.catalog.map((pub, i) => (
+                          <div
+                            key={pub.ml_item_id}
+                            className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-sm ${
+                              i === 0
+                                ? "bg-muted/10 border-border"
+                                : "bg-orange-500/5 border-orange-500/20"
+                            }`}
+                          >
+                            <span className="font-mono text-xs text-muted-foreground w-28 shrink-0">{pub.ml_item_id}</span>
+                            {i === 0 && <span className="text-[10px] text-green-400 font-medium shrink-0">conservar</span>}
+                            {i > 0  && <span className="text-[10px] text-orange-400 font-medium shrink-0">duplicado</span>}
+                            <Badge variant="outline" className={`text-xs shrink-0 ${STATUS_COLOR[pub.status] ?? ""}`}>
+                              {STATUS_LABEL[pub.status] ?? pub.status}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground shrink-0">{fmt(pub.price)}</span>
+                            <span className={`text-xs shrink-0 ${pub.current_stock === 0 ? "text-red-400" : "text-muted-foreground"}`}>
+                              Stock: {pub.current_stock ?? "—"}
+                            </span>
+                            <span className="flex-1 text-xs text-muted-foreground truncate">{pub.title}</span>
+                            {pub.permalink && (
+                              <a
+                                href={pub.permalink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-muted-foreground hover:text-foreground shrink-0"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </a>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 text-xs px-2 shrink-0 border-red-500/40 text-red-400 hover:bg-red-500/10 disabled:opacity-40"
+                              disabled={closingItem === pub.ml_item_id || pub.status === "closed"}
+                              onClick={() => closePub(pub)}
+                            >
+                              {closingItem === pub.ml_item_id
+                                ? "Cerrando..."
+                                : pub.status === "closed"
+                                ? "Cerrada"
+                                : "Cerrar en ML"}
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
