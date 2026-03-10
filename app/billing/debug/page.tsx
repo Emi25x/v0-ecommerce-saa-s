@@ -23,6 +23,15 @@ export default function BillingDebugPage() {
     }
   }
 
+  function statusBadge(status: number | null | undefined) {
+    if (!status) return null
+    return (
+      <span className={`ml-2 text-xs px-2 py-0.5 rounded ${status === 200 ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
+        HTTP {status}
+      </span>
+    )
+  }
+
   return (
     <div className="p-8 max-w-4xl mx-auto font-mono text-sm">
       <h1 className="text-xl font-bold mb-4">Debug: Datos fiscales ML</h1>
@@ -57,10 +66,8 @@ export default function BillingDebugPage() {
           {/* Paso 1: resultado de GET /orders/{id} */}
           <section className="border rounded p-4">
             <h2 className="font-bold mb-2">
-              Paso 1 — GET /orders/{"{id}"} 
-              <span className={`ml-2 text-xs px-2 py-0.5 rounded ${result.order_status === 200 ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
-                HTTP {result.order_status}
-              </span>
+              Paso 1 — GET /orders/{"{id}"}
+              {statusBadge(result.order_status)}
             </h2>
             <p className="text-muted-foreground text-xs mb-1">buyer object (debe tener billing_info.id):</p>
             <pre className="bg-muted p-3 rounded overflow-auto text-xs">
@@ -77,19 +84,34 @@ export default function BillingDebugPage() {
             }
           </section>
 
-          {/* Paso 2: resultado de GET /orders/billing-info/MLA/{id} */}
+          {/* Paso 2A: GET /orders/billing-info/MLA/{billing_info_id} */}
           <section className="border rounded p-4">
             <h2 className="font-bold mb-2">
-              Paso 2 — GET /orders/billing-info/MLA/{"{billing_info_id}"}
-              {result.billing_status && (
-                <span className={`ml-2 text-xs px-2 py-0.5 rounded ${result.billing_status === 200 ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
-                  HTTP {result.billing_status}
-                </span>
+              Paso 2A — GET /orders/billing-info/MLA/{"{billing_info_id}"}
+              {statusBadge(result.billing_a_status)}
+              {!result.billing_info_id && (
+                <span className="ml-2 text-xs text-muted-foreground">(omitido — sin billing_info.id)</span>
               )}
             </h2>
-            <p className="text-muted-foreground text-xs mb-1">Datos fiscales del comprador:</p>
+            <p className="text-muted-foreground text-xs mb-1">Datos fiscales flat (respuesta primaria):</p>
             <pre className="bg-muted p-3 rounded overflow-auto text-xs">
-              {JSON.stringify(result.billing_data, null, 2)}
+              {result.billing_a_data !== null && result.billing_a_data !== undefined
+                ? JSON.stringify(result.billing_a_data, null, 2)
+                : "(sin datos)"}
+            </pre>
+          </section>
+
+          {/* Paso 2B: GET /orders/{id}/billing_info */}
+          <section className="border rounded p-4">
+            <h2 className="font-bold mb-2">
+              Paso 2B — GET /orders/{"{id}"}/billing_info
+              {statusBadge(result.billing_b_status)}
+            </h2>
+            <p className="text-muted-foreground text-xs mb-1">Datos fiscales wrapped en buyer/seller (fallback):</p>
+            <pre className="bg-muted p-3 rounded overflow-auto text-xs">
+              {result.billing_b_data !== null && result.billing_b_data !== undefined
+                ? JSON.stringify(result.billing_b_data, null, 2)
+                : "(sin datos)"}
             </pre>
           </section>
         </div>
