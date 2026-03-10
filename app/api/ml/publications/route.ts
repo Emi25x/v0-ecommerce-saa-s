@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
         head(qb => qb.is("product_id", null)),
         head(qb => qb.lte("current_stock", 0)),
         head(qb => qb.gt("current_stock", 0)),
-        head(qb => qb.eq("catalog_listing_eligible", true)),
+        head(qb => qb.eq("catalog_listing_eligible", true).or("catalog_listing.is.null,catalog_listing.eq.false")),
       ])
 
       return NextResponse.json({
@@ -80,11 +80,11 @@ export async function GET(req: NextRequest) {
       if (accountId)     qb = qb.eq("account_id", accountId)
       if (status)        qb = qb.eq("status", status)
       if (sinProducto)   qb = qb.is("product_id", null)
-      if (soloElegibles) qb = qb.eq("catalog_listing_eligible", true)
+      if (soloElegibles) qb = qb.eq("catalog_listing_eligible", true).or("catalog_listing.is.null,catalog_listing.eq.false")
       if (sinStock)      qb = qb.lte("current_stock", 0)
       if (conStock)      qb = qb.gt("current_stock", 0)
       if (q)             qb = qb.or(`title.ilike.%${q}%,ml_item_id.ilike.%${q}%,sku.ilike.%${q}%`)
-      if (alertsMode === "eligible_catalog") qb = qb.eq("catalog_listing_eligible", true).eq("status", "active")
+      if (alertsMode === "eligible_catalog") qb = qb.eq("catalog_listing_eligible", true).eq("status", "active").or("catalog_listing.is.null,catalog_listing.eq.false")
       if (alertsMode === "under_review")     qb = qb.eq("status", "under_review")
       return qb
     }
