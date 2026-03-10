@@ -80,6 +80,18 @@ export async function GET(req: NextRequest) {
   dataQ = applyFilters(dataQ)
   const { data: orders } = await dataQ
 
+  // Obtener estado de subida a ML para las órdenes de esta página
+  const pageOrderIds = (orders || []).map((o: any) => String(o.ml_order_id))
+  let uploadMap = new Map<string, string>()
+  if (pageOrderIds.length > 0) {
+    const { data: uploads } = await supabase
+      .from("ml_invoices_uploads")
+      .select("order_id, status")
+      .eq("account_id", account_id)
+      .in("order_id", pageOrderIds)
+    ;(uploads || []).forEach((u: any) => uploadMap.set(u.order_id, u.status))
+  }
+
   const enriched = (orders || []).map((o: any) => {
     const items: any[] = Array.isArray(o.items_json) ? o.items_json : []
     const key = String(o.ml_order_id)
@@ -99,8 +111,9 @@ export async function GET(req: NextRequest) {
         cantidad: i.quantity,
         precio:   i.unit_price,
       })),
-      facturada:    facturadaMap.has(key),
-      factura_info: facturadaMap.get(key) || null,
+      facturada:     facturadaMap.has(key),
+      factura_info:  facturadaMap.get(key) || null,
+      upload_status: uploadMap.get(key) || null,
     }
   })
 
