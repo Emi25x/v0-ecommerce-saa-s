@@ -253,7 +253,10 @@ export function buildFacturaHTML(data: FacturaPDFData): string {
     <div>
       <div class="section-title">Datos del receptor</div>
       <div class="field"><label>Razón Social / Nombre</label><span>${data.receptor_nombre || "Consumidor Final"}</span></div>
-      <div class="field"><label>${TIPO_DOC_LABEL[data.receptor_tipo_doc] || "Documento"}</label><span>${data.receptor_nro_doc || "—"}</span></div>
+      ${(data.receptor_tipo_doc !== 99 && data.receptor_nro_doc && data.receptor_nro_doc !== "0")
+        ? `<div class="field"><label>${TIPO_DOC_LABEL[data.receptor_tipo_doc] || "Documento"}</label><span>${data.receptor_nro_doc}</span></div>`
+        : ""
+      }
       ${data.receptor_domicilio ? `<div class="field"><label>Domicilio</label><span>${data.receptor_domicilio}</span></div>` : ""}
     </div>
     <div>
