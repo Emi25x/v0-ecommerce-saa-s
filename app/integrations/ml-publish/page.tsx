@@ -82,6 +82,7 @@ export default function MLPublishPage() {
     status: "success" | "error" | "skipped"
     ml_item_id?: string
     error?: string
+    warnings?: string[]
   }>>([])
   const [filterBrand, setFilterBrand] = useState<string>("")
   const [filterLanguage, setFilterLanguage] = useState<string>("")
@@ -322,6 +323,8 @@ export default function MLPublishPage() {
     let errorCount = 0
     let skippedCount = 0
     const results: typeof publishResults = []
+    const rateLimitRetries = new Map<string, number>() // productId → cantidad de reintentos por rate limit
+    const MAX_RATE_LIMIT_RETRIES = 3
     
     // Publicar en lotes de 3 productos en paralelo para mayor velocidad
     const BATCH_SIZE = 3
@@ -347,7 +350,7 @@ export default function MLPublishPage() {
         
         const result = await response.json()
         if (result.success) {
-          return { status: "success" as const, title: result.product_title || productId, ean: result.product_ean || "", ml_item_id: result.ml_item_id }
+          return { status: "success" as const, title: result.product_title || productId, ean: result.product_ean || "", ml_item_id: result.ml_item_id, warnings: result.warnings }
         } else if (result.skipped) {
           return { status: "skipped" as const, title: result.product_title || productId, ean: result.product_ean || "", ml_item_id: result.existing_item_id }
         } else if (result.is_rate_limit) {
@@ -369,13 +372,21 @@ export default function MLPublishPage() {
       for (const result of batchResults) {
         if (result.status === "success") {
           successCount++
-          results.push({ title: result.title, ean: result.ean, status: "success", ml_item_id: result.ml_item_id })
+          results.push({ title: result.title, ean: result.ean, status: "success", ml_item_id: result.ml_item_id, warnings: result.warnings })
         } else if (result.status === "skipped") {
           skippedCount++
           results.push({ title: result.title, ean: result.ean, status: "skipped", ml_item_id: result.ml_item_id })
         } else if (result.status === "rate_limit") {
-          // Re-encolar el producto para reintentar
-          productIds.push(result.productId)
+          const retries = (rateLimitRetries.get(result.productId) ?? 0) + 1
+          if (retries <= MAX_RATE_LIMIT_RETRIES) {
+            rateLimitRetries.set(result.productId, retries)
+            // Re-encolar con backoff: esperar antes de continuar
+            await new Promise(resolve => setTimeout(resolve, retries * 2000))
+            productIds.push(result.productId)
+          } else {
+            errorCount++
+            results.push({ title: result.productId, ean: "", status: "error", error: "Rate limit: máximo de reintentos alcanzado" })
+          }
         } else {
           errorCount++
           results.push({ title: result.title, ean: result.ean, status: "error", error: result.error })
@@ -1213,7 +1224,14 @@ export default function MLPublishPage() {
                               </td>
                               <td className="p-2">
                                 {result.status === "success" && (
-                                  <Badge className="bg-green-500">Publicado</Badge>
+                                  <div>
+                                    <Badge className="bg-green-500">Publicado</Badge>
+                                    {result.warnings && result.warnings.length > 0 && (
+                                      <div className="text-xs text-yellow-500 mt-1 space-y-0.5">
+                                        {result.warnings.map((w, wi) => <div key={wi}>⚠ {w}</div>)}
+                                      </div>
+                                    )}
+                                  </div>
                                 )}
                                 {result.status === "skipped" && (
                                   <Badge className="bg-yellow-500 text-black">Ya existía</Badge>

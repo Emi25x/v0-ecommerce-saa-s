@@ -2,18 +2,28 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { refreshTokenIfNeeded } from "@/lib/mercadolibre"
 
+// Cache de tipo de cambio EUR (TTL: 30 minutos)
+let eurRateCache: { rate: number; cachedAt: number } | null = null
+const EUR_RATE_CACHE_TTL = 30 * 60 * 1000
+
 // Calcular precio usando la formula de margen
 async function calculatePriceForProduct(costPriceEur: number, marginPercent: number) {
-  // Obtener tipo de cambio EUR billetes BNA
+  // Obtener tipo de cambio EUR billetes BNA (con cache de 30 min)
   let exchangeRate = 1765
-  try {
-    const rateResponse = await fetch("https://dolarapi.com/v1/cotizaciones/eur")
-    if (rateResponse.ok) {
-      const rateData = await rateResponse.json()
-      exchangeRate = Math.round((rateData.venta || 1718) * 1.027) // EUR billetes
+  const now = Date.now()
+  if (eurRateCache && now - eurRateCache.cachedAt < EUR_RATE_CACHE_TTL) {
+    exchangeRate = eurRateCache.rate
+  } else {
+    try {
+      const rateResponse = await fetch("https://dolarapi.com/v1/cotizaciones/eur")
+      if (rateResponse.ok) {
+        const rateData = await rateResponse.json()
+        exchangeRate = Math.round((rateData.venta || 1718) * 1.027) // EUR billetes
+        eurRateCache = { rate: exchangeRate, cachedAt: now }
+      }
+    } catch {
+      // Usar fallback
     }
-  } catch {
-    // Usar fallback
   }
 
   const mlFeePercent = 0.13 // 13% comision ML
@@ -276,10 +286,12 @@ export async function POST(request: NextRequest) {
       finalPrice = priceCalculation.price
     }
 
-    if (!finalPrice) {
-      return NextResponse.json({ 
+    if (!finalPrice || finalPrice <= 0) {
+      return NextResponse.json({
         success: false,
-        error: "No se pudo calcular el precio. El producto no tiene cost_price." 
+        error: finalPrice !== undefined && finalPrice <= 0
+          ? `Precio calculado inválido (${finalPrice}). Verificar costo y margen del producto.`
+          : "No se pudo calcular el precio. El producto no tiene cost_price."
       }, { status: 400 })
     }
 
@@ -288,8 +300,9 @@ export async function POST(request: NextRequest) {
     // ML requiere mínimo 500px en uno de los lados
     const uploadImageToML = async (imageUrl: string): Promise<{ id: string | null, error?: string }> => {
       try {
-        // Descargar imagen con headers de navegador
+        // Descargar imagen con headers de navegador (timeout 10s)
         const response = await fetch(imageUrl, {
+          signal: AbortSignal.timeout(10000),
           headers: {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
@@ -1069,15 +1082,21 @@ Libro nuevo. Envíos a todo el país.`
       })
       .eq("id", product_id)
 
+    // Compilar advertencias de fallos silenciosos
+    const warnings: string[] = []
+    if (imageWarning) warnings.push(`Imagen: ${imageWarning}`)
+    if (!sellerSkuAdded && sellerSkuValue) warnings.push("SKU no pudo agregarse al listing")
+    if (!descriptionAdded) warnings.push(`Descripción no agregada${descriptionError ? `: ${descriptionError}` : ""}`)
+    if (publish_mode === "linked" && catalogProductId && !catalogListing) warnings.push("Catalog opt-in falló, publicado solo como listing tradicional")
+
     return NextResponse.json({
       success: true,
       ml_item_id: mlData.id,
       permalink: mlData.permalink,
       status: mlData.status,
-      // Info del producto para mostrar en resultados
       product_title: product.title,
       product_ean: product.ean,
-      // Debug info
+      warnings: warnings.length > 0 ? warnings : undefined,
       image_url_sent: product.image_url || null,
       ml_picture_id: mlPictureId || null,
       image_warning: imageWarning,
