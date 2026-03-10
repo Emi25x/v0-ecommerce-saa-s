@@ -110,16 +110,36 @@ export default function BillingDebugPage() {
             </pre>
           </section>
 
-          {/* Paso 2B: GET /orders/{id}/billing_info */}
+          {/* Paso 2B V2 */}
           <section className="border rounded p-4">
             <h2 className="font-bold mb-2">
-              Paso 2B — GET /orders/{"{id}"}/billing_info
-              {statusBadge(result.billing_b_status)}
+              Paso 2B V2 — GET /orders/{"{id}"}/billing_info
+              <span className="ml-1 text-xs text-muted-foreground">(x-version: 2)</span>
+              {statusBadge(result.billing_b_v2_status)}
             </h2>
-            <p className="text-muted-foreground text-xs mb-1">Datos fiscales wrapped en buyer/seller (fallback):</p>
+            <p className="text-muted-foreground text-xs mb-1">
+              V2: buyer.billing_info.identification → DNI/CUIT
+            </p>
             <pre className="bg-muted p-3 rounded overflow-auto text-xs">
-              {result.billing_b_data !== null && result.billing_b_data !== undefined
-                ? JSON.stringify(result.billing_b_data, null, 2)
+              {result.billing_b_v2_data !== null && result.billing_b_v2_data !== undefined
+                ? JSON.stringify(result.billing_b_v2_data, null, 2)
+                : "(sin datos)"}
+            </pre>
+          </section>
+
+          {/* Paso 2B V1 */}
+          <section className="border rounded p-4">
+            <h2 className="font-bold mb-2">
+              Paso 2B V1 — GET /orders/{"{id}"}/billing_info
+              <span className="ml-1 text-xs text-muted-foreground">(legacy, sin header)</span>
+              {statusBadge(result.billing_b_v1_status)}
+            </h2>
+            <p className="text-muted-foreground text-xs mb-1">
+              V1: billing_info.doc_type / doc_number + additional_info[]
+            </p>
+            <pre className="bg-muted p-3 rounded overflow-auto text-xs">
+              {result.billing_b_v1_data !== null && result.billing_b_v1_data !== undefined
+                ? JSON.stringify(result.billing_b_v1_data, null, 2)
                 : "(sin datos)"}
             </pre>
           </section>
