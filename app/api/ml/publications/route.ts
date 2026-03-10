@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     // ── Base filter helper (account + text search, no extra conditions) ───
     function baseFilters(qb: any): any {
       if (accountId) qb = qb.eq("account_id", accountId)
-      if (q)         qb = qb.or(`title.ilike.%${q}%,ml_item_id.ilike.%${q}%`)
+      if (q)         qb = qb.or(`title.ilike.%${q}%,ml_item_id.ilike.%${q}%,sku.ilike.%${q}%`)
       return qb
     }
 
@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
         head(qb => qb.is("product_id", null)),
         head(qb => qb.lte("current_stock", 0)),
         head(qb => qb.gt("current_stock", 0)),
-        head(qb => qb.eq("catalog_listing_eligible", true).eq("status", "active")),
+        head(qb => qb.eq("catalog_listing_eligible", true)),
       ])
 
       return NextResponse.json({
@@ -83,7 +83,7 @@ export async function GET(req: NextRequest) {
       if (soloElegibles) qb = qb.eq("catalog_listing_eligible", true)
       if (sinStock)      qb = qb.lte("current_stock", 0)
       if (conStock)      qb = qb.gt("current_stock", 0)
-      if (q)             qb = qb.or(`title.ilike.%${q}%,ml_item_id.ilike.%${q}%`)
+      if (q)             qb = qb.or(`title.ilike.%${q}%,ml_item_id.ilike.%${q}%,sku.ilike.%${q}%`)
       if (alertsMode === "eligible_catalog") qb = qb.eq("catalog_listing_eligible", true).eq("status", "active")
       if (alertsMode === "under_review")     qb = qb.eq("status", "under_review")
       return qb
