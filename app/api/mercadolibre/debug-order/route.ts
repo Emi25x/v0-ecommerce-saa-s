@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 
 // Endpoint temporal de diagnóstico — muestra la estructura real de ML para una orden
 // GET /api/mercadolibre/debug-order?account_id=xxx&order_id=yyy
@@ -15,7 +16,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "account_id y order_id requeridos" }, { status: 400 })
   }
 
-  const { data: ml } = await supabase
+  // adminClient para evitar RLS en cuentas con user_id=null
+  const adminClient = createAdminClient()
+  const { data: ml } = await adminClient
     .from("ml_accounts")
     .select("access_token, ml_user_id")
     .eq("id", accountId)
@@ -30,24 +33,32 @@ export async function GET(request: NextRequest) {
   const orderData = await orderRes.json()
   const billingInfoId = orderData?.buyer?.billing_info?.id
 
-  // Paso 2: GET /orders/billing-info/MLA/{billing_info_id} → datos fiscales reales
-  let billingData = null
-  let billingStatus = null
+  // Paso 2a: GET /orders/billing-info/MLA/{billing_info_id} → datos fiscales (flat)
+  let billingDataA = null
+  let billingStatusA = null
   if (billingInfoId) {
     const billingRes = await fetch(
       `https://api.mercadolibre.com/orders/billing-info/MLA/${billingInfoId}`,
       { headers: { Authorization: auth } }
     )
-    billingStatus = billingRes.status
-    billingData   = billingRes.ok ? await billingRes.json() : await billingRes.text()
+    billingStatusA = billingRes.status
+    billingDataA   = billingRes.ok ? await billingRes.json() : await billingRes.text()
   }
 
+  // Paso 2b: GET /orders/{id}/billing_info → datos fiscales (wrapped en buyer/seller)
+  const billingResB  = await fetch(`https://api.mercadolibre.com/orders/${orderId}/billing_info`, { headers: { Authorization: auth } })
+  const billingStatusB = billingResB.status
+  const billingDataB   = billingResB.ok ? await billingResB.json() : await billingResB.text()
+
   return NextResponse.json({
-    order_status:     orderRes.status,
-    order_buyer:      orderData?.buyer,
-    billing_info_id:  billingInfoId,
-    billing_status:   billingStatus,
-    // Aquí deben estar: first_name, last_name, identification.type/number, address
-    billing_data:     billingData,
+    order_status:        orderRes.status,
+    order_buyer:         orderData?.buyer,
+    billing_info_id:     billingInfoId,
+    // Endpoint A (flat, requiere billingInfoId)
+    billing_a_status:    billingStatusA,
+    billing_a_data:      billingDataA,
+    // Endpoint B (wrapped en {buyer, seller})
+    billing_b_status:    billingStatusB,
+    billing_b_data:      billingDataB,
   })
 }
