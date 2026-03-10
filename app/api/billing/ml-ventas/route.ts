@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
   // Filas paginadas
   let dataQ = supabase
     .from("ml_orders")
-    .select("ml_order_id, status, date_created, total_amount, currency_id, buyer_nickname, buyer_id, shipping_status, items_json")
+    .select("ml_order_id, status, date_created, total_amount, currency_id, buyer_nickname, buyer_id, shipping_status, pack_id, items_json")
     .order("date_created", { ascending: false })
     .range(offset, offset + limit - 1)
   dataQ = applyFilters(dataQ)
