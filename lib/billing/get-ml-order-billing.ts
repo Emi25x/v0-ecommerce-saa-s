@@ -3,13 +3,17 @@
  *
  * Flujo:
  *   1. Cache check en ml_order_billing_cache (TTL 24h)
- *   2. GET /orders/{id}                         → buyer base + billing_info.id
- *   3. GET /orders/billing-info/MLA/{bi_id}     → datos fiscales primarios (approach correcto)
- *      Fallback: GET /orders/{id}/billing_info  → si no hay billing_info.id
+ *   2. GET /orders/{id}                             → buyer base + billing_info.id
+ *   3. GET /orders/billing-info/MLA/{bi_id}         → datos fiscales primarios (endpoint A)
+ *      GET /orders/{id}/billing_info (x-version: 2) → V2: buyer.billing_info.identification
+ *      GET /orders/{id}/billing_info (V1 legacy)    → billing_info.doc_type / doc_number
  *   4. Upsert cache
  *
- * Se llama directamente (sin HTTP) desde facturas/route.ts y desde
- * ml-order-billing/route.ts para evitar self-fetch con APP_URL.
+ * Versiones del endpoint B (GET /orders/{id}/billing_info):
+ *   V1: { billing_info: { doc_type, doc_number, additional_info[] } }
+ *   V2: { site_id, buyer: { cust_id, billing_info: { name, last_name,
+ *           identification: { type, number }, taxes: { taxpayer_type: { id, description } },
+ *           address: { street_name, street_number, city_name, state: { name }, zip_code } } } }
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
@@ -34,8 +38,6 @@ export async function getMLOrderBilling(
   { forceRefresh = false }: { forceRefresh?: boolean } = {},
 ): Promise<MLOrderBillingResult> {
   // ── 1. Cache check ───────────────────────────────────────────────────────
-  // Usar adminClient para la cache también: evita RLS en la tabla de cache
-  // que podría bloquear lecturas cuando user_id en ml_accounts es null.
   const adminClient = createAdminClient()
   const { data: cached } = await adminClient
     .from("ml_order_billing_cache")
@@ -46,10 +48,6 @@ export async function getMLOrderBilling(
 
   if (cached) {
     const ageMs = Date.now() - new Date(cached.updated_at).getTime()
-    // Revalidar si:
-    //  a) Tiene nombre pero sin doc_numero → fetch anterior con endpoint incorrecto
-    //  b) billing_info_missing=true → TTL corto (2h) en lugar de 24h, por si el
-    //     endpoint viejo era el culpable; el nuevo endpoint puede tener los datos
     const needsRevalidation =
       (!!cached.nombre && !cached.doc_numero) ||
       (!!cached.billing_info_missing && ageMs > 2 * 60 * 60 * 1000)
@@ -68,8 +66,6 @@ export async function getMLOrderBilling(
   }
 
   // ── 2. Obtener access_token ──────────────────────────────────────────────
-  // IMPORTANTE: usar adminClient (ya declarado arriba) para evitar que RLS
-  // bloquee cuentas con user_id=null en ml_accounts.
   const { data: mlAccount } = await adminClient
     .from("ml_accounts")
     .select("access_token")
@@ -84,11 +80,11 @@ export async function getMLOrderBilling(
 
   const auth = `Bearer ${mlAccount.access_token}`
 
-  async function mlFetch(url: string, retries = 1): Promise<any> {
+  async function mlFetch(url: string, extraHeaders: Record<string, string> = {}, retries = 1): Promise<any> {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const res = await fetch(url, {
-          headers: { Authorization: auth },
+          headers: { Authorization: auth, ...extraHeaders },
           signal:  AbortSignal.timeout(8000),
         })
         if (!res.ok) {
@@ -117,8 +113,20 @@ export async function getMLOrderBilling(
   const buyerFallback = [buyer.first_name, buyer.last_name].filter(Boolean).join(" ").trim()
     || buyer.nickname || null
 
-  // billing_info.id del buyer → endpoint correcto para datos fiscales
   const billingInfoId: string | null = buyer?.billing_info?.id ?? null
+
+  // Identificación directa en el objeto order (V1 legacy embeds doc_type/doc_number)
+  const buyerDirectId = buyer?.identification
+    || buyer?.billing_info?.identification
+    || null
+  const buyerDirectDoc: string | null =
+    buyer?.billing_info?.doc_number
+    || buyer?.doc_number
+    || null
+  const buyerDirectDocType: string | null =
+    buyer?.billing_info?.doc_type
+    || buyer?.doc_type
+    || null
 
   let nombre:        string | null = null
   let doc_tipo:      string | null = null
@@ -129,29 +137,140 @@ export async function getMLOrderBilling(
   let rawBillingInfo: any          = null
 
   // ── 4. Obtener datos fiscales reales ────────────────────────────────────
-  // Estrategia: intentar todos los endpoints disponibles, usar el que más datos tenga.
   //
-  // Endpoint A: GET /orders/billing-info/MLA/{billing_info_id}
-  //   → respuesta FLAT: { first_name, last_name, identification, business_name, ... }
-  // Endpoint B: GET /orders/{id}/billing_info
-  //   → respuesta WRAPPED: { buyer: { first_name, ..., identification }, seller: {...} }
+  // ML tiene dos versiones del endpoint /orders/{id}/billing_info:
   //
-  // Normalizamos ambas respuestas a flat antes de parsear.
+  // V1 legacy: { billing_info: { doc_type, doc_number, additional_info[] } }
+  // V2 actual: { site_id, buyer: { cust_id, billing_info: {
+  //               name, last_name, identification: { type, number },
+  //               taxes: { taxpayer_type: { id, description } },
+  //               address: { street_name, street_number, city_name, state: { name }, zip_code }
+  //             } }, seller: {} }
+  //
+  // Estrategia: llamar V2 primero (con x-version: 2), sino V1. También
+  // intentar endpoint A si hay billingInfoId.
 
-  /** Extrae el objeto fiscal flat de una respuesta de billing_info de ML */
-  function normalizeBillingResponse(raw: any): any {
-    if (!raw) return {}
-    // Si tiene clave 'buyer' (endpoint B), desenvuelve
-    if (raw.buyer && typeof raw.buyer === "object") return raw.buyer
-    // Si tiene clave 'billing_info' como objeto (algunos endpoints)
-    if (raw.billing_info && typeof raw.billing_info === "object") return raw.billing_info
-    // Ya está flat (endpoint A)
-    return raw
+  /** Parsea additional_info[] de V1 en un mapa tipo→valor */
+  function parseAdditionalInfo(arr: any[]): Record<string, string> {
+    const map: Record<string, string> = {}
+    if (!Array.isArray(arr)) return map
+    for (const item of arr) {
+      if (item?.type && item?.value != null) map[String(item.type)] = String(item.value)
+    }
+    return map
+  }
+
+  /**
+   * Normaliza cualquier respuesta del billing_info de ML a un objeto plano
+   * con campos: name/first_name, last_name, identification, doc_type, doc_number,
+   * taxpayer_type_desc, address.
+   */
+  function extractBillingFields(raw: any): {
+    nombre:        string | null
+    doc_tipo:      string | null
+    doc_numero:    string | null
+    condicion_iva: string | null
+    direccion:     string | null
+  } {
+    if (!raw) return { nombre: null, doc_tipo: null, doc_numero: null, condicion_iva: null, direccion: null }
+
+    // ── Determinar el nodo con los datos fiscales ──────────────────────────
+    let bi: any = raw
+
+    // V2: { buyer: { billing_info: { ... } } }
+    if (raw.buyer?.billing_info && typeof raw.buyer.billing_info === "object") {
+      bi = raw.buyer.billing_info
+    }
+    // V2 sin billing_info nested: { buyer: { name, identification, ... } }
+    else if (raw.buyer && typeof raw.buyer === "object") {
+      bi = raw.buyer
+    }
+    // V1: { billing_info: { doc_type, doc_number, additional_info } }
+    else if (raw.billing_info && typeof raw.billing_info === "object") {
+      bi = raw.billing_info
+    }
+
+    // ── Nombre ────────────────────────────────────────────────────────────
+    const isBusiness = !!(bi.business_name)
+    let resNombre: string | null = null
+    if (isBusiness) {
+      resNombre = bi.business_name
+    } else {
+      // V2 usa "name" como primer nombre; V1/endpoint-A usa "first_name"
+      resNombre = [bi.first_name || bi.name, bi.last_name]
+        .filter(Boolean).join(" ").trim() || bi.full_name || null
+    }
+
+    // ── Documento ─────────────────────────────────────────────────────────
+    // Orden de prioridad: identification.type/number → doc_type/doc_number → additional_info
+    let resDocTipo:   string | null = bi.identification?.type   || bi.doc_type   || null
+    let resDocNumero: string | null = bi.identification?.number != null
+      ? String(bi.identification.number)
+      : (bi.doc_number ? String(bi.doc_number) : null)
+
+    // Fallback: additional_info[] de V1
+    if (!resDocNumero && Array.isArray(bi.additional_info)) {
+      const ai = parseAdditionalInfo(bi.additional_info)
+      resDocTipo   = resDocTipo   || ai["DOC_TYPE"]   || null
+      resDocNumero = resDocNumero || ai["DOC_NUMBER"]  || null
+      // También nombre si no lo tenemos
+      if (!resNombre) {
+        const fn = ai["FIRST_NAME"] || ""
+        const ln = ai["LAST_NAME"]  || ""
+        resNombre = [fn, ln].filter(Boolean).join(" ").trim() || null
+      }
+    }
+
+    // ── Condición IVA ─────────────────────────────────────────────────────
+    // V2: taxes.taxpayer_type.description / .id
+    // V1/A: taxpayer_type (string directo) | iva_condition
+    let resCondIva: string | null =
+      bi.taxes?.taxpayer_type?.description
+      || bi.taxes?.taxpayer_type?.id
+      || bi.taxpayer_type
+      || bi.iva_condition
+      || null
+
+    // Normalizar a valores internos si viene en español/inglés
+    if (resCondIva) {
+      const v = resCondIva.toLowerCase()
+      if (v.includes("final") || v === "05" || v === "5")          resCondIva = "consumidor_final"
+      else if (v.includes("inscripto") || v.includes("registered")) resCondIva = "responsable_inscripto"
+      else if (v.includes("monotrib"))                               resCondIva = "monotributo"
+      else if (v.includes("exento") || v.includes("exempt"))        resCondIva = "exento"
+    }
+
+    // ── Dirección ─────────────────────────────────────────────────────────
+    let resDireccion: string | null = null
+    if (bi.address) {
+      const a = bi.address
+      if (typeof a === "string") {
+        resDireccion = a || null
+      } else {
+        // V2 usa city_name directamente; V1 usa city.name
+        const cityName = a.city_name || a.city?.name || null
+        const stateName = a.state?.name || a.state_name || null
+        const parts = [
+          a.street_name, a.street_number, a.apartment,
+          cityName, stateName, a.zip_code,
+        ].filter(Boolean)
+        resDireccion = parts.length > 0 ? parts.join(", ") : null
+      }
+    }
+
+    return {
+      nombre:        resNombre,
+      doc_tipo:      resDocTipo,
+      doc_numero:    resDocNumero,
+      condicion_iva: resCondIva,
+      direccion:     resDireccion,
+    }
   }
 
   try {
     let rawA: any = null
-    let rawB: any = null
+    let rawB_v2: any = null
+    let rawB_v1: any = null
 
     // Intento A: endpoint con billingInfoId (respuesta flat)
     if (billingInfoId) {
@@ -159,57 +278,68 @@ export async function getMLOrderBilling(
         rawA = await mlFetch(
           `https://api.mercadolibre.com/orders/billing-info/MLA/${billingInfoId}`
         )
-      } catch { /* si falla, usar fallback */ }
+      } catch { /* fallback */ }
     }
 
-    // Intento B: endpoint clásico (respuesta wrapped) — siempre lo intentamos
-    // como alternativa o fuente adicional de datos
+    // Intento B V2: con header x-version: 2 (estructura más completa)
     try {
-      rawB = await mlFetch(`https://api.mercadolibre.com/orders/${order_id}/billing_info`)
-    } catch { /* ignorar si también falla */ }
+      rawB_v2 = await mlFetch(
+        `https://api.mercadolibre.com/orders/${order_id}/billing_info`,
+        { "x-version": "2" }
+      )
+    } catch { /* fallback a V1 */ }
 
-    // Preferimos A si existe, sino B, sino objeto vacío
-    const raw = rawA ?? rawB ?? {}
-    rawBillingInfo = raw
+    // Intento B V1: sin header (legacy, tiene doc_type/doc_number flat + additional_info)
+    try {
+      rawB_v1 = await mlFetch(
+        `https://api.mercadolibre.com/orders/${order_id}/billing_info`
+      )
+    } catch { /* ignorar */ }
 
-    const bi = normalizeBillingResponse(raw)
+    // Extraer datos de cada fuente
+    const parsedA   = rawA   ? extractBillingFields(rawA)   : null
+    const parsedBv2 = rawB_v2 ? extractBillingFields(rawB_v2) : null
+    const parsedBv1 = rawB_v1 ? extractBillingFields(rawB_v1) : null
 
-    const isBusiness = !!(bi.business_name)
+    // Elegir la fuente con más datos (prioridad: A > B_v2 > B_v1)
+    // Para cada campo tomamos el primer valor no-nulo entre las fuentes
+    const sources = [parsedA, parsedBv2, parsedBv1].filter(Boolean) as typeof parsedA[]
+    nombre        = sources.map(s => s!.nombre).find(Boolean)        ?? null
+    doc_tipo      = sources.map(s => s!.doc_tipo).find(Boolean)      ?? null
+    doc_numero    = sources.map(s => s!.doc_numero).find(Boolean)    ?? null
+    condicion_iva = sources.map(s => s!.condicion_iva).find(Boolean) ?? null
+    direccion     = sources.map(s => s!.direccion).find(Boolean)     ?? null
 
-    if (isBusiness) {
-      nombre     = bi.business_name
-      doc_tipo   = bi.doc_type   || bi.identification?.type   || null
-      doc_numero = bi.doc_number || bi.identification?.number || null
-    } else {
-      nombre = [bi.first_name, bi.last_name].filter(Boolean).join(" ").trim()
-        || bi.full_name
-        || null
-      doc_tipo   = bi.identification?.type   || bi.doc_type   || null
-      doc_numero = bi.identification?.number || bi.doc_number || null
-    }
+    // Guardar raw para auditoría (preferir V2, sino V1, sino A)
+    rawBillingInfo = rawB_v2 ?? rawB_v1 ?? rawA
 
-    condicion_iva = bi.taxpayer_type || bi.iva_condition || null
-
-    if (bi.address) {
-      const a = bi.address
-      if (typeof a === "string") {
-        direccion = a || null
-      } else {
-        const parts = [
-          a.street_name, a.street_number, a.apartment,
-          a.city?.name, a.state?.name, a.zip_code,
-        ].filter(Boolean)
-        direccion = parts.length > 0 ? parts.join(", ") : null
+    // Último fallback: identificación directa del buyer en /orders/{id}
+    if (!doc_numero) {
+      if (buyerDirectId?.number != null) {
+        doc_tipo   = buyerDirectId.type   || doc_tipo
+        doc_numero = String(buyerDirectId.number)
+      } else if (buyerDirectDoc) {
+        doc_tipo   = buyerDirectDocType || doc_tipo
+        doc_numero = buyerDirectDoc
       }
     }
+    if (!nombre) nombre = buyerFallback
 
-    if (!nombre && !doc_numero) {
-      nombre               = buyerFallback
-      billing_info_missing = true
-    }
+    billing_info_missing = !nombre && !doc_numero
+
   } catch {
-    nombre               = buyerFallback
-    billing_info_missing = true
+    nombre = buyerFallback
+    if (!doc_numero) {
+      if (buyerDirectId?.number != null) {
+        doc_tipo   = buyerDirectId.type || null
+        doc_numero = String(buyerDirectId.number)
+      } else if (buyerDirectDoc) {
+        doc_tipo   = buyerDirectDocType
+        doc_numero = buyerDirectDoc
+      } else {
+        billing_info_missing = true
+      }
+    }
   }
 
   // ── 5. Upsert cache ──────────────────────────────────────────────────────

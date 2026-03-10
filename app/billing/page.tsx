@@ -68,6 +68,7 @@ interface Factura {
   estado: string
   error_mensaje: string | null
   items: FacturaItem[]
+  orden_id: string | null
   created_at: string
 }
 
@@ -278,6 +279,27 @@ export default function BillingPage() {
   const [searchQ, setSearchQ]     = useState("")
   const [filterEstado, setFilterEstado] = useState("all")
   const LIMIT = 20
+
+  // Refetch billing de facturas ya emitidas
+  const [refetchingId, setRefetchingId] = useState<string | null>(null)
+
+  async function refetchBilling(facturaId: string) {
+    setRefetchingId(facturaId)
+    try {
+      const r = await fetch(`/api/billing/facturas/${facturaId}/refetch-billing`, { method: "POST" })
+      const d = await r.json()
+      if (d.ok) {
+        // Actualizar la factura en la lista local
+        setFacturas(prev => prev.map(f => f.id === facturaId ? { ...f, ...d.factura } : f))
+      } else {
+        alert(`Error al actualizar datos fiscales: ${d.error}`)
+      }
+    } catch {
+      alert("Error de red al actualizar datos fiscales")
+    } finally {
+      setRefetchingId(null)
+    }
+  }
 
   // Nueva factura
   const [showNew, setShowNew]     = useState(false)
@@ -749,7 +771,7 @@ export default function BillingPage() {
                     <td className="p-3 font-mono text-xs text-muted-foreground hidden lg:table-cell">
                       {f.cae || "—"}
                     </td>
-                    <td className="p-3">
+                    <td className="p-3 flex items-center gap-1">
                       {f.cae && (
                         <Button
                           variant="ghost" size="icon" className="h-7 w-7"
@@ -757,6 +779,19 @@ export default function BillingPage() {
                           onClick={() => window.open(`/api/billing/facturas/${f.id}/pdf`, "_blank")}
                         >
                           <Download className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {f.orden_id && (
+                        <Button
+                          variant="ghost" size="icon" className="h-7 w-7"
+                          title="Re-obtener datos fiscales desde ML"
+                          disabled={refetchingId === f.id}
+                          onClick={() => refetchBilling(f.id)}
+                        >
+                          {refetchingId === f.id
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : <RefreshCw className="h-3.5 w-3.5" />
+                          }
                         </Button>
                       )}
                     </td>

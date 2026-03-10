@@ -74,6 +74,7 @@ export async function POST(request: NextRequest) {
       date_created:    o.date_created,
       total_amount:    o.total_amount,
       currency_id:     o.currency_id ?? "ARS",
+      pack_id:         o.pack_id      ? String(o.pack_id) : null,
       packing_status:  o.pack_status  ?? null,
       shipping_status: o.shipping?.status ?? null,
       shipping_id:     o.shipping?.id ? Number(o.shipping.id) : null,

@@ -170,7 +170,11 @@ export default function MLBillingPage() {
   // Selección masiva
   const [selected,      setSelected]      = useState<Set<number>>(new Set())
   const [emittingBatch, setEmittingBatch] = useState(false)
-  const [batchResult,   setBatchResult]   = useState<{ ok: number; err: number; errors: string[]; warnings: string[] } | null>(null)
+  const [batchResult,   setBatchResult]   = useState<{
+    ok: number; err: number; errors: string[]; warnings: string[]
+    // órdenes recién facturadas, listas para subir a ML
+    pendingML: { order_id: number; factura_id: string }[]
+  } | null>(null)
 
   // Subida de facturas a ML
   const [uploadingId,  setUploadingId]  = useState<number | null>(null)
@@ -188,41 +192,92 @@ export default function MLBillingPage() {
     if (!order.factura_info?.factura_id) return
     setUploadingId(order.id)
     try {
-      // 1. Obtener PDF URL de la factura
-      const pdfUrl = `/api/billing/facturas/${order.factura_info.factura_id}/pdf`
-
-      // 2. Obtener número y total de la factura
-      const facRes  = await fetch(`/api/billing/facturas/${order.factura_info.factura_id}`)
-      const facData = facRes.ok ? await facRes.json() : null
-      const factura  = facData?.factura
-
-      const invoiceNumber = factura?.numero
-        ? `${String(factura.punto_venta).padStart(4, "0")}-${String(factura.numero).padStart(8, "0")}`
-        : `FC-${order.factura_info.factura_id.slice(0, 8)}`
-      const invoiceDate   = factura?.fecha || new Date().toISOString().slice(0, 10)
-      const totalAmount   = factura?.importe_total || order.total
-
-      // 3. Llamar al endpoint de subida
       const res  = await fetch("/api/billing/ml-upload-invoice", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({
-          account_id:     activeAccount,
-          order_id:       String(order.id),
-          factura_id:     order.factura_info.factura_id,
-          invoice_number: invoiceNumber,
-          invoice_date:   invoiceDate,
-          total_amount:   totalAmount,
-          pdf_url:        `${window.location.origin}${pdfUrl}`,
+          account_id: activeAccount,
+          order_id:   String(order.id),
+          factura_id: order.factura_info.factura_id,
         }),
       })
       const data = await res.json()
       setUploadStatus(prev => ({ ...prev, [order.id]: data.ok ? "uploaded" : "error" }))
+      if (!data.ok) console.error("ML upload error:", data.error, data.ml_response)
     } catch {
       setUploadStatus(prev => ({ ...prev, [order.id]: "error" }))
     } finally {
       setUploadingId(null)
     }
+  }
+
+  // ── Subida masiva a ML ────────────────────────────────────────────────────
+  const [uploadingBatchML, setUploadingBatchML] = useState(false)
+  const [uploadBatchResult, setUploadBatchResult] = useState<{ ok: number; err: number; errors: string[] } | null>(null)
+
+  // Sube a ML una lista específica de { order_id, factura_id } (usada después de emitirMasivo)
+  const subirListaML = async (lista: { order_id: number; factura_id: string }[]) => {
+    if (!lista.length) return
+    setUploadingBatchML(true); setUploadBatchResult(null)
+    let ok = 0; let err = 0; const errs: string[] = []
+    for (const { order_id, factura_id } of lista) {
+      try {
+        const res  = await fetch("/api/billing/ml-upload-invoice", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ account_id: activeAccount, order_id: String(order_id), factura_id }),
+        })
+        const data = await res.json()
+        if (data.ok) {
+          ok++
+          setUploadStatus(prev => ({ ...prev, [order_id]: "uploaded" }))
+        } else {
+          err++; errs.push(`Orden #${order_id}: ${data.error || "Error"}`)
+          setUploadStatus(prev => ({ ...prev, [order_id]: "error" }))
+        }
+      } catch (e: any) {
+        err++; errs.push(`Orden #${order_id}: ${e.message}`)
+        setUploadStatus(prev => ({ ...prev, [order_id]: "error" }))
+      }
+    }
+    setUploadBatchResult({ ok, err, errors: errs })
+    setUploadingBatchML(false)
+    // Limpiar los pendingML del batchResult para no volver a subirlos
+    setBatchResult(prev => prev ? { ...prev, pendingML: [] } : null)
+  }
+
+  const subirMasivoML = async () => {
+    // Solo subir facturas de órdenes ya facturadas que estén seleccionadas
+    const facturadas = orders.filter(o => selected.has(o.id) && o.facturada && o.factura_info?.factura_id)
+    if (!facturadas.length) return
+    setUploadingBatchML(true); setUploadBatchResult(null)
+    let ok = 0; let err = 0; const errs: string[] = []
+    for (const order of facturadas) {
+      try {
+        const res  = await fetch("/api/billing/ml-upload-invoice", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({
+            account_id: activeAccount,
+            order_id:   String(order.id),
+            factura_id: order.factura_info.factura_id,
+          }),
+        })
+        const data = await res.json()
+        if (data.ok) {
+          ok++
+          setUploadStatus(prev => ({ ...prev, [order.id]: "uploaded" }))
+        } else {
+          err++; errs.push(`Orden #${order.id}: ${data.error || "Error"}`)
+          setUploadStatus(prev => ({ ...prev, [order.id]: "error" }))
+        }
+      } catch (e: any) {
+        err++; errs.push(`Orden #${order.id}: ${e.message}`)
+        setUploadStatus(prev => ({ ...prev, [order.id]: "error" }))
+      }
+    }
+    setUploadBatchResult({ ok, err, errors: errs })
+    setUploadingBatchML(false)
   }
 
   // ── Cargar órdenes ────────────────────────────────────────────────────────
@@ -389,6 +444,7 @@ export default function MLBillingPage() {
 
     const selOrders = orders.filter(o => selected.has(o.id))
     let ok = 0; let err = 0; const errs: string[] = []; const warns: string[] = []
+    const pendingML: { order_id: number; factura_id: string }[] = []
     const round2 = (n: number) => Math.round(n * 100) / 100
     const ivaDefault = empresas.find(e => e.id === activeEmpresa)?.iva_default ?? 0
 
@@ -454,6 +510,9 @@ export default function MLBillingPage() {
             }),
           })
           ok++
+          if (facData.factura?.id) {
+            pendingML.push({ order_id: order.id, factura_id: facData.factura.id })
+          }
         } else {
           err++; errs.push(`Orden #${order.id}: ${facData.error || "Error"}`)
         }
@@ -462,7 +521,7 @@ export default function MLBillingPage() {
       }
     }
 
-    setBatchResult({ ok, err, errors: errs, warnings: warns })
+    setBatchResult({ ok, err, errors: errs, warnings: warns, pendingML })
     setEmittingBatch(false)
     loadOrders(page)
   }
@@ -502,8 +561,10 @@ export default function MLBillingPage() {
     )
   }
 
-  const unfacturadas  = orders.filter(o => !o.facturada)
-  const allSelected   = unfacturadas.length > 0 && selected.size === unfacturadas.length
+  const unfacturadas    = orders.filter(o => !o.facturada)
+  const facturadas      = orders.filter(o => o.facturada && o.factura_info?.factura_id)
+  const allSelected     = unfacturadas.length > 0 && selected.size === unfacturadas.length
+  const selectedConFact = orders.filter(o => selected.has(o.id) && o.facturada && o.factura_info?.factura_id)
   const totalSelected = orders.filter(o => selected.has(o.id)).reduce((s, o) => s + o.total, 0)
   const totalPages    = Math.ceil(total / LIMIT)
 
@@ -654,14 +715,33 @@ export default function MLBillingPage() {
             <Zap className="h-5 w-5 text-primary" />
             <div>
               <p className="text-sm font-semibold">{selected.size} ventas seleccionadas</p>
-              <p className="text-xs text-muted-foreground">Total: {fmtARS(totalSelected)}</p>
+              <p className="text-xs text-muted-foreground">
+                Total: {fmtARS(totalSelected)}
+                {selectedConFact.length > 0 && (
+                  <span className="ml-2 text-blue-400">{selectedConFact.length} con factura</span>
+                )}
+              </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <div className="text-xs text-muted-foreground flex items-center gap-1">
               <Info className="h-3.5 w-3.5" />
               Se emitirá Factura C por cada venta con datos fiscales del comprador
             </div>
+            {/* Subida masiva a ML — solo para órdenes ya facturadas */}
+            {selectedConFact.length > 0 && (
+              <Button
+                variant="outline"
+                onClick={subirMasivoML}
+                disabled={uploadingBatchML}
+                className="gap-2 border-blue-500/40 text-blue-400 hover:bg-blue-500/10"
+              >
+                {uploadingBatchML
+                  ? <><RefreshCw className="h-4 w-4 animate-spin" />Subiendo a ML...</>
+                  : <><Upload className="h-4 w-4" />Subir {selectedConFact.length} facturas a ML</>
+                }
+              </Button>
+            )}
             <Button onClick={emitirMasivo} disabled={emittingBatch || !activeEmpresa} className="gap-2">
               {emittingBatch
                 ? <><RefreshCw className="h-4 w-4 animate-spin" />Facturando...</>
@@ -707,6 +787,51 @@ export default function MLBillingPage() {
                 </ul>
               </details>
             )}
+            {/* Botón para subir a ML las facturas recién emitidas */}
+            {batchResult.pendingML.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-border/50 flex items-center gap-3">
+                <p className="text-xs text-muted-foreground flex-1">
+                  {batchResult.pendingML.length} factura{batchResult.pendingML.length !== 1 ? "s" : ""} lista{batchResult.pendingML.length !== 1 ? "s" : ""} para subir a MercadoLibre
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={uploadingBatchML}
+                  onClick={() => subirListaML(batchResult.pendingML)}
+                  className="gap-2 border-blue-500/40 text-blue-400 hover:bg-blue-500/10 h-7 text-xs"
+                >
+                  {uploadingBatchML
+                    ? <><RefreshCw className="h-3 w-3 animate-spin" />Subiendo...</>
+                    : <><Upload className="h-3 w-3" />Subir a ML</>
+                  }
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Resultado subida masiva a ML */}
+      {uploadBatchResult && (
+        <div className={`rounded-lg border p-4 flex items-start gap-3 ${
+          uploadBatchResult.err === 0 ? "border-blue-500/30 bg-blue-500/5" : "border-amber-500/30 bg-amber-500/5"
+        }`}>
+          {uploadBatchResult.err === 0
+            ? <CheckCircle2 className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
+            : <AlertTriangle className="h-5 w-5 text-amber-400 flex-shrink-0 mt-0.5" />
+          }
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">
+              {uploadBatchResult.ok} factura{uploadBatchResult.ok !== 1 ? "s" : ""} subida{uploadBatchResult.ok !== 1 ? "s" : ""} a ML
+              {uploadBatchResult.err > 0 && ` · ${uploadBatchResult.err} con error`}
+            </p>
+            {uploadBatchResult.errors.length > 0 && (
+              <ul className="mt-2 space-y-0.5">
+                {uploadBatchResult.errors.map((e, i) => (
+                  <li key={i} className="text-xs text-red-400">{e}</li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       )}
@@ -727,11 +852,30 @@ export default function MLBillingPage() {
             <span className="text-sm font-medium">Órdenes</span>
             <Badge variant="secondary" className="text-xs">{total.toLocaleString("es-AR")}</Badge>
           </div>
-          {unfacturadas.length > 0 && (
-            <button onClick={toggleAll} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
-              {allSelected ? "Deseleccionar todas" : `Seleccionar ${unfacturadas.length} sin facturar`}
-            </button>
-          )}
+            <div className="flex items-center gap-3">
+            {unfacturadas.length > 0 && (
+              <button onClick={toggleAll} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+                {allSelected ? "Deseleccionar todas" : `Seleccionar ${unfacturadas.length} sin facturar`}
+              </button>
+            )}
+            {facturadas.length > 0 && (
+              <button
+                onClick={() => {
+                  const ids = facturadas.map(o => o.id)
+                  const allFacSelected = ids.every(id => selected.has(id))
+                  setSelected(prev => {
+                    const n = new Set(prev)
+                    if (allFacSelected) ids.forEach(id => n.delete(id))
+                    else ids.forEach(id => n.add(id))
+                    return n
+                  })
+                }}
+                className="text-xs text-blue-400/70 hover:text-blue-300 transition-colors"
+              >
+                Seleccionar {facturadas.length} con factura
+              </button>
+            )}
+          </div>
         </div>
 
         {loading ? (
@@ -773,13 +917,12 @@ export default function MLBillingPage() {
                     className={`transition-colors ${selected.has(order.id) ? "bg-primary/5" : "hover:bg-muted/20"} ${order.facturada ? "opacity-60" : ""}`}
                   >
                     <td className="px-4 py-3">
-                      {!order.facturada && (
-                        <Checkbox
-                          checked={selected.has(order.id)}
-                          onCheckedChange={() => toggleOrder(order.id)}
-                          aria-label={`Seleccionar orden ${order.id}`}
-                        />
-                      )}
+                      <Checkbox
+                        checked={selected.has(order.id)}
+                        onCheckedChange={() => toggleOrder(order.id)}
+                        aria-label={`Seleccionar orden ${order.id}`}
+                        className={order.facturada ? "opacity-50" : ""}
+                      />
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-muted-foreground">#{order.id}</td>
                     <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{fmtFecha(order.fecha)}</td>
