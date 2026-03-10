@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { buildFacturaHTML } from "@/lib/arca/pdf"
+import { htmlToPdfBuffer } from "@/lib/billing/generate-pdf"
+
+// Puppeteer necesita más tiempo que el default de 10s
+export const maxDuration = 60
 
 // POST /api/billing/ml-upload-invoice
 // Sube la factura emitida a MercadoLibre usando el endpoint oficial.
@@ -128,8 +132,16 @@ export async function POST(req: NextRequest) {
       moneda:   factura.moneda || "PES",
     })
 
-    fileBuffer = Buffer.from(html, "utf-8")
-    fileName   = `factura_${numStr}.html`
+    // Convertir HTML a PDF real (ML requiere PDF, máx 1MB)
+    try {
+      fileBuffer = await htmlToPdfBuffer(html)
+    } catch (pdfErr: any) {
+      // Fallback: enviar HTML si el browser no está disponible.
+      // ML puede rechazarlo — se loguea para poder depurar.
+      console.warn("[ml-upload] htmlToPdfBuffer failed, falling back to HTML:", pdfErr.message)
+      fileBuffer = Buffer.from(html, "utf-8")
+    }
+    fileName = `factura_${numStr}.pdf`
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: `Error generando archivo: ${e.message}` }, { status: 500 })
   }
