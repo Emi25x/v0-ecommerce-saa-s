@@ -31,7 +31,8 @@ export async function GET(request: NextRequest) {
   // Paso 1: GET /orders/{id} → leer buyer.billing_info.id
   const orderRes  = await fetch(`https://api.mercadolibre.com/orders/${orderId}`, { headers: { Authorization: auth } })
   const orderData = await orderRes.json()
-  const billingInfoId = orderData?.buyer?.billing_info?.id
+  const billingInfoId     = orderData?.buyer?.billing_info?.id
+  const contentMissing    = orderRes.headers.get("x-content-missing") ?? null
 
   // Paso 2a: GET /orders/billing-info/MLA/{billing_info_id} → datos fiscales (flat)
   let billingDataA = null
@@ -58,6 +59,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     order_status:             orderRes.status,
     order_buyer:              orderData?.buyer,
+    order_content_missing:    contentMissing,   // "buyer" si ML devuelve respuesta parcial
     billing_info_id:          billingInfoId,
     buyer_identification:     orderData?.buyer?.identification ?? null,
     // Endpoint A (flat, requiere billingInfoId)

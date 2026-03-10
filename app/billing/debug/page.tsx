@@ -68,7 +68,17 @@ export default function BillingDebugPage() {
             <h2 className="font-bold mb-2">
               Paso 1 — GET /orders/{"{id}"}
               {statusBadge(result.order_status)}
+              {result.order_content_missing && (
+                <span className="ml-2 text-xs bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded">
+                  X-Content-Missing: {result.order_content_missing}
+                </span>
+              )}
             </h2>
+            {result.order_content_missing === "buyer" && (
+              <p className="text-orange-400 text-xs mb-2">
+                ⚠ ML retornó respuesta parcial — el buyer está incompleto. Esto puede causar que el DNI no esté disponible.
+              </p>
+            )}
             <p className="text-muted-foreground text-xs mb-1">buyer object (debe tener billing_info.id):</p>
             <pre className="bg-muted p-3 rounded overflow-auto text-xs">
               {JSON.stringify(result.order_buyer, null, 2)}
