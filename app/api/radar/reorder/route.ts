@@ -27,24 +27,13 @@ export async function GET(req: NextRequest) {
 
   const supabase = createAdminClient()
 
-  /*
-   * Usamos el mismo patrón que /api/ml/publications:
-   * - .lte("current_stock", 0) captura stock=0, null y negativos
-   * - OR .eq("status","paused") para publicaciones pausadas por ML
-   *   aunque tengan stock > 0 en BD (puede estar desactualizado)
-   * - NOT IN closed/inactive definitivo
-   *
-   * Evitamos ORDER BY por columna de tabla relacionada (products.brand)
-   * ya que PostgREST puede rechazarlo. Ordenamos solo por sold_quantity
-   * y hacemos sort editorial en el cliente.
-   */
+  // ── 1. Publicaciones sin stock o pausadas ─────────────────────────────────
   let query = supabase
     .from("ml_publications")
     .select(
       `id, ml_item_id, title, sku, isbn, price,
        current_stock, sold_quantity, permalink,
-       account_id, status,
-       products ( brand )`,
+       account_id, status, product_id`,
       { count: "exact" },
     )
     .not("status", "in", '("closed","inactive")')
@@ -60,7 +49,6 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  // Solo ordenamos por sold_quantity en DB; la editorial se ordena abajo en JS
   query = query
     .order("sold_quantity", { ascending: false, nullsFirst: false })
     .range(offset, offset + limit - 1)
@@ -72,7 +60,26 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   }
 
-  let rows = (data ?? []).map((pub: any) => ({
+  const rows = data ?? []
+
+  // ── 2. Obtener editorial (brand) desde products para las rows que tienen product_id
+  //      Evitamos el embedded join de PostgREST porque ml_publications no tiene FK constraint a products
+  const productIds = [...new Set(rows.map((r: any) => r.product_id).filter(Boolean))]
+  const brandMap: Record<string, string> = {}
+
+  if (productIds.length > 0) {
+    const { data: prods } = await supabase
+      .from("products")
+      .select("id, brand")
+      .in("id", productIds)
+
+    for (const p of prods ?? []) {
+      if (p.brand) brandMap[p.id] = p.brand
+    }
+  }
+
+  // ── 3. Mapear resultado ───────────────────────────────────────────────────
+  let result = rows.map((pub: any) => ({
     id:            pub.id,
     ml_item_id:    pub.ml_item_id,
     title:         pub.title,
@@ -80,16 +87,16 @@ export async function GET(req: NextRequest) {
     isbn:          pub.isbn  ?? null,
     price:         pub.price ? Number(pub.price) : null,
     current_stock: pub.current_stock ?? 0,
-    sold_quantity: pub.sold_quantity ? Number(pub.sold_quantity) : 0,
-    editorial:     pub.products?.brand ?? null,
+    sold_quantity: pub.sold_quantity  ? Number(pub.sold_quantity) : 0,
+    editorial:     pub.product_id ? (brandMap[pub.product_id] ?? null) : null,
     status:        pub.status,
     account_id:    pub.account_id,
     permalink:     pub.permalink ?? null,
   }))
 
-  // Sort by editorial client-side (DB sort is only reliable for sold_quantity)
+  // Sort editorial client-side
   if (sort === "editorial") {
-    rows = rows.sort((a, b) => {
+    result = result.sort((a, b) => {
       const ea = (a.editorial ?? "").toLowerCase()
       const eb = (b.editorial ?? "").toLowerCase()
       if (ea < eb) return -1
@@ -98,5 +105,5 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  return NextResponse.json({ ok: true, rows, total: count ?? 0, limit, offset })
+  return NextResponse.json({ ok: true, rows: result, total: count ?? 0, limit, offset })
 }

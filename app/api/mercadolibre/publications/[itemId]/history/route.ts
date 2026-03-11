@@ -77,7 +77,7 @@ export async function GET(
       let accountQuery = supabase
         .from("ml_accounts")
         .select("id, ml_user_id, access_token, nickname")
-        .eq("owner_id", user.id)
+        .eq("user_id", user.id)
 
       if (accountId) {
         accountQuery = accountQuery.eq("id", accountId)

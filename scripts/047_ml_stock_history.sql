@@ -40,16 +40,21 @@ CREATE POLICY "owner can read ml_stock_history"
   ON ml_stock_history FOR SELECT
   USING (
     account_id IN (
-      SELECT id FROM ml_accounts WHERE owner_id = auth.uid()
+      SELECT id FROM ml_accounts WHERE user_id = auth.uid()
     )
   );
 
+-- INSERT: permitir a usuarios autenticados Y a service role (webhooks/cron)
 CREATE POLICY "owner can insert ml_stock_history"
   ON ml_stock_history FOR INSERT
   WITH CHECK (
+    -- Usuario autenticado insertando en su propia cuenta
     account_id IN (
-      SELECT id FROM ml_accounts WHERE owner_id = auth.uid()
+      SELECT id FROM ml_accounts WHERE user_id = auth.uid()
     )
+    OR
+    -- Sin sesión (service role, webhooks, cron jobs del servidor)
+    auth.uid() IS NULL
   );
 
 COMMENT ON TABLE ml_stock_history IS
