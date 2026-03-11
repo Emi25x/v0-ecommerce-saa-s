@@ -14,12 +14,12 @@ export async function GET(request: NextRequest) {
   // ── Productos ──────────────────────────────────────────────────────────────
   let query = supabase
     .from("products")
-    .select("id, sku, ean, title, stock, stock_by_source, price", { count: "exact" })
+    .select("id, sku, title, stock, stock_by_source, price", { count: "exact" })
     .order("title", { ascending: true })
     .range(offset, offset + limit - 1)
 
   if (search) {
-    query = query.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
+    query = query.or(`title.ilike.%${search}%,sku.ilike.%${search}%`)
   }
   if (zeroOnly) {
     query = query.eq("stock", 0)
@@ -32,15 +32,16 @@ export async function GET(request: NextRequest) {
   // Agrupar por warehouse_id para la vista "Por almacén"
   const { data: sources } = await supabase
     .from("import_sources")
-    .select("id, name, warehouse_id, warehouses(id, name, code)")
+    .select("id, name, source_key, warehouse_id, warehouses(id, name, code)")
     .eq("is_active", true)
 
-  // source.id → warehouse info
+  // source_key → warehouse info  (stock_by_source uses source_key, not UUID)
   const sourceWarehouse: Record<string, { id: string; name: string; code: string } | null> = {}
   const sourceLabel: Record<string, string> = {}
   for (const s of sources ?? []) {
-    sourceWarehouse[s.id] = (s as any).warehouses ?? null
-    sourceLabel[s.id] = s.name
+    const key = (s as any).source_key ?? s.id
+    sourceWarehouse[key] = (s as any).warehouses ?? null
+    sourceLabel[key] = s.name
   }
 
   // ── Collect all source keys present in stock_by_source ────────────────────

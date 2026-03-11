@@ -16,7 +16,6 @@ interface Warehouse {
 interface Product {
   id: string
   sku: string
-  ean: string | null
   title: string
   stock: number
   stock_by_source: Record<string, number> | null
@@ -211,7 +210,6 @@ export default function StockOverviewPage() {
                     <td className="px-4 py-2.5 align-middle">
                       <div className="font-mono text-xs text-muted-foreground leading-tight">
                         <div>{p.sku || "—"}</div>
-                        {p.ean && <div className="text-zinc-600">{p.ean}</div>}
                       </div>
                     </td>
                     <td className="px-4 py-2.5 align-middle"><span className="line-clamp-2 leading-tight">{p.title}</span></td>
@@ -264,7 +262,6 @@ export default function StockOverviewPage() {
                     <td className="px-4 py-2.5 align-middle">
                       <div className="font-mono text-xs text-muted-foreground leading-tight">
                         <div>{p.sku || "—"}</div>
-                        {p.ean && <div className="text-zinc-600">{p.ean}</div>}
                       </div>
                     </td>
                     <td className="px-4 py-2.5 align-middle"><span className="line-clamp-2 leading-tight">{p.title}</span></td>
