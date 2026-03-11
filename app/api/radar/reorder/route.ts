@@ -13,16 +13,9 @@
  */
 
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
+import { createAdminClient } from "@/lib/supabase/admin"
 
 export const dynamic = "force-dynamic"
-
-function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  )
-}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl
@@ -32,13 +25,18 @@ export async function GET(req: NextRequest) {
   const search    = searchParams.get("search")?.trim() ?? ""
   const accountId = searchParams.get("account_id")?.trim() ?? ""
 
-  const supabase = getSupabase()
+  const supabase = createAdminClient()
 
   /*
-   * Criterio: publicaciones que NO están cerradas Y que tienen stock = 0 o
-   * están pausadas (ML pausa automáticamente cuando available_quantity llega a 0).
-   * Usamos `.or()` en PostgREST con la condición de stock + status juntos para
-   * evitar problemas de precedencia al combinar .neq() con .or().
+   * Usamos el mismo patrón que /api/ml/publications:
+   * - .lte("current_stock", 0) captura stock=0, null y negativos
+   * - OR .eq("status","paused") para publicaciones pausadas por ML
+   *   aunque tengan stock > 0 en BD (puede estar desactualizado)
+   * - NOT IN closed/inactive definitivo
+   *
+   * Evitamos ORDER BY por columna de tabla relacionada (products.brand)
+   * ya que PostgREST puede rechazarlo. Ordenamos solo por sold_quantity
+   * y hacemos sort editorial en el cliente.
    */
   let query = supabase
     .from("ml_publications")
@@ -49,42 +47,32 @@ export async function GET(req: NextRequest) {
        products ( brand )`,
       { count: "exact" },
     )
-    // status != closed  Y  (stock=0 OR stock IS NULL OR status='paused')
-    .neq("status", "closed")
-    .or("current_stock.eq.0,current_stock.is.null,status.eq.paused")
+    .not("status", "in", '("closed","inactive")')
+    .or("current_stock.lte.0,current_stock.is.null,status.eq.paused")
 
   if (accountId) {
     query = query.eq("account_id", accountId)
   }
 
   if (search) {
-    // Nuevo .or() encadenado → se combina con AND sobre la condición anterior
     query = query.or(
       `title.ilike.%${search}%,sku.ilike.%${search}%,isbn.ilike.%${search}%`,
     )
   }
 
-  // Orden
-  if (sort === "editorial") {
-    query = query
-      .order("products(brand)", { ascending: true,  nullsFirst: false })
-      .order("sold_quantity",   { ascending: false, nullsFirst: false })
-  } else {
-    query = query
-      .order("sold_quantity",   { ascending: false, nullsFirst: false })
-      .order("products(brand)", { ascending: true,  nullsFirst: false })
-  }
-
-  query = query.range(offset, offset + limit - 1)
+  // Solo ordenamos por sold_quantity en DB; la editorial se ordena abajo en JS
+  query = query
+    .order("sold_quantity", { ascending: false, nullsFirst: false })
+    .range(offset, offset + limit - 1)
 
   const { data, error, count } = await query
 
   if (error) {
-    console.error("[radar/reorder]", error.message)
+    console.error("[radar/reorder] DB error:", error.message, error.details)
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   }
 
-  const rows = (data ?? []).map((pub: any) => ({
+  let rows = (data ?? []).map((pub: any) => ({
     id:            pub.id,
     ml_item_id:    pub.ml_item_id,
     title:         pub.title,
@@ -98,6 +86,17 @@ export async function GET(req: NextRequest) {
     account_id:    pub.account_id,
     permalink:     pub.permalink ?? null,
   }))
+
+  // Sort by editorial client-side (DB sort is only reliable for sold_quantity)
+  if (sort === "editorial") {
+    rows = rows.sort((a, b) => {
+      const ea = (a.editorial ?? "").toLowerCase()
+      const eb = (b.editorial ?? "").toLowerCase()
+      if (ea < eb) return -1
+      if (ea > eb) return  1
+      return b.sold_quantity - a.sold_quantity
+    })
+  }
 
   return NextResponse.json({ ok: true, rows, total: count ?? 0, limit, offset })
 }
