@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { createBrowserClient } from "@supabase/ssr"
 import { Button } from "@/components/ui/button"
@@ -18,7 +18,7 @@ import { INTERNAL_FIELDS, generateSuggestedMapping, validateMapping } from "@/li
 export default function NewSourcePage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
-  
+
   // Campos del formulario
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
@@ -26,6 +26,9 @@ export default function NewSourcePage() {
   const [authType, setAuthType] = useState("none")
   const [feedType, setFeedType] = useState("catalog")
   const [isActive, setIsActive] = useState(true)
+  const [mlAccountId, setMlAccountId] = useState<string>("none")
+  const [sourceKey, setSourceKey] = useState("")
+  const [mlAccounts, setMlAccounts] = useState<{ id: string; nickname: string }[]>([])
   
   // Credenciales según tipo de auth
   const [username, setUsername] = useState("")
@@ -44,6 +47,22 @@ export default function NewSourcePage() {
   const [mapping, setMapping] = useState<Record<string, string>>({})
   const [detectingHeaders, setDetectingHeaders] = useState(false)
   const [showMappingWizard, setShowMappingWizard] = useState(false)
+
+  // Cargar cuentas ML disponibles
+  useEffect(() => {
+    fetch("/api/ml/accounts")
+      .then(r => r.json())
+      .then((data: any[]) => setMlAccounts(Array.isArray(data) ? data : []))
+      .catch(() => {})
+  }, [])
+
+  // Auto-generar source_key desde el nombre
+  useEffect(() => {
+    if (!sourceKey) {
+      setSourceKey(name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, ""))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name])
 
   const handleDetectColumns = async () => {
     if (!urlTemplate) {
@@ -145,17 +164,29 @@ export default function NewSourcePage() {
         return
       }
       
-      const validation = validateMapping(mapping)
-      if (!validation.valid) {
+      // Para fuentes de stock+precio por EAN, relajamos la validación (no se exige title)
+      const isStockPriceByEan = feedType === "stock_price" && (mapping.ean || mapping.isbn)
+      if (!isStockPriceByEan) {
+        const validation = validateMapping(mapping)
+        if (!validation.valid) {
+          toast({
+            title: "Error en mapeo",
+            description: validation.error,
+            variant: "destructive"
+          })
+          setLoading(false)
+          return
+        }
+      } else if (!mapping.ean && !mapping.isbn) {
         toast({
           title: "Error en mapeo",
-          description: validation.error,
+          description: "Para fuentes de stock+precio debes mapear al menos el campo 'ean' o 'isbn'",
           variant: "destructive"
         })
         setLoading(false)
         return
       }
-      
+
       const parsedMapping = {
         delimiter: detectedDelimiter,
         mappings: mapping
@@ -169,7 +200,9 @@ export default function NewSourcePage() {
         credentials,
         feed_type: feedType,
         column_mapping: parsedMapping,
-        is_active: isActive
+        is_active: isActive,
+        ml_account_id: mlAccountId && mlAccountId !== "none" ? mlAccountId : null,
+        source_key: sourceKey || name.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
       })
       
       if (error) throw error
@@ -279,6 +312,41 @@ export default function NewSourcePage() {
                     <SelectItem value="other">Otro</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              {/* Cuenta ML vinculada */}
+              <div className="space-y-2">
+                <Label htmlFor="mlAccount">Cuenta ML asociada</Label>
+                <Select value={mlAccountId} onValueChange={setMlAccountId}>
+                  <SelectTrigger id="mlAccount">
+                    <SelectValue placeholder="Seleccionar cuenta..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Todas las cuentas</SelectItem>
+                    {mlAccounts.map(acc => (
+                      <SelectItem key={acc.id} value={acc.id}>{acc.nickname}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Vincula esta fuente a una cuenta de ML específica. El stock de esta fuente se registrará de forma
+                  aislada en <code>stock_by_source</code> usando la clave de abajo.
+                </p>
+              </div>
+
+              {/* Clave de fuente para stock_by_source */}
+              <div className="space-y-2">
+                <Label htmlFor="sourceKey">Clave de fuente (stock_by_source)</Label>
+                <Input
+                  id="sourceKey"
+                  value={sourceKey}
+                  onChange={(e) => setSourceKey(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+                  placeholder="ej: arg_stock"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Se usa como clave en el JSONB de stock. Ej: <code>{"{ arg_stock: 5, azeta: 10 }"}</code>.
+                  Solo letras minúsculas, números y guión bajo.
+                </p>
               </div>
             </div>
             
