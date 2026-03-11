@@ -83,6 +83,7 @@ export default function SuppliersPage() {
   const [sourcesHistory,      setSourcesHistory]      = useState<Record<string, HistoryEntry[]>>({})
   const [loadingSourceHistory, setLoadingSourceHistory] = useState<Record<string, boolean>>({})
   const [expandedSources,     setExpandedSources]     = useState<Set<string>>(new Set())
+  const [runningImports,      setRunningImports]      = useState<Record<string, boolean>>({})
   const [showAddSupplierDialog, setShowAddSupplierDialog] = useState(false)
 
   // Upload form state
@@ -165,6 +166,32 @@ export default function SuppliersPage() {
       }
       return next
     })
+  }
+
+  async function runImport(sourceId: string) {
+    setRunningImports(prev => ({ ...prev, [sourceId]: true }))
+    try {
+      const res = await fetch(`/api/import-now?sourceId=${sourceId}`)
+      const data = await res.json()
+      if (data.success) {
+        const result = data.results?.[0]
+        toast({
+          title: "Importación completada",
+          description: result
+            ? `${fmt(result.imported)} importados · ${fmt(result.updated)} actualizados · ${fmt(result.failed)} errores`
+            : "Importación finalizada",
+        })
+      } else {
+        toast({ title: "Error en importación", description: data.error ?? "Error desconocido", variant: "destructive" })
+      }
+      // Refresh history for this source (force reload)
+      setSourcesHistory(prev => { const next = { ...prev }; delete next[sourceId]; return next })
+      if (expandedSources.has(sourceId)) loadSourceHistory(sourceId)
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" })
+    } finally {
+      setRunningImports(prev => ({ ...prev, [sourceId]: false }))
+    }
   }
 
   // ── Upload file to Blob + create catalog record ───────────────────────────
@@ -774,32 +801,50 @@ export default function SuppliersPage() {
               const history = sourcesHistory[src.id] ?? []
               const loadingHist = loadingSourceHistory[src.id] ?? false
 
+              const isRunning = runningImports[src.id] ?? false
+
               return (
                 <div key={src.id} className="rounded-lg border border-border bg-card overflow-hidden">
                   {/* Source header row */}
-                  <button
-                    className="w-full flex items-center gap-3 px-5 py-4 hover:bg-muted/20 transition-colors text-left"
-                    onClick={() => toggleSource(src.id)}
-                  >
-                    <div className={`h-2 w-2 rounded-full flex-shrink-0 ${src.is_active ? "bg-emerald-400" : "bg-zinc-600"}`} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-semibold">{src.name}</span>
-                        <span className="text-[10px] font-mono bg-muted/50 text-muted-foreground px-1.5 py-0.5 rounded">
-                          {src.feed_type}
-                        </span>
-                        {src.source_key && (
-                          <span className="text-[10px] font-mono text-muted-foreground">key: {src.source_key}</span>
+                  <div className="flex items-center gap-3 px-5 py-4">
+                    <button
+                      className="flex items-center gap-3 flex-1 min-w-0 text-left hover:opacity-80 transition-opacity"
+                      onClick={() => toggleSource(src.id)}
+                    >
+                      <div className={`h-2 w-2 rounded-full flex-shrink-0 ${src.is_active ? "bg-emerald-400" : "bg-zinc-600"}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-semibold">{src.name}</span>
+                          <span className="text-[10px] font-mono bg-muted/50 text-muted-foreground px-1.5 py-0.5 rounded">
+                            {src.feed_type}
+                          </span>
+                          {src.source_key && (
+                            <span className="text-[10px] font-mono text-muted-foreground">key: {src.source_key}</span>
+                          )}
+                        </div>
+                        {src.last_import_at && (
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Última importación: {new Date(src.last_import_at).toLocaleString("es-AR")}
+                          </p>
                         )}
                       </div>
-                      {src.last_import_at && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Última importación: {new Date(src.last_import_at).toLocaleString("es-AR")}
-                        </p>
-                      )}
-                    </div>
-                    <ChevronRight className={`h-4 w-4 text-muted-foreground flex-shrink-0 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
-                  </button>
+                      <ChevronRight className={`h-4 w-4 text-muted-foreground flex-shrink-0 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                    </button>
+                    {src.is_active && src.url_template && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 shrink-0 text-xs h-7 px-2.5"
+                        disabled={isRunning}
+                        onClick={e => { e.stopPropagation(); runImport(src.id) }}
+                      >
+                        {isRunning
+                          ? <><RefreshCw className="h-3 w-3 animate-spin" />Corriendo...</>
+                          : <><Play className="h-3 w-3" />Correr ahora</>
+                        }
+                      </Button>
+                    )}
+                  </div>
 
                   {/* Expanded history */}
                   {isExpanded && (

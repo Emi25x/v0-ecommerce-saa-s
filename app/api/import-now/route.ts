@@ -138,9 +138,12 @@ export async function GET(request: Request) {
             // Check if product exists (include stock_by_source for merge)
             const { data: existing } = await supabase.from("products").select("id, source, stock_by_source").eq("sku", sku).single()
 
+            // Use source_key (short string) as bucket key — not UUID — so warehouse stock filters work correctly
+            const stockKey = source.source_key ?? source.id
+
             // Merge stock into the source's bucket
             const { stock_by_source, stock: totalStock } = mergeStockBySource(
-              existing?.stock_by_source, source.id, productData.stock
+              existing?.stock_by_source, stockKey, productData.stock
             )
             productData.stock = totalStock
             productData.stock_by_source = stock_by_source

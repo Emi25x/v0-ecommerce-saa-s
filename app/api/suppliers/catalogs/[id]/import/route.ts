@@ -248,11 +248,13 @@ export async function POST(
 
   // ── UPDATE existing products ───────────────────────────────────────────────
   if (toUpdate.length > 0 && overwriteMode !== "none") {
+    // Build patches for all rows that need updating
+    const patches: { id: string; patch: Record<string, any> }[] = []
+
     for (const row of toUpdate) {
       const existing = eanToProduct.get(row.ean!)
       if (!existing) continue
 
-      // Build update patch respecting overwrite_mode
       const patch: Record<string, any> = {}
       const shouldWrite = (field: string, newVal: any) => {
         if (newVal == null) return false
@@ -273,15 +275,24 @@ export async function POST(
       if (shouldWrite("price",    row.price))     patch.price     = row.price
       if (row.isbn && shouldWrite("isbn", row.isbn)) patch.isbn   = row.isbn
 
-      if (Object.keys(patch).length === 0) continue
+      if (Object.keys(patch).length > 0) {
+        patches.push({ id: existing.id, patch })
+      }
+    }
 
-      const { error: upErr } = await supabase
-        .from("products")
-        .update(patch)
-        .eq("id", existing.id)
-
-      if (upErr) errorCount++
-      else updatedCount++
+    // Run updates in parallel batches of 50 to avoid N serial round-trips
+    const PARALLEL = 50
+    for (let i = 0; i < patches.length; i += PARALLEL) {
+      const batch = patches.slice(i, i + PARALLEL)
+      const results = await Promise.allSettled(
+        batch.map(({ id, patch }) =>
+          supabase.from("products").update(patch).eq("id", id)
+        )
+      )
+      for (const res of results) {
+        if (res.status === "fulfilled" && !res.value.error) updatedCount++
+        else errorCount++
+      }
     }
   }
 
