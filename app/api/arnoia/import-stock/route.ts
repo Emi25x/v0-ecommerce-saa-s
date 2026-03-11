@@ -1,7 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeEan } from "@/lib/ean-utils"
-import Papa from "papaparse"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -42,34 +41,55 @@ export async function POST(request: NextRequest) {
       headers: { "User-Agent": "Mozilla/5.0 compatible" },
     })
     if (!fetchRes.ok) throw new Error(`HTTP ${fetchRes.status} fetching stock CSV`)
-    const csvText = await fetchRes.text()
+    const buffer  = Buffer.from(await fetchRes.arrayBuffer())
+    const csvText = buffer.toString("latin1")
 
-    // Parsear CSV con PapaParse (autodetectar delimiter)
-    const parsed = Papa.parse(csvText, {
-      header: true,
-      skipEmptyLines: true,
-      dynamicTyping: false,
-    })
-    const rows = parsed.data as any[]
-    console.log(`[ARNOIA-STOCK] Parsed ${rows.length} rows, headers: ${Object.keys(rows[0] || {}).slice(0, 5).join(", ")}`)
+    const lines = csvText.split("\n").filter(l => l.trim())
+    console.log(`[ARNOIA-STOCK] Descargado: ${lines.length} líneas`)
+    if (lines.length === 0) throw new Error("CSV vacío o sin datos")
 
-    if (rows.length === 0) throw new Error("CSV vacío o sin datos")
+    // Detectar delimiter
+    const firstLine = lines[0]
+    const semiCount  = (firstLine.match(/;/g)  || []).length
+    const pipeCount  = (firstLine.match(/\|/g) || []).length
+    const commaCount = (firstLine.match(/,/g)  || []).length
+    const delimiter  = pipeCount >= semiCount && pipeCount >= commaCount ? "|"
+      : semiCount >= commaCount ? ";" : ","
 
-    // Construir arrays EAN, stock, precio deduplicados
+    // Detectar si tiene encabezado: primera columna numérica → sin header
+    const firstCol = firstLine.split(delimiter)[0].replace(/['"]/g, "").trim()
+    const hasHeader = !/^[0-9]+$/.test(firstCol)
+    const startLine = hasHeader ? 1 : 0
+
+    let eanColIdx = 0, stockColIdx = 1, priceColIdx = -1
+    if (hasHeader) {
+      const headers = firstLine.split(delimiter).map(h => h.replace(/['"]/g, "").trim().toLowerCase())
+      eanColIdx   = headers.findIndex(h => ["ean", "ean13", "isbn", "gtin", "codigo"].includes(h))
+      stockColIdx = headers.findIndex(h => ["stock", "cantidad", "qty", "disponible"].includes(h))
+      priceColIdx = headers.findIndex(h => ["precio_sin_iva", "precio", "pvp", "price"].includes(h))
+      if (eanColIdx < 0)   eanColIdx   = 0
+      if (stockColIdx < 0) stockColIdx = 1
+    }
+
+    console.log(`[ARNOIA-STOCK] delimiter="${delimiter}" hasHeader=${hasHeader} eanCol=${eanColIdx} stockCol=${stockColIdx}`)
+
+    // Construir mapa EAN → {stock, price} deduplicado
     const eanMap = new Map<string, { stock: number; price: number | null }>()
 
-    for (const row of rows) {
-      const eanRaw = row["ean"] || row["EAN"] || row["ean13"] || row["EAN13"] || Object.values(row)[0]
-      const ean = normalizeEan(String(eanRaw || ""))
+    for (let i = startLine; i < lines.length; i++) {
+      const parts = lines[i].split(delimiter)
+      if (parts.length < 2) continue
+
+      const eanRaw = (parts[eanColIdx] ?? "").replace(/['"]/g, "").trim().replace(/\D/g, "")
+      const ean = normalizeEan(eanRaw)
       if (!ean || ean.length !== 13) continue
 
-      const stockRaw = row["stock"] || row["STOCK"] || row["Stock"] || row["cantidad"] || "0"
-      const priceRaw = row["precio_sin_iva"] || row["precio"] || row["PRECIO"] || row["pvp"] || null
+      const stockRaw = (parts[stockColIdx] ?? "").replace(/['"]/g, "").trim()
+      const priceRaw = priceColIdx >= 0 ? (parts[priceColIdx] ?? "").replace(/['"]/g, "").trim() : null
 
-      const stock = parseInt(String(stockRaw).replace(/\D/g, ""), 10) || 0
-      const price = priceRaw ? parseFloat(String(priceRaw).replace(",", ".")) || null : null
+      const stock = parseInt(stockRaw.replace(/\D/g, ""), 10) || 0
+      const price = priceRaw ? parseFloat(priceRaw.replace(",", ".")) || null : null
 
-      // Si EAN duplicado, sumar stock
       if (eanMap.has(ean)) {
         const existing = eanMap.get(ean)!
         eanMap.set(ean, { stock: existing.stock + stock, price: price ?? existing.price })

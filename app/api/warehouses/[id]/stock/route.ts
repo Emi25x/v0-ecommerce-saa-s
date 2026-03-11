@@ -123,6 +123,17 @@ export async function GET(
 
     if (prodErr) {
       console.error("[WAREHOUSE STOCK] Products query error:", prodErr.message)
+      // Return empty items but keep the count to help diagnose
+      return NextResponse.json({
+        warehouse,
+        items: [],
+        data_source: "products_error",
+        linked_sources: sourceNames,
+        source_keys: sourceKeys,
+        pagination: { total: totalCount ?? 0, page, page_size: PAGE_SIZE, total_pages: Math.ceil((totalCount ?? 0) / PAGE_SIZE) },
+        stats: { total_skus: totalCount ?? 0, total_units: 0, matched_skus: 0, unmatched_skus: 0 },
+        error: prodErr.message,
+      })
     }
 
     const prodItems = (prodData ?? []) as Array<{
@@ -261,15 +272,16 @@ async function catalogModeResponse({ supabase, warehouseId, warehouse, sourceNam
 }
 
 async function fetchProductMap(supabase: any, productIds: string[]) {
-  const productMap: Record<string, { id: string; ean: string | null; sku: string | null; title: string | null }> = {}
+  const productMap: Record<string, { id: string; sku: string | null; title: string | null }> = {}
   if (productIds.length === 0) return productMap
-  const { data: products } = await supabase
+  const { data: products, error } = await supabase
     .from("products")
-    .select("id, ean, sku, title")
+    .select("id, sku, title")
     .in("id", productIds)
+  if (error) console.error("[WAREHOUSE STOCK] fetchProductMap error:", error.message)
   for (const p of products ?? []) {
     if (!p.id) continue
-    productMap[p.id] = { id: p.id, ean: p.ean, sku: p.sku, title: p.title }
+    productMap[p.id] = { id: p.id, sku: p.sku, title: p.title }
   }
   return productMap
 }

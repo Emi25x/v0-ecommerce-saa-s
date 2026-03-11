@@ -31,9 +31,10 @@ export default function WarehouseDetailPage() {
   const [searchInput, setSearchInput] = useState("")
   const [page, setPage] = useState(1)
 
-  // Sources assignment
+  // Sources / suppliers assignment
   const [allSources, setAllSources] = useState<any[]>([])
-  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
+  const [allSuppliers, setAllSuppliers] = useState<any[]>([])
+  const [selectedSupplierIds, setSelectedSupplierIds] = useState<string[]>([])
   const [showSourcePanel, setShowSourcePanel] = useState(false)
   const [assigning, setAssigning] = useState(false)
   const [assignResult, setAssignResult] = useState<string | null>(null)
@@ -67,29 +68,52 @@ export default function WarehouseDetailPage() {
     fetchData(page, search)
   }, [page, search, fetchData])
 
-  // Load all import sources when panel opens
+  // Load suppliers + import sources when panel opens
   useEffect(() => {
     if (!showSourcePanel) return
-    fetch("/api/inventory/sources")
-      .then((r) => r.json())
-      .then((d) => {
-        const srcs = Array.isArray(d) ? d : d.sources ?? d.data ?? []
-        setAllSources(srcs)
-        // Pre-select those already linked to this warehouse
-        const linked = srcs.filter((s: any) => s.warehouse_id === warehouseId).map((s: any) => s.id)
-        setSelectedSourceIds(linked)
-      })
-      .catch(() => {})
+    Promise.all([
+      fetch("/api/inventory/sources").then(r => r.json()),
+      fetch("/api/suppliers").then(r => r.json()),
+    ]).then(([srcData, supData]) => {
+      const srcs = Array.isArray(srcData) ? srcData : srcData.sources ?? srcData.data ?? []
+      const sups = supData.suppliers ?? []
+      setAllSources(srcs)
+      setAllSuppliers(sups)
+      // Pre-select suppliers whose sources are already linked to this warehouse
+      const linkedSourceIds = new Set(srcs.filter((s: any) => s.warehouse_id === warehouseId).map((s: any) => s.id))
+      const preSelected = sups
+        .filter((sup: any) => {
+          const code = (sup.code ?? sup.name ?? "").toLowerCase()
+          return srcs.some((s: any) =>
+            linkedSourceIds.has(s.id) &&
+            (s.name?.toLowerCase().includes(code) || s.source_key?.toLowerCase().includes(code))
+          )
+        })
+        .map((sup: any) => sup.id)
+      setSelectedSupplierIds(preSelected)
+    }).catch(() => {})
   }, [showSourcePanel, warehouseId])
 
   async function handleAssignSources() {
     setAssigning(true)
     setAssignResult(null)
     try {
+      // Resolve selected supplier IDs → matching import source IDs
+      const sourceIds = allSources
+        .filter((s: any) =>
+          selectedSupplierIds.some((supId) => {
+            const sup = allSuppliers.find((p: any) => p.id === supId)
+            if (!sup) return false
+            const code = (sup.code ?? sup.name ?? "").toLowerCase()
+            return s.name?.toLowerCase().includes(code) || s.source_key?.toLowerCase().includes(code)
+          })
+        )
+        .map((s: any) => s.id)
+
       const res = await fetch(`/api/warehouses/${warehouseId}/assign-sources`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source_ids: selectedSourceIds }),
+        body: JSON.stringify({ source_ids: sourceIds }),
       })
       const d = await res.json()
       setAssignResult(d.message ?? (d.error ? `Error: ${d.error}` : "Listo"))
@@ -176,36 +200,43 @@ export default function WarehouseDetailPage() {
       {showSourcePanel && (
         <Card className="p-5 space-y-4 border-dashed">
           <div>
-            <p className="text-sm font-medium">Fuentes de importación para este almacén</p>
+            <p className="text-sm font-medium">Proveedores para este almacén</p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Las fuentes seleccionadas alimentan el stock de este almacén. Al guardar, se hace backfill de los productos existentes.
+              Las fuentes del proveedor seleccionado alimentarán el stock de este almacén.
             </p>
           </div>
-          {allSources.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No hay fuentes configuradas.</p>
+          {allSuppliers.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No hay proveedores configurados.</p>
           ) : (
             <div className="space-y-2 max-h-48 overflow-y-auto">
-              {allSources.map((s: any) => (
-                <label key={s.id} className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded"
-                    checked={selectedSourceIds.includes(s.id)}
-                    onChange={(e) =>
-                      setSelectedSourceIds((prev) =>
-                        e.target.checked ? [...prev, s.id] : prev.filter((id) => id !== s.id)
-                      )
-                    }
-                  />
-                  <span className="text-sm">{s.name}</span>
-                  {s.warehouse_id === warehouseId && (
-                    <Badge variant="outline" className="text-xs text-green-600 border-green-300">ya vinculada</Badge>
-                  )}
-                  {s.warehouse_id && s.warehouse_id !== warehouseId && (
-                    <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">otro almacén</Badge>
-                  )}
-                </label>
-              ))}
+              {allSuppliers.map((sup: any) => {
+                const code = (sup.code ?? sup.name ?? "").toLowerCase()
+                const matchingSources = allSources.filter((s: any) =>
+                  s.name?.toLowerCase().includes(code) || s.source_key?.toLowerCase().includes(code)
+                )
+                const linkedCount = matchingSources.filter((s: any) => s.warehouse_id === warehouseId).length
+                return (
+                  <label key={sup.id} className="flex items-center gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded"
+                      checked={selectedSupplierIds.includes(sup.id)}
+                      onChange={(e) =>
+                        setSelectedSupplierIds((prev) =>
+                          e.target.checked ? [...prev, sup.id] : prev.filter((id) => id !== sup.id)
+                        )
+                      }
+                    />
+                    <span className="text-sm font-medium">{sup.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {matchingSources.length} fuente{matchingSources.length !== 1 ? "s" : ""}
+                    </span>
+                    {linkedCount > 0 && (
+                      <Badge variant="outline" className="text-xs text-green-600 border-green-300">vinculado</Badge>
+                    )}
+                  </label>
+                )
+              })}
             </div>
           )}
           {assignResult && (
