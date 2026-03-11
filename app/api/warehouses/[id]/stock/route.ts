@@ -197,7 +197,7 @@ async function catalogModeResponse({ supabase, warehouseId, warehouse, sourceNam
       { count: "exact" }
     )
     .eq("warehouse_id", warehouseId)
-    .order("stock_quantity", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
     .range(offset, offset + PAGE_SIZE - 1)
 
   if (search) {
@@ -207,7 +207,18 @@ async function catalogModeResponse({ supabase, warehouseId, warehouse, sourceNam
   const { data: catItems, count: catTotal, error: catErr } = await catQ
 
   if (catErr) {
-    console.error("[WAREHOUSE STOCK] Catalog query error:", catErr.message)
+    console.error("[WAREHOUSE STOCK] Catalog query error:", catErr.message, catErr.code, catErr.details)
+    // Return error info visible in response instead of silently returning empty items
+    return NextResponse.json({
+      warehouse,
+      items: [],
+      data_source: "catalog_error",
+      catalog_error: catErr.message,
+      linked_sources: sourceNames,
+      source_keys: [],
+      pagination: { total: 0, page, page_size: PAGE_SIZE, total_pages: 0 },
+      stats: { total_skus: 0, total_units: 0, matched_skus: 0, unmatched_skus: 0 },
+    })
   }
 
   const [{ count: catTotalCount }, { count: matchedCount }] = await Promise.all([

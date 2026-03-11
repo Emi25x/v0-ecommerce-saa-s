@@ -55,7 +55,7 @@ function parseRow(row: Record<string, any>): ParsedRow {
     author:    g("Autor","autor","Author","author","AUTOR"),
     publisher: g("Editorial","editorial","Publisher","publisher","EDITORIAL","Sello","sello"),
     price:     parseFloat(g("Precio","precio","Price","price","PVP","pvp") ?? "0") || null,
-    stock:     parseInt(g("Stock","stock","Cantidad","cantidad","QTY","qty") ?? "0") || null,
+    stock:     (() => { const v = parseInt(g("Stock","stock","Cantidad","cantidad","QTY","qty") ?? "0", 10); return isNaN(v) ? 0 : v })(),
     language:  g("Idioma","idioma","Language","language"),
     pages:     parseInt(g("Paginas","paginas","Pages","pages","PAGINAS") ?? "0") || null,
     binding:   g("Encuadernacion","encuadernacion","Binding","binding","Formato","formato"),
