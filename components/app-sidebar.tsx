@@ -578,6 +578,17 @@ export function AppSidebar() {
           {shopifyExpanded && (
             <div className="ml-8 mt-1 flex flex-col gap-1">
               <Link
+                href="/shopify/products"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/shopify/products")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <Package className="h-4 w-4" />
+                <span>Productos</span>
+              </Link>
+              <Link
                 href="/shopify/orders"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                   pathname?.startsWith("/shopify/orders")

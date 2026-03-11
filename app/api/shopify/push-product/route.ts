@@ -244,7 +244,7 @@ export async function POST(req: NextRequest) {
     ].filter(m => m.value !== "")
 
     // ── 7. Payload del producto Shopify ────────────────────────────────────
-    const variantSku     = product.isbn ?? product.ean ?? product.sku ?? cleanEan
+    const variantSku     = product.sku ?? product.isbn ?? product.ean ?? cleanEan
     const variantBarcode = product.ean  ?? product.isbn ?? cleanEan
     const weightG        = product.canonical_weight_g ?? 0
 

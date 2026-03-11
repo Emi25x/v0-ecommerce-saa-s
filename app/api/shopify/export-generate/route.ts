@@ -182,7 +182,7 @@ export async function POST(request: NextRequest) {
     const { data: products, error: prodError } = await supabase
       .from("products")
       .select(
-        "id, title, description, brand, sku, ean, isbn, price, cost_price, " +
+        "id, title, description, brand, sku, ean, isbn, price, cost_price, stock, " +
         "canonical_weight_g, image_url, category, custom_fields, " +
         "height, width, thickness, pages, author, language, binding, " +
         "ibic_subjects, edition_date, year_edition, subject, course, condition"
@@ -227,7 +227,7 @@ export async function POST(request: NextRequest) {
       const variantSku = p.sku || p.ean || p.isbn || ""
       const handle     = slugify(p.title ?? barcode ?? "producto")
       const weightG    = p.canonical_weight_g ?? ""
-      const stock      = stockMap[p.id] ?? 0
+      const stock      = stockMap[p.id] ?? p.stock ?? 0
       const price      = p.price != null ? String(p.price) : ""
       const precioArs  = customFields.precio_ars != null ? String(customFields.precio_ars) : price
 
