@@ -195,6 +195,13 @@ export async function POST(request: NextRequest) {
         console.error("[v0] Failed to save relationship:", relationshipError)
       } else {
         console.log("[v0] Relationship saved successfully")
+
+        // Marcar la publicación original como "ya tiene catálogo"
+        // (el trigger de DB lo hace también, esto es belt-and-suspenders)
+        await supabase
+          .from("ml_publications")
+          .update({ catalog_linked_item_id: createData.id })
+          .eq("ml_item_id", product_id)
       }
     } catch (dbError) {
       console.error("[v0] Database error:", dbError)

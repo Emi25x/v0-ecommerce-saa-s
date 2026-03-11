@@ -110,6 +110,7 @@ interface Publication {
   gtin: string | null
   catalog_listing_eligible: boolean | null
   catalog_listing: boolean | null
+  catalog_linked_item_id: string | null
   product_id: string | null
   permalink: string | null
   meli_weight_g: number | null
@@ -1495,6 +1496,20 @@ export default function MLPublicationsPage() {
                                         </div>
                                       </TooltipTrigger>
                                       <TooltipContent side="left">Ya está en catálogo</TooltipContent>
+                                    </Tooltip>
+                                  ) : row.catalog_linked_item_id ? (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div>
+                                          <DropdownMenuItem disabled className="gap-2 opacity-50">
+                                            <ShoppingCart className="h-4 w-4" />
+                                            Opt-in catálogo
+                                          </DropdownMenuItem>
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="left">
+                                        Ya tiene catálogo asociado ({row.catalog_linked_item_id})
+                                      </TooltipContent>
                                     </Tooltip>
                                   ) : row.catalog_listing_eligible ? (
                                     <DropdownMenuItem

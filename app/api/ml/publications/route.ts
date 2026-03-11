@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
         head(qb => qb.is("product_id", null)),
         head(qb => qb.lte("current_stock", 0)),
         head(qb => qb.gt("current_stock", 0)),
-        head(qb => qb.eq("catalog_listing_eligible", true).or("catalog_listing.is.null,catalog_listing.eq.false")),
+        head(qb => qb.eq("catalog_listing_eligible", true).or("catalog_listing.is.null,catalog_listing.eq.false").is("catalog_linked_item_id", null)),
       ])
 
       return NextResponse.json({
@@ -80,11 +80,11 @@ export async function GET(req: NextRequest) {
       if (accountId)     qb = qb.eq("account_id", accountId)
       if (status)        qb = qb.eq("status", status)
       if (sinProducto)   qb = qb.is("product_id", null)
-      if (soloElegibles) qb = qb.eq("catalog_listing_eligible", true).or("catalog_listing.is.null,catalog_listing.eq.false")
+      if (soloElegibles) qb = qb.eq("catalog_listing_eligible", true).or("catalog_listing.is.null,catalog_listing.eq.false").is("catalog_linked_item_id", null)
       if (sinStock)      qb = qb.lte("current_stock", 0)
       if (conStock)      qb = qb.gt("current_stock", 0)
       if (q)             qb = qb.or(`title.ilike.%${q}%,ml_item_id.ilike.%${q}%,sku.ilike.%${q}%`)
-      if (alertsMode === "eligible_catalog") qb = qb.eq("catalog_listing_eligible", true).eq("status", "active").or("catalog_listing.is.null,catalog_listing.eq.false")
+      if (alertsMode === "eligible_catalog") qb = qb.eq("catalog_listing_eligible", true).eq("status", "active").or("catalog_listing.is.null,catalog_listing.eq.false").is("catalog_linked_item_id", null)
       if (alertsMode === "under_review")     qb = qb.eq("status", "under_review")
       return qb
     }
@@ -99,7 +99,7 @@ export async function GET(req: NextRequest) {
     let dataQuery = supabase
       .from("ml_publications")
       .select(
-        "id, ml_item_id, account_id, title, status, price, current_stock, sku, ean, isbn, gtin, catalog_listing_eligible, catalog_listing, product_id, permalink, meli_weight_g, last_sync_at, updated_at"
+        "id, ml_item_id, account_id, title, status, price, current_stock, sku, ean, isbn, gtin, catalog_listing_eligible, catalog_listing, catalog_linked_item_id, product_id, permalink, meli_weight_g, last_sync_at, updated_at"
       )
       .range(page * limit, (page + 1) * limit - 1)
 
