@@ -43,6 +43,10 @@ import {
   ScanLine,
   AlertCircle,
   Layers,
+  History,
+  TrendingDown,
+  ShoppingBag,
+  X,
 } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
@@ -189,8 +193,53 @@ export default function MLPublicationsPage() {
   const [closingItem, setClosingItem]         = useState<string | null>(null)
   const [mlStats, setMlStats]                 = useState<Record<string, { sold_quantity: number; listing_type_id: string | null }>>( {})
 
+  // ── Historial de stock ──────────────────────────────────────────────────
+  const [historialItem,    setHistorialItem]    = useState<Publication | null>(null)
+  const [historialLoading, setHistorialLoading] = useState(false)
+  const [historialData,    setHistorialData]    = useState<{
+    stock_history: {
+      id: string
+      old_quantity: number | null
+      new_quantity: number
+      changed_by_user_id: string | null
+      source: string
+      notes: string | null
+      created_at: string
+    }[]
+    sales: {
+      order_id: number
+      status: string
+      date: string
+      qty_sold: number
+      unit_price: number
+    }[]
+  } | null>(null)
+
   const searchRef = useRef(search)
   searchRef.current = search
+
+  // ── Historial: fetch al abrir el modal ────────────────────────────────
+
+  const openHistorial = useCallback(async (pub: Publication) => {
+    setHistorialItem(pub)
+    setHistorialData(null)
+    setHistorialLoading(true)
+    try {
+      const params = new URLSearchParams()
+      if (pub.account_id) params.set("account_id", pub.account_id)
+      const res = await fetch(
+        `/api/mercadolibre/publications/${pub.ml_item_id}/history?${params}`
+      )
+      if (res.ok) {
+        const data = await res.json()
+        setHistorialData(data)
+      }
+    } catch {
+      // silencioso - el modal muestra estado vacío
+    } finally {
+      setHistorialLoading(false)
+    }
+  }, [])
 
   // ── Load accounts ──────────────────────────────────────────────────────
 
@@ -1500,6 +1549,15 @@ export default function MLPublicationsPage() {
                                     {verifying === row.ml_item_id ? "Verificando..." : "Verificar con ML"}
                                   </DropdownMenuItem>
 
+                                  {/* Historial */}
+                                  <DropdownMenuItem
+                                    className="gap-2"
+                                    onClick={() => openHistorial(row)}
+                                  >
+                                    <History className="h-4 w-4" />
+                                    Historial
+                                  </DropdownMenuItem>
+
                                 </DropdownMenuContent>
                               </DropdownMenu>
 
@@ -1628,8 +1686,183 @@ export default function MLPublicationsPage() {
         )}
 
       </div>
+
+      {/* ── Modal Historial ───────────────────────────────────────────────── */}
+      {historialItem && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setHistorialItem(null)}
+        >
+          <div
+            className="bg-background border rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between gap-4 p-5 border-b shrink-0">
+              <div className="space-y-0.5 min-w-0">
+                <div className="flex items-center gap-2">
+                  <History className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <h2 className="font-semibold truncate">{historialItem.title}</h2>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {historialItem.ml_item_id} · últimos 7 días
+                </p>
+              </div>
+              <button
+                onClick={() => setHistorialItem(null)}
+                className="text-muted-foreground hover:text-foreground shrink-0 p-1"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="overflow-y-auto flex-1 p-5 space-y-6">
+              {historialLoading ? (
+                <div className="text-center text-sm text-muted-foreground py-10">
+                  Cargando historial...
+                </div>
+              ) : (
+                <>
+                  {/* ── Cambios de stock ────────────────────────────────── */}
+                  <section>
+                    <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                      <TrendingDown className="h-4 w-4 text-blue-400" />
+                      Cambios de stock
+                    </h3>
+                    {!historialData?.stock_history?.length ? (
+                      <p className="text-xs text-muted-foreground">
+                        Sin cambios registrados en los últimos 7 días.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {historialData.stock_history.map((entry) => (
+                          <div
+                            key={entry.id}
+                            className="flex items-start justify-between gap-3 text-sm bg-muted/30 rounded-lg px-3 py-2.5"
+                          >
+                            <div className="space-y-0.5 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">
+                                  {SOURCE_LABEL[entry.source] ?? entry.source}
+                                </span>
+                                {entry.notes && (
+                                  <span className="text-xs text-muted-foreground truncate">
+                                    {entry.notes}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <span>
+                                  {entry.old_quantity != null
+                                    ? `${entry.old_quantity} → `
+                                    : ""}
+                                  <span
+                                    className={
+                                      entry.new_quantity === 0
+                                        ? "text-red-400 font-medium"
+                                        : "text-foreground font-medium"
+                                    }
+                                  >
+                                    {entry.new_quantity}
+                                  </span>
+                                </span>
+                              </div>
+                            </div>
+                            <time className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+                              {new Date(entry.created_at).toLocaleString("es-AR", {
+                                day:    "2-digit",
+                                month:  "2-digit",
+                                hour:   "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </time>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+
+                  {/* ── Ventas de la semana ──────────────────────────────── */}
+                  <section>
+                    <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                      <ShoppingBag className="h-4 w-4 text-green-400" />
+                      Ventas
+                      {historialData?.sales?.length ? (
+                        <span className="text-xs text-muted-foreground font-normal">
+                          ({historialData.sales.reduce((s, o) => s + o.qty_sold, 0)} unidades
+                          {" "}· {historialData.sales.length} orden{historialData.sales.length !== 1 ? "es" : ""})
+                        </span>
+                      ) : null}
+                    </h3>
+                    {!historialData?.sales?.length ? (
+                      <p className="text-xs text-muted-foreground">
+                        Sin ventas registradas en los últimos 7 días.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {historialData.sales.map((sale) => (
+                          <div
+                            key={sale.order_id}
+                            className="flex items-center justify-between gap-3 text-sm bg-muted/30 rounded-lg px-3 py-2.5"
+                          >
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">{sale.qty_sold} u.</span>
+                                <span className="text-muted-foreground">×</span>
+                                <span>{fmt(sale.unit_price)}</span>
+                                <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                  sale.status === "paid"
+                                    ? "bg-green-500/15 text-green-400"
+                                    : "bg-yellow-500/15 text-yellow-400"
+                                }`}>
+                                  {ORDER_STATUS_LABEL[sale.status] ?? sale.status}
+                                </span>
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                Orden #{sale.order_id}
+                              </p>
+                            </div>
+                            <time className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+                              {new Date(sale.date).toLocaleString("es-AR", {
+                                day:    "2-digit",
+                                month:  "2-digit",
+                                hour:   "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </time>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
     </TooltipProvider>
   )
+}
+
+// ── Label maps ────────────────────────────────────────────────────────────────
+
+const SOURCE_LABEL: Record<string, string> = {
+  manual:          "Manual",
+  bulk_update:     "Bulk update",
+  webhook_sold:    "Venta (webhook)",
+  cron_reprice:    "Repricing",
+  import:          "Importación",
+  sync_related:    "Sync relacionada",
+}
+
+const ORDER_STATUS_LABEL: Record<string, string> = {
+  paid:        "Pagado",
+  confirmed:   "Confirmado",
+  cancelled:   "Cancelado",
+  invalid:     "Inválido",
 }
 
 // ── BadgeCount sub-component ──────────────────────────────────────────────

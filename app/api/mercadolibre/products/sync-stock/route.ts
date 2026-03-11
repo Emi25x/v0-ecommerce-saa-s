@@ -22,7 +22,22 @@ export async function POST(request: NextRequest) {
 
     console.log("[v0] Syncing stock for product:", product_id, "New quantity:", new_quantity)
 
-    // Actualizar el producto principal
+    const supabase = await createClient()
+
+    // Obtener stock actual y account_id antes de actualizar (para el historial)
+    const { data: pubData } = await supabase
+      .from("ml_publications")
+      .select("current_stock, account_id")
+      .eq("ml_item_id", product_id)
+      .maybeSingle()
+
+    const oldQuantity = pubData?.current_stock ?? null
+    const accountId   = pubData?.account_id ?? null
+
+    // Obtener usuario autenticado para el historial
+    const { data: { user: authUser } } = await supabase.auth.getUser()
+
+    // Actualizar el producto principal en ML
     const updateResponse = await fetch(`${ML_API_BASE}/items/${product_id}`, {
       method: "PUT",
       headers: {
@@ -40,12 +55,20 @@ export async function POST(request: NextRequest) {
       throw new Error("Failed to update product stock")
     }
 
-    const updateData = await updateResponse.json()
+    await updateResponse.json()
     console.log("[v0] Product stock updated successfully")
 
-    // Buscar publicaciones relacionadas en la base de datos
-    const supabase = await createClient()
+    // Registrar en historial de stock
+    await supabase.from("ml_stock_history").insert({
+      ml_item_id:          product_id,
+      account_id:          accountId,
+      old_quantity:        oldQuantity,
+      new_quantity:        new_quantity,
+      changed_by_user_id:  authUser?.id ?? null,
+      source:              "manual",
+    })
 
+    // Buscar publicaciones relacionadas en la base de datos
     const { data: relationships, error: relationshipError } = await supabase
       .from("listing_relationships")
       .select("*")
@@ -80,11 +103,21 @@ export async function POST(request: NextRequest) {
           if (syncResponse.ok) {
             console.log("[v0] Successfully synced stock with:", relatedId)
 
-            // Guardar log de sincronización
+            // Guardar log de sincronización (tabla legacy + historial nuevo)
             await supabase.from("stock_sync_log").insert({
-              listing_id: relatedId,
+              listing_id:   relatedId,
               new_quantity: new_quantity,
-              source: "manual_sync",
+              source:       "manual_sync",
+            })
+
+            await supabase.from("ml_stock_history").insert({
+              ml_item_id:          relatedId,
+              account_id:          accountId,
+              old_quantity:        null,
+              new_quantity:        new_quantity,
+              changed_by_user_id:  authUser?.id ?? null,
+              source:              "sync_related",
+              notes:               `Sincronizado desde ${product_id}`,
             })
           } else {
             console.error("[v0] Failed to sync stock with:", relatedId)
