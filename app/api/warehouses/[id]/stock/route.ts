@@ -92,7 +92,8 @@ export async function GET(
     // Construir queries según si hay datos de stock_by_source o no
     let prodQ = supabase
       .from("products")
-      .select("id, ean, sku, title, stock, cost_price, stock_by_source")
+      .select("id, sku, title, stock, cost_price, stock_by_source")
+      .gt("stock", 0)
       .order("stock", { ascending: false })
       .range(offset, offset + PAGE_SIZE - 1)
 
@@ -101,18 +102,18 @@ export async function GET(
       .select("*", { count: "exact", head: true })
 
     if (hasSourceData) {
+      // Filtrar por source_key en stock_by_source + solo los que tienen stock > 0 en esa fuente
       prodQ = prodQ.or(jsonbOrFilter)
-      countQ = countQ.or(jsonbOrFilter)
+      countQ = countQ.gt("stock", 0).or(jsonbOrFilter)
     } else {
-      // Fallback: mostrar todos los productos con stock > 0
+      // Fallback: todos los productos con stock > 0
       // (stock_by_source aún no fue populado para estas fuentes)
-      prodQ = prodQ.gt("stock", 0)
       countQ = countQ.gt("stock", 0)
     }
 
     if (search) {
-      prodQ = prodQ.or(`title.ilike.%${search}%,ean.ilike.%${search}%,sku.ilike.%${search}%`)
-      countQ = countQ.or(`title.ilike.%${search}%,ean.ilike.%${search}%,sku.ilike.%${search}%`)
+      prodQ = prodQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%`)
+      countQ = countQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%`)
     }
 
     const [{ data: prodData, error: prodErr }, { count: totalCount }] = await Promise.all([prodQ, countQ])
@@ -122,7 +123,7 @@ export async function GET(
     }
 
     const prodItems = (prodData ?? []) as Array<{
-      id: string; ean: string | null; sku: string | null; title: string | null
+      id: string; sku: string | null; title: string | null
       stock: number | null; cost_price: number | null; stock_by_source: Record<string, number> | null
     }>
 
@@ -131,18 +132,19 @@ export async function GET(
     const mlMap = await fetchMLMap(supabase, productIds)
 
     const items = prodItems.map((p) => {
-      // Calcular stock: sumar los values de cada source_key en stock_by_source
+      // Calcular stock específico de las fuentes del almacén
       const sourceStock = sourceKeys.reduce((sum: number, k: string) => sum + (p.stock_by_source?.[k] ?? 0), 0)
+      const displayStock = sourceStock > 0 ? sourceStock : (p.stock ?? 0)
       return {
         id: `prod_${p.id}`,
-        supplier_ean: p.ean,
+        supplier_ean: p.sku,
         supplier_sku: p.sku,
         title: p.title ?? "",
-        stock_quantity: sourceStock > 0 ? sourceStock : (p.stock ?? 0),
+        stock_quantity: displayStock,
         price_original: p.cost_price,
         matched_by: "products",
         product_id: p.id,
-        products: { id: p.id, ean: p.ean, sku: p.sku, title: p.title },
+        products: { id: p.id, ean: p.sku, sku: p.sku, title: p.title },
         ml_publications: mlMap[p.id] ?? [],
       }
     })
@@ -193,7 +195,7 @@ async function catalogModeResponse({ supabase, warehouseId, warehouse, sourceNam
     .from("supplier_catalog_items")
     .select(
       `id, supplier_ean, supplier_sku, title, stock_quantity, price_original, matched_by, product_id,
-       products:product_id (id, ean, sku, title)`,
+       products:product_id (id, sku, title)`,
       { count: "exact" }
     )
     .eq("warehouse_id", warehouseId)
