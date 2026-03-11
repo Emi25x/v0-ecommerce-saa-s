@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { createBrowserClient } from "@supabase/ssr"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,6 +17,9 @@ import { INTERNAL_FIELDS, generateSuggestedMapping, validateMapping, CUSTOM_FIEL
 
 export default function NewSourcePage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const editId = searchParams.get("edit") // present when editing an existing source
+  const isEditMode = !!editId
   const [loading, setLoading] = useState(false)
 
   // Campos del formulario
@@ -56,6 +59,54 @@ export default function NewSourcePage() {
       .then((data: any) => setWarehouses(Array.isArray(data.warehouses) ? data.warehouses : []))
       .catch(() => {})
   }, [])
+
+  // Si estamos en modo edición, cargar los datos de la fuente existente
+  useEffect(() => {
+    if (!editId) return
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    )
+    supabase.from("import_sources").select("*").eq("id", editId).single()
+      .then(({ data, error }) => {
+        if (error || !data) return
+        setName(data.name ?? "")
+        setDescription(data.description ?? "")
+        setUrlTemplate(data.url_template ?? "")
+        setAuthType(data.auth_type ?? "none")
+        setFeedType(data.feed_type ?? "catalog")
+        setIsActive(data.is_active ?? true)
+        setWarehouseId(data.warehouse_id ?? "none")
+
+        // Credenciales
+        const creds = data.credentials ?? {}
+        if (data.auth_type === "basic_auth") {
+          setUsername(creds.username ?? "")
+          setPassword(creds.password ?? "")
+        } else if (data.auth_type === "bearer_token") {
+          setBearerToken(creds.token ?? "")
+        } else if (data.auth_type === "query_params" && creds.params) {
+          setQueryParamsList(
+            Object.entries(creds.params).map(([key, value]) => ({ key, value: String(value) }))
+          )
+        }
+
+        // Column mapping — soportar formato plano y { delimiter, mappings }
+        const cm = data.column_mapping ?? {}
+        const storedMappings: Record<string, string> = cm.mappings ?? cm
+        const storedDelimiter: string = cm.delimiter ?? ","
+        const validMappings: Record<string, string> = {}
+        for (const [k, v] of Object.entries(storedMappings)) {
+          if (typeof v === "string") validMappings[k] = v
+        }
+        if (Object.keys(validMappings).length > 0) {
+          setMapping(validMappings)
+          setDetectedHeaders(Object.keys(validMappings))
+          setDetectedDelimiter(storedDelimiter)
+          setShowMappingWizard(true)
+        }
+      })
+  }, [editId])
 
   const handleDetectColumns = async () => {
     if (!urlTemplate) {
@@ -197,28 +248,39 @@ export default function NewSourcePage() {
         warehouse_id: warehouseId && warehouseId !== "none" ? warehouseId : null,
       }
 
-      let { error } = await supabase.from("import_sources").insert(insertPayload)
-
-      // Fallback: column not yet migrated — retry without warehouse_id
-      if (error?.message?.includes("warehouse_id")) {
-        console.warn("[new-source] warehouse_id column missing, run migration 050. Retrying without it.")
-        const { warehouse_id: _wh, ...payloadWithoutWh } = insertPayload as any
-        ;({ error } = await supabase.from("import_sources").insert(payloadWithoutWh))
+      let error: any
+      if (isEditMode) {
+        // UPDATE
+        ;({ error } = await supabase.from("import_sources").update(insertPayload).eq("id", editId!))
+        if (error?.message?.includes("warehouse_id")) {
+          const { warehouse_id: _wh, ...payloadWithoutWh } = insertPayload as any
+          ;({ error } = await supabase.from("import_sources").update(payloadWithoutWh).eq("id", editId!))
+        }
+      } else {
+        // INSERT
+        ;({ error } = await supabase.from("import_sources").insert(insertPayload))
+        if (error?.message?.includes("warehouse_id")) {
+          console.warn("[new-source] warehouse_id column missing, run migration 050. Retrying without it.")
+          const { warehouse_id: _wh, ...payloadWithoutWh } = insertPayload as any
+          ;({ error } = await supabase.from("import_sources").insert(payloadWithoutWh))
+        }
       }
-      
+
       if (error) throw error
-      
+
       toast({
-        title: "Fuente creada",
-        description: "La fuente de importación se ha creado correctamente"
+        title: isEditMode ? "Fuente actualizada" : "Fuente creada",
+        description: isEditMode
+          ? "Los cambios se guardaron correctamente"
+          : "La fuente de importación se ha creado correctamente"
       })
-      
-      router.push("/inventory/sources")
+
+      router.push(isEditMode ? `/inventory/sources/${editId}` : "/inventory/sources")
     } catch (error: any) {
-      console.error("[v0] Error creating source:", error)
+      console.error("[v0] Error saving source:", error)
       toast({
         title: "Error",
-        description: error.message || "No se pudo crear la fuente",
+        description: error.message || (isEditMode ? "No se pudo actualizar la fuente" : "No se pudo crear la fuente"),
         variant: "destructive"
       })
     } finally {
@@ -239,9 +301,11 @@ export default function NewSourcePage() {
       
       <Card>
         <CardHeader>
-          <CardTitle>Nueva Fuente de Importación</CardTitle>
+          <CardTitle>{isEditMode ? "Editar Fuente de Importación" : "Nueva Fuente de Importación"}</CardTitle>
           <CardDescription>
-            Configura una nueva fuente para importar productos desde CSV/API externa
+            {isEditMode
+              ? "Modificá la configuración de esta fuente de importación"
+              : "Configura una nueva fuente para importar productos desde CSV/API externa"}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -661,7 +725,7 @@ export default function NewSourcePage() {
             <div className="flex gap-4">
               <Button type="submit" disabled={loading}>
                 <Save className="mr-2 h-4 w-4" />
-                {loading ? "Guardando..." : "Guardar Fuente"}
+                {loading ? "Guardando..." : isEditMode ? "Guardar Cambios" : "Guardar Fuente"}
               </Button>
               <Button
                 type="button"
