@@ -28,7 +28,7 @@ interface ShopifyStore {
   is_active: boolean
   vendor: string | null
   product_category: string | null
-  price_source: "products.price" | "product_prices"
+  price_source: "products.price" | "product_prices" | "custom_fields_precio_ars"
   price_list_id: string | null
   default_warehouse_id: string | null
   sucursal_stock_code: string | null
@@ -406,8 +406,9 @@ export default function ShopifyConfigPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="products.price">Precio del producto</SelectItem>
+                    <SelectItem value="products.price">Precio del producto (EUR)</SelectItem>
                     <SelectItem value="product_prices">Motor de pricing (lista de precios)</SelectItem>
+                    <SelectItem value="custom_fields_precio_ars">Precio en pesos ARS (Libral Argentina)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

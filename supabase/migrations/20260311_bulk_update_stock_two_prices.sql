@@ -1,12 +1,13 @@
 -- bulk_update_stock_two_prices
--- Actualiza stock, cost_price (precio en divisa extranjera) y price (precio de venta local)
--- Usado por fuentes como Libral Argentina que proveen dos columnas de precio.
+-- Para fuentes como Libral Argentina que proveen:
+--   precio_euros  → products.price          (PVP en EUR, precio base del sistema)
+--   pesos_argentinos → products.custom_fields.precio_ars (PVP en ARS, exclusivo del almacén AR)
 
 CREATE OR REPLACE FUNCTION bulk_update_stock_two_prices(
   p_eans        TEXT[],
   p_stocks      INT[],
-  p_cost_prices NUMERIC[],
-  p_prices      NUMERIC[]
+  p_prices      NUMERIC[],   -- PVP en EUR → products.price
+  p_prices_ars  NUMERIC[]    -- PVP en ARS → custom_fields.precio_ars
 )
 RETURNS INT
 LANGUAGE plpgsql
@@ -24,21 +25,24 @@ BEGIN
 
   WITH input AS (
     SELECT
-      p_eans[i]        AS ean,
-      p_stocks[i]      AS stock,
-      p_cost_prices[i] AS cost_price,
-      p_prices[i]      AS price
+      p_eans[i]       AS ean,
+      p_stocks[i]     AS stock,
+      p_prices[i]     AS price,
+      p_prices_ars[i] AS precio_ars
     FROM generate_series(1, v_total) AS i
   ),
   updated AS (
     UPDATE products p
     SET
-      stock      = input.stock,
-      cost_price = CASE WHEN input.cost_price IS NOT NULL AND input.cost_price > 0
-                        THEN input.cost_price ELSE p.cost_price END,
-      price      = CASE WHEN input.price IS NOT NULL AND input.price > 0
-                        THEN input.price      ELSE p.price      END,
-      updated_at = NOW()
+      stock        = input.stock,
+      price        = CASE WHEN input.price IS NOT NULL AND input.price > 0
+                          THEN input.price ELSE p.price END,
+      custom_fields = jsonb_set(
+                        COALESCE(p.custom_fields, '{}'::jsonb),
+                        '{precio_ars}',
+                        to_jsonb(input.precio_ars)
+                      ),
+      updated_at   = NOW()
     FROM input
     WHERE p.ean = input.ean
     RETURNING p.ean

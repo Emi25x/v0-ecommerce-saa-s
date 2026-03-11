@@ -196,16 +196,18 @@ export async function POST(request: NextRequest) {
       const stockRaw = (stockKey ? row[stockKey] : null) || row["stock"] || row["cantidad"] || null
       const stock = stockRaw !== null ? parseInt(String(stockRaw).replace(/\D/g, ""), 10) || 0 : null
 
-      // Two-price sources (e.g. Libral Argentina): cost_price = precio_euros, price = pesos_argentinos
+      // precio_euros     → price     (PVP EUR, precio base del sistema)
+      // pesos_argentinos → price_ars (PVP ARS, se guarda en custom_fields.precio_ars del almacén)
       let cost_price: number | null = null
       let price: number | null = null
+      let price_ars: number | null = null
       if (hasTwoPrices) {
-        const costKey = cm["cost_price"] || "precio_euros"
-        const sellKey = cm["price"] || "pesos_argentinos"
-        const costRaw = row[costKey] ?? null
-        const sellRaw = row[sellKey] ?? null
-        cost_price = costRaw ? parseFloat(String(costRaw).replace(",", ".").replace(/[^\d.]/g, "")) || null : null
-        price      = sellRaw ? parseFloat(String(sellRaw).replace(",", ".").replace(/[^\d.]/g, "")) || null : null
+        const eurKey = cm["price"]     || "precio_euros"
+        const arsKey = cm["price_ars"] || "pesos_argentinos"
+        const eurRaw = row[eurKey] ?? null
+        const arsRaw = row[arsKey] ?? null
+        price     = eurRaw ? parseFloat(String(eurRaw).replace(",", ".").replace(/[^\d.]/g, "")) || null : null
+        price_ars = arsRaw ? parseFloat(String(arsRaw).replace(",", ".").replace(/[^\d.]/g, "")) || null : null
       } else {
         const priceKey = col("price", "pvp", "precio_sin_iva", "precio", "price")
         const priceRaw = (priceKey ? row[priceKey] : null)
@@ -228,6 +230,7 @@ export async function POST(request: NextRequest) {
         author: (authorKey ? row[authorKey] : null) || row["autor"] || row["author"] || row["autores"] || null,
         cost_price,
         price,
+        price_ars,
         image_url: (imageKey ? row[imageKey] : null) || row["url"] || row["portada"] || row["imagen"] || row["image"] || row["url_fotografia"] || null,
         stock,
         brand: row[cm["brand"] ?? ""] || row["editorial"] || row["marca"] || row["brand"] || null,
@@ -278,17 +281,22 @@ export async function POST(request: NextRequest) {
             let rpcData: any = null
 
             if (hasTwoPrices) {
-              // Dos precios: cost_price (EUR) + price (ARS)
-              const sellPrices = chunk.map(p => {
+              // PVP EUR → price, PVP ARS → custom_fields.precio_ars
+              const eurPrices = chunk.map(p => {
                 if (p.price === null || p.price === undefined) return null
                 const n = parseFloat(String(p.price).replace(",", "."))
+                return isNaN(n) ? null : n
+              })
+              const arsPrices = chunk.map(p => {
+                if (p.price_ars === null || p.price_ars === undefined) return null
+                const n = parseFloat(String(p.price_ars).replace(",", "."))
                 return isNaN(n) ? null : n
               })
               const res = await supabase.rpc("bulk_update_stock_two_prices", {
                 p_eans: eans,
                 p_stocks: stocks,
-                p_cost_prices: costPrices,
-                p_prices: sellPrices,
+                p_prices: eurPrices,
+                p_prices_ars: arsPrices,
               })
               rpcError = res.error; rpcData = res.data
             } else {

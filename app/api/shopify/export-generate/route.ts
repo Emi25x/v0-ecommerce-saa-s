@@ -229,6 +229,7 @@ export async function POST(request: NextRequest) {
       const weightG    = p.canonical_weight_g ?? ""
       const stock      = stockMap[p.id] ?? 0
       const price      = p.price != null ? String(p.price) : ""
+      const precioArs  = customFields.precio_ars != null ? String(customFields.precio_ars) : price
 
       // ── Dimensions (mm) from DB or custom_fields ───────────────────────
       const alto    = p.height    != null ? Math.round(p.height * 10)    : (customFields.alto_mm    ?? "")
@@ -310,7 +311,7 @@ export async function POST(request: NextRequest) {
 
           // Pricing by market
           case "Included / Argentina":      return "TRUE"
-          case "Price / Argentina":         return price
+          case "Price / Argentina":         return precioArs
           case "Compare At Price / Argentina": return ""
           case "Included / International":  return "FALSE"
           case "Price / International":     return ""

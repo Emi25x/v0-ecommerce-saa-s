@@ -157,6 +157,12 @@ export async function POST(req: NextRequest) {
       if (pp?.calculated_price != null) salePrice = String(pp.calculated_price)
     }
 
+    // Precio en ARS desde custom_fields (para tiendas/almacenes con moneda ARS)
+    if (store.price_source === "custom_fields_precio_ars") {
+      const arsPrice = Number(cf.precio_ars)
+      if (arsPrice > 0) salePrice = String(arsPrice)
+    }
+
     // ── 4. Stock desde el almacén configurado ──────────────────────────────
     // Locations mapeados para inventario por location en Shopify
     const warehouseId = store.default_warehouse_id
