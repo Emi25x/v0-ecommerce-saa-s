@@ -35,6 +35,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: "Libral no configurado", skipped: true })
     }
 
+    // Usar source_key (string corto) como clave en stock_by_source para compatibilidad con filtros del almacén
+    const libralSourceKey: string = libralSource.source_key ?? libralSource.name?.toLowerCase().replace(/[^a-z0-9]/g, "_") ?? libralSource.id
+
     // Obtener token de Libral
     const token = await getLibralToken()
 
@@ -90,7 +93,7 @@ export async function GET(request: Request) {
           if (existingProduct) {
             // Producto existe - verificar si hay cambios
             const { stock_by_source, stock: totalStock } = mergeStockBySource(
-              existingProduct.stock_by_source, libralSource.id, newStock
+              existingProduct.stock_by_source, libralSourceKey, newStock
             )
             const stockChanged = existingProduct.stock !== totalStock
             const priceChanged = Math.abs(existingProduct.price - newPrice) > 0.01
@@ -118,7 +121,7 @@ export async function GET(request: Request) {
             }
           } else {
             // Producto nuevo - importar
-            const { stock_by_source: newSbs, stock: totalStock } = mergeStockBySource(null, libralSource.id, newStock)
+            const { stock_by_source: newSbs, stock: totalStock } = mergeStockBySource(null, libralSourceKey, newStock)
             const productData: any = {
               sku,
               title: apiProduct[fieldMapping.title],
@@ -130,7 +133,7 @@ export async function GET(request: Request) {
               category: apiProduct[fieldMapping.category] || null,
               image_url: apiProduct[fieldMapping.image_url] || null,
               condition: apiProduct[fieldMapping.condition] ? "new" : "used",
-              source: [libralSource.id],
+              source: [libralSourceKey],
               internal_code: `INT-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
               custom_fields: {
                 libral_id: apiProduct.id,
