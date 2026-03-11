@@ -197,7 +197,7 @@ export default function NewSourcePage() {
         description: description || null,
         url_template: urlTemplate,
         auth_type: authType,
-        credentials,
+        credentials: credentials ?? {},
         feed_type: feedType,
         column_mapping: parsedMapping,
         is_active: isActive,
