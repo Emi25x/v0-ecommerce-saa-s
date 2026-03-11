@@ -96,7 +96,10 @@ export async function POST(request: NextRequest) {
     if (totalLines === 0) {
       await del(rawBlob.url).catch(() => {})
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
-      console.warn(`[AZETA-DL] Catálogo vacío (0 filas de datos). ¿Archivo parcial no disponible hoy?`)
+      const rawSizeMb = (rawBuf.length / 1024 / 1024).toFixed(2)
+      const rawPreview = csvText.slice(0, 400).replace(/\r/g, "").trim()
+      console.warn(`[AZETA-DL] Catálogo vacío (0 filas). rawSize=${rawSizeMb}MB isZip=${isZip} preview="${rawPreview.slice(0, 100)}"`)
+      const isHtml = rawPreview.toLowerCase().includes("<html") || rawPreview.toLowerCase().includes("<!doctype")
       return NextResponse.json({
         ok: true,
         empty: true,
@@ -104,7 +107,14 @@ export async function POST(request: NextRequest) {
         csv_size_mb: 0,
         total_lines: 0,
         elapsed_seconds: parseFloat(elapsed),
-        message: "El catálogo no contiene filas de datos (solo header o archivo vacío). El parcial puede no estar disponible hoy.",
+        raw_size_mb: parseFloat(rawSizeMb),
+        raw_preview: rawPreview,
+        is_zip: isZip,
+        message: rawBuf.length === 0
+          ? "El servidor de Azeta devolvió una respuesta vacía (0 bytes)."
+          : isHtml
+            ? "El servidor de Azeta devolvió HTML en lugar del catálogo (posible error de credenciales o sesión caducada)."
+            : "El catálogo solo tiene encabezado sin filas de datos.",
       })
     }
 

@@ -73,9 +73,9 @@ export default function BatchImportPage() {
     addLog(`Iniciando importacion por lotes de ${sourceName}...`)
 
     const nameLower = sourceName.toLowerCase()
-    // Solo "Azeta Total" usa el flujo de blob-streaming (archivo ZIP ~230MB).
-    // "Azeta Parcial" usa el mismo flujo genérico que Arnoia Act (batch importer directo).
-    const isAzeta = nameLower.includes("azeta") && !nameLower.includes("parcial")
+    // Ambas fuentes Azeta (Total y Parcial) usan el flujo azeta/download → azeta/process.
+    // El batch genérico no puede manejar el ZIP de Total (~230MB) ni los errores del servidor de Azeta.
+    const isAzeta = nameLower.includes("azeta")
     const isArnoiaStock = nameLower.includes("arnoia") && nameLower.includes("stock")
 
     // Arnoia Stock: endpoint dedicado simple
@@ -133,11 +133,14 @@ export default function BatchImportPage() {
           return
         }
         const blobUrl = dlData.blob_url
-        addLog(`ZIP procesado: CSV ${dlData.csv_size_mb}MB, ${dlData.total_lines?.toLocaleString()} lineas (${dlData.elapsed_seconds}s)`)
+        addLog(`Descarga: ${dlData.csv_size_mb}MB, ${dlData.total_lines?.toLocaleString()} lineas (${dlData.elapsed_seconds}s)`)
 
         // Catálogo vacío — no hay nada que procesar
         if (!blobUrl || (dlData.total_lines ?? 0) <= 0) {
-          addLog(`⚠️ ${dlData.message || "El catálogo no tiene datos disponibles. El parcial puede no estar publicado hoy."}`)
+          addLog(`⚠️ ${dlData.message || "El catálogo no tiene datos disponibles."}`)
+          if (dlData.raw_preview) {
+            addLog(`Diagnóstico — tamaño: ${dlData.raw_size_mb}MB, isZip: ${dlData.is_zip}, contenido: ${dlData.raw_preview.slice(0, 200)}`)
+          }
           setStatus("Sin datos disponibles")
           setIsRunning(false)
           return
