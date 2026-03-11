@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getLibralToken, queryLibralProducts, delayBetweenBatches } from "@/lib/libral"
+import { mergeStockBySource } from "@/lib/stock-helpers"
 
 // Sincroniza stock y precios solo cuando hay cambios
 // Detecta productos nuevos automáticamente
@@ -79,16 +80,19 @@ export async function GET(request: Request) {
 
           if (!sku) continue
 
-          // Verificar si el producto existe
+          // Verificar si el producto existe (incluir stock_by_source para merge)
           const { data: existingProduct } = await supabase
             .from("products")
-            .select("id, stock, price")
+            .select("id, stock, price, stock_by_source")
             .eq("sku", sku)
             .single()
 
           if (existingProduct) {
             // Producto existe - verificar si hay cambios
-            const stockChanged = existingProduct.stock !== newStock
+            const { stock_by_source, stock: totalStock } = mergeStockBySource(
+              existingProduct.stock_by_source, libralSource.id, newStock
+            )
+            const stockChanged = existingProduct.stock !== totalStock
             const priceChanged = Math.abs(existingProduct.price - newPrice) > 0.01
 
             if (stockChanged || priceChanged) {
@@ -96,7 +100,8 @@ export async function GET(request: Request) {
               const { error: updateError } = await supabase
                 .from("products")
                 .update({
-                  stock: newStock,
+                  stock: totalStock,
+                  stock_by_source,
                   price: newPrice,
                   updated_at: new Date().toISOString(),
                 })
@@ -113,12 +118,14 @@ export async function GET(request: Request) {
             }
           } else {
             // Producto nuevo - importar
+            const { stock_by_source: newSbs, stock: totalStock } = mergeStockBySource(null, libralSource.id, newStock)
             const productData: any = {
               sku,
               title: apiProduct[fieldMapping.title],
               description: apiProduct[fieldMapping.description] || null,
               price: newPrice,
-              stock: newStock,
+              stock: totalStock,
+              stock_by_source: newSbs,
               brand: apiProduct[fieldMapping.brand] || null,
               category: apiProduct[fieldMapping.category] || null,
               image_url: apiProduct[fieldMapping.image_url] || null,

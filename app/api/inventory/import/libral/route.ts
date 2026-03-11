@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getLibralProducts } from "@/lib/libral"
 import { createClient } from "@/lib/supabase/server"
+import { mergeStockBySource } from "@/lib/stock-helpers"
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,6 +16,16 @@ export async function POST(request: NextRequest) {
     console.log("[v0] Libral Import - Starting import with pageSize:", pageSize)
 
     const supabase = await createClient()
+
+    // Fetch the Libral source to get its id for stock_by_source keying
+    const { data: libralSource } = await supabase
+      .from("import_sources")
+      .select("id")
+      .ilike("name", "%libral%")
+      .limit(1)
+      .single()
+    const libralSourceId: string = libralSource?.id ?? "libral"
+
     let totalImported = 0
     let page = 0
     let hasMore = true
@@ -34,16 +45,21 @@ export async function POST(request: NextRequest) {
         // Check if product already exists by EAN (SKU)
         const { data: existingProduct } = await supabase
           .from("products")
-          .select("*")
+          .select("id, source, stock_by_source")
           .eq("sku", libralProduct.ean)
           .single()
+
+        const { stock_by_source, stock } = mergeStockBySource(
+          existingProduct?.stock_by_source, libralSourceId, libralProduct.stockdisponibletotal
+        )
 
         const productData = {
           sku: libralProduct.ean,
           title: libralProduct.titulo,
           description: libralProduct.sinopsis || libralProduct.resumen || null,
           price: libralProduct.precioventa,
-          stock: libralProduct.stockdisponibletotal,
+          stock,
+          stock_by_source,
           source: existingProduct ? [...(existingProduct.source || []), "libral"] : ["libral"],
           custom_fields: {
             libral_id: libralProduct.id,

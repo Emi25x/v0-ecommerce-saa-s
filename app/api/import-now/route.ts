@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
+import { mergeStockBySource } from "@/lib/stock-helpers"
 
 console.log("[v0] ========================================")
 console.log("[v0] IMPORT-NOW ENDPOINT MODULE LOADED")
@@ -134,8 +135,15 @@ export async function GET(request: Request) {
               updated_at: new Date().toISOString(),
             }
 
-            // Check if product exists
-            const { data: existing } = await supabase.from("products").select("id, source").eq("sku", sku).single()
+            // Check if product exists (include stock_by_source for merge)
+            const { data: existing } = await supabase.from("products").select("id, source, stock_by_source").eq("sku", sku).single()
+
+            // Merge stock into the source's bucket
+            const { stock_by_source, stock: totalStock } = mergeStockBySource(
+              existing?.stock_by_source, source.id, productData.stock
+            )
+            productData.stock = totalStock
+            productData.stock_by_source = stock_by_source
 
             if (existing) {
               // Update existing product
