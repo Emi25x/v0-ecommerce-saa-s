@@ -19,10 +19,11 @@ COMMENT ON COLUMN ml_publications.catalog_linked_item_id IS
   'Si está lleno, esta publicación ya tiene opt-in de catálogo realizado.';
 
 -- 2. Backfill desde listing_relationships existentes
+-- Cast explícito porque original_listing_id es UUID y ml_item_id es VARCHAR
 UPDATE ml_publications p
-   SET catalog_linked_item_id = r.catalog_listing_id
+   SET catalog_linked_item_id = r.catalog_listing_id::TEXT
   FROM listing_relationships r
- WHERE p.ml_item_id = r.original_listing_id
+ WHERE p.ml_item_id = r.original_listing_id::TEXT
    AND p.catalog_linked_item_id IS NULL;
 
 -- 3. Trigger: auto-actualizar cuando se crea una nueva relación
@@ -32,8 +33,8 @@ LANGUAGE plpgsql
 AS $$
 BEGIN
   UPDATE ml_publications
-     SET catalog_linked_item_id = NEW.catalog_listing_id
-   WHERE ml_item_id = NEW.original_listing_id;
+     SET catalog_linked_item_id = NEW.catalog_listing_id::TEXT
+   WHERE ml_item_id = NEW.original_listing_id::TEXT;
   RETURN NEW;
 END;
 $$;

@@ -40,7 +40,7 @@ CREATE POLICY "owner can read ml_stock_history"
   ON ml_stock_history FOR SELECT
   USING (
     account_id IN (
-      SELECT id FROM ml_accounts WHERE owner_user_id = auth.uid()
+      SELECT id FROM ml_accounts WHERE owner_id = auth.uid()
     )
   );
 
@@ -48,7 +48,7 @@ CREATE POLICY "owner can insert ml_stock_history"
   ON ml_stock_history FOR INSERT
   WITH CHECK (
     account_id IN (
-      SELECT id FROM ml_accounts WHERE owner_user_id = auth.uid()
+      SELECT id FROM ml_accounts WHERE owner_id = auth.uid()
     )
   );
 
