@@ -32,7 +32,8 @@ export async function GET(req: NextRequest) {
 
   const supabase = getSupabase()
 
-  // Buscar publicaciones activas con stock = 0
+  // Publicaciones con stock = 0 (activas o pausadas — ML pausa automáticamente al quedarse sin stock)
+  // Excluimos solo las cerradas definitivamente
   let query = supabase
     .from("ml_publications")
     .select(`
@@ -46,10 +47,11 @@ export async function GET(req: NextRequest) {
       sold_quantity,
       permalink,
       account_id,
+      status,
       product_id,
       products ( brand )
     `, { count: "exact" })
-    .eq("status", "active")
+    .not("status", "eq", "closed")
     .or("current_stock.is.null,current_stock.eq.0")
 
   if (search) {

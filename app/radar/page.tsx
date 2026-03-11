@@ -443,7 +443,7 @@ export default function RadarDashboardPage() {
           </div>
         ) : reorderBooks.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            {reorderSearch ? "Sin resultados para esa búsqueda." : "No hay publicaciones activas sin stock. ¡Todo en orden!"}
+            {reorderSearch ? "Sin resultados para esa búsqueda." : "No hay publicaciones sin stock. ¡Todo en orden!"}
           </p>
         ) : (
           <>
