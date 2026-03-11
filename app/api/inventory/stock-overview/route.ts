@@ -28,23 +28,22 @@ export async function GET(request: NextRequest) {
   const { data: products, count, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // ── Fuentes con almacén vinculado ──────────────────────────────────────────
-  // source_key → { warehouse_id, warehouse_name, warehouse_code }
+  // ── Fuentes: source.id es la clave en stock_by_source ─────────────────────
+  // Agrupar por warehouse_id para la vista "Por almacén"
   const { data: sources } = await supabase
     .from("import_sources")
-    .select("source_key, name, warehouse_id, warehouses(id, name, code)")
-    .not("source_key", "is", null)
+    .select("id, name, warehouse_id, warehouses(id, name, code)")
+    .eq("is_active", true)
 
-  // Build source_key → warehouse mapping
+  // source.id → warehouse info
   const sourceWarehouse: Record<string, { id: string; name: string; code: string } | null> = {}
   const sourceLabel: Record<string, string> = {}
   for (const s of sources ?? []) {
-    const key = s.source_key as string
-    sourceWarehouse[key] = (s as any).warehouses ?? null
-    sourceLabel[key] = s.name
+    sourceWarehouse[s.id] = (s as any).warehouses ?? null
+    sourceLabel[s.id] = s.name
   }
 
-  // ── Collect all source keys present in this page ───────────────────────────
+  // ── Collect all source keys present in stock_by_source ────────────────────
   const sourceKeysSet = new Set<string>()
   for (const p of products ?? []) {
     if (p.stock_by_source && typeof p.stock_by_source === "object") {
@@ -54,7 +53,6 @@ export async function GET(request: NextRequest) {
   const sourceKeys = Array.from(sourceKeysSet).sort()
 
   // ── Build warehouse → [source_keys] map ───────────────────────────────────
-  // Used by the frontend to group columns by warehouse
   const warehouseMap: Record<string, { id: string; name: string; code: string; source_keys: string[] }> = {}
   const noWarehouseKeys: string[] = []
 

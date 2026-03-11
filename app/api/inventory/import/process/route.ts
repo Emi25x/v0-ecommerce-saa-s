@@ -162,15 +162,22 @@ export async function POST(request: NextRequest) {
         .filter(Boolean)
         .map(normalizeValue)
 
-      // Buscar productos existentes por el campo de match
+      // Buscar productos existentes por el campo de match (incluir stock_by_source para merge)
       const { data: existingProducts } = await supabase
         .from("products")
-        .select("sku, ean")
+        .select("sku, ean, stock_by_source")
         .in(matchField, batchMatchValues)
 
       // Crear set de valores existentes según el campo de match
       const existingMatchSet = new Set(
         existingProducts?.map((p) => matchField === "ean" ? p.ean : p.sku) || []
+      )
+      // Mapa matchValue → { sku, stock_by_source }
+      const existingProductMap = new Map(
+        existingProducts?.map((p) => [
+          matchField === "ean" ? p.ean : p.sku,
+          { sku: p.sku, stock_by_source: p.stock_by_source || {} }
+        ]) || []
       )
       // También crear un mapa para obtener el SKU desde el EAN cuando hacemos match por EAN
       const eanToSkuMap = new Map(
@@ -214,10 +221,19 @@ export async function POST(request: NextRequest) {
             if (val != null && val !== "") customFields[key] = String(val).trim()
           }
 
+          // Merge stock_by_source: preservar el stock de otras fuentes/almacenes
+          const stockQty = Number.parseInt(stock) || 0
+          const existingEntry = existingProductMap.get(matchValue)
+          const prevStockBySource: Record<string, number> = existingEntry?.stock_by_source || {}
+          const newStockBySource = { ...prevStockBySource, [source.id]: stockQty }
+          // El total es la suma de todos los almacenes/fuentes
+          const totalStock = Object.values(newStockBySource).reduce((s, v) => s + (v || 0), 0)
+
           // Construir datos del producto
           let productData: any = {
             price: Number.parseFloat(price) || 0,
-            stock: Number.parseInt(stock) || 0,
+            stock: totalStock,
+            stock_by_source: newStockBySource,
             source: [source.id],
             ...(Object.keys(customFields).length > 0 ? { custom_fields: customFields } : {}),
           }

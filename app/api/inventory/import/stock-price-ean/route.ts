@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
   // ── Cargar configuración de fuente ───────────────────────────────────────
   const { data: source, error: srcErr } = await supabase
     .from("import_sources")
-    .select("id, name, url_template, column_mapping, csv_separator, source_key, credentials, auth_type")
+    .select("id, name, url_template, column_mapping, csv_separator, credentials, auth_type")
     .eq("id", sourceId)
     .single()
 
@@ -61,7 +61,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Fuente no encontrada" }, { status: 404 })
   }
 
-  const sourceKey = source.source_key || source.name.toLowerCase().replace(/[^a-z0-9]+/g, "_")
+  // Use source.id as the stock_by_source key (unique, never clashes between sources)
+  const sourceKey = source.id
   const mapping: Record<string, string> = source.column_mapping || {}
 
   // Necesitamos al menos la columna de EAN
