@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server"
 import { executeFullImport } from "@/lib/import/batch-import"
 import { runCatalogImport } from "@/lib/azeta/run-catalog-import"
 import { runAzetaStockUpdate } from "@/lib/azeta/update-stock-import"
+import { runLibralStockImport } from "@/lib/libral/run-stock-import"
 // TODO: Implementar sync ML como función directa en lugar de fetch
 // import { syncStockWithML } from "@/lib/ml/sync-stock"
 
@@ -65,8 +66,9 @@ export async function GET(request: Request) {
         const source = schedule.import_sources
         console.log(`[v0] Ejecutando importación para fuente: ${source.name} (feed_type: ${source.feed_type})`)
 
-        // Rutear según proveedor: Azeta necesita manejo especial (ZIP + RPC propio de stock)
+        // Rutear según proveedor: cada proveedor tiene su propio manejador
         const isAzeta = source.name.toLowerCase().includes("azeta")
+        const isLibral = source.name.toLowerCase().includes("libral") || source.feed_type === "api"
         let importResult: { success: boolean; created?: number; updated?: number; message?: string }
 
         if (isAzeta && source.feed_type === "stock_price") {
@@ -79,8 +81,14 @@ export async function GET(request: Request) {
           console.log(`[v0] Ejecutando importación catálogo AZETA para ${source.name}`)
           const r = await runCatalogImport({ source_id: schedule.source_id })
           importResult = { success: r.success, created: r.created, updated: r.updated, message: r.error ?? `${r.created} creados, ${r.updated} actualizados` }
+        } else if (isLibral) {
+          // Libral Argentina: API JSON con paginación, usa admin client para bypassear RLS
+          const sourceKey = source.source_key ?? "libral"
+          console.log(`[v0] Ejecutando importación stock LIBRAL para ${source.name} (source_key: ${sourceKey})`)
+          const r = await runLibralStockImport(sourceKey)
+          importResult = { success: r.success, updated: r.updated, message: r.error ?? `${r.updated} actualizados, ${r.zeroed} en cero` }
         } else {
-          // Resto de proveedores: importador genérico
+          // Resto de proveedores: importador genérico CSV
           console.log(`[v0] Ejecutando importación directa para ${source.name}`)
           importResult = await executeFullImport(schedule.source_id, source.feed_type)
         }
