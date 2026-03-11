@@ -159,12 +159,13 @@ export async function POST(request: NextRequest) {
     let invalid_ean = 0
 
     const isStockImport = source.name.toLowerCase().includes("stock")
+      || source.feed_type === "stock_price"
 
     // column_mapping values may be original-case column names; normalize them for lookup
     const cm: Record<string, string> = {}
     if (source.column_mapping && typeof source.column_mapping === "object") {
-      for (const [field, col] of Object.entries(source.column_mapping as Record<string, string>)) {
-        cm[field] = normalizeHeader(col)
+      for (const [field, colName] of Object.entries(source.column_mapping as Record<string, string>)) {
+        cm[field] = normalizeHeader(colName)
       }
     }
 
@@ -176,6 +177,12 @@ export async function POST(request: NextRequest) {
       return null
     }
 
+    // Detect if this source provides two separate price columns (e.g. cost in EUR + price in ARS)
+    // Triggered when column_mapping has distinct "price" and "cost_price" keys,
+    // or when the CSV contains the known Libral Argentina columns.
+    const hasTwoPrices = (cm["price"] && cm["cost_price"] && cm["price"] !== cm["cost_price"])
+      || headersNormalized.includes("pesos_argentinos")
+
     for (const row of batchRows) {
       const eanRaw = row[col("ean", "ean") ?? "ean"]
         || row["ean13"] || row["gtin"] || row["codigo_de_barras"]
@@ -185,14 +192,26 @@ export async function POST(request: NextRequest) {
       if (!ean) { missing_ean++; continue }
       if (ean.length !== 13) { invalid_ean++; continue }
 
-      const priceKey = col("price", "pvp", "precio_sin_iva", "precio", "price")
-      const priceRaw = (priceKey ? row[priceKey] : null)
-        || row["pesos_argentinos"] || row["pvp"] || row["precio_sin_iva"] || row["precio"] || row["price"] || null
-      const cost_price = priceRaw ? parseFloat(String(priceRaw).replace(",", ".").replace(/[^\d.]/g, "")) || null : null
-
       const stockKey = col("stock", "stock", "cantidad")
       const stockRaw = (stockKey ? row[stockKey] : null) || row["stock"] || row["cantidad"] || null
       const stock = stockRaw !== null ? parseInt(String(stockRaw).replace(/\D/g, ""), 10) || 0 : null
+
+      // Two-price sources (e.g. Libral Argentina): cost_price = precio_euros, price = pesos_argentinos
+      let cost_price: number | null = null
+      let price: number | null = null
+      if (hasTwoPrices) {
+        const costKey = cm["cost_price"] || "precio_euros"
+        const sellKey = cm["price"] || "pesos_argentinos"
+        const costRaw = row[costKey] ?? null
+        const sellRaw = row[sellKey] ?? null
+        cost_price = costRaw ? parseFloat(String(costRaw).replace(",", ".").replace(/[^\d.]/g, "")) || null : null
+        price      = sellRaw ? parseFloat(String(sellRaw).replace(",", ".").replace(/[^\d.]/g, "")) || null : null
+      } else {
+        const priceKey = col("price", "pvp", "precio_sin_iva", "precio", "price")
+        const priceRaw = (priceKey ? row[priceKey] : null)
+          || row["pvp"] || row["precio_sin_iva"] || row["precio"] || row["price"] || null
+        cost_price = priceRaw ? parseFloat(String(priceRaw).replace(",", ".").replace(/[^\d.]/g, "")) || null : null
+      }
 
       const descKey = cm["description"] || Object.keys(row).find(k => k.includes("sinopsis"))
       const yearKey = cm["year_edition"] || Object.keys(row).find(k => k.includes("ano_edicion") || k.includes("ano_edici"))
@@ -208,6 +227,7 @@ export async function POST(request: NextRequest) {
         title: (titleKey ? row[titleKey] : null) || row["titulo"] || row["title"] || row["articulo"] || null,
         author: (authorKey ? row[authorKey] : null) || row["autor"] || row["author"] || row["autores"] || null,
         cost_price,
+        price,
         image_url: (imageKey ? row[imageKey] : null) || row["url"] || row["portada"] || row["imagen"] || row["image"] || row["url_fotografia"] || null,
         stock,
         brand: row[cm["brand"] ?? ""] || row["editorial"] || row["marca"] || row["brand"] || null,
@@ -235,8 +255,8 @@ export async function POST(request: NextRequest) {
       for (const p of productsToInsert) dedupMap.set(p.ean, p)
       const deduped = Array.from(dedupMap.values())
 
-      if (isStockImport) {
-        // Stock: usar RPC bulk con retry
+      if (isStockImport || hasTwoPrices) {
+        // Stock / dos-precios: usar RPC bulk con retry
         const STOCK_CHUNK = 200
         for (let i = 0; i < deduped.length; i += STOCK_CHUNK) {
           const chunk = deduped.slice(i, i + STOCK_CHUNK)
@@ -245,7 +265,7 @@ export async function POST(request: NextRequest) {
             const n = parseInt(String(p.stock ?? 0), 10)
             return isNaN(n) ? 0 : n
           })
-          const prices = chunk.map(p => {
+          const costPrices = chunk.map(p => {
             if (p.cost_price === null || p.cost_price === undefined) return null
             const n = parseFloat(String(p.cost_price).replace(",", "."))
             return isNaN(n) ? null : n
@@ -254,11 +274,31 @@ export async function POST(request: NextRequest) {
           let retryCount = 0
           let chunkDone = false
           while (!chunkDone && retryCount <= 2) {
-            const { error: rpcError, data: rpcData } = await supabase.rpc("bulk_update_stock_price", {
-              p_eans: eans,
-              p_stocks: stocks,
-              p_prices: prices,
-            })
+            let rpcError: any = null
+            let rpcData: any = null
+
+            if (hasTwoPrices) {
+              // Dos precios: cost_price (EUR) + price (ARS)
+              const sellPrices = chunk.map(p => {
+                if (p.price === null || p.price === undefined) return null
+                const n = parseFloat(String(p.price).replace(",", "."))
+                return isNaN(n) ? null : n
+              })
+              const res = await supabase.rpc("bulk_update_stock_two_prices", {
+                p_eans: eans,
+                p_stocks: stocks,
+                p_cost_prices: costPrices,
+                p_prices: sellPrices,
+              })
+              rpcError = res.error; rpcData = res.data
+            } else {
+              const res = await supabase.rpc("bulk_update_stock_price", {
+                p_eans: eans,
+                p_stocks: stocks,
+                p_prices: costPrices,
+              })
+              rpcError = res.error; rpcData = res.data
+            }
 
             if (rpcError) {
               if (isTimeoutError(rpcError.message) && retryCount < 2) {
