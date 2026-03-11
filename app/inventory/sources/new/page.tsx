@@ -183,7 +183,7 @@ export default function NewSourcePage() {
         mappings: mapping
       }
       
-      const { error } = await supabase.from("import_sources").insert({
+      const insertPayload: Record<string, unknown> = {
         name,
         description: description || null,
         url_template: urlTemplate,
@@ -193,7 +193,16 @@ export default function NewSourcePage() {
         column_mapping: parsedMapping,
         is_active: isActive,
         warehouse_id: warehouseId && warehouseId !== "none" ? warehouseId : null,
-      })
+      }
+
+      let { error } = await supabase.from("import_sources").insert(insertPayload)
+
+      // Fallback: column not yet migrated — retry without warehouse_id
+      if (error?.message?.includes("warehouse_id")) {
+        console.warn("[new-source] warehouse_id column missing, run migration 050. Retrying without it.")
+        const { warehouse_id: _wh, ...payloadWithoutWh } = insertPayload as any
+        ;({ error } = await supabase.from("import_sources").insert(payloadWithoutWh))
+      }
       
       if (error) throw error
       
