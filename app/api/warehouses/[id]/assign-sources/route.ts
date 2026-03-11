@@ -101,11 +101,12 @@ export async function POST(
 
     // eslint-disable-next-line no-constant-condition
     while (true) {
+      // Fetch products with stock > 0 that don't yet have this source key in stock_by_source
       const { data: prods, error: fetchErr } = await supabaseAdmin
         .from("products")
         .select("id, stock, stock_by_source")
         .gt("stock", 0)
-        .or("stock_by_source.is.null,stock_by_source.eq.{}")
+        .or(`stock_by_source.is.null,stock_by_source->>${primarySourceKey}.is.null`)
         .range(offset, offset + FETCH_LIMIT - 1)
         .order("id")
 
@@ -119,7 +120,8 @@ export async function POST(
         const batch = prods.slice(i, i + CHUNK)
         const updates = batch.map((p: any) => ({
           id: p.id,
-          stock_by_source: { [primarySourceKey]: p.stock ?? 0 },
+          // Merge with existing keys instead of replacing the whole object
+          stock_by_source: { ...(p.stock_by_source ?? {}), [primarySourceKey]: p.stock ?? 0 },
         }))
         const { error: upsertErr } = await supabaseAdmin
           .from("products")

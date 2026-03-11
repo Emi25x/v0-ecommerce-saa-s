@@ -97,18 +97,16 @@ export async function GET(
       .order("stock", { ascending: false })
       .range(offset, offset + PAGE_SIZE - 1)
 
+    // Always filter by stock > 0 for both data and count
     let countQ = supabase
       .from("products")
       .select("*", { count: "exact", head: true })
+      .gt("stock", 0)
 
     if (hasSourceData) {
-      // Filtrar por source_key en stock_by_source + solo los que tienen stock > 0 en esa fuente
+      // Filtrar por source_key en stock_by_source
       prodQ = prodQ.or(jsonbOrFilter)
-      countQ = countQ.gt("stock", 0).or(jsonbOrFilter)
-    } else {
-      // Fallback: todos los productos con stock > 0
-      // (stock_by_source aún no fue populado para estas fuentes)
-      countQ = countQ.gt("stock", 0)
+      countQ = countQ.or(jsonbOrFilter)
     }
 
     if (search) {
