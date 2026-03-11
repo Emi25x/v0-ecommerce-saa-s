@@ -187,6 +187,7 @@ export default function MLPublicationsPage() {
   const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroup[]>([])
   const [loadingDuplicates, setLoadingDuplicates] = useState(false)
   const [closingItem, setClosingItem]         = useState<string | null>(null)
+  const [mlStats, setMlStats]                 = useState<Record<string, { sold_quantity: number; listing_type_id: string | null }>>( {})
 
   const searchRef = useRef(search)
   searchRef.current = search
@@ -349,8 +350,12 @@ export default function MLPublicationsPage() {
     try {
       const res  = await fetch(`/api/ml/publications/duplicates?account_id=${accountId}`)
       const data = await res.json()
-      if (data.ok) setDuplicateGroups(data.groups)
-      else toast({ title: "Error al buscar duplicados", description: data.error, variant: "destructive" })
+      if (data.ok) {
+        setDuplicateGroups(data.groups)
+        setMlStats(data.ml_stats ?? {})
+      } else {
+        toast({ title: "Error al buscar duplicados", description: data.error, variant: "destructive" })
+      }
     } catch (err: any) {
       toast({ title: "Error de red", description: err.message, variant: "destructive" })
     } finally {
@@ -359,7 +364,7 @@ export default function MLPublicationsPage() {
   }
 
   const closePub = async (pub: Publication) => {
-    if (!confirm(`¿Cerrar ${pub.ml_item_id} en MercadoLibre?\n\nEsta acción cierra la publicación en ML. No se puede deshacer fácilmente.`)) return
+    if (!confirm(`¿Eliminar ${pub.ml_item_id} en MercadoLibre?\n\nEsto cierra la publicación en ML. Para que desaparezca del panel, después podés reimportar o sincronizar.`)) return
     setClosingItem(pub.ml_item_id)
     try {
       const res  = await fetch("/api/ml/publications/close", {
@@ -369,7 +374,7 @@ export default function MLPublicationsPage() {
       })
       const data = await res.json()
       if (data.ok) {
-        toast({ title: "Publicación cerrada", description: `${pub.ml_item_id} cerrada en MercadoLibre.` })
+        toast({ title: "Publicación eliminada en ML", description: `${pub.ml_item_id} cerrada en MercadoLibre. Recargando duplicados...` })
         loadDuplicates()
         loadCounts(accountId)
       } else {
@@ -1068,6 +1073,19 @@ export default function MLPublicationsPage() {
                             <span className={`text-xs shrink-0 ${pub.current_stock === 0 ? "text-red-400" : "text-muted-foreground"}`}>
                               Stock: {pub.current_stock ?? "—"}
                             </span>
+                            {mlStats[pub.ml_item_id] != null && (
+                              <span className="text-xs text-blue-400 shrink-0">
+                                {mlStats[pub.ml_item_id].sold_quantity} ventas
+                              </span>
+                            )}
+                            {mlStats[pub.ml_item_id]?.listing_type_id && (
+                              <span className="text-[10px] text-muted-foreground shrink-0 border border-muted-foreground/20 rounded px-1 py-0.5">
+                                {mlStats[pub.ml_item_id].listing_type_id === "gold_premium" ? "Gold Premium · cuotas"
+                                 : mlStats[pub.ml_item_id].listing_type_id === "gold_special" ? "Gold Especial"
+                                 : mlStats[pub.ml_item_id].listing_type_id === "gold_pro"     ? "Catálogo"
+                                 : mlStats[pub.ml_item_id].listing_type_id}
+                              </span>
+                            )}
                             <span className="flex-1 text-xs text-muted-foreground truncate">{pub.title}</span>
                             {pub.permalink && (
                               <a
@@ -1087,10 +1105,10 @@ export default function MLPublicationsPage() {
                               onClick={() => closePub(pub)}
                             >
                               {closingItem === pub.ml_item_id
-                                ? "Cerrando..."
+                                ? "Eliminando..."
                                 : pub.status === "closed"
-                                ? "Cerrada"
-                                : "Cerrar en ML"}
+                                ? "Eliminada"
+                                : "Eliminar en ML"}
                             </Button>
                           </div>
                         ))}
@@ -1120,6 +1138,19 @@ export default function MLPublicationsPage() {
                             <span className={`text-xs shrink-0 ${pub.current_stock === 0 ? "text-red-400" : "text-muted-foreground"}`}>
                               Stock: {pub.current_stock ?? "—"}
                             </span>
+                            {mlStats[pub.ml_item_id] != null && (
+                              <span className="text-xs text-blue-400 shrink-0">
+                                {mlStats[pub.ml_item_id].sold_quantity} ventas
+                              </span>
+                            )}
+                            {mlStats[pub.ml_item_id]?.listing_type_id && (
+                              <span className="text-[10px] text-muted-foreground shrink-0 border border-muted-foreground/20 rounded px-1 py-0.5">
+                                {mlStats[pub.ml_item_id].listing_type_id === "gold_premium" ? "Gold Premium · cuotas"
+                                 : mlStats[pub.ml_item_id].listing_type_id === "gold_special" ? "Gold Especial"
+                                 : mlStats[pub.ml_item_id].listing_type_id === "gold_pro"     ? "Catálogo"
+                                 : mlStats[pub.ml_item_id].listing_type_id}
+                              </span>
+                            )}
                             <span className="flex-1 text-xs text-muted-foreground truncate">{pub.title}</span>
                             {pub.permalink && (
                               <a
@@ -1139,10 +1170,10 @@ export default function MLPublicationsPage() {
                               onClick={() => closePub(pub)}
                             >
                               {closingItem === pub.ml_item_id
-                                ? "Cerrando..."
+                                ? "Eliminando..."
                                 : pub.status === "closed"
-                                ? "Cerrada"
-                                : "Cerrar en ML"}
+                                ? "Eliminada"
+                                : "Eliminar en ML"}
                             </Button>
                           </div>
                         ))}
