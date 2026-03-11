@@ -108,6 +108,21 @@ export async function POST(request: NextRequest) {
         totalNotFound += batchEans.length - batchUpdated
         console.log(`[ARNOIA-STOCK] Batch ${i}-${i + batchEans.length}: ${batchUpdated} updated`)
       }
+
+      // También actualizar stock_by_source.arnoia para que el almacén vinculado pueda leerlo
+      const { data: existingProds } = await supabase
+        .from("products")
+        .select("id, ean, stock_by_source")
+        .in("ean", batchEans)
+
+      if (existingProds && existingProds.length > 0) {
+        const stockByEan = new Map(batchEans.map((e, idx) => [e, batchStocks[idx]]))
+        const arnoiaUpdates = existingProds.map((p: any) => ({
+          id: p.id,
+          stock_by_source: { ...(p.stock_by_source || {}), arnoia: stockByEan.get(p.ean) ?? 0 },
+        }))
+        await supabase.from("products").upsert(arnoiaUpdates, { onConflict: "id" })
+      }
     }
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2)

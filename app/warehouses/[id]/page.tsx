@@ -16,6 +16,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
+  Link2,
+  RefreshCw,
 } from "lucide-react"
 
 export default function WarehouseDetailPage() {
@@ -28,6 +30,13 @@ export default function WarehouseDetailPage() {
   const [search, setSearch] = useState("")
   const [searchInput, setSearchInput] = useState("")
   const [page, setPage] = useState(1)
+
+  // Sources assignment
+  const [allSources, setAllSources] = useState<any[]>([])
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
+  const [showSourcePanel, setShowSourcePanel] = useState(false)
+  const [assigning, setAssigning] = useState(false)
+  const [assignResult, setAssignResult] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const fetchData = useCallback(
@@ -58,6 +67,44 @@ export default function WarehouseDetailPage() {
     fetchData(page, search)
   }, [page, search, fetchData])
 
+  // Load all import sources when panel opens
+  useEffect(() => {
+    if (!showSourcePanel) return
+    fetch("/api/inventory/sources")
+      .then((r) => r.json())
+      .then((d) => {
+        const srcs = Array.isArray(d) ? d : d.sources ?? d.data ?? []
+        setAllSources(srcs)
+        // Pre-select those already linked to this warehouse
+        const linked = srcs.filter((s: any) => s.warehouse_id === warehouseId).map((s: any) => s.id)
+        setSelectedSourceIds(linked)
+      })
+      .catch(() => {})
+  }, [showSourcePanel, warehouseId])
+
+  async function handleAssignSources() {
+    setAssigning(true)
+    setAssignResult(null)
+    try {
+      const res = await fetch(`/api/warehouses/${warehouseId}/assign-sources`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_ids: selectedSourceIds }),
+      })
+      const d = await res.json()
+      setAssignResult(d.message ?? (d.error ? `Error: ${d.error}` : "Listo"))
+      if (res.ok) {
+        setShowSourcePanel(false)
+        setPage(1)
+        fetchData(1, search)
+      }
+    } catch (e: any) {
+      setAssignResult(`Error: ${e.message}`)
+    } finally {
+      setAssigning(false)
+    }
+  }
+
   function handleSearchChange(val: string) {
     setSearchInput(val)
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -71,6 +118,7 @@ export default function WarehouseDetailPage() {
   const items: any[] = data?.items ?? []
   const pagination = data?.pagination
   const stats = data?.stats
+  const linkedSources: string[] = data?.linked_sources ?? []
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
@@ -81,7 +129,7 @@ export default function WarehouseDetailPage() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <div>
+        <div className="flex-1">
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-semibold">
               {warehouse?.name ?? "Almacén"}
@@ -96,11 +144,73 @@ export default function WarehouseDetailPage() {
               <Badge variant="secondary">{warehouse.code}</Badge>
             )}
           </div>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Contenido del almacén
-          </p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <p className="text-sm text-muted-foreground">Contenido del almacén</p>
+            {linkedSources.length > 0 && (
+              <div className="flex gap-1">
+                {linkedSources.map((s) => (
+                  <Badge key={s} variant="outline" className="text-xs">{s}</Badge>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
+        <Button variant="outline" size="sm" className="gap-2 shrink-0" onClick={() => setShowSourcePanel((v) => !v)}>
+          <Link2 className="h-4 w-4" />
+          Vincular fuentes
+        </Button>
       </div>
+
+      {/* Source assignment panel */}
+      {showSourcePanel && (
+        <Card className="p-5 space-y-4 border-dashed">
+          <div>
+            <p className="text-sm font-medium">Fuentes de importación para este almacén</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Las fuentes seleccionadas alimentan el stock de este almacén. Al guardar, se hace backfill de los productos existentes.
+            </p>
+          </div>
+          {allSources.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No hay fuentes configuradas.</p>
+          ) : (
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {allSources.map((s: any) => (
+                <label key={s.id} className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded"
+                    checked={selectedSourceIds.includes(s.id)}
+                    onChange={(e) =>
+                      setSelectedSourceIds((prev) =>
+                        e.target.checked ? [...prev, s.id] : prev.filter((id) => id !== s.id)
+                      )
+                    }
+                  />
+                  <span className="text-sm">{s.name}</span>
+                  {s.warehouse_id === warehouseId && (
+                    <Badge variant="outline" className="text-xs text-green-600 border-green-300">ya vinculada</Badge>
+                  )}
+                  {s.warehouse_id && s.warehouse_id !== warehouseId && (
+                    <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">otro almacén</Badge>
+                  )}
+                </label>
+              ))}
+            </div>
+          )}
+          {assignResult && (
+            <p className="text-sm text-muted-foreground">{assignResult}</p>
+          )}
+          <div className="flex gap-2">
+            <Button size="sm" onClick={handleAssignSources} disabled={assigning}>
+              {assigning ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
+              Guardar y hacer backfill
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setShowSourcePanel(false)}>
+              Cancelar
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* Stats */}
       {stats && (
