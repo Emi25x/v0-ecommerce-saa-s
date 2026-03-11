@@ -21,6 +21,7 @@ export default function NewSourcePage() {
   const editId = searchParams.get("edit") // present when editing an existing source
   const isEditMode = !!editId
   const [loading, setLoading] = useState(false)
+  const [warehouseColMissing, setWarehouseColMissing] = useState(false)
 
   // Campos del formulario
   const [name, setName] = useState("")
@@ -51,6 +52,14 @@ export default function NewSourcePage() {
   const [showMappingWizard, setShowMappingWizard] = useState(false)
   // Track which headers are in "custom name" input mode
   const [customInputFor, setCustomInputFor] = useState<Record<string, string>>({})
+
+  // Verificar si la columna warehouse_id existe en la DB
+  useEffect(() => {
+    fetch("/api/migrations/warehouse-column")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d && d.column_exists === false) setWarehouseColMissing(true) })
+      .catch(() => {})
+  }, [])
 
   // Cargar almacenes disponibles
   useEffect(() => {
@@ -309,6 +318,18 @@ export default function NewSourcePage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {warehouseColMissing && (
+            <div className="mb-6 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-400 space-y-2">
+              <p className="font-medium">Migración pendiente: columna <code>warehouse_id</code></p>
+              <p className="text-xs text-amber-400/80">
+                El almacén no se guardará hasta ejecutar este SQL en el{" "}
+                <strong>SQL Editor de Supabase</strong>:
+              </p>
+              <pre className="bg-black/30 rounded p-2 text-xs font-mono overflow-x-auto select-all">
+                {`ALTER TABLE import_sources\n  ADD COLUMN IF NOT EXISTS warehouse_id UUID REFERENCES warehouses(id) ON DELETE SET NULL;`}
+              </pre>
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Información básica */}
             <div className="space-y-4">

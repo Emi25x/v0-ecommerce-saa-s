@@ -7,19 +7,20 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { 
-  ArrowLeft, 
-  Calendar, 
-  Clock, 
-  FileText, 
-  Database, 
-  Settings, 
-  History, 
-  Play, 
-  CheckCircle2, 
+  ArrowLeft,
+  Calendar,
+  Clock,
+  FileText,
+  Database,
+  Settings,
+  History,
+  Play,
+  CheckCircle2,
   XCircle,
   Link as LinkIcon,
   Shield,
-  Loader2
+  Loader2,
+  Warehouse
 } from "lucide-react"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
@@ -31,6 +32,7 @@ export default function SourceDetailPage() {
   const sourceId = params.id as string
   
   const [source, setSource] = useState<any>(null)
+  const [warehouse, setWarehouse] = useState<{ name: string; code: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<any>(null)
 
@@ -61,6 +63,16 @@ export default function SourceDetailPage() {
       if (sourceError) throw sourceError
 
       setSource(sourceData)
+
+      // Fetch warehouse if linked
+      if (sourceData.warehouse_id) {
+        const { data: wh } = await supabase
+          .from("warehouses")
+          .select("name, code")
+          .eq("id", sourceData.warehouse_id)
+          .single()
+        if (wh) setWarehouse(wh)
+      }
 
       // Fetch import statistics
       const { data: historyData, error: historyError } = await supabase
@@ -168,6 +180,18 @@ export default function SourceDetailPage() {
                 <p className="text-sm font-medium">Autenticación</p>
                 <p className="text-sm text-muted-foreground capitalize">
                   {source.auth_type === "none" ? "Sin autenticación" : source.auth_type}
+                </p>
+              </div>
+            </div>
+            <Separator />
+            <div className="flex items-start gap-3">
+              <Warehouse className="h-5 w-5 mt-0.5 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Almacén asociado</p>
+                <p className="text-sm text-muted-foreground">
+                  {warehouse
+                    ? `${warehouse.name} (${warehouse.code})`
+                    : <span className="italic">Sin almacén específico</span>}
                 </p>
               </div>
             </div>
