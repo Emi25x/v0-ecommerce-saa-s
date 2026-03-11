@@ -59,7 +59,18 @@ export async function POST(request: NextRequest) {
     })
 
     const products = parsed.data as any[]
-    const mapping = source.column_mapping || {}
+    // Support both legacy flat mapping and new { delimiter, mappings } format
+    const rawMapping = source.column_mapping || {}
+    const mapping: Record<string, string> = rawMapping.mappings ?? rawMapping
+
+    // Extract custom field mappings: { csvColumn: customKey }
+    const CUSTOM_PREFIX = "custom:"
+    const customMappings: Record<string, string> = {}
+    for (const [col, val] of Object.entries(mapping)) {
+      if (typeof val === "string" && val.startsWith(CUSTOM_PREFIX)) {
+        customMappings[col] = val.slice(CUSTOM_PREFIX.length)
+      }
+    }
 
     const sampleProduct = products[0] || {}
     const hasName = sampleProduct[mapping.name || "name"]
@@ -196,11 +207,19 @@ export async function POST(request: NextRequest) {
             return { success: true, skipped: true, sku: matchValue }
           }
 
+          // Construir campos personalizados desde customMappings
+          const customFields: Record<string, string> = {}
+          for (const [csvCol, key] of Object.entries(customMappings)) {
+            const val = getColumnValue(row, csvCol)
+            if (val != null && val !== "") customFields[key] = String(val).trim()
+          }
+
           // Construir datos del producto
           let productData: any = {
             price: Number.parseFloat(price) || 0,
             stock: Number.parseInt(stock) || 0,
             source: [source.id],
+            ...(Object.keys(customFields).length > 0 ? { custom_fields: customFields } : {}),
           }
           
           // Agregar EAN si está disponible

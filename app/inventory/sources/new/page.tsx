@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
 import { ArrowLeft, Save, Download, Check, X } from "lucide-react"
 import Link from "next/link"
-import { INTERNAL_FIELDS, generateSuggestedMapping, validateMapping } from "@/lib/column-mapping-helpers"
+import { INTERNAL_FIELDS, generateSuggestedMapping, validateMapping, CUSTOM_FIELD_PREFIX, isCustomField, customFieldKey, makeCustomFieldValue } from "@/lib/column-mapping-helpers"
 
 export default function NewSourcePage() {
   const router = useRouter()
@@ -46,6 +46,8 @@ export default function NewSourcePage() {
   const [mapping, setMapping] = useState<Record<string, string>>({})
   const [detectingHeaders, setDetectingHeaders] = useState(false)
   const [showMappingWizard, setShowMappingWizard] = useState(false)
+  // Track which headers are in "custom name" input mode
+  const [customInputFor, setCustomInputFor] = useState<Record<string, string>>({})
 
   // Cargar almacenes disponibles
   useEffect(() => {
@@ -484,50 +486,124 @@ export default function NewSourcePage() {
                   </div>
                   
                   <div className="space-y-3 max-h-96 overflow-y-auto">
-                    {detectedHeaders.map((header, idx) => (
-                      <div key={idx} className="flex items-center gap-3">
-                        <div className="flex-1">
-                          <Label className="text-xs text-muted-foreground">
-                            Columna CSV
-                          </Label>
-                          <div className="font-mono text-sm mt-1 p-2 bg-background rounded border">
+                    <div className="grid grid-cols-[1fr_auto_1fr] gap-x-3 text-xs text-muted-foreground font-medium pb-1 border-b border-border/30">
+                      <span>Columna CSV</span>
+                      <span />
+                      <span>Campo interno</span>
+                    </div>
+                    {detectedHeaders.map((header, idx) => {
+                      const currentValue = mapping[header] || "_ignore"
+                      const isCustom = isCustomField(currentValue)
+                      const isEditingCustom = customInputFor[header] !== undefined
+
+                      return (
+                        <div key={idx} className="grid grid-cols-[1fr_auto_1fr] items-center gap-x-3">
+                          {/* CSV column name */}
+                          <div className="font-mono text-sm p-2 bg-background rounded border truncate" title={header}>
                             {header}
                           </div>
+
+                          <div className="text-muted-foreground text-xs">→</div>
+
+                          {/* Internal field selector or custom name input */}
+                          <div>
+                            {isEditingCustom ? (
+                              <div className="flex gap-1">
+                                <Input
+                                  autoFocus
+                                  className="h-8 text-xs font-mono"
+                                  placeholder="ej: precio_eur"
+                                  value={customInputFor[header]}
+                                  onChange={e => {
+                                    const sanitized = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "")
+                                    setCustomInputFor(prev => ({ ...prev, [header]: sanitized }))
+                                  }}
+                                  onKeyDown={e => {
+                                    if (e.key === "Enter") {
+                                      const key = customInputFor[header].trim()
+                                      if (key) {
+                                        setMapping(prev => ({ ...prev, [header]: makeCustomFieldValue(key) }))
+                                      }
+                                      setCustomInputFor(prev => { const n = { ...prev }; delete n[header]; return n })
+                                    }
+                                    if (e.key === "Escape") {
+                                      setCustomInputFor(prev => { const n = { ...prev }; delete n[header]; return n })
+                                    }
+                                  }}
+                                />
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 px-2"
+                                  onClick={() => {
+                                    const key = customInputFor[header].trim()
+                                    if (key) {
+                                      setMapping(prev => ({ ...prev, [header]: makeCustomFieldValue(key) }))
+                                    }
+                                    setCustomInputFor(prev => { const n = { ...prev }; delete n[header]; return n })
+                                  }}
+                                >
+                                  <Check className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-8 px-2"
+                                  onClick={() => setCustomInputFor(prev => { const n = { ...prev }; delete n[header]; return n })}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <Select
+                                value={isCustom ? "_custom_set" : currentValue}
+                                onValueChange={(value) => {
+                                  if (value === "_custom_new") {
+                                    setCustomInputFor(prev => ({ ...prev, [header]: "" }))
+                                    return
+                                  }
+                                  const newMapping = { ...mapping }
+                                  if (value === "_ignore") {
+                                    delete newMapping[header]
+                                  } else {
+                                    newMapping[header] = value
+                                  }
+                                  setMapping(newMapping)
+                                }}
+                              >
+                                <SelectTrigger className="h-8 text-xs">
+                                  <SelectValue>
+                                    {isCustom
+                                      ? <span className="text-amber-400 font-mono">campo: {customFieldKey(currentValue)}</span>
+                                      : undefined}
+                                  </SelectValue>
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="_ignore">
+                                    <span className="text-muted-foreground">Ignorar</span>
+                                  </SelectItem>
+                                  {INTERNAL_FIELDS.map(field => (
+                                    <SelectItem key={field.key} value={field.key}>
+                                      {field.label} {field.required && "*"}
+                                    </SelectItem>
+                                  ))}
+                                  {isCustom && (
+                                    <SelectItem value="_custom_set">
+                                      <span className="text-amber-400 font-mono">campo: {customFieldKey(currentValue)}</span>
+                                    </SelectItem>
+                                  )}
+                                  <SelectItem value="_custom_new">
+                                    <span className="text-blue-400">+ Nueva columna personalizada…</span>
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
+                            )}
+                          </div>
                         </div>
-                        <div className="text-muted-foreground">→</div>
-                        <div className="flex-1">
-                          <Label className="text-xs text-muted-foreground">
-                            Campo Interno
-                          </Label>
-                          <Select
-                            value={mapping[header] || "_ignore"}
-                            onValueChange={(value) => {
-                              const newMapping = { ...mapping }
-                              if (value === "_ignore") {
-                                delete newMapping[header]
-                              } else {
-                                newMapping[header] = value
-                              }
-                              setMapping(newMapping)
-                            }}
-                          >
-                            <SelectTrigger className="mt-1">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="_ignore">
-                                <span className="text-muted-foreground">Ignorar</span>
-                              </SelectItem>
-                              {INTERNAL_FIELDS.map(field => (
-                                <SelectItem key={field.key} value={field.key}>
-                                  {field.label} {field.required && "*"}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                   
                   {sampleRows.length > 0 && (
