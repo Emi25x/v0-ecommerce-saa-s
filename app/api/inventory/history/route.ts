@@ -7,12 +7,13 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const page = Number.parseInt(searchParams.get("page") || "1")
     const limit = Number.parseInt(searchParams.get("limit") || "50")
+    const sourceId = searchParams.get("source_id") ?? null
     const offset = (page - 1) * limit
 
-    console.log("[v0] Obteniendo historial de importaciones - página:", page, "límite:", limit)
+    console.log("[v0] Obteniendo historial de importaciones - página:", page, "límite:", limit, "source_id:", sourceId)
 
     // Obtener el historial con JOIN a import_sources para obtener el nombre
-    const { data: history, error: historyError } = await supabase
+    let q = supabase
       .from("import_history")
       .select(
         `
@@ -28,15 +29,19 @@ export async function GET(request: Request) {
       .order("started_at", { ascending: false })
       .range(offset, offset + limit - 1)
 
+    if (sourceId) q = q.eq("source_id", sourceId)
+
+    const { data: history, error: historyError } = await q
+
     if (historyError) {
       console.error("[v0] Error al obtener historial:", historyError)
       return NextResponse.json({ error: historyError.message }, { status: 500 })
     }
 
     // Obtener el total de registros
-    const { count, error: countError } = await supabase
-      .from("import_history")
-      .select("*", { count: "exact", head: true })
+    let countQ = supabase.from("import_history").select("*", { count: "exact", head: true })
+    if (sourceId) countQ = countQ.eq("source_id", sourceId)
+    const { count, error: countError } = await countQ
 
     if (countError) {
       console.error("[v0] Error al contar historial:", countError)

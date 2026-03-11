@@ -10,8 +10,16 @@ import { useToast } from "@/hooks/use-toast"
 import {
   Upload, Package, FileText, CheckCircle2, XCircle, Clock, RefreshCw,
   AlertTriangle, ChevronDown, ChevronUp, Eye, Play, Database, BarChart3,
-  FileSpreadsheet,
+  FileSpreadsheet, Plus, Zap, History, ChevronRight,
 } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { put } from "@vercel/blob"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -23,6 +31,8 @@ interface Supplier  { id: string; name: string; code: string; is_active: boolean
 interface Catalog   { id: string; name: string; file_url: string; file_format: string; import_status: string | null; imported_at: string | null; total_items: number; matched_items: number; catalog_mode: string; overwrite_mode: string; warehouse_id: string | null; created_at: string }
 interface Warehouse { id: string; name: string; code: string; is_default: boolean }
 interface ImportRun { id: string; catalog_id: string | null; feed_kind: string; catalog_mode: string | null; overwrite_mode: string | null; total_rows: number; valid_ean: number; created_count: number; updated_count: number; skipped_count: number; set_zero_stock_count: number; new_detected_count: number; error_count: number; status: string; started_at: string; finished_at: string | null }
+interface ImportSource { id: string; name: string; feed_type: string; is_active: boolean; source_key: string | null; last_import_at: string | null; url_template: string | null }
+interface HistoryEntry { id: string; status: string; products_imported: number | null; products_updated: number | null; products_failed: number | null; started_at: string; completed_at: string | null; mode: string | null; total_rows: number | null; created_count: number | null; updated_count: number | null; error_count: number | null; error_message: string | null }
 
 interface Preview {
   total_rows: number
@@ -68,6 +78,13 @@ export default function SuppliersPage() {
   const [activeTab,        setActiveTab]        = useState("import")
   const [loading,          setLoading]          = useState(false)
 
+  // Import sources (automated feeds)
+  const [importSources,       setImportSources]       = useState<ImportSource[]>([])
+  const [sourcesHistory,      setSourcesHistory]      = useState<Record<string, HistoryEntry[]>>({})
+  const [loadingSourceHistory, setLoadingSourceHistory] = useState<Record<string, boolean>>({})
+  const [expandedSources,     setExpandedSources]     = useState<Set<string>>(new Set())
+  const [showAddSupplierDialog, setShowAddSupplierDialog] = useState(false)
+
   // Upload form state
   const [uploading,     setUploading]     = useState(false)
   const [uploadFile,    setUploadFile]    = useState<File | null>(null)
@@ -104,7 +121,51 @@ export default function SuppliersPage() {
     if (!selectedSupplier) return
     fetch(`/api/suppliers/catalogs?supplier_id=${selectedSupplier}`).then(r => r.json()).then(d => setCatalogs(d.catalogs ?? []))
     fetch(`/api/suppliers/import-runs?supplier_id=${selectedSupplier}&limit=20`).then(r => r.json()).then(d => setImportRuns(d.runs ?? []))
-  }, [selectedSupplier])
+
+    // Fetch automated import sources matching this supplier name
+    const sup = suppliers.find(s => s.id === selectedSupplier)
+    if (!sup) return
+    fetch("/api/inventory/sources")
+      .then(r => r.json())
+      .then(d => {
+        const all: ImportSource[] = d.sources ?? d.data ?? []
+        const keyword = sup.name.toLowerCase()
+        const code = sup.code.toLowerCase()
+        const matched = all.filter(s =>
+          s.name?.toLowerCase().includes(keyword) ||
+          s.name?.toLowerCase().includes(code) ||
+          s.source_key?.toLowerCase().includes(code)
+        )
+        setImportSources(matched)
+        setSourcesHistory({})
+        setExpandedSources(new Set())
+      })
+  }, [selectedSupplier, suppliers])
+
+  async function loadSourceHistory(sourceId: string) {
+    if (sourcesHistory[sourceId] !== undefined) return
+    setLoadingSourceHistory(prev => ({ ...prev, [sourceId]: true }))
+    try {
+      const res = await fetch(`/api/inventory/history?source_id=${sourceId}&limit=10`)
+      const data = await res.json()
+      setSourcesHistory(prev => ({ ...prev, [sourceId]: data.history ?? [] }))
+    } finally {
+      setLoadingSourceHistory(prev => ({ ...prev, [sourceId]: false }))
+    }
+  }
+
+  function toggleSource(sourceId: string) {
+    setExpandedSources(prev => {
+      const next = new Set(prev)
+      if (next.has(sourceId)) {
+        next.delete(sourceId)
+      } else {
+        next.add(sourceId)
+        loadSourceHistory(sourceId)
+      }
+      return next
+    })
+  }
 
   // ── Upload file to Blob + create catalog record ───────────────────────────
   const handleUpload = async () => {
@@ -246,6 +307,9 @@ export default function SuppliersPage() {
           <h1 className="text-xl font-bold">Proveedores</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Importación controlada de catálogo y stock por EAN</p>
         </div>
+        <Button size="sm" onClick={() => setShowAddSupplierDialog(true)} className="gap-1.5">
+          <Plus className="h-3.5 w-3.5" />Agregar proveedor
+        </Button>
       </div>
 
       {/* Supplier selector */}
@@ -282,6 +346,12 @@ export default function SuppliersPage() {
             </TabsTrigger>
             <TabsTrigger value="logs">
               <BarChart3 className="h-3.5 w-3.5 mr-1.5" />Historial
+            </TabsTrigger>
+            <TabsTrigger value="fuentes">
+              <Zap className="h-3.5 w-3.5 mr-1.5" />Fuentes automáticas
+              {importSources.length > 0 && (
+                <span className="ml-1.5 text-[10px] bg-muted/50 rounded-full px-1.5 py-px font-mono">{importSources.length}</span>
+              )}
             </TabsTrigger>
           </TabsList>
 
@@ -693,8 +763,242 @@ export default function SuppliersPage() {
             </div>
           </TabsContent>
 
+          {/* ── Fuentes automáticas tab ── */}
+          <TabsContent value="fuentes" className="mt-4 space-y-3">
+            {importSources.length === 0 ? (
+              <div className="rounded-lg border border-border bg-card p-8 text-center text-muted-foreground text-sm">
+                No se encontraron fuentes automáticas para este proveedor.
+              </div>
+            ) : importSources.map(src => {
+              const isExpanded = expandedSources.has(src.id)
+              const history = sourcesHistory[src.id] ?? []
+              const loadingHist = loadingSourceHistory[src.id] ?? false
+
+              return (
+                <div key={src.id} className="rounded-lg border border-border bg-card overflow-hidden">
+                  {/* Source header row */}
+                  <button
+                    className="w-full flex items-center gap-3 px-5 py-4 hover:bg-muted/20 transition-colors text-left"
+                    onClick={() => toggleSource(src.id)}
+                  >
+                    <div className={`h-2 w-2 rounded-full flex-shrink-0 ${src.is_active ? "bg-emerald-400" : "bg-zinc-600"}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-semibold">{src.name}</span>
+                        <span className="text-[10px] font-mono bg-muted/50 text-muted-foreground px-1.5 py-0.5 rounded">
+                          {src.feed_type}
+                        </span>
+                        {src.source_key && (
+                          <span className="text-[10px] font-mono text-muted-foreground">key: {src.source_key}</span>
+                        )}
+                      </div>
+                      {src.last_import_at && (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Última importación: {new Date(src.last_import_at).toLocaleString("es-AR")}
+                        </p>
+                      )}
+                    </div>
+                    <ChevronRight className={`h-4 w-4 text-muted-foreground flex-shrink-0 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                  </button>
+
+                  {/* Expanded history */}
+                  {isExpanded && (
+                    <div className="border-t border-border">
+                      {loadingHist ? (
+                        <div className="flex items-center gap-2 text-muted-foreground text-sm px-5 py-4">
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />Cargando historial...
+                        </div>
+                      ) : history.length === 0 ? (
+                        <p className="px-5 py-4 text-sm text-muted-foreground">Sin historial de importaciones.</p>
+                      ) : (
+                        <table className="w-full text-xs">
+                          <thead className="bg-muted/20 text-muted-foreground uppercase tracking-wide">
+                            <tr>
+                              <th className="px-5 py-2 text-left">Estado</th>
+                              <th className="px-4 py-2 text-right">Importados</th>
+                              <th className="px-4 py-2 text-right">Actualizados</th>
+                              <th className="px-4 py-2 text-right">Errores</th>
+                              <th className="px-4 py-2 text-left">Inicio</th>
+                              <th className="px-4 py-2 text-left">Duración</th>
+                              <th className="px-4 py-2 text-left">Mensaje</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border">
+                            {history.map(h => {
+                              const durMs = h.completed_at
+                                ? new Date(h.completed_at).getTime() - new Date(h.started_at).getTime()
+                                : null
+                              const durLabel = durMs == null ? "—"
+                                : durMs < 60000 ? `${Math.round(durMs / 1000)}s`
+                                : `${Math.round(durMs / 60000)}m ${Math.round((durMs % 60000) / 1000)}s`
+
+                              const imported = h.products_imported ?? h.created_count ?? 0
+                              const updated = h.products_updated ?? h.updated_count ?? 0
+                              const errors = h.products_failed ?? h.error_count ?? 0
+
+                              return (
+                                <tr key={h.id} className="hover:bg-muted/10">
+                                  <td className="px-5 py-2.5"><StatusBadge status={h.status} /></td>
+                                  <td className="px-4 py-2.5 text-right font-mono text-emerald-400">{fmt(imported)}</td>
+                                  <td className="px-4 py-2.5 text-right font-mono text-amber-400">{fmt(updated)}</td>
+                                  <td className="px-4 py-2.5 text-right font-mono">
+                                    {errors > 0
+                                      ? <span className="text-red-400">{fmt(errors)}</span>
+                                      : <span className="text-muted-foreground">—</span>
+                                    }
+                                  </td>
+                                  <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">
+                                    {new Date(h.started_at).toLocaleString("es-AR")}
+                                  </td>
+                                  <td className="px-4 py-2.5 text-muted-foreground font-mono">{durLabel}</td>
+                                  <td className="px-4 py-2.5 text-muted-foreground max-w-[240px] truncate">
+                                    {h.error_message ?? "—"}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </TabsContent>
+
         </Tabs>
       )}
+
+      {/* ── Add Supplier Dialog ─────────────────────────────────────────── */}
+      <AddSupplierDialog
+        open={showAddSupplierDialog}
+        onClose={() => setShowAddSupplierDialog(false)}
+        onCreated={(newSupplier) => {
+          setSuppliers(prev => [...prev, newSupplier])
+          setSelectedSupplier(newSupplier.id)
+          setShowAddSupplierDialog(false)
+        }}
+      />
     </div>
+  )
+}
+
+// ─── Add Supplier Dialog ──────────────────────────────────────────────────────
+function AddSupplierDialog({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean
+  onClose: () => void
+  onCreated: (supplier: Supplier) => void
+}) {
+  const { toast } = useToast()
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState({ name: "", code: "", country: "", email: "", type: "distributor" })
+
+  function set(field: string, value: string) {
+    setForm(prev => ({ ...prev, [field]: value }))
+  }
+
+  async function handleSubmit() {
+    if (!form.name || !form.code) {
+      toast({ title: "Nombre y código son obligatorios", variant: "destructive" })
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch("/api/suppliers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.name,
+          code: form.code.toUpperCase(),
+          country: form.country || null,
+          contact_email: form.email || null,
+          type: form.type,
+          is_active: true,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Error al crear proveedor")
+      const supplier = data.supplier ?? data
+      onCreated(supplier)
+      setForm({ name: "", code: "", country: "", email: "", type: "distributor" })
+      toast({ title: "Proveedor creado", description: supplier.name })
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v) onClose() }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Agregar proveedor</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5 col-span-2">
+              <label className="text-xs text-muted-foreground">Nombre *</label>
+              <Input
+                placeholder="Ej: Libral Argentina"
+                value={form.name}
+                onChange={e => set("name", e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">Código *</label>
+              <Input
+                placeholder="Ej: LIBRAL"
+                value={form.code}
+                onChange={e => set("code", e.target.value.toUpperCase())}
+                className="font-mono uppercase"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">País</label>
+              <Input
+                placeholder="Ej: Argentina"
+                value={form.country}
+                onChange={e => set("country", e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">Email</label>
+              <Input
+                type="email"
+                placeholder="contacto@proveedor.com"
+                value={form.email}
+                onChange={e => set("email", e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">Tipo</label>
+              <Select value={form.type} onValueChange={v => set("type", v)}>
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="distributor">Distribuidor</SelectItem>
+                  <SelectItem value="publisher">Editorial</SelectItem>
+                  <SelectItem value="wholesaler">Mayorista</SelectItem>
+                  <SelectItem value="direct">Directo</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>Cancelar</Button>
+          <Button size="sm" onClick={handleSubmit} disabled={saving} className="gap-1.5">
+            {saving ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" />Guardando...</> : <><Plus className="h-3.5 w-3.5" />Crear proveedor</>}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
