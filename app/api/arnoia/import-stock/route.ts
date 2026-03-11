@@ -117,8 +117,9 @@ export async function POST(request: NextRequest) {
 
       if (existingProds && existingProds.length > 0) {
         const stockByEan = new Map(batchEans.map((e, idx) => [e, batchStocks[idx]]))
+        const stockKey = (source as any).source_key ?? "arnoia"
         const arnoiaUpdates = existingProds.map((p: any) => {
-          const merged = { ...(p.stock_by_source || {}), [source.id]: stockByEan.get(p.ean) ?? 0 }
+          const merged = { ...(p.stock_by_source || {}), [stockKey]: stockByEan.get(p.ean) ?? 0 }
           return {
             id: p.id,
             stock_by_source: merged,

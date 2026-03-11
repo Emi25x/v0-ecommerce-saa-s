@@ -17,14 +17,15 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient()
 
-    // Fetch the Libral source to get its id for stock_by_source keying
+    // Fetch the Libral source to get its source_key for stock_by_source keying
     const { data: libralSource } = await supabase
       .from("import_sources")
-      .select("id")
+      .select("id, source_key")
       .ilike("name", "%libral%")
       .limit(1)
       .single()
-    const libralSourceId: string = libralSource?.id ?? "libral"
+    // Usar source_key (clave corta sin guiones) en lugar de UUID para compatibilidad con filtros JSONB
+    const libralSourceId: string = (libralSource as any)?.source_key ?? libralSource?.id ?? "libral"
 
     let totalImported = 0
     let page = 0

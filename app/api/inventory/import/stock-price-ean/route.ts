@@ -61,8 +61,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Fuente no encontrada" }, { status: 404 })
   }
 
-  // Use source.id as the stock_by_source key (unique, never clashes between sources)
-  const sourceKey = source.id
+  // Usar source_key (clave corta, sin guiones) como key en stock_by_source.
+  // Fallback a source.id si source_key no está definido.
+  const sourceKey = (source as any).source_key ?? source.id
   const mapping: Record<string, string> = source.column_mapping || {}
 
   // Necesitamos al menos la columna de EAN

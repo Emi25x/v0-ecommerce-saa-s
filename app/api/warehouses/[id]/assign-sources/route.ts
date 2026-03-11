@@ -83,9 +83,17 @@ export async function POST(
       return NextResponse.json({ error: updateError.message }, { status: 500 })
     }
 
-    // Backfill: asignar stock_by_source[primarySourceId] para productos sin fuente asignada
+    // Backfill: asignar stock_by_source[source_key] para productos sin fuente asignada
     // Solo toca productos donde stock_by_source IS NULL o {} (vacío)
-    const primarySourceId = source_ids[0]
+    // Usar source_key (clave corta) en lugar de UUID para compatibilidad con filtros JSONB
+    const { data: primarySource } = await supabase
+      .from("import_sources")
+      .select("id, name, source_key")
+      .eq("id", source_ids[0])
+      .single()
+    const primarySourceKey: string = (primarySource as any)?.source_key
+      ?? (primarySource?.name?.split(" ")[0].toLowerCase())
+      ?? source_ids[0]
     let backfilled = 0
     const CHUNK = 1000
     let offset = 0
@@ -111,7 +119,7 @@ export async function POST(
         const batch = prods.slice(i, i + CHUNK)
         const updates = batch.map((p: any) => ({
           id: p.id,
-          stock_by_source: { [primarySourceId]: p.stock ?? 0 },
+          stock_by_source: { [primarySourceKey]: p.stock ?? 0 },
         }))
         const { error: upsertErr } = await supabaseAdmin
           .from("products")
@@ -131,7 +139,7 @@ export async function POST(
       success: true,
       assigned_sources: source_ids.length,
       backfilled_products: backfilled,
-      primary_source_id: primarySourceId,
+      primary_source_key: primarySourceKey,
       message: `${source_ids.length} fuente(s) vinculadas al almacén "${warehouse.name}". Backfill: ${backfilled} productos.`,
     })
   } catch (error) {
