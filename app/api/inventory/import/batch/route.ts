@@ -160,36 +160,62 @@ export async function POST(request: NextRequest) {
 
     const isStockImport = source.name.toLowerCase().includes("stock")
 
+    // column_mapping values may be original-case column names; normalize them for lookup
+    const cm: Record<string, string> = {}
+    if (source.column_mapping && typeof source.column_mapping === "object") {
+      for (const [field, col] of Object.entries(source.column_mapping as Record<string, string>)) {
+        cm[field] = normalizeHeader(col)
+      }
+    }
+
+    // Helper: use column_mapping first, then heuristic fallbacks
+    const col = (field: string, ...fallbacks: string[]): string | null => {
+      const mappedKey = cm[field]
+      if (mappedKey) return mappedKey
+      for (const f of fallbacks) if (f) return f
+      return null
+    }
+
     for (const row of batchRows) {
-      const eanRaw = row["ean"] || row["ean13"] || row["gtin"] || row["codigo_de_barras"]
-      const isbnRaw = row["isbn"] || row["isbn13"]
+      const eanRaw = row[col("ean", "ean") ?? "ean"]
+        || row["ean13"] || row["gtin"] || row["codigo_de_barras"]
+      const isbnRaw = row[col("isbn", "isbn") ?? "isbn"] || row["isbn13"]
       const ean = normalizeEan(eanRaw || isbnRaw)
 
       if (!ean) { missing_ean++; continue }
       if (ean.length !== 13) { invalid_ean++; continue }
 
-      const priceRaw = row["pvp"] || row["precio_sin_iva"] || row["precio"] || row["price"] || null
+      const priceKey = col("price", "pvp", "precio_sin_iva", "precio", "price")
+      const priceRaw = (priceKey ? row[priceKey] : null)
+        || row["pesos_argentinos"] || row["pvp"] || row["precio_sin_iva"] || row["precio"] || row["price"] || null
       const cost_price = priceRaw ? parseFloat(String(priceRaw).replace(",", ".").replace(/[^\d.]/g, "")) || null : null
-      const stockRaw = row["stock"] || row["cantidad"] || null
+
+      const stockKey = col("stock", "stock", "cantidad")
+      const stockRaw = (stockKey ? row[stockKey] : null) || row["stock"] || row["cantidad"] || null
       const stock = stockRaw !== null ? parseInt(String(stockRaw).replace(/\D/g, ""), 10) || 0 : null
 
-      const descKey = Object.keys(row).find(k => k.includes("sinopsis"))
-      const yearKey = Object.keys(row).find(k => k.includes("ano_edicion") || k.includes("ano_edici"))
+      const descKey = cm["description"] || Object.keys(row).find(k => k.includes("sinopsis"))
+      const yearKey = cm["year_edition"] || Object.keys(row).find(k => k.includes("ano_edicion") || k.includes("ano_edici"))
+
+      const titleKey = col("title", "titulo", "title", "articulo")
+      const authorKey = col("author", "autor", "author", "autores")
+      const imageKey = col("image_url", "url", "portada", "imagen", "image", "url_fotografia")
+      const categoryKey = col("category", "categoria", "category", "tematica")
 
       productsToInsert.push({
         ean,
         isbn: isbnRaw || null,
-        title: row["titulo"] || row["title"] || null,
-        author: row["autor"] || row["author"] || null,
+        title: (titleKey ? row[titleKey] : null) || row["titulo"] || row["title"] || row["articulo"] || null,
+        author: (authorKey ? row[authorKey] : null) || row["autor"] || row["author"] || row["autores"] || null,
         cost_price,
-        image_url: row["url"] || row["portada"] || row["imagen"] || row["image"] || null,
+        image_url: (imageKey ? row[imageKey] : null) || row["url"] || row["portada"] || row["imagen"] || row["image"] || row["url_fotografia"] || null,
         stock,
-        brand: row["editorial"] || row["marca"] || row["brand"] || null,
-        category: row["categoria"] || row["category"] || null,
+        brand: row[cm["brand"] ?? ""] || row["editorial"] || row["marca"] || row["brand"] || null,
+        category: (categoryKey ? row[categoryKey] : null) || row["categoria"] || row["category"] || row["tematica"] || null,
         description: (descKey ? row[descKey] : null) || row["descripcion"] || row["description"] || null,
-        language: row["idioma"] || row["language"] || null,
+        language: row[cm["language"] ?? ""] || row["idioma"] || row["language"] || null,
         year_edition: (yearKey ? row[yearKey] : null) || row["year_edition"] || null,
-        internal_code: row["codigo_interno"] || row["internal_code"] || null,
+        internal_code: row[cm["internal_code"] ?? ""] || row["codigo_interno"] || row["internal_code"] || null,
       })
     }
 
@@ -265,6 +291,8 @@ export async function POST(request: NextRequest) {
         const toUpsert = deduped.map(p => ({
           ...p,
           sku: eanToSku.get(p.ean) || p.ean,
+          // title is NOT NULL in products; fall back to ean if mapping produced nothing
+          title: p.title || p.ean,
         }))
 
         // Upsert en chunks de UPSERT_CHUNK
