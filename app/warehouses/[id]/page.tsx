@@ -119,6 +119,7 @@ export default function WarehouseDetailPage() {
   const pagination = data?.pagination
   const stats = data?.stats
   const linkedSources: string[] = data?.linked_sources ?? []
+  const dataSource: string = data?.data_source ?? ""
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
@@ -160,6 +161,16 @@ export default function WarehouseDetailPage() {
           Vincular fuentes
         </Button>
       </div>
+
+      {/* Hint when no import sources are linked */}
+      {dataSource === "products_all" && !showSourcePanel && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
+          <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+          <span>
+            Mostrando todos los productos con stock. Para ver solo los productos de este almacén, hacé clic en <strong>Vincular fuentes</strong> y asigná las fuentes de importación correspondientes.
+          </span>
+        </div>
+      )}
 
       {/* Source assignment panel */}
       {showSourcePanel && (

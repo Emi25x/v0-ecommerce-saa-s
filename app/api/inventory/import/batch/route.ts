@@ -338,12 +338,20 @@ export async function POST(request: NextRequest) {
         const eanToSku = new Map<string, string>()
         existingRows?.forEach((r: any) => eanToSku.set(r.ean, r.sku))
 
-        const toUpsert = deduped.map(p => ({
-          ...p,
-          sku: eanToSku.get(p.ean) || p.ean,
-          // title is NOT NULL in products; fall back to ean if mapping produced nothing
-          title: p.title || p.ean,
-        }))
+        const toUpsert = deduped.map(p => {
+          // Strip price_ars — not a products column (goes to custom_fields via two-prices RPC path)
+          const { price_ars, ...rest } = p
+          const custom_fields = price_ars != null
+            ? { ...(rest.custom_fields ?? {}), precio_ars: price_ars }
+            : (rest.custom_fields ?? undefined)
+          return {
+            ...rest,
+            ...(custom_fields ? { custom_fields } : {}),
+            sku: eanToSku.get(p.ean) || p.ean,
+            // title is NOT NULL in products; fall back to ean if mapping produced nothing
+            title: p.title || p.ean,
+          }
+        })
 
         // Upsert en chunks de UPSERT_CHUNK
         for (let i = 0; i < toUpsert.length; i += UPSERT_CHUNK) {

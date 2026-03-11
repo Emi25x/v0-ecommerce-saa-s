@@ -64,30 +64,35 @@ export async function GET(
       return catalogModeResponse({ supabase, warehouseId, warehouse, sourceNames, search, page, offset })
     }
 
-    // ── Sin fuentes → vacío ───────────────────────────────────────────────────
-    if (sourceKeys.length === 0) {
-      return NextResponse.json(emptyResponse(warehouse, sourceNames))
-    }
+    // ── Sin fuentes vinculadas → mostrar todos los productos con stock > 0 ─────
+    // No bloquear el almacén: si aún no tiene fuentes configuradas, muestra el
+    // catálogo completo como fallback para que el usuario pueda ver qué tiene.
+    // (Cuando se vinculen fuentes, se filtrará por stock_by_source[source_key])
+    const noLinkedSources = sourceKeys.length === 0
 
     // ── Modo 2: products filtrados por stock_by_source[source_key] ────────────
     // Los source_keys son cadenas cortas sin guiones (e.g. "libral", "azeta")
     // por lo que el filtro JSONB funciona correctamente en PostgREST.
     //
-    // Construir filtro OR: stock_by_source->>'key1'.not.is.null,stock_by_source->>'key2'.not.is.null,...
-    const jsonbOrFilter = sourceKeys.map((k: string) => `stock_by_source->>${k}.not.is.null`).join(",")
+    // Construir filtro OR: stock_by_source->>'key1'.not.is.null,...
+    const jsonbOrFilter = noLinkedSources
+      ? ""
+      : sourceKeys.map((k: string) => `stock_by_source->>${k}.not.is.null`).join(",")
 
     // Contar cuántos productos ya tienen stock_by_source poblado con alguna de estas claves
-    let { count: jsonbCount, error: jsonbTestErr } = await supabase
-      .from("products")
-      .select("*", { count: "exact", head: true })
-      .or(jsonbOrFilter)
+    let hasSourceData = false
+    if (!noLinkedSources && jsonbOrFilter) {
+      const { count: jsonbCount, error: jsonbTestErr } = await supabase
+        .from("products")
+        .select("*", { count: "exact", head: true })
+        .or(jsonbOrFilter)
 
-    if (jsonbTestErr) {
-      console.error("[WAREHOUSE STOCK] JSONB filter error:", jsonbTestErr.message)
-      jsonbCount = 0
+      if (jsonbTestErr) {
+        console.error("[WAREHOUSE STOCK] JSONB filter error:", jsonbTestErr.message)
+      } else {
+        hasSourceData = (jsonbCount ?? 0) > 0
+      }
     }
-
-    const hasSourceData = (jsonbCount ?? 0) > 0
 
     // Construir queries según si hay datos de stock_by_source o no
     let prodQ = supabase
@@ -152,7 +157,7 @@ export async function GET(
     return NextResponse.json({
       warehouse,
       items,
-      data_source: hasSourceData ? "products_by_source" : "products_fallback",
+      data_source: noLinkedSources ? "products_all" : hasSourceData ? "products_by_source" : "products_fallback",
       linked_sources: sourceNames,
       source_keys: sourceKeys,
       pagination: {

@@ -73,7 +73,15 @@ export async function GET(request: Request) {
           throw new Error("CSV file is empty or has no data rows")
         }
 
-        const headers = lines[0].split(";").map((h) => h.trim())
+        // Auto-detect separator (|, ;, \t, ,)
+        const firstLine = lines[0]
+        const separatorCounts = ["|", ";", "\t", ","].map(s => ({
+          s, n: (firstLine.match(new RegExp(`\\${s === "\t" ? "t" : s}`, "g")) || []).length
+        }))
+        const separator = separatorCounts.reduce((best, cur) => cur.n > best.n ? cur : best).s
+        console.log(`[v0] Separator detected: "${separator}"`)
+
+        const headers = firstLine.split(separator).map((h) => h.trim().replace(/^["']|["']$/g, ""))
         console.log(`[v0] CSV headers:`, headers)
 
         const columnMapping = source.column_mapping as Record<string, string>
@@ -110,7 +118,7 @@ export async function GET(request: Request) {
           if (!line.trim()) continue
 
           try {
-            const values = line.split(";").map((v) => v.trim())
+            const values = line.split(separator).map((v) => v.trim().replace(/^["']|["']$/g, ""))
             const row: Record<string, string> = {}
 
             headers.forEach((header, index) => {
