@@ -73,10 +73,8 @@ export async function GET(
       .eq("warehouse_id", warehouseId)
       .eq("is_active", true)
 
-    // Normalizar nombre de fuente → clave en stock_by_source (e.g. "AZETA" → "azeta")
-    const sourceKeys = (linkedSources ?? []).map((s) =>
-      s.name.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "")
-    )
+    // Cada fuente usa su UUID como clave en stock_by_source (consistente con mergeStockBySource)
+    const sourceKeys = (linkedSources ?? []).map((s) => s.id)
 
     // Productos con stock_by_source en alguna de esas claves
     type ProductRow = {

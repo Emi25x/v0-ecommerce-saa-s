@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 
 /**
  * POST /api/warehouses/[id]/assign-sources
  * Vincula fuentes de importación a un almacén y hace backfill de stock_by_source
- * para los productos que ya existen en esas fuentes.
+ * para los productos que aún no tienen ninguna fuente asignada (stock_by_source vacío).
  *
- * Body: { source_ids: string[] }
- *
- * El backfill solo aplica a fuentes "azeta" y "arnoia" (stock_by_source).
+ * Usa source.id como clave (igual que mergeStockBySource en lib/stock-helpers).
+ * Solo backfilla productos con stock_by_source NULL o {} para evitar doble conteo.
  */
 export async function POST(
   request: Request,
@@ -16,6 +16,7 @@ export async function POST(
 ) {
   try {
     const supabase = await createClient()
+    const supabaseAdmin = createAdminClient()
     const { id: warehouseId } = await params
 
     const {
@@ -27,7 +28,6 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Verify warehouse belongs to user
     const { data: warehouse, error: warehouseError } = await supabase
       .from("warehouses")
       .select("id, name")
@@ -46,7 +46,7 @@ export async function POST(
       return NextResponse.json({ error: "source_ids requerido" }, { status: 400 })
     }
 
-    // Asignar warehouse_id a las fuentes seleccionadas
+    // 1. Asignar warehouse_id a las fuentes
     const { error: updateError } = await supabase
       .from("import_sources")
       .update({ warehouse_id: warehouseId })
@@ -56,54 +56,49 @@ export async function POST(
       return NextResponse.json({ error: updateError.message }, { status: 500 })
     }
 
-    // Backfill de stock_by_source para las fuentes vinculadas
-    // Para cada fuente, el key en stock_by_source es el nombre normalizado
-    const { data: sources } = await supabase
-      .from("import_sources")
-      .select("id, name")
-      .in("id", source_ids)
-
+    // 2. Backfill usando el PRIMER source como clave para los productos aún sin fuente asignada.
+    //    Solo productos con stock_by_source NULL o vacío ({}) para evitar doble conteo.
+    //    Los productos ya atribuidos a otra fuente se saltean.
+    const primarySourceId = source_ids[0]
     let backfilled = 0
+    const CHUNK = 1000
+    let offset = 0
+    const FETCH_LIMIT = 10000
 
-    for (const source of sources ?? []) {
-      const sourceKey = source.name.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "")
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { data: prods } = await supabaseAdmin
+        .from("products")
+        .select("id, stock, stock_by_source")
+        .gt("stock", 0)
+        // Solo productos sin ninguna clave en stock_by_source
+        .or("stock_by_source.is.null,stock_by_source.eq.{}")
+        .range(offset, offset + FETCH_LIMIT - 1)
+        .order("id")
 
-      // Buscar productos que ya tienen stock de esta fuente en stock_by_source
-      // o que tienen stock > 0 y la fuente es la principal (azeta, arnoia)
-      if (sourceKey === "azeta") {
-        // Azeta ya escribe stock_by_source.azeta - nada que backfillear
-        continue
+      if (!prods || prods.length === 0) break
+
+      for (let i = 0; i < prods.length; i += CHUNK) {
+        const batch = prods.slice(i, i + CHUNK)
+        const updates = batch.map((p: any) => ({
+          id: p.id,
+          // Solo seteamos la clave del source; no recalculamos products.stock para no alterar el total
+          stock_by_source: { [primarySourceId]: p.stock ?? 0 },
+        }))
+        await supabaseAdmin.from("products").upsert(updates, { onConflict: "id" })
+        backfilled += batch.length
       }
 
-      if (sourceKey.startsWith("arnoia")) {
-        // Arnoia: backfill leyendo products.stock donde stock_by_source.arnoia no existe aún
-        const { data: prodsToBackfill } = await supabase
-          .from("products")
-          .select("id, stock, stock_by_source")
-          .gt("stock", 0)
-          .is(`stock_by_source->arnoia`, null)
-          .limit(10000)
-
-        if (prodsToBackfill && prodsToBackfill.length > 0) {
-          const CHUNK = 500
-          for (let i = 0; i < prodsToBackfill.length; i += CHUNK) {
-            const batch = prodsToBackfill.slice(i, i + CHUNK)
-            const updates = batch.map((p: any) => ({
-              id: p.id,
-              stock_by_source: { ...(p.stock_by_source || {}), arnoia: p.stock ?? 0 },
-            }))
-            await supabase.from("products").upsert(updates, { onConflict: "id" })
-            backfilled += batch.length
-          }
-        }
-      }
+      if (prods.length < FETCH_LIMIT) break
+      offset += FETCH_LIMIT
     }
 
     return NextResponse.json({
       success: true,
       assigned_sources: source_ids.length,
       backfilled_products: backfilled,
-      message: `${source_ids.length} fuente(s) vinculadas al almacén ${warehouse.name}. ${backfilled} productos con backfill.`,
+      primary_source_id: primarySourceId,
+      message: `${source_ids.length} fuente(s) vinculadas al almacén "${warehouse.name}". Backfill: ${backfilled} productos asignados.`,
     })
   } catch (error) {
     console.error("[ASSIGN-SOURCES]", error)

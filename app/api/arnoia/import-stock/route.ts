@@ -117,10 +117,14 @@ export async function POST(request: NextRequest) {
 
       if (existingProds && existingProds.length > 0) {
         const stockByEan = new Map(batchEans.map((e, idx) => [e, batchStocks[idx]]))
-        const arnoiaUpdates = existingProds.map((p: any) => ({
-          id: p.id,
-          stock_by_source: { ...(p.stock_by_source || {}), arnoia: stockByEan.get(p.ean) ?? 0 },
-        }))
+        const arnoiaUpdates = existingProds.map((p: any) => {
+          const merged = { ...(p.stock_by_source || {}), [source.id]: stockByEan.get(p.ean) ?? 0 }
+          return {
+            id: p.id,
+            stock_by_source: merged,
+            stock: Object.values(merged).reduce((s: number, v: any) => s + (Number(v) || 0), 0),
+          }
+        })
         await supabase.from("products").upsert(arnoiaUpdates, { onConflict: "id" })
       }
     }

@@ -105,12 +105,11 @@ export async function POST(_request: NextRequest) {
         continue
       }
 
-      // Construir updates: merge azeta dentro del JSONB existente
+      // Construir updates: merge azeta dentro del JSONB existente usando source.id como clave
       const updates = existing.map((p: any) => {
         const { stock, price } = eanMap.get(p.ean)!
-        // Merge: preserva claves de otros proveedores (arnoia, etc.)
-        const mergedSource = { ...(p.stock_by_source || {}), azeta: stock }
-        const update: any = { id: p.id, stock_by_source: mergedSource }
+        const mergedSource = { ...(p.stock_by_source || {}), [source.id]: stock }
+        const update: any = { id: p.id, stock_by_source: mergedSource, stock: Object.values(mergedSource).reduce((s: number, v: any) => s + (Number(v) || 0), 0) }
         if (price !== null) update.cost_price = price
         return update
       })
