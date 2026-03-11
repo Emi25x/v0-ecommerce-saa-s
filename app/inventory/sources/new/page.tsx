@@ -50,8 +50,8 @@ export default function NewSourcePage() {
   // Cargar almacenes disponibles
   useEffect(() => {
     fetch("/api/warehouses")
-      .then(r => r.ok ? r.json() : [])
-      .then((data: any[]) => setWarehouses(Array.isArray(data) ? data : []))
+      .then(r => r.ok ? r.json() : { warehouses: [] })
+      .then((data: any) => setWarehouses(Array.isArray(data.warehouses) ? data.warehouses : []))
       .catch(() => {})
   }, [])
 
