@@ -164,8 +164,10 @@ export async function POST(request: NextRequest) {
     // column_mapping values may be original-case column names; normalize them for lookup
     const cm: Record<string, string> = {}
     if (source.column_mapping && typeof source.column_mapping === "object") {
-      for (const [field, colName] of Object.entries(source.column_mapping as Record<string, string>)) {
-        cm[field] = normalizeHeader(colName)
+      for (const [field, colName] of Object.entries(source.column_mapping as Record<string, unknown>)) {
+        if (typeof colName === "string" && colName.trim()) {
+          cm[field] = normalizeHeader(colName)
+        }
       }
     }
 
@@ -177,10 +179,10 @@ export async function POST(request: NextRequest) {
       return null
     }
 
-    // Detect if this source provides two separate price columns (e.g. cost in EUR + price in ARS)
-    // Triggered when column_mapping has distinct "price" and "cost_price" keys,
-    // or when the CSV contains the known Libral Argentina columns.
-    const hasTwoPrices = (cm["price"] && cm["cost_price"] && cm["price"] !== cm["cost_price"])
+    // Detect if this source provides two separate price columns (EUR + ARS)
+    // Triggered when column_mapping has "price_ars" key,
+    // or when the CSV contains the known Libral Argentina column.
+    const hasTwoPrices = !!cm["price_ars"]
       || headersNormalized.includes("pesos_argentinos")
 
     for (const row of batchRows) {
