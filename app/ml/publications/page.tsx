@@ -207,6 +207,11 @@ export default function MLPublicationsPage() {
       notes: string | null
       created_at: string
     }[]
+    ml_snapshot: {
+      available_quantity: number | null
+      price: number | null
+      status: string | null
+    } | null
     sales: {
       order_id: number
       status: string
@@ -1739,15 +1744,41 @@ export default function MLPublicationsPage() {
                 </div>
               ) : (
                 <>
+                  {/* ── Snapshot actual desde ML ────────────────────────── */}
+                  {historialData?.ml_snapshot && (
+                    <section className="bg-muted/40 rounded-lg px-4 py-3 flex items-center justify-between gap-4">
+                      <div className="text-xs text-muted-foreground">Stock actual en ML</div>
+                      <div className="flex items-center gap-4 text-sm">
+                        <span className={`font-semibold ${
+                          (historialData.ml_snapshot.available_quantity ?? 0) === 0
+                            ? "text-red-400"
+                            : "text-foreground"
+                        }`}>
+                          {historialData.ml_snapshot.available_quantity ?? "–"} u.
+                        </span>
+                        {historialData.ml_snapshot.price != null && (
+                          <span className="text-muted-foreground">{fmt(historialData.ml_snapshot.price)}</span>
+                        )}
+                        {historialData.ml_snapshot.status && (
+                          <span className="text-xs text-muted-foreground capitalize">
+                            {historialData.ml_snapshot.status}
+                          </span>
+                        )}
+                      </div>
+                    </section>
+                  )}
+
                   {/* ── Cambios de stock ────────────────────────────────── */}
                   <section>
                     <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
                       <TrendingDown className="h-4 w-4 text-blue-400" />
                       Cambios de stock
+                      <span className="text-xs text-muted-foreground font-normal">(últimos 7 días — capturados vía webhook ML)</span>
                     </h3>
                     {!historialData?.stock_history?.length ? (
                       <p className="text-xs text-muted-foreground">
                         Sin cambios registrados en los últimos 7 días.
+                        Los cambios futuros se capturarán automáticamente vía webhooks de ML.
                       </p>
                     ) : (
                       <div className="space-y-2">
