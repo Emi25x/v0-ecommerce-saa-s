@@ -26,9 +26,8 @@ export default function NewSourcePage() {
   const [authType, setAuthType] = useState("none")
   const [feedType, setFeedType] = useState("catalog")
   const [isActive, setIsActive] = useState(true)
-  const [mlAccountId, setMlAccountId] = useState<string>("none")
-  const [sourceKey, setSourceKey] = useState("")
-  const [mlAccounts, setMlAccounts] = useState<{ id: string; nickname: string }[]>([])
+  const [warehouseId, setWarehouseId] = useState<string>("none")
+  const [warehouses, setWarehouses] = useState<{ id: string; name: string; code: string }[]>([])
   
   // Credenciales según tipo de auth
   const [username, setUsername] = useState("")
@@ -48,21 +47,13 @@ export default function NewSourcePage() {
   const [detectingHeaders, setDetectingHeaders] = useState(false)
   const [showMappingWizard, setShowMappingWizard] = useState(false)
 
-  // Cargar cuentas ML disponibles
+  // Cargar almacenes disponibles
   useEffect(() => {
-    fetch("/api/ml/accounts")
-      .then(r => r.json())
-      .then((data: any[]) => setMlAccounts(Array.isArray(data) ? data : []))
+    fetch("/api/warehouses")
+      .then(r => r.ok ? r.json() : [])
+      .then((data: any[]) => setWarehouses(Array.isArray(data) ? data : []))
       .catch(() => {})
   }, [])
-
-  // Auto-generar source_key desde el nombre
-  useEffect(() => {
-    if (!sourceKey) {
-      setSourceKey(name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, ""))
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name])
 
   const handleDetectColumns = async () => {
     if (!urlTemplate) {
@@ -201,8 +192,7 @@ export default function NewSourcePage() {
         feed_type: feedType,
         column_mapping: parsedMapping,
         is_active: isActive,
-        ml_account_id: mlAccountId && mlAccountId !== "none" ? mlAccountId : null,
-        source_key: sourceKey || name.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
+        warehouse_id: warehouseId && warehouseId !== "none" ? warehouseId : null,
       })
       
       if (error) throw error
@@ -314,38 +304,23 @@ export default function NewSourcePage() {
                 </Select>
               </div>
 
-              {/* Cuenta ML vinculada */}
+              {/* Almacén asociado */}
               <div className="space-y-2">
-                <Label htmlFor="mlAccount">Cuenta ML asociada</Label>
-                <Select value={mlAccountId} onValueChange={setMlAccountId}>
-                  <SelectTrigger id="mlAccount">
-                    <SelectValue placeholder="Seleccionar cuenta..." />
+                <Label htmlFor="warehouseId">Almacén asociado</Label>
+                <Select value={warehouseId} onValueChange={setWarehouseId}>
+                  <SelectTrigger id="warehouseId">
+                    <SelectValue placeholder="Seleccionar almacén..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Todas las cuentas</SelectItem>
-                    {mlAccounts.map(acc => (
-                      <SelectItem key={acc.id} value={acc.id}>{acc.nickname}</SelectItem>
+                    <SelectItem value="none">Sin almacén específico</SelectItem>
+                    {warehouses.map(w => (
+                      <SelectItem key={w.id} value={w.id}>{w.name} ({w.code})</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Vincula esta fuente a una cuenta de ML específica. El stock de esta fuente se registrará de forma
-                  aislada en <code>stock_by_source</code> usando la clave de abajo.
-                </p>
-              </div>
-
-              {/* Clave de fuente para stock_by_source */}
-              <div className="space-y-2">
-                <Label htmlFor="sourceKey">Clave de fuente (stock_by_source)</Label>
-                <Input
-                  id="sourceKey"
-                  value={sourceKey}
-                  onChange={(e) => setSourceKey(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
-                  placeholder="ej: arg_stock"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Se usa como clave en el JSONB de stock. Ej: <code>{"{ arg_stock: 5, azeta: 10 }"}</code>.
-                  Solo letras minúsculas, números y guión bajo.
+                  El stock importado se acumula en este almacén. Luego, en la configuración de cada
+                  cuenta de ML se elige qué almacén usar para sincronizar el stock.
                 </p>
               </div>
             </div>

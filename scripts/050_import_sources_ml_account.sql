@@ -1,21 +1,14 @@
--- Vincular fuente de importación a cuenta ML específica
--- y agregar source_key para identificar la fuente en stock_by_source
+-- Vincula cada fuente de importación a un almacén específico.
+-- El almacén determina a qué stock_by_source key se acumula el stock importado.
+-- Luego, en la config de cada cuenta ML se elige qué almacén usar para sincronizar.
 
 ALTER TABLE import_sources
-  ADD COLUMN IF NOT EXISTS ml_account_id UUID REFERENCES ml_accounts(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS source_key    TEXT; -- clave en stock_by_source, ej: "arg_stock"
+  ADD COLUMN IF NOT EXISTS warehouse_id UUID REFERENCES warehouses(id) ON DELETE SET NULL;
 
--- Generar source_key automáticamente a partir del nombre si no está seteado
-UPDATE import_sources
-SET source_key = LOWER(REGEXP_REPLACE(TRIM(name), '[^a-zA-Z0-9]+', '_', 'g'))
-WHERE source_key IS NULL;
+-- Índice para queries por almacén
+CREATE INDEX IF NOT EXISTS idx_import_sources_warehouse
+  ON import_sources(warehouse_id)
+  WHERE warehouse_id IS NOT NULL;
 
--- Índice para queries por cuenta ML
-CREATE INDEX IF NOT EXISTS idx_import_sources_ml_account
-  ON import_sources(ml_account_id)
-  WHERE ml_account_id IS NOT NULL;
-
-COMMENT ON COLUMN import_sources.ml_account_id IS
-  'Cuenta ML a la que alimenta esta fuente. NULL = todas las cuentas.';
-COMMENT ON COLUMN import_sources.source_key IS
-  'Clave usada en products.stock_by_source para aislar stock por fuente.';
+COMMENT ON COLUMN import_sources.warehouse_id IS
+  'Almacén al que alimenta esta fuente. NULL = almacén por defecto del usuario.';

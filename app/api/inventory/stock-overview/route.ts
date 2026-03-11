@@ -6,12 +6,12 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
 
   const search   = searchParams.get("search") || ""
-  const source   = searchParams.get("source") || ""   // filter by source key
   const zeroOnly = searchParams.get("zero") === "1"
   const page     = Math.max(1, parseInt(searchParams.get("page") || "1"))
   const limit    = 50
   const offset   = (page - 1) * limit
 
+  // ── Productos ──────────────────────────────────────────────────────────────
   let query = supabase
     .from("products")
     .select("id, sku, ean, title, stock, stock_by_source, price", { count: "exact" })
@@ -26,12 +26,25 @@ export async function GET(request: NextRequest) {
   }
 
   const { data: products, count, error } = await query
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  // ── Fuentes con almacén vinculado ──────────────────────────────────────────
+  // source_key → { warehouse_id, warehouse_name, warehouse_code }
+  const { data: sources } = await supabase
+    .from("import_sources")
+    .select("source_key, name, warehouse_id, warehouses(id, name, code)")
+    .not("source_key", "is", null)
+
+  // Build source_key → warehouse mapping
+  const sourceWarehouse: Record<string, { id: string; name: string; code: string } | null> = {}
+  const sourceLabel: Record<string, string> = {}
+  for (const s of sources ?? []) {
+    const key = s.source_key as string
+    sourceWarehouse[key] = (s as any).warehouses ?? null
+    sourceLabel[key] = s.name
   }
 
-  // Collect all unique source keys across all products
+  // ── Collect all source keys present in this page ───────────────────────────
   const sourceKeysSet = new Set<string>()
   for (const p of products ?? []) {
     if (p.stock_by_source && typeof p.stock_by_source === "object") {
@@ -40,15 +53,31 @@ export async function GET(request: NextRequest) {
   }
   const sourceKeys = Array.from(sourceKeysSet).sort()
 
-  // Filter by source if requested (client already filters but API supports it too)
-  let rows = products ?? []
-  if (source) {
-    rows = rows.filter(p => p.stock_by_source?.[source] != null)
+  // ── Build warehouse → [source_keys] map ───────────────────────────────────
+  // Used by the frontend to group columns by warehouse
+  const warehouseMap: Record<string, { id: string; name: string; code: string; source_keys: string[] }> = {}
+  const noWarehouseKeys: string[] = []
+
+  for (const key of sourceKeys) {
+    const wh = sourceWarehouse[key]
+    if (wh) {
+      if (!warehouseMap[wh.id]) {
+        warehouseMap[wh.id] = { ...wh, source_keys: [] }
+      }
+      warehouseMap[wh.id].source_keys.push(key)
+    } else {
+      noWarehouseKeys.push(key)
+    }
   }
 
+  const warehouses = Object.values(warehouseMap)
+
   return NextResponse.json({
-    products: rows,
+    products: products ?? [],
     source_keys: sourceKeys,
+    source_label: sourceLabel,
+    warehouses,          // [{ id, name, code, source_keys[] }]
+    no_warehouse_keys: noWarehouseKeys,
     total: count ?? 0,
     page,
     limit,
