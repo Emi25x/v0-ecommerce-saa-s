@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
         description: body.description,
         url_template: body.url_template,
         auth_type: body.auth_type || "query_params",
-        credentials: body.credentials,
+        credentials: body.credentials ?? {},
         feed_type: body.feed_type,
         column_mapping: body.column_mapping,
         is_active: true,
