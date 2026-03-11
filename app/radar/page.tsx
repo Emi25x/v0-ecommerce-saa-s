@@ -2,10 +2,24 @@
 
 import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
-import { RefreshCw, TrendingUp, BookOpen, AlertCircle, Zap, ChevronRight, BarChart3, Newspaper, ExternalLink } from "lucide-react"
+import { RefreshCw, TrendingUp, BookOpen, AlertCircle, Zap, ChevronRight, BarChart3, Newspaper, ExternalLink, PackageX, Copy, Check, ArrowUpDown } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+
+interface ReorderBook {
+  id: string
+  ml_item_id: string
+  title: string
+  sku: string | null
+  isbn: string | null
+  price: number | null
+  current_stock: number
+  sold_quantity: number
+  editorial: string | null
+  permalink: string | null
+}
 
 interface Stats {
   totals: {
@@ -55,6 +69,44 @@ export default function RadarDashboardPage() {
     project_type: string; confidence_score: number; published_at: string | null
   }[]>([])
 
+  // Volver a pedir
+  const [reorderBooks, setReorderBooks] = useState<ReorderBook[]>([])
+  const [reorderTotal, setReorderTotal] = useState(0)
+  const [reorderLoading, setReorderLoading] = useState(true)
+  const [reorderSort, setReorderSort] = useState<"sold" | "editorial">("sold")
+  const [reorderSearch, setReorderSearch] = useState("")
+  const [reorderPage, setReorderPage] = useState(0)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const REORDER_LIMIT = 20
+
+  const loadReorder = useCallback(async (sort: string, search: string, page: number) => {
+    setReorderLoading(true)
+    try {
+      const params = new URLSearchParams({
+        sort,
+        limit: String(REORDER_LIMIT),
+        offset: String(page * REORDER_LIMIT),
+      })
+      if (search) params.set("search", search)
+      const res = await fetch(`/api/radar/reorder?${params}`)
+      const data = await res.json()
+      if (data.ok) {
+        setReorderBooks(data.rows ?? [])
+        setReorderTotal(data.total ?? 0)
+      }
+    } finally {
+      setReorderLoading(false)
+    }
+  }, [])
+
+  const copySku = useCallback((book: ReorderBook) => {
+    const value = book.sku ?? book.isbn ?? book.ml_item_id
+    navigator.clipboard.writeText(value).then(() => {
+      setCopiedId(book.id)
+      setTimeout(() => setCopiedId(null), 1500)
+    })
+  }, [])
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -72,6 +124,20 @@ export default function RadarDashboardPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    loadReorder(reorderSort, reorderSearch, reorderPage)
+  }, [loadReorder, reorderSort, reorderSearch, reorderPage])
+
+  // Reset to page 0 when sort/search changes
+  const handleSortChange = (s: "sold" | "editorial") => {
+    setReorderSort(s)
+    setReorderPage(0)
+  }
+  const handleSearchChange = (v: string) => {
+    setReorderSearch(v)
+    setReorderPage(0)
+  }
 
   const statCards = [
     {
@@ -328,6 +394,160 @@ export default function RadarDashboardPage() {
               </div>
             ))}
           </div>
+        )}
+      </Card>
+
+      {/* Volver a pedir */}
+      <Card className="p-5">
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+          <div className="flex items-center gap-2">
+            <PackageX className="h-4 w-4 text-orange-400" />
+            <h2 className="text-sm font-semibold">Volver a pedir</h2>
+            {reorderTotal > 0 && (
+              <Badge variant="outline" className="text-[10px] text-orange-400 border-orange-500/30">
+                {reorderTotal} sin stock
+              </Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Input
+              placeholder="Buscar por título, SKU, ISBN…"
+              value={reorderSearch}
+              onChange={e => handleSearchChange(e.target.value)}
+              className="h-7 text-xs w-52"
+            />
+            <Button
+              variant={reorderSort === "sold" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-7 text-xs px-2"
+              onClick={() => handleSortChange("sold")}
+            >
+              <TrendingUp className="h-3 w-3 mr-1" /> Más vendidos
+            </Button>
+            <Button
+              variant={reorderSort === "editorial" ? "secondary" : "ghost"}
+              size="sm"
+              className="h-7 text-xs px-2"
+              onClick={() => handleSortChange("editorial")}
+            >
+              <ArrowUpDown className="h-3 w-3 mr-1" /> Por editorial
+            </Button>
+          </div>
+        </div>
+
+        {reorderLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="h-10 bg-muted/30 rounded animate-pulse" />
+            ))}
+          </div>
+        ) : reorderBooks.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {reorderSearch ? "Sin resultados para esa búsqueda." : "No hay publicaciones activas sin stock. ¡Todo en orden!"}
+          </p>
+        ) : (
+          <>
+            {/* Table header */}
+            <div className="hidden sm:grid grid-cols-[1fr_auto_auto_auto_auto] gap-3 px-3 pb-1 text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
+              <span>Título</span>
+              <span className="text-right">Editorial</span>
+              <span className="text-right w-16">SKU / ISBN</span>
+              <span className="text-right w-16">Vendidos</span>
+              <span className="w-8" />
+            </div>
+
+            <div className="space-y-1">
+              {reorderBooks.map(book => (
+                <div
+                  key={book.id}
+                  className="grid grid-cols-[1fr_auto] sm:grid-cols-[1fr_auto_auto_auto_auto] gap-3 items-center rounded-md border border-border bg-muted/10 px-3 py-2 hover:bg-muted/20 transition-colors"
+                >
+                  {/* Título + permalink */}
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{book.title}</p>
+                    {book.editorial && (
+                      <p className="text-[10px] text-muted-foreground truncate">{book.editorial}</p>
+                    )}
+                  </div>
+
+                  {/* Editorial (desktop only — already shown below title on mobile) */}
+                  <span className="hidden sm:block text-xs text-muted-foreground text-right truncate max-w-[120px]">
+                    {book.editorial ?? "—"}
+                  </span>
+
+                  {/* SKU / ISBN */}
+                  <div className="hidden sm:flex items-center gap-1 justify-end w-32">
+                    <span className="text-xs font-mono text-muted-foreground truncate">
+                      {book.sku ?? book.isbn ?? "—"}
+                    </span>
+                  </div>
+
+                  {/* Vendidos */}
+                  <div className="hidden sm:flex items-center gap-1 justify-end w-16">
+                    <TrendingUp className="h-3 w-3 text-emerald-400 shrink-0" />
+                    <span className="text-xs font-mono font-semibold tabular-nums text-emerald-400">
+                      {book.sold_quantity.toLocaleString("es-AR")}
+                    </span>
+                  </div>
+
+                  {/* Acciones */}
+                  <div className="flex items-center gap-1 justify-end">
+                    {/* Mobile: sold quantity badge */}
+                    <span className="sm:hidden text-xs font-mono font-semibold text-emerald-400 mr-1">
+                      {book.sold_quantity.toLocaleString("es-AR")}
+                    </span>
+
+                    {book.permalink && (
+                      <a
+                        href={book.permalink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-muted-foreground hover:text-foreground p-1"
+                        title="Ver en MercadoLibre"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    )}
+                    <button
+                      onClick={() => copySku(book)}
+                      className="text-muted-foreground hover:text-foreground p-1 rounded"
+                      title={`Copiar SKU: ${book.sku ?? book.isbn ?? book.ml_item_id}`}
+                    >
+                      {copiedId === book.id
+                        ? <Check className="h-3.5 w-3.5 text-emerald-400" />
+                        : <Copy className="h-3.5 w-3.5" />
+                      }
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Paginación */}
+            {reorderTotal > REORDER_LIMIT && (
+              <div className="flex items-center justify-between mt-4 pt-3 border-t border-border">
+                <span className="text-xs text-muted-foreground">
+                  {reorderPage * REORDER_LIMIT + 1}–{Math.min((reorderPage + 1) * REORDER_LIMIT, reorderTotal)} de {reorderTotal}
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm" variant="outline" className="h-7 text-xs"
+                    disabled={reorderPage === 0}
+                    onClick={() => setReorderPage(p => p - 1)}
+                  >
+                    Anterior
+                  </Button>
+                  <Button
+                    size="sm" variant="outline" className="h-7 text-xs"
+                    disabled={(reorderPage + 1) * REORDER_LIMIT >= reorderTotal}
+                    onClick={() => setReorderPage(p => p + 1)}
+                  >
+                    Siguiente
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </Card>
 
