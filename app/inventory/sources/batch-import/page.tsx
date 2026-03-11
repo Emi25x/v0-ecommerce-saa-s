@@ -73,7 +73,9 @@ export default function BatchImportPage() {
     addLog(`Iniciando importacion por lotes de ${sourceName}...`)
 
     const nameLower = sourceName.toLowerCase()
-    const isAzeta = nameLower.includes("azeta")
+    // Solo "Azeta Total" usa el flujo de blob-streaming (archivo ZIP ~230MB).
+    // "Azeta Parcial" usa el mismo flujo genérico que Arnoia Act (batch importer directo).
+    const isAzeta = nameLower.includes("azeta") && !nameLower.includes("parcial")
     const isArnoiaStock = nameLower.includes("arnoia") && nameLower.includes("stock")
 
     // Arnoia Stock: endpoint dedicado simple
