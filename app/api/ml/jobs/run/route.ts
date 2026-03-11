@@ -297,10 +297,13 @@ async function executeCatalogOptIn(job: any, supabase: any): Promise<Record<stri
     throw new Error(`ML opt-in failed for ${ml_item_id}: ${errMsg}`)
   }
 
-  // Update local record
+  // Update local record — el item ahora ES catálogo (catalog_listing=true)
+  // y sigue siendo elegible (catalog_listing_eligible=true), pero el filtro
+  // "Elegibles catálogo" excluye items con catalog_listing=true.
   await supabase.from("ml_publications")
     .update({
       catalog_product_id,
+      catalog_listing:          true,
       catalog_listing_eligible: true,
       updated_at: new Date().toISOString(),
     })
@@ -426,7 +429,7 @@ async function executeImportSingle(job: any, supabase: any): Promise<Record<stri
   const fullAttributes = [
     "id", "title", "price", "available_quantity", "sold_quantity", "status",
     "permalink", "thumbnail", "listing_type_id", "attributes",
-    "seller_custom_field", "catalog_listing", "catalog_product_id", "health",
+    "seller_custom_field", "catalog_listing", "catalog_listing_eligible", "catalog_product_id", "health",
   ].join(",")
 
   const { ok, status, data, rateLimited, retryAfter } = await mlFetch(
@@ -461,8 +464,9 @@ async function executeImportSingle(job: any, supabase: any): Promise<Record<stri
     sku,
     isbn,
     ean,
-    catalog_listing_eligible: item.catalog_listing ?? false,
-    catalog_product_id:      item.catalog_product_id ?? null,
+    catalog_listing:          item.catalog_listing          ?? false,
+    catalog_listing_eligible: item.catalog_listing_eligible ?? false,
+    catalog_product_id:       item.catalog_product_id       ?? null,
     updated_at:              new Date().toISOString(),
   }
 

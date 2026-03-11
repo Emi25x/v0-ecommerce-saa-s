@@ -36,15 +36,17 @@ export async function GET(req: NextRequest) {
       bySku[pub.sku].push(pub)
     }
 
-    // Filtrar grupos donde hay >1 tradicional O >1 catálogo
-    // (1 tradicional + 1 catálogo es lo normal)
+    // Detectar duplicados: cualquier SKU con 2+ publicaciones es un duplicado.
+    // Casos:
+    //   2+ tradicionales → duplicado claro
+    //   2+ catálogo      → duplicado claro
+    //   1 tradicional + 1 catálogo → también duplicado (solo debe quedar 1)
     const groups = []
     for (const [sku, pubs] of Object.entries(bySku)) {
+      if ((pubs?.length ?? 0) < 2) continue
       const traditional = pubs!.filter(p => !p.catalog_listing)
       const catalog     = pubs!.filter(p =>  p.catalog_listing)
-      if (traditional.length > 1 || catalog.length > 1) {
-        groups.push({ sku, traditional, catalog })
-      }
+      groups.push({ sku, traditional, catalog })
     }
 
     // Ordenar por SKU
