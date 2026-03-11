@@ -387,6 +387,38 @@ export async function POST(request: NextRequest) {
         created = isStockImport ? 0 : Math.min(created, total_ok - updated)
       }
 
+      // Populate stock_by_source so warehouse source-filtering works
+      const sourceKey = (source.source_key || source.name?.toLowerCase().replace(/[^a-z0-9]/g, "_") || "").slice(0, 30)
+      if (sourceKey && deduped.some((p: any) => p.stock !== null && p.stock !== undefined)) {
+        const eanStockMap = new Map<string, number>()
+        for (const p of deduped) {
+          if (p.stock !== null && p.stock !== undefined) {
+            eanStockMap.set(p.ean, parseInt(String(p.stock), 10) || 0)
+          }
+        }
+        const stockEans = Array.from(eanStockMap.keys())
+        const SBS_CHUNK = 200
+        for (let i = 0; i < stockEans.length; i += SBS_CHUNK) {
+          const eanChunk = stockEans.slice(i, i + SBS_CHUNK)
+          try {
+            const { data: prods } = await supabase
+              .from("products")
+              .select("id, ean, stock_by_source")
+              .in("ean", eanChunk)
+            if (!prods?.length) continue
+            await supabase.from("products").upsert(
+              prods.map((p: any) => ({
+                id: p.id,
+                stock_by_source: { ...(p.stock_by_source ?? {}), [sourceKey]: eanStockMap.get(p.ean) ?? 0 },
+              })),
+              { onConflict: "id" }
+            )
+          } catch (e) {
+            console.warn("[BATCH] stock_by_source update failed for chunk:", e)
+          }
+        }
+      }
+
       if (!last_error) last_reason = "success"
     } else {
       last_reason = rows_seen === 0 ? "no_rows_in_batch" : "all_filtered"
