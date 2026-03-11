@@ -2,24 +2,13 @@
 
 import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
-import { RefreshCw, TrendingUp, BookOpen, AlertCircle, Zap, ChevronRight, BarChart3, Newspaper, ExternalLink, PackageX, Copy, Check, ArrowUpDown } from "lucide-react"
+import {
+  RefreshCw, TrendingUp, BookOpen, AlertCircle, Zap,
+  ChevronRight, BarChart3, Newspaper, ExternalLink, PackageX,
+} from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-
-interface ReorderBook {
-  id: string
-  ml_item_id: string
-  title: string
-  sku: string | null
-  isbn: string | null
-  price: number | null
-  current_stock: number
-  sold_quantity: number
-  editorial: string | null
-  permalink: string | null
-}
 
 interface Stats {
   totals: {
@@ -34,6 +23,11 @@ interface Stats {
   by_status: Record<string, number>
   top_opportunities: { opportunity_type: string; score: number; confidence: string }[]
   top_gaps: { category: string; gap_score: number }[]
+}
+
+interface ReorderSummary {
+  total: number
+  top: { title: string; sold_quantity: number; editorial: string | null }[]
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -61,50 +55,35 @@ const STATUS_COLOR: Record<string, string> = {
 }
 
 export default function RadarDashboardPage() {
-  const [stats, setStats]       = useState<Stats | null>(null)
-  const [loading, setLoading]   = useState(true)
+  const [stats, setStats]         = useState<Stats | null>(null)
+  const [loading, setLoading]     = useState(true)
   const [newsItems, setNewsItems] = useState<{
     id: string; title: string; source: string; url: string | null;
     detected_book: string | null; detected_author: string | null;
     project_type: string; confidence_score: number; published_at: string | null
   }[]>([])
 
-  // Volver a pedir
-  const [reorderBooks, setReorderBooks] = useState<ReorderBook[]>([])
-  const [reorderTotal, setReorderTotal] = useState(0)
+  const [reorder, setReorder]         = useState<ReorderSummary | null>(null)
   const [reorderLoading, setReorderLoading] = useState(true)
-  const [reorderSort, setReorderSort] = useState<"sold" | "editorial">("sold")
-  const [reorderSearch, setReorderSearch] = useState("")
-  const [reorderPage, setReorderPage] = useState(0)
-  const [copiedId, setCopiedId] = useState<string | null>(null)
-  const REORDER_LIMIT = 20
 
-  const loadReorder = useCallback(async (sort: string, search: string, page: number) => {
+  const loadReorderSummary = useCallback(async () => {
     setReorderLoading(true)
     try {
-      const params = new URLSearchParams({
-        sort,
-        limit: String(REORDER_LIMIT),
-        offset: String(page * REORDER_LIMIT),
-      })
-      if (search) params.set("search", search)
-      const res = await fetch(`/api/radar/reorder?${params}`)
+      const res  = await fetch("/api/radar/reorder?limit=5&sort=sold")
       const data = await res.json()
       if (data.ok) {
-        setReorderBooks(data.rows ?? [])
-        setReorderTotal(data.total ?? 0)
+        setReorder({
+          total: data.total,
+          top:   (data.rows ?? []).map((r: any) => ({
+            title:        r.title,
+            sold_quantity: r.sold_quantity,
+            editorial:    r.editorial,
+          })),
+        })
       }
     } finally {
       setReorderLoading(false)
     }
-  }, [])
-
-  const copySku = useCallback((book: ReorderBook) => {
-    const value = book.sku ?? book.isbn ?? book.ml_item_id
-    navigator.clipboard.writeText(value).then(() => {
-      setCopiedId(book.id)
-      setTimeout(() => setCopiedId(null), 1500)
-    })
   }, [])
 
   const load = useCallback(async () => {
@@ -123,63 +102,49 @@ export default function RadarDashboardPage() {
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
-
-  useEffect(() => {
-    loadReorder(reorderSort, reorderSearch, reorderPage)
-  }, [loadReorder, reorderSort, reorderSearch, reorderPage])
-
-  // Reset to page 0 when sort/search changes
-  const handleSortChange = (s: "sold" | "editorial") => {
-    setReorderSort(s)
-    setReorderPage(0)
-  }
-  const handleSearchChange = (v: string) => {
-    setReorderSearch(v)
-    setReorderPage(0)
-  }
+  useEffect(() => { load(); loadReorderSummary() }, [load, loadReorderSummary])
 
   const statCards = [
     {
       label: "Oportunidades",
       value: stats?.totals.opportunities ?? 0,
-      icon: <Zap className="h-5 w-5 text-blue-400" />,
-      href: "/radar/oportunidades",
+      icon:  <Zap className="h-5 w-5 text-blue-400" />,
+      href:  "/radar/oportunidades",
       color: "border-blue-500/20",
     },
     {
       label: "Señales (7d)",
       value: stats?.totals.signals_7d ?? 0,
-      icon: <TrendingUp className="h-5 w-5 text-emerald-400" />,
-      href: "/radar/tendencias",
+      icon:  <TrendingUp className="h-5 w-5 text-emerald-400" />,
+      href:  "/radar/tendencias",
       color: "border-emerald-500/20",
     },
     {
       label: "Huecos abiertos",
       value: stats?.totals.open_gaps ?? 0,
-      icon: <AlertCircle className="h-5 w-5 text-amber-400" />,
-      href: "/radar/huecos",
+      icon:  <AlertCircle className="h-5 w-5 text-amber-400" />,
+      href:  "/radar/huecos",
       color: "border-amber-500/20",
     },
     {
       label: "Adaptaciones",
       value: stats?.totals.adaptations ?? 0,
-      icon: <BookOpen className="h-5 w-5 text-purple-400" />,
-      href: "/radar/adaptaciones",
+      icon:  <BookOpen className="h-5 w-5 text-purple-400" />,
+      href:  "/radar/adaptaciones",
       color: "border-purple-500/20",
     },
     {
       label: "En revisión",
       value: stats?.totals.pending_review ?? 0,
-      icon: <BarChart3 className="h-5 w-5 text-sky-400" />,
-      href: "/radar/oportunidades?status=reviewing",
+      icon:  <BarChart3 className="h-5 w-5 text-sky-400" />,
+      href:  "/radar/oportunidades?status=reviewing",
       color: "border-sky-500/20",
     },
     {
       label: "Aprobadas",
       value: stats?.totals.approved ?? 0,
-      icon: <BarChart3 className="h-5 w-5 text-green-400" />,
-      href: "/radar/oportunidades?status=approved",
+      icon:  <BarChart3 className="h-5 w-5 text-green-400" />,
+      href:  "/radar/oportunidades?status=approved",
       color: "border-green-500/20",
     },
   ]
@@ -194,7 +159,7 @@ export default function RadarDashboardPage() {
             Oportunidades detectadas a partir de tendencias, huecos y señales externas
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+        <Button variant="outline" size="sm" onClick={() => { load(); loadReorderSummary() }} disabled={loading}>
           <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
           Actualizar
         </Button>
@@ -359,9 +324,7 @@ export default function RadarDashboardPage() {
             {newsItems.map(item => (
               <div key={item.id} className="flex items-start gap-3 rounded-md border border-border bg-muted/10 px-3 py-2.5">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">
-                    {item.detected_book ?? item.title}
-                  </p>
+                  <p className="text-sm font-medium truncate">{item.detected_book ?? item.title}</p>
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     <span className="text-[10px] text-muted-foreground">{item.source}</span>
                     {item.detected_author && (
@@ -397,159 +360,56 @@ export default function RadarDashboardPage() {
         )}
       </Card>
 
-      {/* Volver a pedir */}
-      <Card className="p-5">
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-          <div className="flex items-center gap-2">
-            <PackageX className="h-4 w-4 text-orange-400" />
-            <h2 className="text-sm font-semibold">Volver a pedir</h2>
-            {reorderTotal > 0 && (
-              <Badge variant="outline" className="text-[10px] text-orange-400 border-orange-500/30">
-                {reorderTotal} sin stock
-              </Badge>
-            )}
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Input
-              placeholder="Buscar por título, SKU, ISBN…"
-              value={reorderSearch}
-              onChange={e => handleSearchChange(e.target.value)}
-              className="h-7 text-xs w-52"
-            />
-            <Button
-              variant={reorderSort === "sold" ? "secondary" : "ghost"}
-              size="sm"
-              className="h-7 text-xs px-2"
-              onClick={() => handleSortChange("sold")}
-            >
-              <TrendingUp className="h-3 w-3 mr-1" /> Más vendidos
-            </Button>
-            <Button
-              variant={reorderSort === "editorial" ? "secondary" : "ghost"}
-              size="sm"
-              className="h-7 text-xs px-2"
-              onClick={() => handleSortChange("editorial")}
-            >
-              <ArrowUpDown className="h-3 w-3 mr-1" /> Por editorial
-            </Button>
-          </div>
-        </div>
-
-        {reorderLoading ? (
-          <div className="space-y-2">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="h-10 bg-muted/30 rounded animate-pulse" />
-            ))}
-          </div>
-        ) : reorderBooks.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            {reorderSearch ? "Sin resultados para esa búsqueda." : "No hay publicaciones sin stock. ¡Todo en orden!"}
-          </p>
-        ) : (
-          <>
-            {/* Table header */}
-            <div className="hidden sm:grid grid-cols-[1fr_auto_auto_auto_auto] gap-3 px-3 pb-1 text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
-              <span>Título</span>
-              <span className="text-right">Editorial</span>
-              <span className="text-right w-16">SKU / ISBN</span>
-              <span className="text-right w-16">Vendidos</span>
-              <span className="w-8" />
+      {/* Volver a pedir — resumen compacto */}
+      <Link href="/radar/volver-a-pedir">
+        <Card className="p-5 hover:bg-muted/10 transition-colors cursor-pointer border-orange-500/20">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <PackageX className="h-4 w-4 text-orange-400" />
+              <h2 className="text-sm font-semibold">Volver a pedir</h2>
+              {reorder && reorder.total > 0 && (
+                <Badge variant="outline" className="text-[10px] text-orange-400 border-orange-500/30">
+                  {reorder.total} sin stock
+                </Badge>
+              )}
             </div>
+            <span className="text-xs text-muted-foreground hover:text-foreground">Ver todos →</span>
+          </div>
 
-            <div className="space-y-1">
-              {reorderBooks.map(book => (
-                <div
-                  key={book.id}
-                  className="grid grid-cols-[1fr_auto] sm:grid-cols-[1fr_auto_auto_auto_auto] gap-3 items-center rounded-md border border-border bg-muted/10 px-3 py-2 hover:bg-muted/20 transition-colors"
-                >
-                  {/* Título + permalink */}
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{book.title}</p>
-                    {book.editorial && (
-                      <p className="text-[10px] text-muted-foreground truncate">{book.editorial}</p>
-                    )}
-                  </div>
-
-                  {/* Editorial (desktop only — already shown below title on mobile) */}
-                  <span className="hidden sm:block text-xs text-muted-foreground text-right truncate max-w-[120px]">
-                    {book.editorial ?? "—"}
-                  </span>
-
-                  {/* SKU / ISBN */}
-                  <div className="hidden sm:flex items-center gap-1 justify-end w-32">
-                    <span className="text-xs font-mono text-muted-foreground truncate">
-                      {book.sku ?? book.isbn ?? "—"}
+          {reorderLoading ? (
+            <div className="space-y-1.5">
+              {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-7 bg-muted/30 rounded animate-pulse" />)}
+            </div>
+          ) : !reorder || reorder.total === 0 ? (
+            <p className="text-sm text-muted-foreground">Sin publicaciones sin stock. ¡Todo en orden!</p>
+          ) : (
+            <div className="space-y-1.5">
+              {reorder.top.map((book, i) => (
+                <div key={i} className="flex items-center gap-3 rounded-md bg-muted/10 px-3 py-1.5">
+                  <span className="text-xs font-mono text-muted-foreground w-5 shrink-0">{i + 1}.</span>
+                  <span className="text-sm flex-1 truncate">{book.title}</span>
+                  {book.editorial && (
+                    <span className="text-[10px] text-muted-foreground hidden sm:block truncate max-w-[120px]">
+                      {book.editorial}
                     </span>
-                  </div>
-
-                  {/* Vendidos */}
-                  <div className="hidden sm:flex items-center gap-1 justify-end w-16">
-                    <TrendingUp className="h-3 w-3 text-emerald-400 shrink-0" />
-                    <span className="text-xs font-mono font-semibold tabular-nums text-emerald-400">
+                  )}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <TrendingUp className="h-3 w-3 text-emerald-400" />
+                    <span className="text-xs font-mono font-semibold text-emerald-400 tabular-nums">
                       {book.sold_quantity.toLocaleString("es-AR")}
                     </span>
-                  </div>
-
-                  {/* Acciones */}
-                  <div className="flex items-center gap-1 justify-end">
-                    {/* Mobile: sold quantity badge */}
-                    <span className="sm:hidden text-xs font-mono font-semibold text-emerald-400 mr-1">
-                      {book.sold_quantity.toLocaleString("es-AR")}
-                    </span>
-
-                    {book.permalink && (
-                      <a
-                        href={book.permalink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-muted-foreground hover:text-foreground p-1"
-                        title="Ver en MercadoLibre"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                      </a>
-                    )}
-                    <button
-                      onClick={() => copySku(book)}
-                      className="text-muted-foreground hover:text-foreground p-1 rounded"
-                      title={`Copiar SKU: ${book.sku ?? book.isbn ?? book.ml_item_id}`}
-                    >
-                      {copiedId === book.id
-                        ? <Check className="h-3.5 w-3.5 text-emerald-400" />
-                        : <Copy className="h-3.5 w-3.5" />
-                      }
-                    </button>
                   </div>
                 </div>
               ))}
+              {reorder.total > 5 && (
+                <p className="text-xs text-muted-foreground text-center pt-1">
+                  + {reorder.total - 5} más sin stock →
+                </p>
+              )}
             </div>
-
-            {/* Paginación */}
-            {reorderTotal > REORDER_LIMIT && (
-              <div className="flex items-center justify-between mt-4 pt-3 border-t border-border">
-                <span className="text-xs text-muted-foreground">
-                  {reorderPage * REORDER_LIMIT + 1}–{Math.min((reorderPage + 1) * REORDER_LIMIT, reorderTotal)} de {reorderTotal}
-                </span>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm" variant="outline" className="h-7 text-xs"
-                    disabled={reorderPage === 0}
-                    onClick={() => setReorderPage(p => p - 1)}
-                  >
-                    Anterior
-                  </Button>
-                  <Button
-                    size="sm" variant="outline" className="h-7 text-xs"
-                    disabled={(reorderPage + 1) * REORDER_LIMIT >= reorderTotal}
-                    onClick={() => setReorderPage(p => p + 1)}
-                  >
-                    Siguiente
-                  </Button>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-      </Card>
+          )}
+        </Card>
+      </Link>
 
       {/* Quick links */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
