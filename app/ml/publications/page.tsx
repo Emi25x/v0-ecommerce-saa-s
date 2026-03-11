@@ -1865,12 +1865,13 @@ export default function MLPublicationsPage() {
 // ── Label maps ────────────────────────────────────────────────────────────────
 
 const SOURCE_LABEL: Record<string, string> = {
-  manual:          "Manual",
-  bulk_update:     "Bulk update",
-  webhook_sold:    "Venta (webhook)",
-  cron_reprice:    "Repricing",
-  import:          "Importación",
-  sync_related:    "Sync relacionada",
+  webhook_item_update: "Actualización ML",
+  order_sold:          "Venta",
+  cron_reprice:        "Repricing",
+  import:              "Importación",
+  manual:              "Sync manual",
+  bulk_update:         "Bulk update",
+  sync_related:        "Sync relacionada",
 }
 
 const ORDER_STATUS_LABEL: Record<string, string> = {

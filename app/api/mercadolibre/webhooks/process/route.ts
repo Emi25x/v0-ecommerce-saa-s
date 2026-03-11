@@ -143,6 +143,38 @@ async function processOrderUpdate(orderData: any, userId: string) {
     throw error
   }
 
+  // Registrar ventas en historial de stock cuando la orden es pagada/confirmada
+  // Nota: el webhook `items` también disparará y registrará el cambio de stock real.
+  // Esto registra la CAUSA (venta) con referencia a la orden.
+  if (orderData.status === "paid" || orderData.status === "confirmed") {
+    const items: any[] = orderData.order_items ?? []
+    for (const line of items) {
+      const mlItemId = line.item?.id
+      const qtySold  = line.quantity ?? 0
+      if (!mlItemId || qtySold <= 0) continue
+
+      const { data: pub } = await supabase
+        .from("ml_publications")
+        .select("current_stock, account_id")
+        .eq("ml_item_id", mlItemId)
+        .maybeSingle()
+
+      if (!pub) continue
+
+      const newQty = (pub.current_stock ?? 0) - qtySold
+
+      await supabase.from("ml_stock_history").insert({
+        ml_item_id:          mlItemId,
+        account_id:          pub.account_id,
+        old_quantity:        pub.current_stock,
+        new_quantity:        Math.max(0, newQty),
+        changed_by_user_id:  null,
+        source:              "order_sold",
+        notes:               `Orden #${orderData.id} — ${qtySold} u. vendida${qtySold !== 1 ? "s" : ""}`,
+      })
+    }
+  }
+
   console.log(`[v0] Order ${orderData.id} updated successfully`)
 }
 
@@ -182,28 +214,39 @@ async function processItemUpdate(itemData: any, userId: string) {
 
   console.log(`[v0] Processing item update: ${itemData.id}`)
 
-  // Guardar o actualizar el producto en la base de datos
-  const { error } = await supabase.from("ml_products").upsert(
-    {
-      product_id: itemData.id,
-      user_id: userId,
-      title: itemData.title,
-      status: itemData.status,
-      price: itemData.price,
-      available_quantity: itemData.available_quantity,
-      sold_quantity: itemData.sold_quantity,
-      permalink: itemData.permalink,
-      thumbnail: itemData.thumbnail,
-      product_data: itemData,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "product_id,user_id" },
-  )
+  const newQty: number | null = itemData.available_quantity ?? null
 
-  if (error) {
-    console.error("[v0] Error upserting product:", error)
-    throw error
+  // Obtener stock actual almacenado y account_id para comparar
+  const { data: pub } = await supabase
+    .from("ml_publications")
+    .select("current_stock, account_id")
+    .eq("ml_item_id", itemData.id)
+    .maybeSingle()
+
+  // Si el stock cambió, registrar en historial (cambio viene desde ML)
+  if (pub && newQty !== null && newQty !== pub.current_stock) {
+    await supabase.from("ml_stock_history").insert({
+      ml_item_id:          itemData.id,
+      account_id:          pub.account_id,
+      old_quantity:        pub.current_stock,
+      new_quantity:        newQty,
+      changed_by_user_id:  null,   // no se conoce vía webhook
+      source:              "webhook_item_update",
+      notes:               `Estado ML: ${itemData.status ?? "?"}`,
+    })
+
+    // Actualizar stock en ml_publications
+    await supabase
+      .from("ml_publications")
+      .update({
+        current_stock: newQty,
+        status:        itemData.status ?? undefined,
+        price:         itemData.price  ?? undefined,
+        last_sync_at:  new Date().toISOString(),
+        updated_at:    new Date().toISOString(),
+      })
+      .eq("ml_item_id", itemData.id)
   }
 
-  console.log(`[v0] Product ${itemData.id} updated successfully`)
+  console.log(`[v0] Item ${itemData.id} processed (stock: ${pub?.current_stock} → ${newQty})`)
 }

@@ -24,19 +24,6 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient()
 
-    // Obtener stock actual y account_id antes de actualizar (para el historial)
-    const { data: pubData } = await supabase
-      .from("ml_publications")
-      .select("current_stock, account_id")
-      .eq("ml_item_id", product_id)
-      .maybeSingle()
-
-    const oldQuantity = pubData?.current_stock ?? null
-    const accountId   = pubData?.account_id ?? null
-
-    // Obtener usuario autenticado para el historial
-    const { data: { user: authUser } } = await supabase.auth.getUser()
-
     // Actualizar el producto principal en ML
     const updateResponse = await fetch(`${ML_API_BASE}/items/${product_id}`, {
       method: "PUT",
@@ -57,16 +44,8 @@ export async function POST(request: NextRequest) {
 
     await updateResponse.json()
     console.log("[v0] Product stock updated successfully")
-
-    // Registrar en historial de stock
-    await supabase.from("ml_stock_history").insert({
-      ml_item_id:          product_id,
-      account_id:          accountId,
-      old_quantity:        oldQuantity,
-      new_quantity:        new_quantity,
-      changed_by_user_id:  authUser?.id ?? null,
-      source:              "manual",
-    })
+    // El historial se registra vía webhook de ML (items topic),
+    // capturando el cambio independientemente del origen.
 
     // Buscar publicaciones relacionadas en la base de datos
     const { data: relationships, error: relationshipError } = await supabase
@@ -103,22 +82,12 @@ export async function POST(request: NextRequest) {
           if (syncResponse.ok) {
             console.log("[v0] Successfully synced stock with:", relatedId)
 
-            // Guardar log de sincronización (tabla legacy + historial nuevo)
             await supabase.from("stock_sync_log").insert({
               listing_id:   relatedId,
               new_quantity: new_quantity,
               source:       "manual_sync",
             })
-
-            await supabase.from("ml_stock_history").insert({
-              ml_item_id:          relatedId,
-              account_id:          accountId,
-              old_quantity:        null,
-              new_quantity:        new_quantity,
-              changed_by_user_id:  authUser?.id ?? null,
-              source:              "sync_related",
-              notes:               `Sincronizado desde ${product_id}`,
-            })
+            // Historial de la publicación relacionada se captura vía webhook de ML
           } else {
             console.error("[v0] Failed to sync stock with:", relatedId)
           }
