@@ -191,22 +191,26 @@ function emptyResponse(warehouse: any, sourceNames: string[]) {
 }
 
 async function catalogModeResponse({ supabase, warehouseId, warehouse, sourceNames, search, page, offset }: any) {
+  // Query catalog items WITHOUT inline join to avoid PostgREST join issues
   let catQ = supabase
     .from("supplier_catalog_items")
     .select(
-      `id, supplier_ean, supplier_sku, title, stock_quantity, price_original, matched_by, product_id,
-       products:product_id (id, sku, title)`,
+      "id, supplier_ean, supplier_sku, title, stock_quantity, price_original, matched_by, product_id",
       { count: "exact" }
     )
     .eq("warehouse_id", warehouseId)
-    .order("stock_quantity", { ascending: false })
+    .order("stock_quantity", { ascending: false, nullsFirst: false })
     .range(offset, offset + PAGE_SIZE - 1)
 
   if (search) {
     catQ = catQ.or(`title.ilike.%${search}%,supplier_ean.ilike.%${search}%,supplier_sku.ilike.%${search}%`)
   }
 
-  const { data: catItems, count: catTotal } = await catQ
+  const { data: catItems, count: catTotal, error: catErr } = await catQ
+
+  if (catErr) {
+    console.error("[WAREHOUSE STOCK] Catalog query error:", catErr.message)
+  }
 
   const [{ count: catTotalCount }, { count: matchedCount }] = await Promise.all([
     supabase.from("supplier_catalog_items").select("*", { count: "exact", head: true }).eq("warehouse_id", warehouseId),
@@ -217,21 +221,43 @@ async function catalogModeResponse({ supabase, warehouseId, warehouse, sourceNam
   const matchedSKUs = matchedCount ?? 0
   const totalUnits = (catItems ?? []).reduce((s: number, r: any) => s + (r.stock_quantity ?? 0), 0)
 
+  // Fetch product data separately (avoids RLS join issues)
   const productIds = (catItems ?? []).filter((i: any) => i.product_id).map((i: any) => i.product_id as string)
-  const mlMap = await fetchMLMap(supabase, productIds)
+  const [mlMap, productMap] = await Promise.all([
+    fetchMLMap(supabase, productIds),
+    fetchProductMap(supabase, productIds),
+  ])
+
+  // Use catTotalCount as reliable count (catTotal may be null if query had issues)
+  const reliableTotal = catTotal ?? catTotalCount ?? 0
 
   return NextResponse.json({
     warehouse,
     items: (catItems ?? []).map((item: any) => ({
       ...item,
+      products: item.product_id ? (productMap[item.product_id] ?? null) : null,
       ml_publications: item.product_id ? (mlMap[item.product_id] ?? []) : [],
     })),
     data_source: "catalog",
     linked_sources: sourceNames,
     source_keys: [],
-    pagination: { total: catTotal ?? 0, page, page_size: PAGE_SIZE, total_pages: Math.ceil((catTotal ?? 0) / PAGE_SIZE) },
+    pagination: { total: reliableTotal, page, page_size: PAGE_SIZE, total_pages: Math.ceil(reliableTotal / PAGE_SIZE) },
     stats: { total_skus: totalSKUs, total_units: totalUnits, matched_skus: matchedSKUs, unmatched_skus: totalSKUs - matchedSKUs },
   })
+}
+
+async function fetchProductMap(supabase: any, productIds: string[]) {
+  const productMap: Record<string, { id: string; ean: string | null; sku: string | null; title: string | null }> = {}
+  if (productIds.length === 0) return productMap
+  const { data: products } = await supabase
+    .from("products")
+    .select("id, ean, sku, title")
+    .in("id", productIds)
+  for (const p of products ?? []) {
+    if (!p.id) continue
+    productMap[p.id] = { id: p.id, ean: p.ean, sku: p.sku, title: p.title }
+  }
+  return productMap
 }
 
 async function fetchMLMap(supabase: any, productIds: string[]) {
