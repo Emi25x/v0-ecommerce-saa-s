@@ -90,7 +90,9 @@ export async function GET(
     let productCount = 0
 
     if (sourceKeys.length > 0) {
-      // PostgREST OR filter: stock_by_source->>'key' IS NOT NULL para cada clave de fuente
+      // Primero intentar filtrar por stock_by_source[sourceId]
+      // Si no hay resultados (stock_by_source vacío, backfill no ejecutado aún),
+      // caer en fallback: todos los productos con stock > 0
       const jsonbOrFilter = sourceKeys.map((k) => `stock_by_source->>${k}.not.is.null`).join(",")
 
       let prodQuery = supabase
@@ -107,6 +109,25 @@ export async function GET(
       const { data: prodData, count: pCount } = await prodQuery
       productItems = (prodData ?? []) as ProductRow[]
       productCount = pCount ?? 0
+
+      // Fallback: si el filtro JSONB no devuelve resultados (stock_by_source aún no populado),
+      // mostrar todos los productos con stock > 0
+      if (productCount === 0) {
+        let fallbackQuery = supabase
+          .from("products")
+          .select("id, ean, sku, title, stock, cost_price, stock_by_source", { count: "exact" })
+          .gt("stock", 0)
+          .order("stock", { ascending: false })
+          .range(offset, offset + PAGE_SIZE - 1)
+
+        if (search) {
+          fallbackQuery = fallbackQuery.or(`title.ilike.%${search}%,ean.ilike.%${search}%,sku.ilike.%${search}%`)
+        }
+
+        const { data: fbData, count: fbCount } = await fallbackQuery
+        productItems = (fbData ?? []) as ProductRow[]
+        productCount = fbCount ?? 0
+      }
     }
 
     // ── Combinar fuentes ──────────────────────────────────────────────────────
@@ -175,16 +196,27 @@ export async function GET(
       matchedSKUs = totals?.filter((r) => r.product_id).length ?? 0
     } else {
       // Stats from products
-      const { data: allProds } = await supabase
+      const jsonbFilter = sourceKeys.map((k) => `stock_by_source->>${k}.not.is.null`).join(",")
+      let { data: allProds } = await supabase
         .from("products")
         .select("id, stock, stock_by_source")
-        .or(sourceKeys.map((k) => `stock_by_source->>${k}.not.is.null`).join(","))
-      totalSKUs = allProds?.length ?? 0
-      totalUnits = allProds?.reduce((s, r) => {
+        .or(jsonbFilter)
+
+      // Fallback igual que en la query paginada
+      if (!allProds || allProds.length === 0) {
+        const { data: fb } = await supabase
+          .from("products")
+          .select("id, stock, stock_by_source")
+          .gt("stock", 0)
+        allProds = fb ?? []
+      }
+
+      totalSKUs = allProds.length
+      totalUnits = allProds.reduce((s, r) => {
         const src = sourceKeys.reduce((sum, k) => sum + ((r.stock_by_source as any)?.[k] ?? 0), 0)
         return s + (src > 0 ? src : (r.stock ?? 0))
-      }, 0) ?? 0
-      matchedSKUs = totalSKUs // all products are "matched" since they are in products table
+      }, 0)
+      matchedSKUs = totalSKUs
     }
 
     const enrichedItems = items.map((item) => ({
