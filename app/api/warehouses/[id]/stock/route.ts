@@ -3,21 +3,13 @@ import { createClient } from "@/lib/supabase/server"
 
 const PAGE_SIZE = 50
 
-/**
- * GET /api/warehouses/[id]/stock
- *
- * Devuelve el contenido de stock de un almacén.
- * Combina dos fuentes:
- *  1. supplier_catalog_items (importaciones de catálogo de proveedores)
- *  2. products.stock_by_source (importaciones directas de fuentes como azeta/arnoia)
- *     → se activa cuando hay import_sources con warehouse_id = este almacén
- */
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createClient()
+    const supabaseAdmin = createAdminClient()
     const { id: warehouseId } = await params
 
     const {
@@ -29,7 +21,6 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Verify warehouse belongs to user
     const { data: warehouse, error: warehouseError } = await supabase
       .from("warehouses")
       .select("id, name, code, is_default")
@@ -46,204 +37,211 @@ export async function GET(
     const page = parseInt(searchParams.get("page") ?? "1", 10)
     const offset = (page - 1) * PAGE_SIZE
 
-    // ── Fuente 1: supplier_catalog_items ─────────────────────────────────────
-    let catalogQuery = supabase
-      .from("supplier_catalog_items")
-      .select(
-        `id, supplier_ean, supplier_sku, title, stock_quantity, price_original, matched_by, product_id,
-         products:product_id (id, ean, sku, title)`,
-        { count: "exact" }
-      )
-      .eq("warehouse_id", warehouseId)
-      .order("stock_quantity", { ascending: false })
-      .range(offset, offset + PAGE_SIZE - 1)
-
-    if (search) {
-      catalogQuery = catalogQuery.or(
-        `title.ilike.%${search}%,supplier_ean.ilike.%${search}%,supplier_sku.ilike.%${search}%`
-      )
-    }
-
-    const { data: catalogItems, count: catalogCount } = await catalogQuery
-
-    // ── Fuente 2: import_sources con warehouse_id → products.stock_by_source ─
+    // ── Fuentes vinculadas ────────────────────────────────────────────────────
     const { data: linkedSources } = await supabase
       .from("import_sources")
       .select("id, name")
       .eq("warehouse_id", warehouseId)
       .eq("is_active", true)
 
-    // Cada fuente usa su UUID como clave en stock_by_source (consistente con mergeStockBySource)
     const sourceKeys = (linkedSources ?? []).map((s) => s.id)
+    const sourceNames = (linkedSources ?? []).map((s) => s.name)
 
-    // Productos con stock_by_source en alguna de esas claves
-    type ProductRow = {
-      id: string
-      ean: string | null
-      sku: string | null
-      title: string | null
-      stock: number | null
-      cost_price: number | null
-      stock_by_source: Record<string, number> | null
-    }
-    let productItems: ProductRow[] = []
-    let productCount = 0
+    // ── Modo 1: supplier_catalog_items ────────────────────────────────────────
+    const { count: catalogCount } = await supabase
+      .from("supplier_catalog_items")
+      .select("*", { count: "exact", head: true })
+      .eq("warehouse_id", warehouseId)
 
-    if (sourceKeys.length > 0) {
-      // Primero intentar filtrar por stock_by_source[sourceId]
-      // Si no hay resultados (stock_by_source vacío, backfill no ejecutado aún),
-      // caer en fallback: todos los productos con stock > 0
-      const jsonbOrFilter = sourceKeys.map((k) => `stock_by_source->>${k}.not.is.null`).join(",")
-
-      let prodQuery = supabase
-        .from("products")
-        .select("id, ean, sku, title, stock, cost_price, stock_by_source", { count: "exact" })
-        .or(jsonbOrFilter)
-        .order("stock", { ascending: false })
+    if ((catalogCount ?? 0) > 0) {
+      // Modo catálogo: paginar supplier_catalog_items
+      let catQ = supabase
+        .from("supplier_catalog_items")
+        .select(
+          `id, supplier_ean, supplier_sku, title, stock_quantity, price_original, matched_by, product_id,
+           products:product_id (id, ean, sku, title)`,
+          { count: "exact" }
+        )
+        .eq("warehouse_id", warehouseId)
+        .order("stock_quantity", { ascending: false })
         .range(offset, offset + PAGE_SIZE - 1)
 
       if (search) {
-        prodQuery = prodQuery.or(`title.ilike.%${search}%,ean.ilike.%${search}%,sku.ilike.%${search}%`)
+        catQ = catQ.or(`title.ilike.%${search}%,supplier_ean.ilike.%${search}%,supplier_sku.ilike.%${search}%`)
       }
 
-      const { data: prodData, count: pCount } = await prodQuery
-      productItems = (prodData ?? []) as ProductRow[]
-      productCount = pCount ?? 0
+      const { data: catItems, count: catTotal } = await catQ
 
-      // Fallback: si el filtro JSONB no devuelve resultados (stock_by_source aún no populado),
-      // mostrar todos los productos con stock > 0
-      if (productCount === 0) {
-        let fallbackQuery = supabase
-          .from("products")
-          .select("id, ean, sku, title, stock, cost_price, stock_by_source", { count: "exact" })
-          .gt("stock", 0)
-          .order("stock", { ascending: false })
-          .range(offset, offset + PAGE_SIZE - 1)
-
-        if (search) {
-          fallbackQuery = fallbackQuery.or(`title.ilike.%${search}%,ean.ilike.%${search}%,sku.ilike.%${search}%`)
-        }
-
-        const { data: fbData, count: fbCount } = await fallbackQuery
-        productItems = (fbData ?? []) as ProductRow[]
-        productCount = fbCount ?? 0
-      }
-    }
-
-    // ── Combinar fuentes ──────────────────────────────────────────────────────
-    // Si hay supplier_catalog_items, usarlos (modo catálogo)
-    // Si no, usar products (modo stock_by_source)
-    const usingCatalogMode = (catalogCount ?? 0) > 0 || sourceKeys.length === 0
-
-    let items: any[]
-    let total: number
-
-    if (usingCatalogMode) {
-      items = catalogItems ?? []
-      total = catalogCount ?? 0
-    } else {
-      // Mapear products al mismo shape que catalog items
-      items = productItems.map((p) => {
-        const sourceStock = sourceKeys.reduce((sum, k) => sum + (p.stock_by_source?.[k] ?? 0), 0)
-        return {
-          id: `prod_${p.id}`,
-          supplier_ean: p.ean,
-          supplier_sku: p.sku,
-          title: p.title ?? "",
-          stock_quantity: sourceStock > 0 ? sourceStock : (p.stock ?? 0),
-          price_original: p.cost_price,
-          matched_by: "products",
-          product_id: p.id,
-          products: { id: p.id, ean: p.ean, sku: p.sku, title: p.title },
-          _source: "products",
-        }
-      })
-      total = productCount
-    }
-
-    // ── ML publication links ──────────────────────────────────────────────────
-    const productIds = items.filter((i) => i.product_id).map((i) => i.product_id as string)
-    const mlMap: Record<string, { ml_item_id: string; account_nickname: string }[]> = {}
-
-    if (productIds.length > 0) {
-      const { data: mlPubs } = await supabase
-        .from("ml_publications")
-        .select("product_id, ml_item_id, ml_accounts(nickname, ml_user_id)")
-        .in("product_id", productIds)
-
-      for (const pub of mlPubs ?? []) {
-        if (!pub.product_id) continue
-        if (!mlMap[pub.product_id]) mlMap[pub.product_id] = []
-        mlMap[pub.product_id].push({
-          ml_item_id: pub.ml_item_id,
-          account_nickname: (pub.ml_accounts as any)?.nickname ?? (pub.ml_accounts as any)?.ml_user_id ?? "",
-        })
-      }
-    }
-
-    // ── Aggregate totals ──────────────────────────────────────────────────────
-    let totalSKUs = 0
-    let totalUnits = 0
-    let matchedSKUs = 0
-
-    if (usingCatalogMode) {
-      const { data: totals } = await supabase
+      // Stats via aggregate queries
+      const { count: catTotalCount } = await supabase
         .from("supplier_catalog_items")
-        .select("stock_quantity, product_id")
+        .select("*", { count: "exact", head: true })
         .eq("warehouse_id", warehouseId)
-      totalSKUs = totals?.length ?? 0
-      totalUnits = totals?.reduce((s, r) => s + (r.stock_quantity ?? 0), 0) ?? 0
-      matchedSKUs = totals?.filter((r) => r.product_id).length ?? 0
-    } else {
-      // Stats from products
-      const jsonbFilter = sourceKeys.map((k) => `stock_by_source->>${k}.not.is.null`).join(",")
-      let { data: allProds } = await supabase
-        .from("products")
-        .select("id, stock, stock_by_source")
-        .or(jsonbFilter)
 
-      // Fallback igual que en la query paginada
-      if (!allProds || allProds.length === 0) {
-        const { data: fb } = await supabase
-          .from("products")
-          .select("id, stock, stock_by_source")
-          .gt("stock", 0)
-        allProds = fb ?? []
-      }
+      const { count: matchedCount } = await supabase
+        .from("supplier_catalog_items")
+        .select("*", { count: "exact", head: true })
+        .eq("warehouse_id", warehouseId)
+        .not("product_id", "is", null)
 
-      totalSKUs = allProds.length
-      totalUnits = allProds.reduce((s, r) => {
-        const src = sourceKeys.reduce((sum, k) => sum + ((r.stock_by_source as any)?.[k] ?? 0), 0)
-        return s + (src > 0 ? src : (r.stock ?? 0))
-      }, 0)
-      matchedSKUs = totalSKUs
+      const totalSKUs = catTotalCount ?? 0
+      const totalUnits = (catItems ?? []).reduce((s: number, r: any) => s + (r.stock_quantity ?? 0), 0)
+      const matchedSKUs = matchedCount ?? 0
+
+      const productIds = (catItems ?? []).filter((i) => i.product_id).map((i) => i.product_id as string)
+      const mlMap = await fetchMLMap(supabase, productIds)
+
+      return NextResponse.json({
+        warehouse,
+        items: (catItems ?? []).map((item) => ({
+          ...item,
+          ml_publications: item.product_id ? (mlMap[item.product_id] ?? []) : [],
+        })),
+        data_source: "catalog",
+        linked_sources: sourceNames,
+        pagination: {
+          total: totalSKUs,
+          page,
+          page_size: PAGE_SIZE,
+          total_pages: Math.ceil(totalSKUs / PAGE_SIZE),
+        },
+        stats: {
+          total_skus: totalSKUs,
+          total_units: totalUnits,
+          matched_skus: matchedSKUs,
+          unmatched_skus: totalSKUs - matchedSKUs,
+        },
+      })
     }
 
-    const enrichedItems = items.map((item) => ({
-      ...item,
-      ml_publications: item.product_id ? (mlMap[item.product_id] ?? []) : [],
-    }))
+    // ── Modo 2: products via import_sources ───────────────────────────────────
+    // Si no hay fuentes vinculadas, nada que mostrar
+    if (sourceKeys.length === 0) {
+      return NextResponse.json({
+        warehouse,
+        items: [],
+        data_source: "products",
+        linked_sources: [],
+        pagination: { total: 0, page: 1, page_size: PAGE_SIZE, total_pages: 0 },
+        stats: { total_skus: 0, total_units: 0, matched_skus: 0, unmatched_skus: 0 },
+      })
+    }
+
+    // Construir query de productos: filtrar por stock_by_source[sourceId] o fallback a stock > 0
+    // Intentar filtro JSONB primero, luego fallback
+    let prodQuery = supabase
+      .from("products")
+      .select("id, ean, sku, title, stock, cost_price, stock_by_source", { count: "exact" })
+      .order("stock", { ascending: false })
+      .range(offset, offset + PAGE_SIZE - 1)
+
+    let totalCountQuery = supabase
+      .from("products")
+      .select("*", { count: "exact", head: true })
+
+    // Intentar filtro JSONB por source.id como clave
+    const jsonbOrFilter = sourceKeys.map((k) => `stock_by_source->>${k}.not.is.null`).join(",")
+    const { count: jsonbCount, error: jsonbErr } = await supabase
+      .from("products")
+      .select("*", { count: "exact", head: true })
+      .or(jsonbOrFilter)
+
+    const useJsonb = !jsonbErr && (jsonbCount ?? 0) > 0
+
+    if (useJsonb) {
+      prodQuery = prodQuery.or(jsonbOrFilter)
+      totalCountQuery = totalCountQuery.or(jsonbOrFilter)
+    } else {
+      // Fallback: todos los productos con stock > 0
+      prodQuery = prodQuery.gt("stock", 0)
+      totalCountQuery = totalCountQuery.gt("stock", 0)
+    }
+
+    if (search) {
+      prodQuery = prodQuery.or(`title.ilike.%${search}%,ean.ilike.%${search}%,sku.ilike.%${search}%`)
+    }
+
+    const [{ data: prodData, count: pCount }, { count: totalCount }] = await Promise.all([
+      prodQuery,
+      totalCountQuery,
+    ])
+
+    const productItems = (prodData ?? []) as Array<{
+      id: string; ean: string | null; sku: string | null; title: string | null
+      stock: number | null; cost_price: number | null; stock_by_source: Record<string, number> | null
+    }>
+
+    // totalUnits: sum from the current page (exact sum requires loading all rows, skip for perf)
+    const totalUnits = productItems.reduce((s, p) => {
+      const src = sourceKeys.reduce((sum, k) => sum + (p.stock_by_source?.[k] ?? 0), 0)
+      return s + (src > 0 ? src : (p.stock ?? 0))
+    }, 0)
+
+    const totalSKUs = totalCount ?? 0
+
+    // ML enrichment
+    const productIds = productItems.map((p) => p.id)
+    const mlMap = await fetchMLMap(supabase, productIds)
+
+    const items = productItems.map((p) => {
+      const sourceStock = sourceKeys.reduce((sum, k) => sum + (p.stock_by_source?.[k] ?? 0), 0)
+      return {
+        id: `prod_${p.id}`,
+        supplier_ean: p.ean,
+        supplier_sku: p.sku,
+        title: p.title ?? "",
+        stock_quantity: sourceStock > 0 ? sourceStock : (p.stock ?? 0),
+        price_original: p.cost_price,
+        matched_by: "products",
+        product_id: p.id,
+        products: { id: p.id, ean: p.ean, sku: p.sku, title: p.title },
+        ml_publications: mlMap[p.id] ?? [],
+      }
+    })
 
     return NextResponse.json({
       warehouse,
-      items: enrichedItems,
-      data_source: usingCatalogMode ? "catalog" : "products",
-      linked_sources: (linkedSources ?? []).map((s) => s.name),
+      items,
+      data_source: "products",
+      linked_sources: sourceNames,
       pagination: {
-        total,
+        total: totalSKUs,
         page,
         page_size: PAGE_SIZE,
-        total_pages: Math.ceil(total / PAGE_SIZE),
+        total_pages: Math.ceil(totalSKUs / PAGE_SIZE),
       },
       stats: {
         total_skus: totalSKUs,
         total_units: totalUnits,
-        matched_skus: matchedSKUs,
-        unmatched_skus: totalSKUs - matchedSKUs,
+        matched_skus: totalSKUs,
+        unmatched_skus: 0,
       },
     })
   } catch (error) {
     console.error("[WAREHOUSE STOCK]", error)
-    return NextResponse.json({ error: "Error interno" }, { status: 500 })
+    return NextResponse.json({ error: "Error interno", detail: String(error) }, { status: 500 })
   }
+}
+
+async function fetchMLMap(
+  supabase: any,
+  productIds: string[]
+): Promise<Record<string, { ml_item_id: string; account_nickname: string }[]>> {
+  const mlMap: Record<string, { ml_item_id: string; account_nickname: string }[]> = {}
+  if (productIds.length === 0) return mlMap
+
+  const { data: mlPubs } = await supabase
+    .from("ml_publications")
+    .select("product_id, ml_item_id, ml_accounts(nickname, ml_user_id)")
+    .in("product_id", productIds)
+
+  for (const pub of mlPubs ?? []) {
+    if (!pub.product_id) continue
+    if (!mlMap[pub.product_id]) mlMap[pub.product_id] = []
+    mlMap[pub.product_id].push({
+      ml_item_id: pub.ml_item_id,
+      account_nickname: (pub.ml_accounts as any)?.nickname ?? (pub.ml_accounts as any)?.ml_user_id ?? "",
+    })
+  }
+  return mlMap
 }
