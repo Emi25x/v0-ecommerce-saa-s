@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 import { mergeStockBySource } from "@/lib/stock-helpers"
+import { runLibralStockImport } from "@/lib/libral/run-stock-import"
 
 console.log("[v0] ========================================")
 console.log("[v0] IMPORT-NOW ENDPOINT MODULE LOADED")
@@ -52,6 +53,21 @@ export async function GET(request: Request) {
       console.log(`[v0] ========================================`)
       console.log(`[v0] Processing source: ${source.name}`)
       console.log(`[v0] ========================================`)
+
+      // Libral Argentina uses a JSON API, not CSV — delegate to dedicated importer
+      const isLibral = source.name?.toLowerCase().includes("libral") || source.feed_type === "api"
+      if (isLibral) {
+        console.log(`[v0] Libral source detected, using runLibralStockImport`)
+        const r = await runLibralStockImport(source.source_key ?? "libral")
+        results.push({
+          source: source.name,
+          imported: 0,
+          updated: r.updated,
+          failed: r.errors,
+          total: r.updated,
+        })
+        continue
+      }
 
       try {
         // Download CSV
