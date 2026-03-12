@@ -189,8 +189,8 @@ export async function POST(request: NextRequest) {
     let errors = 0
     let zeroed = 0
 
-    // Track which publications were matched (for zero_missing)
-    const matchedPubIds = new Set<string>()
+    // Build a Set of ALL EANs from the file for zero_missing check
+    const fileEanSet = new Set(stockUpdates.map(u => u.ean))
 
     for (const update of stockUpdates) {
       const pub = pubByEan.get(update.ean)
@@ -207,7 +207,6 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      matchedPubIds.add(pub.id)
       const oldStock = pub.current_stock ?? 0
 
       if (oldStock === update.stock) {
@@ -277,13 +276,21 @@ export async function POST(request: NextRequest) {
     // --- Zero missing: set stock=0 for publications NOT in the file ---
     const zeroedItems: UpdateResult[] = []
     if (zero_missing) {
-      // Only zero publications that have a SKU/EAN (i.e. are from this provider)
-      // and were NOT matched by the file
+      // Only zero publications whose SKU/EAN is NOT in the file
+      // Check all identifier fields against the file's EAN set
       const pubsToZero = publications.filter((pub: any) => {
-        if (matchedPubIds.has(pub.id)) return false
         const currentStock = pub.current_stock ?? 0
         if (currentStock === 0) return false // Already zero
-        // Only zero if this pub has a SKU that looks like an EAN (numeric, 8+ digits)
+
+        // Check if ANY of this pub's identifiers appear in the file
+        for (const field of [pub.sku, pub.ean, pub.gtin, pub.isbn]) {
+          const normalized = field?.replace(/\D/g, "")
+          if (normalized && normalized.length >= 8 && fileEanSet.has(normalized)) {
+            return false // This pub IS in the file, don't zero it
+          }
+        }
+
+        // Only zero if this pub has a SKU that looks like an EAN (from provider)
         const skuNorm = pub.sku?.replace(/\D/g, "")
         return skuNorm && skuNorm.length >= 8
       })
