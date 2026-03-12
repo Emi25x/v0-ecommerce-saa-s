@@ -113,9 +113,9 @@ export default function StockUpdatePage() {
           <tr>
             <th className="text-left py-2 px-2">ML Item</th>
             <th className="text-left py-2 px-2">SKU</th>
-            <th className="text-left py-2 px-2">EAN</th>
             <th className="text-left py-2 px-2">Titulo</th>
-            {showStock && <th className="text-right py-2 px-2">Stock Archivo</th>}
+            <th className="text-right py-2 px-2">Stock ML</th>
+            {showStock && <th className="text-right py-2 px-2">Nuevo</th>}
             <th className="text-center py-2 px-2">Estado</th>
           </tr>
         </thead>
@@ -124,8 +124,8 @@ export default function StockUpdatePage() {
             <tr key={i} className="border-b last:border-0">
               <td className="py-1.5 px-2 font-mono text-xs">{item.ml_item_id || "-"}</td>
               <td className="py-1.5 px-2 font-mono text-xs">{item.sku || "-"}</td>
-              <td className="py-1.5 px-2 font-mono text-xs">{item.ean}</td>
               <td className="py-1.5 px-2 text-xs truncate max-w-[250px]" title={item.title}>{item.title || "-"}</td>
+              <td className="py-1.5 px-2 text-right">{item.old_stock}</td>
               {showStock && <td className="py-1.5 px-2 text-right font-medium">{item.new_stock}</td>}
               <td className="py-1.5 px-2 text-center">
                 {item.status === "updated" && <CheckCircle2 className="h-4 w-4 text-green-600 inline" />}

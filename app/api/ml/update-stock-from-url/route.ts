@@ -180,6 +180,37 @@ export async function POST(request: NextRequest) {
 
     console.log(`[update-stock-from-url] Found ${publications.length} total publications for account ${account.nickname}, ${pubByEan.size} unique EAN/SKU keys`)
 
+    // --- Fetch real stock from ML API in bulk ---
+    const mlStockMap = new Map<string, number>() // ml_item_id → available_quantity
+    const allItemIds = publications.map((p: any) => p.ml_item_id).filter(Boolean)
+    const BATCH_SIZE = 20
+
+    for (let i = 0; i < allItemIds.length; i += BATCH_SIZE) {
+      const batch = allItemIds.slice(i, i + BATCH_SIZE)
+      try {
+        const res = await fetch(
+          `${ML_API_BASE}/items?ids=${batch.join(",")}&attributes=id,available_quantity`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        )
+        if (res.ok) {
+          const data = await res.json()
+          for (const item of data) {
+            if (item.code === 200 && item.body) {
+              mlStockMap.set(item.body.id, item.body.available_quantity ?? 0)
+            }
+          }
+        }
+        // Small delay to avoid rate limiting
+        if (i + BATCH_SIZE < allItemIds.length) {
+          await new Promise(r => setTimeout(r, 200))
+        }
+      } catch (err) {
+        console.error(`[update-stock-from-url] Error fetching ML stock batch: ${err}`)
+      }
+    }
+
+    console.log(`[update-stock-from-url] Fetched real ML stock for ${mlStockMap.size} items`)
+
     // --- Match and update ---
     const results: UpdateResult[] = []
     const notFoundItems: UpdateResult[] = []
@@ -209,7 +240,7 @@ export async function POST(request: NextRequest) {
           continue
         }
 
-        const oldStock = pub.current_stock ?? 0
+        const oldStock = mlStockMap.get(pub.ml_item_id) ?? 0
 
         if (oldStock === update.stock) {
           skipped++
@@ -291,7 +322,7 @@ export async function POST(request: NextRequest) {
       })
 
       for (const pub of pubsToZero) {
-        const oldStock = pub.current_stock ?? 0
+        const oldStock = mlStockMap.get(pub.ml_item_id) ?? 0
 
         if (dry_run) {
           zeroed++
