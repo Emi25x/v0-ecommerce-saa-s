@@ -106,7 +106,7 @@ export default function StockUpdatePage() {
     }
   }
 
-  const renderTable = (items: DetailItem[]) => (
+  const renderTable = (items: DetailItem[], showStock = true) => (
     <div className="max-h-96 overflow-auto">
       <table className="w-full text-sm">
         <thead className="sticky top-0 bg-background border-b">
@@ -114,9 +114,8 @@ export default function StockUpdatePage() {
             <th className="text-left py-2 px-2">ML Item</th>
             <th className="text-left py-2 px-2">SKU</th>
             <th className="text-left py-2 px-2">EAN</th>
-            <th className="text-left py-2 px-2 hidden lg:table-cell">Titulo</th>
-            <th className="text-right py-2 px-2">Ant.</th>
-            <th className="text-right py-2 px-2">Nuevo</th>
+            <th className="text-left py-2 px-2">Titulo</th>
+            {showStock && <th className="text-right py-2 px-2">Stock Archivo</th>}
             <th className="text-center py-2 px-2">Estado</th>
           </tr>
         </thead>
@@ -126,12 +125,11 @@ export default function StockUpdatePage() {
               <td className="py-1.5 px-2 font-mono text-xs">{item.ml_item_id || "-"}</td>
               <td className="py-1.5 px-2 font-mono text-xs">{item.sku || "-"}</td>
               <td className="py-1.5 px-2 font-mono text-xs">{item.ean}</td>
-              <td className="py-1.5 px-2 text-xs truncate max-w-[200px] hidden lg:table-cell" title={item.title}>{item.title || "-"}</td>
-              <td className="py-1.5 px-2 text-right">{item.old_stock}</td>
-              <td className="py-1.5 px-2 text-right font-medium">{item.new_stock}</td>
+              <td className="py-1.5 px-2 text-xs truncate max-w-[250px]" title={item.title}>{item.title || "-"}</td>
+              {showStock && <td className="py-1.5 px-2 text-right font-medium">{item.new_stock}</td>}
               <td className="py-1.5 px-2 text-center">
                 {item.status === "updated" && <CheckCircle2 className="h-4 w-4 text-green-600 inline" />}
-                {item.status === "skipped" && <span className="text-yellow-600">-</span>}
+                {item.status === "skipped" && <span className="text-yellow-600">=</span>}
                 {item.status === "zeroed" && <MinusCircle className="h-4 w-4 text-orange-500 inline" />}
                 {item.status === "not_found" && <span className="text-muted-foreground">?</span>}
                 {item.status === "error" && (
@@ -355,11 +353,11 @@ export default function StockUpdatePage() {
               {activeTab === "details" && (!result.details || result.details.length === 0) && (
                 <p className="text-sm text-muted-foreground">No hay items para mostrar</p>
               )}
-              {activeTab === "not_found" && result.not_found_details && result.not_found_details.length > 0 && renderTable(result.not_found_details)}
+              {activeTab === "not_found" && result.not_found_details && result.not_found_details.length > 0 && renderTable(result.not_found_details, true)}
               {activeTab === "not_found" && (!result.not_found_details || result.not_found_details.length === 0) && (
                 <p className="text-sm text-muted-foreground">Todos los EANs del archivo fueron encontrados</p>
               )}
-              {activeTab === "zeroed" && result.zeroed_details && result.zeroed_details.length > 0 && renderTable(result.zeroed_details)}
+              {activeTab === "zeroed" && result.zeroed_details && result.zeroed_details.length > 0 && renderTable(result.zeroed_details, false)}
               {activeTab === "zeroed" && (!result.zeroed_details || result.zeroed_details.length === 0) && (
                 <p className="text-sm text-muted-foreground">No hay items puestos en 0</p>
               )}
