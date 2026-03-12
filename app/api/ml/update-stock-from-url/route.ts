@@ -2,6 +2,8 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { refreshTokenIfNeeded } from "@/lib/mercadolibre"
 
+export const maxDuration = 300 // 5 minutes for processing large stock files
+
 const ML_API_BASE = "https://api.mercadolibre.com"
 
 interface StockUpdate {
