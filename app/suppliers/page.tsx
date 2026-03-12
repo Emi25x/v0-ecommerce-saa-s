@@ -171,18 +171,19 @@ export default function SuppliersPage() {
   async function runImport(sourceId: string) {
     setRunningImports(prev => ({ ...prev, [sourceId]: true }))
     try {
-      const res = await fetch(`/api/import-now?sourceId=${sourceId}`)
+      const res = await fetch(`/api/inventory/sources/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_id: sourceId }),
+      })
       const data = await res.json()
       if (data.success) {
-        const result = data.results?.[0]
         toast({
-          title: "Importación completada",
-          description: result
-            ? `${fmt(result.imported)} importados · ${fmt(result.updated)} actualizados · ${fmt(result.failed)} errores`
-            : "Importación finalizada",
+          title: "Importación iniciada",
+          description: "El proceso corre en segundo plano. Revisá el historial en unos minutos.",
         })
       } else {
-        toast({ title: "Error en importación", description: data.error ?? "Error desconocido", variant: "destructive" })
+        toast({ title: "Error en importación", description: data.message ?? data.error ?? "Error desconocido", variant: "destructive" })
       }
       // Refresh history for this source (force reload)
       setSourcesHistory(prev => { const next = { ...prev }; delete next[sourceId]; return next })
