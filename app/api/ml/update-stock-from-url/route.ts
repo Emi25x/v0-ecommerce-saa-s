@@ -356,8 +356,8 @@ export async function POST(request: NextRequest) {
       summary: { updated, skipped, not_found: notFound, zeroed, errors },
       parse_errors: parseErrors.length > 0 ? parseErrors.slice(0, 20) : undefined,
       details: results,
-      not_found_details: notFoundItems.slice(0, 200),
-      zeroed_details: zeroedItems.slice(0, 200),
+      not_found_details: notFoundItems,
+      zeroed_details: zeroedItems,
     }
 
     console.log(`[update-stock-from-url] Done. Updated: ${updated}, Skipped: ${skipped}, Not found: ${notFound}, Zeroed: ${zeroed}, Errors: ${errors}`)
