@@ -139,22 +139,36 @@ export async function POST(request: NextRequest) {
 
     console.log(`[update-stock-from-url] Parsed ${stockUpdates.length} valid EAN/stock pairs from ${lines.length - 1} data rows`)
 
-    // --- Get ML publications for this account (match by ean, gtin, isbn, OR sku) ---
-    const { data: publications, error: pubError } = await supabase
-      .from("ml_publications")
-      .select("id, ml_item_id, ean, gtin, isbn, sku, current_stock, status, title")
-      .eq("account_id", account.id)
-      .or("ean.not.is.null,gtin.not.is.null,isbn.not.is.null,sku.not.is.null")
+    // --- Get ALL ML publications for this account (paginate past Supabase 1000-row limit) ---
+    const allPublications: any[] = []
+    const PAGE_SIZE = 1000
+    let from = 0
+    let hasMore = true
 
-    if (pubError) {
-      return NextResponse.json({ error: `Failed to fetch publications: ${pubError.message}` }, { status: 500 })
+    while (hasMore) {
+      const { data: page, error: pubError } = await supabase
+        .from("ml_publications")
+        .select("id, ml_item_id, ean, gtin, isbn, sku, current_stock, status, title")
+        .eq("account_id", account.id)
+        .range(from, from + PAGE_SIZE - 1)
+
+      if (pubError) {
+        return NextResponse.json({ error: `Failed to fetch publications: ${pubError.message}` }, { status: 500 })
+      }
+
+      allPublications.push(...(page || []))
+      hasMore = (page?.length || 0) === PAGE_SIZE
+      from += PAGE_SIZE
     }
 
-    // Build EAN lookup map — the file has EANs, but in ML they may be stored
-    // as ean, gtin, isbn, or even as the sku field. Index all of them.
+    const publications = allPublications
+
+    // Build lookup map — the file has EANs, but in ML they are typically
+    // stored as sku. Also index by ean, gtin, isbn for broader matching.
     const pubByEan = new Map<string, typeof publications[0]>()
-    for (const pub of publications || []) {
-      for (const field of [pub.ean, pub.gtin, pub.isbn, pub.sku]) {
+    for (const pub of publications) {
+      // Index sku FIRST (highest priority since that's where EANs usually are in ML)
+      for (const field of [pub.sku, pub.ean, pub.gtin, pub.isbn]) {
         const normalized = field?.replace(/\D/g, "")
         if (normalized && normalized.length >= 8 && !pubByEan.has(normalized)) {
           pubByEan.set(normalized, pub)
@@ -162,7 +176,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log(`[update-stock-from-url] Found ${publications?.length || 0} publications with EAN for account ${account.nickname}`)
+    console.log(`[update-stock-from-url] Found ${publications.length} total publications for account ${account.nickname}, ${pubByEan.size} unique EAN/SKU keys`)
 
     // --- Match and update ---
     const results: UpdateResult[] = []
