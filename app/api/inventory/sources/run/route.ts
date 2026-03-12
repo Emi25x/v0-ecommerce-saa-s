@@ -71,11 +71,14 @@ export async function POST(request: Request) {
 
     console.log(`[SOURCES-RUN] History record creado: ${historyRecord.id}`)
 
-    const isLibral = source.name?.toLowerCase().includes("libral") || source.feed_type === "api"
+    // Only route feed_type="api" sources to the Libral API importer.
+    // "Libral Argentina" is feed_type="stock_price" (TAB text file) and must
+    // go through the generic batch-import path instead.
+    const isLibral = source.feed_type === "api"
 
     if (isLibral) {
-      // Libral: API JSON paginada, ejecutar directamente con admin client
-      console.log(`[SOURCES-RUN] Fuente Libral detectada, ejecutando runLibralStockImport`)
+      // Libral API: JSON paginada, ejecutar directamente con admin client
+      console.log(`[SOURCES-RUN] Fuente API Libral detectada, ejecutando runLibralStockImport`)
       const sourceKey = source.source_key ?? "libral"
       const r = await runLibralStockImport(sourceKey)
 

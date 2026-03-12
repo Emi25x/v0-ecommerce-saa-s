@@ -68,7 +68,9 @@ export async function GET(request: Request) {
 
         // Rutear según proveedor: cada proveedor tiene su propio manejador
         const isAzeta = source.name.toLowerCase().includes("azeta")
-        const isLibral = source.name.toLowerCase().includes("libral") || source.feed_type === "api"
+        // Only feed_type="api" sources use the Libral API importer.
+        // "Libral Argentina" (feed_type="stock_price") goes through executeFullImport.
+        const isLibral = source.feed_type === "api"
         let importResult: { success: boolean; created?: number; updated?: number; message?: string }
 
         if (isAzeta && source.feed_type === "stock_price") {

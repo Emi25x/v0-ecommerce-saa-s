@@ -134,8 +134,10 @@ export async function GET(request: Request) {
         continue
       }
 
-      // ── Libral Argentina: API JSON paginada ───────────────────────────────
-      const isLibral = sourceLower.includes("libral") || source.feed_type === "api"
+      // ── Libral: API JSON paginada (feed_type==="api" only) ───────────────
+      // NOTE: "Libral Argentina" is feed_type="stock_price" and is handled by
+      // the generic CSV path below (TAB-delimited text file).
+      const isLibral = source.feed_type === "api"
       if (isLibral) {
         console.log(`[v0] Libral source detected, using runLibralStockImport`)
 

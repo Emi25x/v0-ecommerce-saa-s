@@ -154,9 +154,12 @@ export async function GET(request: NextRequest) {
       // Verificar column_mapping contra headers detectados
       if (hasHeader && src.column_mapping && result.headers) {
         const mapping = src.column_mapping as Record<string, string>
+        // Keys that are config directives, not CSV column names
+        const CONFIG_ONLY_KEYS = new Set(["match_field", "delimiter", "mappings"])
         const mappingCheck: Record<string, "OK" | "MISSING"> = {}
         for (const [field, csvCol] of Object.entries(mapping)) {
           if (typeof csvCol !== "string") continue
+          if (CONFIG_ONLY_KEYS.has(field)) continue // skip non-column config keys
           mappingCheck[field] = result.headers.includes(csvCol) ? "OK" : "MISSING"
         }
         result.column_mapping_check = mappingCheck
