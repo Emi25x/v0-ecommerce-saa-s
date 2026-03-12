@@ -110,11 +110,17 @@ export async function GET(
 
     if (hasSourceData) {
       // Filtrar por source_key en stock_by_source
-      prodQ = prodQ.or(jsonbOrFilter)
-      countQ = countQ.or(jsonbOrFilter)
-    }
-
-    if (search) {
+      // Nota: combinar con búsqueda en un solo .or() evita que PostgREST
+      // descarte el primer parámetro or= cuando hay dos en la misma query.
+      if (search) {
+        const searchFilter = `title.ilike.%${search}%,sku.ilike.%${search}%`
+        prodQ = prodQ.or(jsonbOrFilter).or(searchFilter)
+        countQ = countQ.or(jsonbOrFilter).or(searchFilter)
+      } else {
+        prodQ = prodQ.or(jsonbOrFilter)
+        countQ = countQ.or(jsonbOrFilter)
+      }
+    } else if (search) {
       prodQ = prodQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%`)
       countQ = countQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%`)
     }

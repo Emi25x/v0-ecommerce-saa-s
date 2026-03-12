@@ -58,7 +58,34 @@ export async function GET(request: Request) {
       const isLibral = source.name?.toLowerCase().includes("libral") || source.feed_type === "api"
       if (isLibral) {
         console.log(`[v0] Libral source detected, using runLibralStockImport`)
+
+        // Create import_history record so the history tab shows the run
+        const { data: histRecord } = await supabase
+          .from("import_history")
+          .insert({
+            source_id: source.id,
+            status: "running",
+            started_at: new Date().toISOString(),
+          })
+          .select()
+          .single()
+
         const r = await runLibralStockImport(source.source_key ?? "libral")
+
+        // Update history with result
+        if (histRecord) {
+          await supabase
+            .from("import_history")
+            .update({
+              status: r.success ? "success" : "error",
+              completed_at: new Date().toISOString(),
+              products_updated: r.updated,
+              products_failed: r.errors,
+              error_message: r.error ?? null,
+            })
+            .eq("id", histRecord.id)
+        }
+
         results.push({
           source: source.name,
           imported: 0,
