@@ -92,6 +92,11 @@ interface LocalProduct {
   pages: number | null
   binding: string | null
   category: string | null
+  year_edition: string | null
+  height: number | null
+  width: number | null
+  thickness: number | null
+  canonical_weight_g: number | null
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
@@ -642,7 +647,7 @@ function AddProductDialog({
     setLocalProduct(null)
     setPublishResult(null)
     try {
-      const res = await fetch(`/api/inventory/products?ean=${encodeURIComponent(q)}&sku=${encodeURIComponent(q)}&limit=1`)
+      const res = await fetch(`/api/inventory/products?search=${encodeURIComponent(q)}&limit=1`)
       const data = await res.json()
       const found: LocalProduct | null = data.products?.[0] ?? data.data?.[0] ?? null
       setLocalProduct(found)
@@ -824,7 +829,16 @@ function AddProductDialog({
                   {localProduct.language && <span>Idioma: {localProduct.language}</span>}
                   {localProduct.stock != null && <span>Stock local: {localProduct.stock.toLocaleString("es-AR")}</span>}
                   {localProduct.pages && <span>Páginas: {localProduct.pages}</span>}
-                  {localProduct.binding && <span>Formato: {localProduct.binding}</span>}
+                  {localProduct.binding && <span>Encuadernación: {localProduct.binding}</span>}
+                  {localProduct.year_edition && <span>Año: {localProduct.year_edition}</span>}
+                  {localProduct.category && <span>Categoría: {localProduct.category}</span>}
+                  {(localProduct.height || localProduct.width || localProduct.thickness) && (
+                    <span>Dim: {[localProduct.height, localProduct.thickness, localProduct.width].filter(Boolean).join(" × ")} cm</span>
+                  )}
+                  {localProduct.canonical_weight_g && <span>Peso: {localProduct.canonical_weight_g}g</span>}
+                  {localProduct.description && (
+                    <span className="col-span-3 line-clamp-2 opacity-80">{localProduct.description}</span>
+                  )}
                 </div>
               )}
             </div>

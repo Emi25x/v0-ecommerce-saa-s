@@ -4,7 +4,7 @@
  * Flujo completo en un solo paso (diseñado para cron/server):
  *   1. Resuelve la URL desde import_sources (source_id | source_name | fallback "Azeta Total")
  *   2. Descarga el ZIP/CSV desde AZETA
- *   3. Extrae y parsea el CSV (delimiter auto-detectado)
+ *   3. Extrae y parsea el CSV línea a línea con fflate (streaming, sin cargar el CSV completo)
  *   4. Upsert en tabla products (batches de 500)
  *
  * Se llama directamente desde /api/azeta/import-catalog (cron).
@@ -22,13 +22,13 @@ const AZETA_TOTAL_URL =
   "https://www.azetadistribuciones.es/servicios_web/csv.php?user=680899&password=badajoz24"
 
 export interface CatalogImportResult {
-  success:         boolean
-  created?:        number
-  updated?:        number
-  errors?:         number
-  total_rows?:     number
+  success:          boolean
+  created?:         number
+  updated?:         number
+  errors?:          number
+  total_rows?:      number
   elapsed_seconds?: number
-  error?:          string
+  error?:           string
 }
 
 export async function runCatalogImport(opts?: {
@@ -46,21 +46,6 @@ export async function runCatalogImport(opts?: {
     if (!s) return ""
     if (s.length === 10) s = "978" + s
     return s.padStart(13, "0")
-  }
-
-  async function extractCSVFromZip(buf: Uint8Array): Promise<string> {
-    // Usar adm-zip para soportar streaming ZIPs (compressedSize=0 en local file header)
-    const AdmZip = (await import("adm-zip")).default
-    const zip = new AdmZip(Buffer.from(buf))
-    const entries = zip.getEntries()
-    for (const entry of entries) {
-      console.log(`[AZETA][ZIP] entry="${entry.entryName}" size=${(entry.header.size / 1024 / 1024).toFixed(1)}MB`)
-      if (/\.(csv|txt)$/i.test(entry.entryName) && !entry.isDirectory) {
-        const decompressed = entry.getData()
-        return new TextDecoder("latin1").decode(decompressed)
-      }
-    }
-    throw new Error("No se encontro CSV/TXT en el ZIP")
   }
 
   const supabase = createAdminClient()
@@ -91,6 +76,7 @@ export async function runCatalogImport(opts?: {
       return { success: false, error: `Error ${res.status} servidor AZETA — ${preview}` }
     }
 
+    // Descargar el archivo comprimido completo (230MB como Uint8Array — manejable)
     const chunks: Uint8Array[] = []
     const reader = res.body!.getReader()
     while (true) {
@@ -107,42 +93,6 @@ export async function runCatalogImport(opts?: {
     const isZip = fileBuf[0] === 0x50 && fileBuf[1] === 0x4b
     console.log(`[AZETA] Formato: ${isZip ? "ZIP" : "CSV"}`)
 
-    let csvText: string
-    if (isZip) {
-      csvText = await extractCSVFromZip(fileBuf)
-    } else {
-      csvText = new TextDecoder("latin1").decode(fileBuf)
-    }
-    console.log(`[AZETA] CSV: ${(csvText.length / 1024 / 1024).toFixed(1)}MB`)
-
-    const firstLine = csvText.substring(0, csvText.indexOf("\n")).trim()
-    const pipeCount = (firstLine.match(/\|/g) || []).length
-    const semiCount = (firstLine.match(/;/g)  || []).length
-    const delimiter = pipeCount >= semiCount ? "|" : ";"
-    const rawHeaders = firstLine.split(delimiter).map(h => h.trim().replace(/['"]/g, "").toLowerCase())
-    console.log(`[AZETA][CSV] delimiter="${delimiter}" headers=${rawHeaders.slice(0, 10).join(",")}`)
-
-    const firstColNumeric = /^[0-9eE.+\-]+$/.test(rawHeaders[0])
-    const headers  = firstColNumeric ? [] : rawHeaders
-    const hasHeader = headers.length > 0
-
-    const colIdx = {
-      ean:       hasHeader ? headers.findIndex(h => ["ean", "isbn", "gtin"].includes(h)) : 0,
-      titulo:    hasHeader ? headers.findIndex(h => ["titulo", "title"].includes(h)) : -1,
-      autor:     hasHeader ? headers.findIndex(h => ["autor", "author"].includes(h)) : -1,
-      editorial: hasHeader ? headers.findIndex(h => ["editorial", "publisher"].includes(h)) : -1,
-      pvp:       hasHeader ? headers.findIndex(h => ["pvp", "precio", "precio_sin_iva", "precio s/iva"].includes(h)) : -1,
-      idioma:    hasHeader ? headers.findIndex(h => ["idioma", "language"].includes(h)) : -1,
-      sinopsis:  hasHeader ? headers.findIndex(h => h.includes("sinopsis") || h === "descripcion") : -1,
-      url:       hasHeader ? headers.findIndex(h => ["url", "imagen", "portada"].includes(h)) : -1,
-      ano:       hasHeader ? headers.findIndex(h => h.includes("ano_edicion") || h.includes("year")) : -1,
-      codigo:    hasHeader ? headers.findIndex(h => h === "codigo_interno") : -1,
-    }
-
-    if (colIdx.ean < 0) {
-      return { success: false, error: `Columna EAN no encontrada. Headers: ${headers.slice(0, 10).join(",")}` }
-    }
-
     // Leer discount rate desde import_sources
     const { data: azetaSource } = await supabase
       .from("import_sources")
@@ -157,20 +107,60 @@ export async function runCatalogImport(opts?: {
       console.log(`[AZETA][RUN] discount_rate=${discountRate} → cost_price = PVP * ${(1 - discountRate).toFixed(4)}`)
     }
 
-    const lines = csvText.split("\n")
+    // ── Procesamiento línea a línea (sin construir el CSV completo en memoria) ──
     const productMap = new Map<string, any>()
     let discarded = 0
 
-    for (let i = hasHeader ? 1 : 0; i < lines.length; i++) {
-      const line = lines[i].trim()
-      if (!line) continue
+    // Estado del parser CSV (se actualiza en el primer renglón)
+    let headerProcessed = false
+    let hasHeader       = false
+    let delimiter       = "|"
+    let colIdx = {
+      ean: 0, titulo: -1, autor: -1, editorial: -1,
+      pvp: -1, idioma: -1, sinopsis: -1, url: -1, ano: -1, codigo: -1,
+    }
+
+    function processLine(rawLine: string): void {
+      const line = rawLine.trim()
+      if (!line) return
+
+      if (!headerProcessed) {
+        // Auto-detección de delimitador a partir de la primera línea
+        const pipeCount = (line.match(/\|/g) || []).length
+        const semiCount = (line.match(/;/g)  || []).length
+        delimiter = pipeCount >= semiCount ? "|" : ";"
+
+        const rawHeaders = line.split(delimiter).map(h => h.trim().replace(/['"]/g, "").toLowerCase())
+        const firstColNumeric = /^[0-9eE.+\-]+$/.test(rawHeaders[0])
+
+        if (!firstColNumeric) {
+          hasHeader = true
+          colIdx = {
+            ean:       rawHeaders.findIndex(h => ["ean", "isbn", "gtin"].includes(h)),
+            titulo:    rawHeaders.findIndex(h => ["titulo", "title"].includes(h)),
+            autor:     rawHeaders.findIndex(h => ["autor", "author"].includes(h)),
+            editorial: rawHeaders.findIndex(h => ["editorial", "publisher"].includes(h)),
+            pvp:       rawHeaders.findIndex(h => ["pvp", "precio", "precio_sin_iva", "precio s/iva"].includes(h)),
+            idioma:    rawHeaders.findIndex(h => ["idioma", "language"].includes(h)),
+            sinopsis:  rawHeaders.findIndex(h => h.includes("sinopsis") || h === "descripcion"),
+            url:       rawHeaders.findIndex(h => ["url", "imagen", "portada"].includes(h)),
+            ano:       rawHeaders.findIndex(h => h.includes("ano_edicion") || h.includes("year")),
+            codigo:    rawHeaders.findIndex(h => h === "codigo_interno"),
+          }
+        }
+        headerProcessed = true
+        if (hasHeader) return // saltar fila de encabezado
+      }
+
       const cols = line.split(delimiter)
-      if (cols.length <= colIdx.ean) continue
-      const ean = normalizeEan(cols[colIdx.ean]?.replace(/['"]/g, "").trim())
-      if (!ean || ean.length !== 13) { discarded++; continue }
+      // Para archivos sin header, colIdx.ean = 0 (primera columna)
+      const eanCol = colIdx.ean >= 0 ? colIdx.ean : 0
+      if (cols.length <= eanCol) return
+      const ean = normalizeEan(cols[eanCol]?.replace(/['"]/g, "").trim())
+      if (!ean || ean.length !== 13) { discarded++; return }
       const col = (ci: number) => ci >= 0 && cols[ci] ? cols[ci].replace(/['"]/g, "").trim() || null : null
-      const priceStr = col(colIdx.pvp)
-      const pvpRaw   = priceStr ? parseFloat(priceStr.replace(",", ".")) || null : null
+      const priceStr  = col(colIdx.pvp)
+      const pvpRaw    = priceStr ? parseFloat(priceStr.replace(",", ".")) || null : null
       const costPrice = pvpRaw != null
         ? (discountRate != null ? Math.round(pvpRaw * (1 - discountRate) * 10000) / 10000 : pvpRaw)
         : null
@@ -189,14 +179,98 @@ export async function runCatalogImport(opts?: {
       })
     }
 
+    // ── Descompresión y parseo línea a línea ──────────────────────────────────
+    if (isZip) {
+      // fflate Unzip: streaming — nunca construye el CSV completo en memoria
+      await new Promise<void>((resolve, reject) => {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { Unzip, UnzipInflate } = require("fflate") as typeof import("fflate")
+        let foundFile  = false
+        let lineBuffer = new Uint8Array(0)
+        const decoder  = new TextDecoder("latin1")
+
+        const unzipper = new Unzip()
+        ;(unzipper as any).register(UnzipInflate)
+
+        unzipper.onfile = (file: any) => {
+          if (!foundFile && /\.(csv|txt)$/i.test(file.name) && !file.name.endsWith("/")) {
+            foundFile = true
+            console.log(`[AZETA][ZIP] Procesando entrada: ${file.name}`)
+
+            file.ondata = (err: Error | null, data: Uint8Array, final: boolean) => {
+              if (err) { reject(err); return }
+
+              // Concatenar con buffer incompleto de la iteración anterior
+              const combined = new Uint8Array(lineBuffer.length + data.length)
+              combined.set(lineBuffer)
+              combined.set(data, lineBuffer.length)
+
+              // Procesar líneas completas (terminadas en \n)
+              let start = 0
+              for (let i = 0; i < combined.length; i++) {
+                if (combined[i] === 0x0a) {
+                  const slice = combined.slice(start, i)
+                  // Eliminar \r si viene de CRLF
+                  const lineBytes = slice.length > 0 && slice[slice.length - 1] === 0x0d
+                    ? slice.slice(0, -1) : slice
+                  processLine(decoder.decode(lineBytes))
+                  start = i + 1
+                }
+              }
+              lineBuffer = combined.slice(start)
+
+              if (final) {
+                if (lineBuffer.length > 0) processLine(decoder.decode(lineBuffer))
+                resolve()
+              }
+            }
+
+            file.start()
+          } else {
+            file.terminate()
+          }
+        }
+
+        // Alimentar el descompresor con el buffer completo (230MB Uint8Array)
+        unzipper.push(fileBuf, true)
+      })
+    } else {
+      // CSV sin comprimir: procesar por chunks de 1MB para evitar string gigante
+      const decoder  = new TextDecoder("latin1")
+      const CHUNK    = 1024 * 1024
+      let lineBuffer = new Uint8Array(0)
+      for (let i = 0; i < fileBuf.length; i += CHUNK) {
+        const piece    = fileBuf.slice(i, Math.min(i + CHUNK, fileBuf.length))
+        const combined = new Uint8Array(lineBuffer.length + piece.length)
+        combined.set(lineBuffer)
+        combined.set(piece, lineBuffer.length)
+        let start = 0
+        for (let j = 0; j < combined.length; j++) {
+          if (combined[j] === 0x0a) {
+            const slice     = combined.slice(start, j)
+            const lineBytes = slice.length > 0 && slice[slice.length - 1] === 0x0d ? slice.slice(0, -1) : slice
+            processLine(decoder.decode(lineBytes))
+            start = j + 1
+          }
+        }
+        lineBuffer = combined.slice(start)
+      }
+      if (lineBuffer.length > 0) processLine(decoder.decode(lineBuffer))
+    }
+
+    // Validación post-parseo
+    if (hasHeader && colIdx.ean < 0) {
+      return { success: false, error: "Columna EAN no encontrada en el CSV" }
+    }
+
     const products = Array.from(productMap.values())
     console.log(`[AZETA][IMPORT] validos=${products.length} descartados=${discarded}`)
 
     const allEans = products.map(p => p.ean)
 
-    // Fetch existing ean→sku mapping in chunks so we can:
-    //   1. preserve existing SKUs (avoids UNIQUE constraint violations on products.sku)
-    //   2. distinguish created vs updated rows
+    // Fetch existing ean→sku mapping para:
+    //   1. preservar SKU existente (evita violación UNIQUE en products.sku)
+    //   2. distinguir created vs updated
     const eanToSku = new Map<string, string>()
     for (let i = 0; i < allEans.length; i += 5000) {
       const { data } = await supabase.from("products").select("ean, sku").in("ean", allEans.slice(i, i + 5000))
@@ -207,7 +281,6 @@ export async function runCatalogImport(opts?: {
     for (let i = 0; i < products.length; i += 500) {
       const batch = products.slice(i, i + 500).map(p => ({
         ...p,
-        // Use existing SKU to avoid UNIQUE violation; fall back to EAN for new products
         sku: eanToSku.get(p.ean) ?? p.ean,
       }))
       const { error } = await supabase.from("products").upsert(batch, { onConflict: "ean" })
