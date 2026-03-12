@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
       success: true,
       updated: totalUpdated,
       not_found: totalNotFound,
-      total_rows: rows.length,
+      total_rows: lines.length,
       unique_eans: eans.length,
       duration_seconds: parseFloat(duration),
     })

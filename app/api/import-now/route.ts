@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 import { mergeStockBySource } from "@/lib/stock-helpers"
 import { runLibralStockImport } from "@/lib/libral/run-stock-import"
+import { runAzetaStockUpdate } from "@/lib/azeta/update-stock-import"
 
 console.log("[v0] ========================================")
 console.log("[v0] IMPORT-NOW ENDPOINT MODULE LOADED")
@@ -54,8 +55,87 @@ export async function GET(request: Request) {
       console.log(`[v0] Processing source: ${source.name}`)
       console.log(`[v0] ========================================`)
 
-      // Libral Argentina uses a JSON API, not CSV — delegate to dedicated importer
-      const isLibral = source.name?.toLowerCase().includes("libral") || source.feed_type === "api"
+      const sourceLower = (source.name ?? "").toLowerCase()
+
+      // ── Azeta: CSV propio, delegar a runAzetaStockUpdate ──────────────────
+      if (sourceLower.includes("azeta")) {
+        console.log(`[v0] Azeta source detected, using runAzetaStockUpdate`)
+
+        const { data: histRecord } = await supabase
+          .from("import_history")
+          .insert({ source_id: source.id, status: "running", started_at: new Date().toISOString() })
+          .select().single()
+
+        const r = await runAzetaStockUpdate(source as any)
+
+        if (histRecord) {
+          await supabase.from("import_history").update({
+            status: r.success ? "success" : "error",
+            completed_at: new Date().toISOString(),
+            products_updated: r.updated ?? 0,
+            products_failed: r.not_found ?? 0,
+            error_message: r.error ?? null,
+          }).eq("id", histRecord.id)
+        }
+
+        results.push({
+          source: source.name,
+          imported: 0,
+          updated: r.updated ?? 0,
+          failed: r.not_found ?? 0,
+          total: r.updated ?? 0,
+        })
+        continue
+      }
+
+      // ── Arnoia: CSV latin1 + bulk_update_stock_price RPC ──────────────────
+      if (sourceLower.includes("arnoia")) {
+        console.log(`[v0] Arnoia source detected, calling dedicated import-stock`)
+
+        const { data: histRecord } = await supabase
+          .from("import_history")
+          .insert({ source_id: source.id, status: "running", started_at: new Date().toISOString() })
+          .select().single()
+
+        let arnoiaUpdated = 0, arnoiaFailed = 0, arnoiaError: string | null = null
+        try {
+          const baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL
+            ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
+            : process.env.VERCEL_URL
+              ? `https://${process.env.VERCEL_URL}`
+              : "http://localhost:3000"
+          const res = await fetch(`${baseUrl}/api/arnoia/import-stock`, { method: "POST" })
+          const data = await res.json()
+          if (res.ok && data.success) {
+            arnoiaUpdated = data.updated ?? 0
+          } else {
+            arnoiaError = data.error ?? `HTTP ${res.status}`
+          }
+        } catch (e: any) {
+          arnoiaError = e.message
+        }
+
+        if (histRecord) {
+          await supabase.from("import_history").update({
+            status: arnoiaError ? "error" : "success",
+            completed_at: new Date().toISOString(),
+            products_updated: arnoiaUpdated,
+            error_message: arnoiaError,
+          }).eq("id", histRecord.id)
+        }
+
+        results.push({
+          source: source.name,
+          imported: 0,
+          updated: arnoiaUpdated,
+          failed: arnoiaFailed,
+          total: arnoiaUpdated,
+        })
+        continue
+      }
+
+      // ── Libral Argentina: API JSON paginada ───────────────────────────────
+      const isLibral = sourceLower.includes("libral") || source.feed_type === "api"
       if (isLibral) {
         console.log(`[v0] Libral source detected, using runLibralStockImport`)
 
