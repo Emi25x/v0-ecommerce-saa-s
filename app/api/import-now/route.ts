@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 import { mergeStockBySource } from "@/lib/stock-helpers"
 import { runLibralStockImport } from "@/lib/libral/run-stock-import"
 import { runAzetaStockUpdate } from "@/lib/azeta/update-stock-import"
+import { runArnoiaStockImport } from "@/lib/arnoia/run-stock-import"
 
 console.log("[v0] ========================================")
 console.log("[v0] IMPORT-NOW ENDPOINT MODULE LOADED")
@@ -88,48 +89,34 @@ export async function GET(request: Request) {
         continue
       }
 
-      // ── Arnoia: CSV latin1 + bulk_update_stock_price RPC ──────────────────
-      if (sourceLower.includes("arnoia")) {
-        console.log(`[v0] Arnoia source detected, calling dedicated import-stock`)
+      // ── Arnoia Stock: CSV latin1 + bulk_update_stock_price RPC ───────────
+      // Only stock_price feeds. Arnoia catalog sources (Arnoia, Arnoia Act)
+      // fall through to the generic CSV batch path below.
+      if (sourceLower.includes("arnoia") && source.feed_type === "stock_price") {
+        console.log(`[v0] Arnoia Stock source detected, running runArnoiaStockImport`)
 
         const { data: histRecord } = await supabase
           .from("import_history")
           .insert({ source_id: source.id, status: "running", started_at: new Date().toISOString() })
           .select().single()
 
-        let arnoiaUpdated = 0, arnoiaFailed = 0, arnoiaError: string | null = null
-        try {
-          const baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL
-            ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-            : process.env.VERCEL_URL
-              ? `https://${process.env.VERCEL_URL}`
-              : "http://localhost:3000"
-          const res = await fetch(`${baseUrl}/api/arnoia/import-stock`, { method: "POST" })
-          const data = await res.json()
-          if (res.ok && data.success) {
-            arnoiaUpdated = data.updated ?? 0
-          } else {
-            arnoiaError = data.error ?? `HTTP ${res.status}`
-          }
-        } catch (e: any) {
-          arnoiaError = e.message
-        }
+        const r = await runArnoiaStockImport()
 
         if (histRecord) {
           await supabase.from("import_history").update({
-            status: arnoiaError ? "error" : "success",
+            status: r.success ? "success" : "error",
             completed_at: new Date().toISOString(),
-            products_updated: arnoiaUpdated,
-            error_message: arnoiaError,
+            products_updated: r.updated,
+            error_message: r.error ?? null,
           }).eq("id", histRecord.id)
         }
 
         results.push({
           source: source.name,
           imported: 0,
-          updated: arnoiaUpdated,
-          failed: arnoiaFailed,
-          total: arnoiaUpdated,
+          updated: r.updated,
+          failed: r.not_found,
+          total: r.updated,
         })
         continue
       }
