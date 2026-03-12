@@ -76,40 +76,6 @@ export default function BatchImportPage() {
     // Ambas fuentes Azeta (Total y Parcial) usan el flujo azeta/download → azeta/process.
     // El batch genérico no puede manejar el ZIP de Total (~230MB) ni los errores del servidor de Azeta.
     const isAzeta = nameLower.includes("azeta")
-    const isArnoiaStock = nameLower.includes("arnoia") && nameLower.includes("stock")
-
-    // Arnoia Stock: endpoint dedicado simple
-    if (isArnoiaStock) {
-      try {
-        setStatus("Procesando Arnoia Stock...")
-        addLog("Usando importador dedicado para Arnoia Stock...")
-        const response = await fetch("/api/arnoia/import-stock", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-        })
-        const result = await response.json().catch(() => ({}))
-        if (!response.ok) {
-          const msg = result.error || `Error ${response.status}`
-          addLog(`Error: ${msg}`)
-          setStatus(`Error: ${msg}`)
-          setIsRunning(false)
-          return
-        }
-        const c = result.created || 0
-        const u = result.updated || result.updated_count || 0
-        setTotalCreated(c); setTotalUpdated(u); setTotalProcessed(c + u); setTotalRows(c + u); setProgress(100)
-        addLog(`Completado: ${c} creados, ${u} actualizados`)
-        setStatus("Importacion completada")
-        setIsRunning(false)
-        return
-      } catch (err: any) {
-        addLog(`Error: ${err.message}`)
-        setStatus(`Error: ${err.message}`)
-        setIsRunning(false)
-        return
-      }
-    }
 
     // AZETA: llama directamente a import-catalog (descarga ZIP/CSV server-side, sin Blob intermedio)
     if (isAzeta) {
