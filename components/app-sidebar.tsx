@@ -448,6 +448,19 @@ export function AppSidebar() {
                 </svg>
                 <span>Sincronización</span>
               </Link>
+              <Link
+                href="/ml/stock-update"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/ml/stock-update")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/>
+                </svg>
+                <span>Stock desde URL</span>
+              </Link>
 
               {/* ── Catálogo ── */}
               <div className="my-2 border-t border-sidebar-border" />
