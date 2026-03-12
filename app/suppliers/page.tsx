@@ -1006,11 +1006,27 @@ function AddSupplierDialog({
             </div>
             <div className="space-y-1.5">
               <label className="text-xs text-muted-foreground">País</label>
-              <Input
-                placeholder="Ej: Argentina"
-                value={form.country}
-                onChange={e => set("country", e.target.value)}
-              />
+              <Select value={form.country} onValueChange={v => set("country", v)}>
+                <SelectTrigger className="h-9 text-sm">
+                  <SelectValue placeholder="Seleccionar..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="AR">Argentina</SelectItem>
+                  <SelectItem value="ES">España</SelectItem>
+                  <SelectItem value="MX">México</SelectItem>
+                  <SelectItem value="CL">Chile</SelectItem>
+                  <SelectItem value="CO">Colombia</SelectItem>
+                  <SelectItem value="PE">Perú</SelectItem>
+                  <SelectItem value="UY">Uruguay</SelectItem>
+                  <SelectItem value="BR">Brasil</SelectItem>
+                  <SelectItem value="US">Estados Unidos</SelectItem>
+                  <SelectItem value="DE">Alemania</SelectItem>
+                  <SelectItem value="FR">Francia</SelectItem>
+                  <SelectItem value="IT">Italia</SelectItem>
+                  <SelectItem value="GB">Reino Unido</SelectItem>
+                  <SelectItem value="CN">China</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <label className="text-xs text-muted-foreground">Email</label>
