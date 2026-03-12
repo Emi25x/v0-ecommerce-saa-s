@@ -214,18 +214,26 @@ export async function runCatalogImport(opts?: {
     console.log(`[AZETA][IMPORT] validos=${products.length} descartados=${discarded}`)
 
     const allEans = products.map(p => p.ean)
-    const existingSet = new Set<string>()
+
+    // Fetch existing ean→sku mapping in chunks so we can:
+    //   1. preserve existing SKUs (avoids UNIQUE constraint violations on products.sku)
+    //   2. distinguish created vs updated rows
+    const eanToSku = new Map<string, string>()
     for (let i = 0; i < allEans.length; i += 5000) {
-      const { data } = await supabase.from("products").select("ean").in("ean", allEans.slice(i, i + 5000))
-      ;(data || []).forEach((r: any) => existingSet.add(r.ean))
+      const { data } = await supabase.from("products").select("ean, sku").in("ean", allEans.slice(i, i + 5000))
+      ;(data || []).forEach((r: any) => { if (r.ean) eanToSku.set(r.ean, r.sku) })
     }
 
     let created = 0, updated = 0, errors = 0
     for (let i = 0; i < products.length; i += 500) {
-      const batch = products.slice(i, i + 500)
+      const batch = products.slice(i, i + 500).map(p => ({
+        ...p,
+        // Use existing SKU to avoid UNIQUE violation; fall back to EAN for new products
+        sku: eanToSku.get(p.ean) ?? p.ean,
+      }))
       const { error } = await supabase.from("products").upsert(batch, { onConflict: "ean" })
       if (error) { console.error(`[AZETA][UPSERT] error: ${error.message}`); errors += batch.length }
-      else { for (const p of batch) existingSet.has(p.ean) ? updated++ : created++ }
+      else { for (const p of batch) eanToSku.has(p.ean) ? updated++ : created++ }
       if (i % 10000 === 0) console.log(`[AZETA][UPSERT] ${i + batch.length}/${products.length}`)
     }
 
