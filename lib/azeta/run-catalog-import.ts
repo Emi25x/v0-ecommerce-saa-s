@@ -49,37 +49,16 @@ export async function runCatalogImport(opts?: {
   }
 
   async function extractCSVFromZip(buf: Uint8Array): Promise<string> {
-    let off = 0
-    while (off < buf.length - 30) {
-      if (
-        buf[off] === 0x50 && buf[off + 1] === 0x4b &&
-        buf[off + 2] === 0x03 && buf[off + 3] === 0x04
-      ) {
-        const method          = buf[off + 8]  | (buf[off + 9]  << 8)
-        const compressedSize  = (buf[off + 18] | (buf[off + 19] << 8) | (buf[off + 20] << 16) | (buf[off + 21] << 24)) >>> 0
-        const fileNameLen     = buf[off + 26] | (buf[off + 27] << 8)
-        const extraLen        = buf[off + 28] | (buf[off + 29] << 8)
-        const fileName        = new TextDecoder().decode(buf.subarray(off + 30, off + 30 + fileNameLen))
-        console.log(`[AZETA][ZIP] entry="${fileName}" method=${method} size=${compressedSize}`)
-
-        if (/\.(csv|txt)$/i.test(fileName)) {
-          const dataStart  = off + 30 + fileNameLen + extraLen
-          const compressed = buf.subarray(dataStart, dataStart + compressedSize)
-          let decompressed: Uint8Array
-          if (method === 0) {
-            decompressed = compressed
-          } else if (method === 8) {
-            const { inflateRawSync } = await import("zlib")
-            decompressed = inflateRawSync(Buffer.from(compressed))
-          } else {
-            throw new Error(`ZIP method ${method} not supported`)
-          }
-          return new TextDecoder("latin1").decode(decompressed)
-        }
-        off += 30 + fileNameLen + extraLen + compressedSize
-        continue
+    // Usar adm-zip para soportar streaming ZIPs (compressedSize=0 en local file header)
+    const AdmZip = (await import("adm-zip")).default
+    const zip = new AdmZip(Buffer.from(buf))
+    const entries = zip.getEntries()
+    for (const entry of entries) {
+      console.log(`[AZETA][ZIP] entry="${entry.entryName}" size=${(entry.header.size / 1024 / 1024).toFixed(1)}MB`)
+      if (/\.(csv|txt)$/i.test(entry.entryName) && !entry.isDirectory) {
+        const decompressed = entry.getData()
+        return new TextDecoder("latin1").decode(decompressed)
       }
-      off++
     }
     throw new Error("No se encontro CSV/TXT en el ZIP")
   }

@@ -143,35 +143,17 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Extrae el primer CSV/TXT de un ZIP
+// Extrae el primer CSV/TXT de un ZIP usando adm-zip (soporta streaming ZIPs con compressedSize=0)
 async function extractCSVFromZip(buf: Uint8Array): Promise<string> {
-  let off = 0
-  while (off < buf.length - 30) {
-    if (buf[off]===0x50 && buf[off+1]===0x4b && buf[off+2]===0x03 && buf[off+3]===0x04) {
-      const method = buf[off+8] | (buf[off+9] << 8)
-      const compressedSize = (buf[off+18]|(buf[off+19]<<8)|(buf[off+20]<<16)|(buf[off+21]<<24))>>>0
-      const fileNameLen = buf[off+26] | (buf[off+27] << 8)
-      const extraLen   = buf[off+28] | (buf[off+29] << 8)
-      const fileName   = new TextDecoder().decode(buf.subarray(off+30, off+30+fileNameLen))
-      console.log(`[ZIP] entry="${fileName}" method=${method} compressed=${(compressedSize/1024/1024).toFixed(1)}MB`)
-
-      if (/\.(csv|txt)$/i.test(fileName)) {
-        const dataStart  = off + 30 + fileNameLen + extraLen
-        const compressed = buf.subarray(dataStart, dataStart + compressedSize)
-        if (method === 0) {
-          return new TextDecoder("latin1").decode(compressed)
-        } else if (method === 8) {
-          const { inflateRawSync } = await import("zlib")
-          const dec = inflateRawSync(Buffer.from(compressed))
-          return new TextDecoder("latin1").decode(dec)
-        } else {
-          throw new Error(`ZIP method ${method} no soportado`)
-        }
-      }
-      off += 30 + fileNameLen + extraLen + compressedSize
-      continue
+  const AdmZip = (await import("adm-zip")).default
+  const zip = new AdmZip(Buffer.from(buf))
+  const entries = zip.getEntries()
+  for (const entry of entries) {
+    console.log(`[ZIP] entry="${entry.entryName}" size=${(entry.header.size / 1024 / 1024).toFixed(1)}MB`)
+    if (/\.(csv|txt)$/i.test(entry.entryName) && !entry.isDirectory) {
+      const decompressed = entry.getData()
+      return new TextDecoder("latin1").decode(decompressed)
     }
-    off++
   }
   throw new Error("No se encontro CSV/TXT en el ZIP")
 }
