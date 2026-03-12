@@ -275,6 +275,7 @@ export async function POST(req: NextRequest) {
         images: product.image_url
           ? [{ src: product.image_url, alt: product.title }]
           : [],
+        metafields,
       },
     }
 
@@ -361,20 +362,46 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 10. Metafields ─────────────────────────────────────────────────────
-    // Usamos metafieldsSet bulk si es posible, sino POST individual
-    let metafieldsSet = 0
-    for (const mf of metafields) {
+    // Para productos nuevos los metafields ya vienen en el payload de creación.
+    // Para productos actualizados: GET existing → PUT si existe, POST si no.
+    let metafieldsSet = action === "created" ? metafields.length : 0
+
+    if (action === "updated" && metafields.length > 0) {
+      // Obtener metafields existentes del producto
+      let existingMfs: any[] = []
       try {
-        // Intentar PUT (update) primero, si falla hacer POST (create)
-        await shopifyRest(
-          "POST",
-          `/products/${shopifyProductId}/metafields.json`,
+        const mfsRes = await shopifyRest(
+          "GET",
+          `/products/${shopifyProductId}/metafields.json?limit=250`,
           token, store.shop_domain,
-          { metafield: mf },
         )
-        metafieldsSet++
-      } catch {
-        // Puede ya existir con el mismo namespace+key, ignorar duplicado
+        existingMfs = mfsRes.metafields ?? []
+      } catch {}
+
+      for (const mf of metafields) {
+        const existing = existingMfs.find(
+          (e: any) => e.namespace === mf.namespace && e.key === mf.key,
+        )
+        try {
+          if (existing) {
+            await shopifyRest(
+              "PUT",
+              `/products/${shopifyProductId}/metafields/${existing.id}.json`,
+              token, store.shop_domain,
+              { metafield: { id: existing.id, value: mf.value, type: mf.type } },
+            )
+          } else {
+            await shopifyRest(
+              "POST",
+              `/products/${shopifyProductId}/metafields.json`,
+              token, store.shop_domain,
+              { metafield: mf },
+            )
+          }
+          metafieldsSet++
+        } catch (e: any) {
+          console.error(`[push-product] metafield ${mf.key} error:`, e.message)
+        }
       }
     }
 
