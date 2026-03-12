@@ -114,7 +114,7 @@ export default function StockUpdatePage() {
             <th className="text-left py-2 px-2">ML Item</th>
             <th className="text-left py-2 px-2">SKU</th>
             <th className="text-left py-2 px-2">Titulo</th>
-            <th className="text-right py-2 px-2">Stock ML</th>
+            <th className="text-right py-2 px-2">Ant.</th>
             {showStock && <th className="text-right py-2 px-2">Nuevo</th>}
             <th className="text-center py-2 px-2">Estado</th>
           </tr>
@@ -295,10 +295,6 @@ export default function StockUpdatePage() {
                 <div className="rounded-lg bg-green-100 dark:bg-green-900/30 p-3">
                   <div className="text-2xl font-bold text-green-700 dark:text-green-400">{result.summary.updated}</div>
                   <div className="text-xs text-muted-foreground">{result.dry_run ? "A actualizar" : "Actualizados"}</div>
-                </div>
-                <div className="rounded-lg bg-yellow-100 dark:bg-yellow-900/30 p-3">
-                  <div className="text-2xl font-bold text-yellow-700 dark:text-yellow-400">{result.summary.skipped}</div>
-                  <div className="text-xs text-muted-foreground">Sin cambios</div>
                 </div>
                 <div className="rounded-lg bg-muted p-3">
                   <div className="text-2xl font-bold">{result.summary.not_found}</div>

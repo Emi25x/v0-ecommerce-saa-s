@@ -180,42 +180,10 @@ export async function POST(request: NextRequest) {
 
     console.log(`[update-stock-from-url] Found ${publications.length} total publications for account ${account.nickname}, ${pubByEan.size} unique EAN/SKU keys`)
 
-    // --- Fetch real stock from ML API in bulk ---
-    const mlStockMap = new Map<string, number>() // ml_item_id → available_quantity
-    const allItemIds = publications.map((p: any) => p.ml_item_id).filter(Boolean)
-    const BATCH_SIZE = 20
-
-    for (let i = 0; i < allItemIds.length; i += BATCH_SIZE) {
-      const batch = allItemIds.slice(i, i + BATCH_SIZE)
-      try {
-        const res = await fetch(
-          `${ML_API_BASE}/items?ids=${batch.join(",")}&attributes=id,available_quantity`,
-          { headers: { Authorization: `Bearer ${accessToken}` } }
-        )
-        if (res.ok) {
-          const data = await res.json()
-          for (const item of data) {
-            if (item.code === 200 && item.body) {
-              mlStockMap.set(item.body.id, item.body.available_quantity ?? 0)
-            }
-          }
-        }
-        // Small delay to avoid rate limiting
-        if (i + BATCH_SIZE < allItemIds.length) {
-          await new Promise(r => setTimeout(r, 200))
-        }
-      } catch (err) {
-        console.error(`[update-stock-from-url] Error fetching ML stock batch: ${err}`)
-      }
-    }
-
-    console.log(`[update-stock-from-url] Fetched real ML stock for ${mlStockMap.size} items`)
-
     // --- Match and update ---
     const results: UpdateResult[] = []
     const notFoundItems: UpdateResult[] = []
     let updated = 0
-    let skipped = 0
     let notFound = 0
     let errors = 0
     let zeroed = 0
@@ -240,21 +208,7 @@ export async function POST(request: NextRequest) {
           continue
         }
 
-        const oldStock = mlStockMap.get(pub.ml_item_id) ?? 0
-
-        if (oldStock === update.stock) {
-          skipped++
-          results.push({
-            ml_item_id: pub.ml_item_id,
-            ean: update.ean,
-            sku: pub.sku,
-            title: pub.title,
-            old_stock: oldStock,
-            new_stock: update.stock,
-            status: "skipped",
-          })
-          continue
-        }
+        const oldStock = pub.current_stock ?? 0
 
         if (dry_run) {
           updated++
@@ -322,7 +276,7 @@ export async function POST(request: NextRequest) {
       })
 
       for (const pub of pubsToZero) {
-        const oldStock = mlStockMap.get(pub.ml_item_id) ?? 0
+        const oldStock = pub.current_stock ?? 0
 
         if (dry_run) {
           zeroed++
@@ -387,14 +341,14 @@ export async function POST(request: NextRequest) {
       },
       file_eans: stockUpdates.length,
       publications_with_ean: publications?.length || 0,
-      summary: { updated, skipped, not_found: notFound, zeroed, errors },
+      summary: { updated, skipped: 0, not_found: notFound, zeroed, errors },
       parse_errors: parseErrors.length > 0 ? parseErrors.slice(0, 20) : undefined,
       details: results,
       not_found_details: notFoundItems,
       zeroed_details: zeroedItems,
     }
 
-    console.log(`[update-stock-from-url] Done. Updated: ${updated}, Skipped: ${skipped}, Not found: ${notFound}, Zeroed: ${zeroed}, Errors: ${errors}`)
+    console.log(`[update-stock-from-url] Done. Updated: ${updated}, Not found: ${notFound}, Zeroed: ${zeroed}, Errors: ${errors}`)
 
     return NextResponse.json(response)
   } catch (error: any) {
