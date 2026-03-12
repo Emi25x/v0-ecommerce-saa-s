@@ -276,12 +276,9 @@ export async function POST(request: NextRequest) {
     // --- Zero missing: set stock=0 for publications NOT in the file ---
     const zeroedItems: UpdateResult[] = []
     if (zero_missing) {
-      // Only zero publications whose SKU/EAN is NOT in the file
-      // Check all identifier fields against the file's EAN set
+      // Zero ALL active publications not in the file
+      // (that have a numeric SKU >= 8 digits, i.e. from this provider)
       const pubsToZero = publications.filter((pub: any) => {
-        const currentStock = pub.current_stock ?? 0
-        if (currentStock === 0) return false // Already zero
-
         // Check if ANY of this pub's identifiers appear in the file
         for (const field of [pub.sku, pub.ean, pub.gtin, pub.isbn]) {
           const normalized = field?.replace(/\D/g, "")
