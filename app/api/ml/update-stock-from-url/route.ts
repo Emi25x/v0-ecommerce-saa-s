@@ -276,20 +276,15 @@ export async function POST(request: NextRequest) {
     // --- Zero missing: set stock=0 for publications NOT in the file ---
     const zeroedItems: UpdateResult[] = []
     if (zero_missing) {
-      // Zero ALL active publications not in the file
-      // (that have a numeric SKU >= 8 digits, i.e. from this provider)
+      // Zero ALL publications of the account that are NOT in the file
       const pubsToZero = publications.filter((pub: any) => {
-        // Check if ANY of this pub's identifiers appear in the file
         for (const field of [pub.sku, pub.ean, pub.gtin, pub.isbn]) {
           const normalized = field?.replace(/\D/g, "")
           if (normalized && normalized.length >= 8 && fileEanSet.has(normalized)) {
             return false // This pub IS in the file, don't zero it
           }
         }
-
-        // Only zero if this pub has a SKU that looks like an EAN (from provider)
-        const skuNorm = pub.sku?.replace(/\D/g, "")
-        return skuNorm && skuNorm.length >= 8
+        return true // Not in file → zero it
       })
 
       for (const pub of pubsToZero) {
