@@ -230,6 +230,7 @@ export function AppSidebar() {
   const [integrationsExpanded, setIntegrationsExpanded] = useState(true)
   const [pricingExpanded, setPricingExpanded] = useState(true)
   const [radarExpanded, setRadarExpanded]     = useState(true)
+  const [enviosExpanded, setEnviosExpanded]   = useState(true)
 
   const [lastVisits, setLastVisits] = useState({
     orders: null as string | null,
@@ -952,6 +953,52 @@ export function AppSidebar() {
                   <span>{item.label}</span>
                 </Link>
               ))}
+            </div>
+          )}
+        </div>
+
+        {/* Envíos */}
+        <div className="mt-2">
+          <button
+            onClick={() => setEnviosExpanded(!enviosExpanded)}
+            className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <div className="flex items-center gap-3">
+              <Truck className="h-5 w-5" />
+              <span className="font-medium">Envíos</span>
+            </div>
+            <svg className={`h-4 w-4 transition-transform ${enviosExpanded ? "rotate-180" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
+
+          {enviosExpanded && (
+            <div className="ml-8 mt-1 flex flex-col gap-1">
+              <Link
+                href="/envios"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname === "/envios"
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+                  <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+                </svg>
+                <span>Panel</span>
+              </Link>
+              <Link
+                href="/envios/transportistas"
+                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  pathname?.startsWith("/envios/transportistas")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <Truck className="h-4 w-4" />
+                <span>Transportistas</span>
+              </Link>
             </div>
           )}
         </div>
