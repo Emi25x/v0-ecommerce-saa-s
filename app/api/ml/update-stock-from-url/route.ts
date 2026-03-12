@@ -12,9 +12,11 @@ interface StockUpdate {
 interface UpdateResult {
   ml_item_id: string
   ean: string
+  sku?: string
+  title?: string
   old_stock: number
   new_stock: number
-  status: "updated" | "skipped" | "error"
+  status: "updated" | "skipped" | "error" | "not_found" | "zeroed"
   error?: string
 }
 
@@ -27,7 +29,7 @@ interface UpdateResult {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { account_id, url, dry_run = true } = body
+    const { account_id, url, dry_run = true, zero_missing = false } = body
 
     if (!account_id) {
       return NextResponse.json({ error: "account_id is required" }, { status: 400 })
@@ -180,27 +182,41 @@ export async function POST(request: NextRequest) {
 
     // --- Match and update ---
     const results: UpdateResult[] = []
+    const notFoundItems: UpdateResult[] = []
     let updated = 0
     let skipped = 0
     let notFound = 0
     let errors = 0
+    let zeroed = 0
+
+    // Track which publications were matched (for zero_missing)
+    const matchedPubIds = new Set<string>()
 
     for (const update of stockUpdates) {
       const pub = pubByEan.get(update.ean)
 
       if (!pub) {
         notFound++
+        notFoundItems.push({
+          ml_item_id: "",
+          ean: update.ean,
+          old_stock: 0,
+          new_stock: update.stock,
+          status: "not_found",
+        })
         continue
       }
 
+      matchedPubIds.add(pub.id)
       const oldStock = pub.current_stock ?? 0
 
-      // Skip if stock is the same
       if (oldStock === update.stock) {
         skipped++
         results.push({
           ml_item_id: pub.ml_item_id,
           ean: update.ean,
+          sku: pub.sku,
+          title: pub.title,
           old_stock: oldStock,
           new_stock: update.stock,
           status: "skipped",
@@ -213,6 +229,8 @@ export async function POST(request: NextRequest) {
         results.push({
           ml_item_id: pub.ml_item_id,
           ean: update.ean,
+          sku: pub.sku,
+          title: pub.title,
           old_stock: oldStock,
           new_stock: update.stock,
           status: "updated",
@@ -222,36 +240,8 @@ export async function POST(request: NextRequest) {
 
       // --- Actually update ML ---
       try {
-        const mlResponse = await fetch(`${ML_API_BASE}/items/${pub.ml_item_id}`, {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ available_quantity: update.stock }),
-        })
+        await updateMLStock(accessToken, pub.ml_item_id, update.stock)
 
-        if (mlResponse.status === 429) {
-          // Rate limited - wait and retry once
-          await new Promise(r => setTimeout(r, 2000))
-          const retryResponse = await fetch(`${ML_API_BASE}/items/${pub.ml_item_id}`, {
-            method: "PUT",
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ available_quantity: update.stock }),
-          })
-          if (!retryResponse.ok) {
-            const errText = await retryResponse.text()
-            throw new Error(`ML API error after retry: ${retryResponse.status} - ${errText}`)
-          }
-        } else if (!mlResponse.ok) {
-          const errText = await mlResponse.text()
-          throw new Error(`ML API error: ${mlResponse.status} - ${errText}`)
-        }
-
-        // Update local DB
         await supabase
           .from("ml_publications")
           .update({ current_stock: update.stock, updated_at: new Date().toISOString() })
@@ -261,18 +251,21 @@ export async function POST(request: NextRequest) {
         results.push({
           ml_item_id: pub.ml_item_id,
           ean: update.ean,
+          sku: pub.sku,
+          title: pub.title,
           old_stock: oldStock,
           new_stock: update.stock,
           status: "updated",
         })
 
-        // Small delay to avoid rate limiting
         await new Promise(r => setTimeout(r, 300))
       } catch (err: any) {
         errors++
         results.push({
           ml_item_id: pub.ml_item_id,
           ean: update.ean,
+          sku: pub.sku,
+          title: pub.title,
           old_stock: oldStock,
           new_stock: update.stock,
           status: "error",
@@ -281,8 +274,76 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // --- Zero missing: set stock=0 for publications NOT in the file ---
+    const zeroedItems: UpdateResult[] = []
+    if (zero_missing) {
+      // Only zero publications that have a SKU/EAN (i.e. are from this provider)
+      // and were NOT matched by the file
+      const pubsToZero = publications.filter((pub: any) => {
+        if (matchedPubIds.has(pub.id)) return false
+        const currentStock = pub.current_stock ?? 0
+        if (currentStock === 0) return false // Already zero
+        // Only zero if this pub has a SKU that looks like an EAN (numeric, 8+ digits)
+        const skuNorm = pub.sku?.replace(/\D/g, "")
+        return skuNorm && skuNorm.length >= 8
+      })
+
+      for (const pub of pubsToZero) {
+        const oldStock = pub.current_stock ?? 0
+
+        if (dry_run) {
+          zeroed++
+          zeroedItems.push({
+            ml_item_id: pub.ml_item_id,
+            ean: pub.sku || pub.ean || "",
+            sku: pub.sku,
+            title: pub.title,
+            old_stock: oldStock,
+            new_stock: 0,
+            status: "zeroed",
+          })
+          continue
+        }
+
+        try {
+          await updateMLStock(accessToken, pub.ml_item_id, 0)
+
+          await supabase
+            .from("ml_publications")
+            .update({ current_stock: 0, updated_at: new Date().toISOString() })
+            .eq("id", pub.id)
+
+          zeroed++
+          zeroedItems.push({
+            ml_item_id: pub.ml_item_id,
+            ean: pub.sku || pub.ean || "",
+            sku: pub.sku,
+            title: pub.title,
+            old_stock: oldStock,
+            new_stock: 0,
+            status: "zeroed",
+          })
+
+          await new Promise(r => setTimeout(r, 300))
+        } catch (err: any) {
+          errors++
+          zeroedItems.push({
+            ml_item_id: pub.ml_item_id,
+            ean: pub.sku || pub.ean || "",
+            sku: pub.sku,
+            title: pub.title,
+            old_stock: oldStock,
+            new_stock: 0,
+            status: "error",
+            error: err.message,
+          })
+        }
+      }
+    }
+
     const response = {
       dry_run,
+      zero_missing,
       account: account.nickname,
       account_id: account.id,
       file_url: url,
@@ -293,12 +354,14 @@ export async function POST(request: NextRequest) {
       },
       file_eans: stockUpdates.length,
       publications_with_ean: publications?.length || 0,
-      summary: { updated, skipped, not_found: notFound, errors },
+      summary: { updated, skipped, not_found: notFound, zeroed, errors },
       parse_errors: parseErrors.length > 0 ? parseErrors.slice(0, 20) : undefined,
-      details: results.slice(0, 100), // Limit details to first 100
+      details: results,
+      not_found_details: notFoundItems.slice(0, 200),
+      zeroed_details: zeroedItems.slice(0, 200),
     }
 
-    console.log(`[update-stock-from-url] Done. Updated: ${updated}, Skipped: ${skipped}, Not found: ${notFound}, Errors: ${errors}`)
+    console.log(`[update-stock-from-url] Done. Updated: ${updated}, Skipped: ${skipped}, Not found: ${notFound}, Zeroed: ${zeroed}, Errors: ${errors}`)
 
     return NextResponse.json(response)
   } catch (error: any) {
@@ -311,6 +374,36 @@ export async function POST(request: NextRequest) {
 }
 
 // --- Helper functions ---
+
+async function updateMLStock(accessToken: string, mlItemId: string, quantity: number) {
+  const res = await fetch(`${ML_API_BASE}/items/${mlItemId}`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ available_quantity: quantity }),
+  })
+
+  if (res.status === 429) {
+    await new Promise(r => setTimeout(r, 2000))
+    const retry = await fetch(`${ML_API_BASE}/items/${mlItemId}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ available_quantity: quantity }),
+    })
+    if (!retry.ok) {
+      const errText = await retry.text()
+      throw new Error(`ML API error after retry: ${retry.status} - ${errText}`)
+    }
+  } else if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`ML API error: ${res.status} - ${errText}`)
+  }
+}
 
 function detectDelimiter(line: string): string {
   const delimiters = ["|", "\t", ";", ","]
