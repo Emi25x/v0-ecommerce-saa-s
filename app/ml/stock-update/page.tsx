@@ -50,7 +50,7 @@ export default function StockUpdatePage() {
   const [accountId, setAccountId] = useState("")
   const [url, setUrl] = useState("https://mayorista.libroide.com/datos/actuweb/ListadoArgentinafotos.txt")
   const [dryRun, setDryRun] = useState(true)
-  const [zeroMissing, setZeroMissing] = useState(false)
+  const [mode, setMode] = useState<"update" | "zero_only" | "update_and_zero">("update")
   const [loading, setLoading] = useState(false)
   const [loadingAccounts, setLoadingAccounts] = useState(true)
   const [result, setResult] = useState<UpdateResult | null>(null)
@@ -81,7 +81,13 @@ export default function StockUpdatePage() {
       const res = await fetch("/api/ml/update-stock-from-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account_id: accountId, url, dry_run: dryRun, zero_missing: zeroMissing }),
+        body: JSON.stringify({
+          account_id: accountId,
+          url,
+          dry_run: dryRun,
+          zero_missing: mode === "update_and_zero",
+          zero_only: mode === "zero_only",
+        }),
       })
 
       const data = await res.json()
@@ -185,17 +191,46 @@ export default function StockUpdatePage() {
                   Dry Run {dryRun ? (
                     <Badge variant="secondary" className="ml-2">Solo simular</Badge>
                   ) : (
-                    <Badge variant="destructive" className="ml-2">Actualizar ML</Badge>
+                    <Badge variant="destructive" className="ml-2">Ejecutar en ML</Badge>
                   )}
                 </Label>
               </div>
-              <div className="flex items-center gap-3">
-                <Switch id="zero_missing" checked={zeroMissing} onCheckedChange={setZeroMissing} />
-                <Label htmlFor="zero_missing" className="cursor-pointer">
-                  Poner en 0 los que no estan en el archivo
-                  {zeroMissing && <Badge variant="outline" className="ml-2 text-orange-500 border-orange-500">Activado</Badge>}
-                </Label>
-              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Modo de operacion</Label>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setMode("update")}
+                className={`rounded-lg border p-3 text-left text-sm transition-colors ${
+                  mode === "update" ? "border-primary bg-primary/10" : "border-muted hover:border-muted-foreground/30"
+                }`}
+              >
+                <div className="font-medium">Actualizar stock</div>
+                <div className="text-xs text-muted-foreground mt-1">Solo actualiza las que estan en el archivo</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("zero_only")}
+                className={`rounded-lg border p-3 text-left text-sm transition-colors ${
+                  mode === "zero_only" ? "border-orange-500 bg-orange-500/10" : "border-muted hover:border-muted-foreground/30"
+                }`}
+              >
+                <div className="font-medium">Solo poner en 0</div>
+                <div className="text-xs text-muted-foreground mt-1">Pone en 0 las que NO estan en el archivo, sin actualizar stock</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("update_and_zero")}
+                className={`rounded-lg border p-3 text-left text-sm transition-colors ${
+                  mode === "update_and_zero" ? "border-red-500 bg-red-500/10" : "border-muted hover:border-muted-foreground/30"
+                }`}
+              >
+                <div className="font-medium">Actualizar + poner en 0</div>
+                <div className="text-xs text-muted-foreground mt-1">Actualiza stock y pone en 0 las que no estan</div>
+              </button>
             </div>
           </div>
 

@@ -29,7 +29,7 @@ interface UpdateResult {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { account_id, url, dry_run = true, zero_missing = false } = body
+    const { account_id, url, dry_run = true, zero_missing = false, zero_only = false } = body
 
     if (!account_id) {
       return NextResponse.json({ error: "account_id is required" }, { status: 400 })
@@ -192,90 +192,93 @@ export async function POST(request: NextRequest) {
     // Build a Set of ALL EANs from the file for zero_missing check
     const fileEanSet = new Set(stockUpdates.map(u => u.ean))
 
-    for (const update of stockUpdates) {
-      const pub = pubByEan.get(update.ean)
+    // Skip stock updates if zero_only mode (only zero missing pubs)
+    if (!zero_only) {
+      for (const update of stockUpdates) {
+        const pub = pubByEan.get(update.ean)
 
-      if (!pub) {
-        notFound++
-        notFoundItems.push({
-          ml_item_id: "",
-          ean: update.ean,
-          old_stock: 0,
-          new_stock: update.stock,
-          status: "not_found",
-        })
-        continue
-      }
+        if (!pub) {
+          notFound++
+          notFoundItems.push({
+            ml_item_id: "",
+            ean: update.ean,
+            old_stock: 0,
+            new_stock: update.stock,
+            status: "not_found",
+          })
+          continue
+        }
 
-      const oldStock = pub.current_stock ?? 0
+        const oldStock = pub.current_stock ?? 0
 
-      if (oldStock === update.stock) {
-        skipped++
-        results.push({
-          ml_item_id: pub.ml_item_id,
-          ean: update.ean,
-          sku: pub.sku,
-          title: pub.title,
-          old_stock: oldStock,
-          new_stock: update.stock,
-          status: "skipped",
-        })
-        continue
-      }
+        if (oldStock === update.stock) {
+          skipped++
+          results.push({
+            ml_item_id: pub.ml_item_id,
+            ean: update.ean,
+            sku: pub.sku,
+            title: pub.title,
+            old_stock: oldStock,
+            new_stock: update.stock,
+            status: "skipped",
+          })
+          continue
+        }
 
-      if (dry_run) {
-        updated++
-        results.push({
-          ml_item_id: pub.ml_item_id,
-          ean: update.ean,
-          sku: pub.sku,
-          title: pub.title,
-          old_stock: oldStock,
-          new_stock: update.stock,
-          status: "updated",
-        })
-        continue
-      }
+        if (dry_run) {
+          updated++
+          results.push({
+            ml_item_id: pub.ml_item_id,
+            ean: update.ean,
+            sku: pub.sku,
+            title: pub.title,
+            old_stock: oldStock,
+            new_stock: update.stock,
+            status: "updated",
+          })
+          continue
+        }
 
-      // --- Actually update ML ---
-      try {
-        await updateMLStock(accessToken, pub.ml_item_id, update.stock)
+        // --- Actually update ML ---
+        try {
+          await updateMLStock(accessToken, pub.ml_item_id, update.stock)
 
-        await supabase
-          .from("ml_publications")
-          .update({ current_stock: update.stock, updated_at: new Date().toISOString() })
-          .eq("id", pub.id)
+          await supabase
+            .from("ml_publications")
+            .update({ current_stock: update.stock, updated_at: new Date().toISOString() })
+            .eq("id", pub.id)
 
-        updated++
-        results.push({
-          ml_item_id: pub.ml_item_id,
-          ean: update.ean,
-          sku: pub.sku,
-          title: pub.title,
-          old_stock: oldStock,
-          new_stock: update.stock,
-          status: "updated",
-        })
+          updated++
+          results.push({
+            ml_item_id: pub.ml_item_id,
+            ean: update.ean,
+            sku: pub.sku,
+            title: pub.title,
+            old_stock: oldStock,
+            new_stock: update.stock,
+            status: "updated",
+          })
 
-        await new Promise(r => setTimeout(r, 300))
-      } catch (err: any) {
-        errors++
-        results.push({
-          ml_item_id: pub.ml_item_id,
-          ean: update.ean,
-          sku: pub.sku,
-          title: pub.title,
-          old_stock: oldStock,
-          new_stock: update.stock,
-          status: "error",
-          error: err.message,
-        })
+          await new Promise(r => setTimeout(r, 300))
+        } catch (err: any) {
+          errors++
+          results.push({
+            ml_item_id: pub.ml_item_id,
+            ean: update.ean,
+            sku: pub.sku,
+            title: pub.title,
+            old_stock: oldStock,
+            new_stock: update.stock,
+            status: "error",
+            error: err.message,
+          })
+        }
       }
     }
 
     // --- Zero missing: set stock=0 for publications NOT in the file ---
     const zeroedItems: UpdateResult[] = []
-    if (zero_missing) {
+    if (zero_missing || zero_only) {
       // Zero ALL publications of the account that are NOT in the file
       const pubsToZero = publications.filter((pub: any) => {
         for (const field of [pub.sku, pub.ean, pub.gtin, pub.isbn]) {
