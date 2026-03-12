@@ -59,8 +59,17 @@ export async function POST(request: NextRequest) {
     console.log(`[update-stock-from-url] Account resolved: ${account.nickname} (${account.id})`)
 
     // --- Refresh token if needed ---
-    const freshAccount = await refreshTokenIfNeeded(account)
-    const accessToken = freshAccount.access_token
+    let accessToken: string
+    try {
+      const freshAccount = await refreshTokenIfNeeded(account)
+      accessToken = freshAccount.access_token
+    } catch (tokenErr: any) {
+      console.error("[update-stock-from-url] Token refresh failed:", tokenErr)
+      return NextResponse.json(
+        { error: `Token refresh failed: ${tokenErr.message}` },
+        { status: 401 }
+      )
+    }
 
     // --- Fetch the file ---
     console.log(`[update-stock-from-url] Fetching file from: ${url}`)

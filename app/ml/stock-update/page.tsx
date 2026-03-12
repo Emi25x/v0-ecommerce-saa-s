@@ -90,10 +90,17 @@ export default function StockUpdatePage() {
         }),
       })
 
-      const data = await res.json()
+      const text = await res.text()
+      let data: any
+      try {
+        data = JSON.parse(text)
+      } catch {
+        setError(`Error ${res.status}: ${text.slice(0, 300)}`)
+        return
+      }
 
       if (!res.ok) {
-        setError(data.error || `Error ${res.status}`)
+        setError(data.error || data.details || `Error ${res.status}`)
         if (data.headers) setResult(data)
         return
       }
