@@ -1,13 +1,20 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2, Play, FileText, AlertTriangle, CheckCircle2, XCircle } from "lucide-react"
+
+interface MlAccount {
+  id: string
+  nickname: string
+  ml_user_id: string
+}
 
 interface UpdateResult {
   dry_run: boolean
@@ -32,12 +39,29 @@ interface UpdateResult {
 }
 
 export default function StockUpdatePage() {
-  const [accountId, setAccountId] = useState("libroide_argentina")
+  const [accounts, setAccounts] = useState<MlAccount[]>([])
+  const [accountId, setAccountId] = useState("")
   const [url, setUrl] = useState("https://mayorista.libroide.com/datos/actuweb/ListadoArgentinafotos.txt")
   const [dryRun, setDryRun] = useState(true)
   const [loading, setLoading] = useState(false)
+  const [loadingAccounts, setLoadingAccounts] = useState(true)
   const [result, setResult] = useState<UpdateResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch("/api/ml/accounts")
+      .then(res => res.json())
+      .then(data => {
+        const list = data.accounts || data || []
+        setAccounts(list)
+        // Pre-select libroide_argentina if it exists
+        const libroide = list.find((a: MlAccount) => a.nickname?.toLowerCase().includes("libroide"))
+        if (libroide) setAccountId(libroide.nickname)
+        else if (list.length > 0) setAccountId(list[0].nickname)
+      })
+      .catch(() => {})
+      .finally(() => setLoadingAccounts(false))
+  }, [])
 
   const handleRun = async () => {
     setLoading(true)
@@ -86,13 +110,25 @@ export default function StockUpdatePage() {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="account_id">Cuenta ML (nickname o UUID)</Label>
-              <Input
-                id="account_id"
-                value={accountId}
-                onChange={(e) => setAccountId(e.target.value)}
-                placeholder="libroide_argentina"
-              />
+              <Label>Cuenta ML</Label>
+              {loadingAccounts ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground h-10">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Cargando cuentas...
+                </div>
+              ) : (
+                <Select value={accountId} onValueChange={setAccountId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar cuenta" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map((acc) => (
+                      <SelectItem key={acc.id} value={acc.nickname}>
+                        {acc.nickname}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
             <div className="flex items-center gap-3 pt-6">
               <Switch
