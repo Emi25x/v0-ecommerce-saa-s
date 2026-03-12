@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { RefreshCw, Truck, Package, Clock, CheckCircle, XCircle, Settings } from "lucide-react"
+import { RefreshCw, Truck, Package, Clock, CheckCircle, XCircle, Settings, Plus } from "lucide-react"
 
 interface ShipmentRow {
   id: string
@@ -82,6 +82,12 @@ export default function EnviosPage() {
             Actualizar
           </Button>
           <Button size="sm" asChild>
+            <Link href="/envios/nuevo">
+              <Plus className="mr-2 h-4 w-4" />
+              Nuevo envío
+            </Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
             <Link href="/envios/transportistas">
               <Settings className="mr-2 h-4 w-4" />
               Transportistas
@@ -185,9 +191,11 @@ export default function EnviosPage() {
                 {shipments.map(s => {
                   const st = STATUS_LABELS[s.status] ?? { label: s.status, variant: "secondary" as const }
                   return (
-                    <TableRow key={s.id}>
+                    <TableRow key={s.id} className="cursor-pointer hover:bg-muted/30">
                       <TableCell className="font-mono text-sm">
-                        {s.tracking_number ?? <span className="text-muted-foreground">—</span>}
+                        <Link href={`/envios/${s.id}`} className="hover:underline">
+                          {s.tracking_number ?? <span className="text-muted-foreground">—</span>}
+                        </Link>
                       </TableCell>
                       <TableCell className="capitalize">{s.carrier_slug ?? "—"}</TableCell>
                       <TableCell>

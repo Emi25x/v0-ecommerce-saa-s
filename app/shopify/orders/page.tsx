@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Loader2, ShoppingBag, Package, Search, X } from "lucide-react"
+import { Loader2, ShoppingBag, Package, Search, X, Truck } from "lucide-react"
 
 type ShopifyStore = { id: string; shop_domain: string; is_active: boolean }
 
@@ -19,7 +19,15 @@ type ShopifyOrder = {
   currency: string
   financial_status: string
   fulfillment_status: string | null
-  customer?: { first_name?: string; last_name?: string; email?: string }
+  customer?: { first_name?: string; last_name?: string; email?: string; phone?: string }
+  shipping_address?: {
+    name?: string
+    address1?: string
+    city?: string
+    province?: string
+    zip?: string
+    phone?: string
+  }
 }
 
 type ShopifyVariant = {
@@ -508,8 +516,8 @@ export default function ShopifyPage() {
               <table className="w-full text-sm">
                 <thead className="bg-muted/50 border-b border-border">
                   <tr>
-                    {["Orden", "Fecha", "Cliente", "Total", "Pago", "Envío"].map(h => (
-                      <th key={h} className={`p-3 font-medium text-xs uppercase tracking-wide text-muted-foreground ${h === "Total" ? "text-right" : "text-left"}`}>{h}</th>
+                    {["Orden", "Fecha", "Cliente", "Total", "Pago", "Envío", ""].map((h, i) => (
+                      <th key={i} className={`p-3 font-medium text-xs uppercase tracking-wide text-muted-foreground ${h === "Total" ? "text-right" : "text-left"}`}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -531,6 +539,29 @@ export default function ShopifyPage() {
                       </td>
                       <td className="p-3"><FinancialBadge status={order.financial_status} /></td>
                       <td className="p-3"><FulfillmentBadge status={order.fulfillment_status} /></td>
+                      <td className="p-3">
+                        {(() => {
+                          const sa = order.shipping_address
+                          const params = new URLSearchParams({
+                            ref: order.name,
+                            ...(sa?.name     ? { dest_nombre:    sa.name }     : order.customer ? { dest_nombre: `${order.customer.first_name ?? ""} ${order.customer.last_name ?? ""}`.trim() } : {}),
+                            ...(sa?.address1 ? { dest_direccion: sa.address1 } : {}),
+                            ...(sa?.city     ? { dest_localidad: sa.city }     : {}),
+                            ...(sa?.province ? { dest_provincia: sa.province } : {}),
+                            ...(sa?.zip      ? { dest_cp:        sa.zip }      : {}),
+                            ...(sa?.phone    ? { dest_telefono:  sa.phone }    : order.customer?.phone ? { dest_telefono: order.customer.phone } : {}),
+                            ...(order.customer?.email ? { dest_email: order.customer.email } : {}),
+                          })
+                          return (
+                            <a href={`/envios/nuevo?${params}`} target="_blank" rel="noopener noreferrer">
+                              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1">
+                                <Truck className="h-3.5 w-3.5" />
+                                Enviar
+                              </Button>
+                            </a>
+                          )
+                        })()}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
