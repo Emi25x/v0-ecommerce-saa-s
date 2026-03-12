@@ -139,33 +139,26 @@ export async function POST(request: NextRequest) {
 
     console.log(`[update-stock-from-url] Parsed ${stockUpdates.length} valid EAN/stock pairs from ${lines.length - 1} data rows`)
 
-    // --- Get ML publications for this account that have EAN ---
+    // --- Get ML publications for this account (match by ean, gtin, isbn, OR sku) ---
     const { data: publications, error: pubError } = await supabase
       .from("ml_publications")
-      .select("id, ml_item_id, ean, gtin, isbn, current_stock, status, title")
+      .select("id, ml_item_id, ean, gtin, isbn, sku, current_stock, status, title")
       .eq("account_id", account.id)
-      .not("ean", "is", null)
-      .neq("ean", "")
+      .or("ean.not.is.null,gtin.not.is.null,isbn.not.is.null,sku.not.is.null")
 
     if (pubError) {
       return NextResponse.json({ error: `Failed to fetch publications: ${pubError.message}` }, { status: 500 })
     }
 
-    // Build EAN lookup map (normalize EANs by stripping non-digits)
+    // Build EAN lookup map — the file has EANs, but in ML they may be stored
+    // as ean, gtin, isbn, or even as the sku field. Index all of them.
     const pubByEan = new Map<string, typeof publications[0]>()
     for (const pub of publications || []) {
-      const normalizedEan = pub.ean?.replace(/\D/g, "")
-      if (normalizedEan) {
-        pubByEan.set(normalizedEan, pub)
-      }
-      // Also index by gtin and isbn
-      const normalizedGtin = pub.gtin?.replace(/\D/g, "")
-      if (normalizedGtin && !pubByEan.has(normalizedGtin)) {
-        pubByEan.set(normalizedGtin, pub)
-      }
-      const normalizedIsbn = pub.isbn?.replace(/\D/g, "")
-      if (normalizedIsbn && !pubByEan.has(normalizedIsbn)) {
-        pubByEan.set(normalizedIsbn, pub)
+      for (const field of [pub.ean, pub.gtin, pub.isbn, pub.sku]) {
+        const normalized = field?.replace(/\D/g, "")
+        if (normalized && normalized.length >= 8 && !pubByEan.has(normalized)) {
+          pubByEan.set(normalized, pub)
+        }
       }
     }
 
