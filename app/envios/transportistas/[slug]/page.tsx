@@ -34,7 +34,10 @@ export default function CarrierConfigPage() {
   // Campos del formulario
   const [user, setUser]               = useState("")
   const [password, setPassword]       = useState("")
+  const [apiKey, setApiKey]           = useState("")
   const [baseUrl, setBaseUrl]         = useState("")
+
+  const isCabify = slug === "cabify"
 
   async function load() {
     setLoading(true)
@@ -54,8 +57,12 @@ export default function CarrierConfigPage() {
     const body: any = {
       config: { ...carrier.config, base_url: baseUrl },
     }
-    if (user)     body.credentials_user     = user
-    if (password) body.credentials_password = password
+    if (isCabify) {
+      if (apiKey) body.credentials_api_key = apiKey
+    } else {
+      if (user)     body.credentials_user     = user
+      if (password) body.credentials_password = password
+    }
 
     const res = await fetch(`/api/envios/carriers/${slug}`, {
       method: "PATCH",
@@ -67,6 +74,7 @@ export default function CarrierConfigPage() {
       setSaved(true)
       setUser("")
       setPassword("")
+      setApiKey("")
       load()
       setTimeout(() => setSaved(false), 3000)
     }
@@ -123,30 +131,50 @@ export default function CarrierConfigPage() {
               placeholder="https://epresislv.fastmail.com.ar"
             />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="user">Usuario</Label>
-            <Input
-              id="user"
-              value={user}
-              onChange={e => setUser(e.target.value)}
-              placeholder="Usuario de API"
-              autoComplete="off"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="password">Contraseña / Token</Label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="••••••••"
-              autoComplete="new-password"
-            />
-            <p className="text-xs text-muted-foreground">
-              Dejá en blanco para no modificar la contraseña guardada.
-            </p>
-          </div>
+          {isCabify ? (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="api_key">API Key</Label>
+              <Input
+                id="api_key"
+                type="password"
+                value={apiKey}
+                onChange={e => setApiKey(e.target.value)}
+                placeholder="Ingresá tu API Key de Cabify Logistics"
+                autoComplete="new-password"
+              />
+              <p className="text-xs text-muted-foreground">
+                Obtenela en el panel de Cabify Logistics → Configuración → API.
+                Dejá en blanco para no modificar la key guardada.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="user">Usuario</Label>
+                <Input
+                  id="user"
+                  value={user}
+                  onChange={e => setUser(e.target.value)}
+                  placeholder="Usuario de API"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="password">Contraseña / Token</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="new-password"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Dejá en blanco para no modificar la contraseña guardada.
+                </p>
+              </div>
+            </>
+          )}
 
           <div className="flex gap-2 pt-2">
             <Button onClick={save} disabled={saving} className="flex-1">

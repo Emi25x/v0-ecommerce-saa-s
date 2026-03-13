@@ -1,13 +1,21 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { createFastMailClient } from "@/lib/carriers/fastmail"
+import { createCabifyClient } from "@/lib/carriers/cabify"
 
 export const dynamic = "force-dynamic"
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { origen_cp, destino_cp, peso_g, valor, dimensiones } = body
+    const {
+      carrier_slug = "fastmail",
+      origen_cp,
+      destino_cp,
+      peso_g,
+      valor,
+      dimensiones,
+    } = body
 
     if (!origen_cp || !destino_cp || !peso_g) {
       return NextResponse.json(
@@ -20,21 +28,55 @@ export async function POST(request: NextRequest) {
     const { data: carrier } = await supabase
       .from("carriers")
       .select("*")
-      .eq("slug", "fastmail")
+      .eq("slug", carrier_slug)
       .single()
 
     if (!carrier?.active) {
-      return NextResponse.json({ error: "FastMail no configurado" }, { status: 503 })
+      return NextResponse.json({ error: `${carrier_slug}: transportista no configurado` }, { status: 503 })
     }
 
-    const client = createFastMailClient(carrier.config, carrier.credentials)
-    const quote = await client.quote({ origen_cp, destino_cp, peso_g, valor: valor ?? 0, dimensiones })
+    // ── Dispatch por carrier ────────────────────────────────────────────────────
+    if (carrier_slug === "cabify") {
+      const client = createCabifyClient(carrier.config, carrier.credentials)
+      const quote  = await client.quote({
+        pickup_postal_code:   origen_cp,
+        delivery_postal_code: destino_cp,
+        weight_g:             peso_g,
+        declared_value:       valor ?? 0,
+        dimensions:           dimensiones
+          ? {
+              length_cm: dimensiones.largo_cm ?? dimensiones.length_cm ?? 0,
+              width_cm:  dimensiones.ancho_cm ?? dimensiones.width_cm  ?? 0,
+              height_cm: dimensiones.alto_cm  ?? dimensiones.height_cm ?? 0,
+            }
+          : undefined,
+      })
 
-    if (quote.error) {
-      return NextResponse.json({ error: quote.error }, { status: 502 })
+      if (quote.error) {
+        return NextResponse.json({ error: quote.error }, { status: 502 })
+      }
+
+      // Normalizar al formato de respuesta unificado
+      const servicios = quote.services.map(s => ({
+        codigo:     s.service,
+        nombre:     s.name,
+        plazo_dias: s.estimated_days,
+        precio:     s.price_ars,
+        descripcion: s.description,
+      }))
+
+      return NextResponse.json({ ok: true, servicios, carrier: "cabify" })
+    } else {
+      // FastMail (default)
+      const client = createFastMailClient(carrier.config, carrier.credentials)
+      const quote  = await client.quote({ origen_cp, destino_cp, peso_g, valor: valor ?? 0, dimensiones })
+
+      if (quote.error) {
+        return NextResponse.json({ error: quote.error }, { status: 502 })
+      }
+
+      return NextResponse.json({ ok: true, servicios: quote.servicios, carrier: "fastmail" })
     }
-
-    return NextResponse.json({ ok: true, servicios: quote.servicios })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }

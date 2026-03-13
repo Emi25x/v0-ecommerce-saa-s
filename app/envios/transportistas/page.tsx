@@ -116,6 +116,19 @@ export default function TransportistasPage() {
               </CardDescription>
             </CardHeader>
           </Card>
+          {carriers.length === 0 && (
+            <Card className="border-dashed col-span-full">
+              <CardHeader>
+                <CardDescription className="text-sm">
+                  No hay transportistas en la base de datos. Ejecutá las migraciones{" "}
+                  <code className="font-mono text-xs bg-muted px-1 rounded">20260312_create_carriers.sql</code>{" "}
+                  y{" "}
+                  <code className="font-mono text-xs bg-muted px-1 rounded">20260313_add_cabify_carrier.sql</code>{" "}
+                  en Supabase SQL Editor.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          )}
         </div>
       )}
     </div>
