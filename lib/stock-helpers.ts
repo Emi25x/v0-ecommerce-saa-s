@@ -35,7 +35,7 @@ export async function fetchStockBySourceBatch(
     .select(`${matchField}, stock_by_source`)
     .in(matchField, matchValues)
   const map = new Map<string, Record<string, number>>()
-  for (const p of data ?? []) {
+  for (const p of (data as any[]) ?? []) {
     const key = p[matchField]
     if (key) map.set(key, p.stock_by_source || {})
   }

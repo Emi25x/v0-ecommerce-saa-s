@@ -174,7 +174,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Refrescar token si es necesario para tener access_token valido
-    const validAccount = await refreshTokenIfNeeded(account)
+    const validAccount = await refreshTokenIfNeeded(account) as any
     const accessToken = validAccount.access_token
 
     // Verificar si el EAN/ISBN ya está publicado en ML por este vendedor

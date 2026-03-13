@@ -1423,7 +1423,7 @@ export default function CompetitionPage() {
                                                 </div>
                                               </div>
 
-                                              {boost.type === "price" && product.competition.price_to_win && (
+                                              {boost.type === "price" && product.competition?.price_to_win && (
                                                 <div className="mt-3 pt-3 border-t border-amber-300">
                                                   <Label className="text-sm font-medium text-gray-900 mb-2 block">
                                                     Nuevo Precio Sugerido:
@@ -1432,7 +1432,7 @@ export default function CompetitionPage() {
                                                     <Input
                                                       type="number"
                                                       step="0.01"
-                                                      placeholder={product.competition.price_to_win.toFixed(2)}
+                                                      placeholder={product.competition?.price_to_win?.toFixed(2)}
                                                       value={priceUpdateValue[product.id] || ""}
                                                       onChange={(e) =>
                                                         setPriceUpdateValue({

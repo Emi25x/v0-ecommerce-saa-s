@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase"
 
 export async function GET() {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
 
     // Obtener todos los productos con custom_fields
     const { data: products, error } = await supabase
@@ -20,7 +20,7 @@ export async function GET() {
     const customFieldsSet = new Set<string>()
     const fieldExamples: Record<string, string[]> = {}
 
-    products?.forEach((product) => {
+    products?.forEach((product: any) => {
       if (product.custom_fields && typeof product.custom_fields === "object") {
         Object.entries(product.custom_fields).forEach(([key, value]) => {
           customFieldsSet.add(key)

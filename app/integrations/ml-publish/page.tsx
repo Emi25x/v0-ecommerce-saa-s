@@ -37,6 +37,7 @@ interface Template {
   name: string
   margin_percent: number
   listing_type_id: string
+  price_profile_id?: string | null
 }
 
 interface Account {
@@ -606,7 +607,7 @@ export default function MLPublishPage() {
 
     const productIds = Array.from(selectedProducts)
 
-    setPublishProgress({ current: 0, total: productIds.length, success: 0, errors: 0 })
+    setPublishProgress({ current: 0, total: productIds.length, success: 0, errors: 0, skipped: 0 })
 
     let successCount = 0
     let errorCount = 0
@@ -639,10 +640,10 @@ export default function MLPublishPage() {
         } else {
           errorCount++
         }
-        setPublishProgress({ current: i + 1, total: productIds.length, success: successCount, errors: errorCount })
+        setPublishProgress({ current: i + 1, total: productIds.length, success: successCount, errors: errorCount, skipped: 0 })
       } catch {
         errorCount++
-        setPublishProgress({ current: i + 1, total: productIds.length, success: successCount, errors: errorCount })
+        setPublishProgress({ current: i + 1, total: productIds.length, success: successCount, errors: errorCount, skipped: 0 })
       }
 
       // Delay de 1 segundo entre publicaciones

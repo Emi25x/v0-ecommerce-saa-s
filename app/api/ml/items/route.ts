@@ -290,7 +290,7 @@ export async function GET(request: NextRequest) {
           // Verificar si existe
           const { data: existing } = await supabase
             .from("ml_publications")
-            .select("id")
+            .select("id, health_checked_at")
             .eq("ml_item_id", product.id)
             .maybeSingle()
           

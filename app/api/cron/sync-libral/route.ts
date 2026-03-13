@@ -75,7 +75,7 @@ export async function GET(request: Request) {
       )
 
       // Procesar cada producto
-      for (const apiProduct of result.data) {
+      for (const apiProduct of result.data as Record<string, any>[]) {
         try {
           const sku = apiProduct[fieldMapping.sku]
           const newStock = apiProduct[fieldMapping.stock] || 0

@@ -63,8 +63,8 @@ export async function POST(request: NextRequest) {
     const isZip = fileBuffer.length >= 4 && fileBuffer[0] === 0x50 && fileBuffer[1] === 0x4B
     console.log(`[v0][RUN/START] Es ZIP: ${isZip}`)
     
-    let csvText: string
-    
+    let csvText: string = ""
+
     if (isZip) {
       console.log(`[v0][RUN/START] Extrayendo CSV del ZIP...`)
       try {

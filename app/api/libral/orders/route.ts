@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
 
     console.log("[v0] Libral Orders - Fetching with filters:", { estado, fechaDesde, fechaHasta })
 
-    const orders = await getLibralOrders(token, { estado, fechaDesde, fechaHasta })
+    const orders = await getLibralOrders({ estado, fechaDesde, fechaHasta })
 
     console.log("[v0] Libral Orders - Retrieved:", orders.length, "orders")
 

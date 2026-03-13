@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { NextRequest, NextResponse } from "next/server"
 
 export const dynamic = "force-dynamic"
@@ -7,7 +7,7 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const supabase = await createClient({ useServiceRole: true })
+  const supabase = createAdminClient()
   const { data, error } = await supabase
     .from("price_list_fee_rules")
     .select("*")
@@ -21,7 +21,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const supabase = await createClient({ useServiceRole: true })
+  const supabase = createAdminClient()
   const body     = await req.json()
   const { data, error } = await supabase
     .from("price_list_fee_rules")

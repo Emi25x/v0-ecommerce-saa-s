@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { getValidAccessToken } from "@/lib/mercadolibre"
 import { NextRequest, NextResponse } from "next/server"
 import { protectCron } from "@/lib/auth/protect-api"
@@ -684,7 +685,7 @@ export async function POST(request: NextRequest) {
   const limit      = Math.min(50, Math.max(1, body.limit ?? 5))
   const accountId  = body.account_id ?? null
 
-  const supabase = await createClient({ useServiceRole: true })
+  const supabase = createAdminClient()
 
   // ── 1. Claim jobs (lock atómico) ─────────────────────────────────────────
   const query = supabase

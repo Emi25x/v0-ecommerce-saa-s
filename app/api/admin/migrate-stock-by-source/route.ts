@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     const { error: migrateError } = await supabase
       .from('products')
       .update({ 
-        stock_by_source: supabase.raw(`jsonb_build_object('legacy', COALESCE(stock, 0))`)
+        stock_by_source: (supabase as any).raw(`jsonb_build_object('legacy', COALESCE(stock, 0))`)
       })
       .eq('stock_by_source', '{}')
       .not('stock', 'is', null)

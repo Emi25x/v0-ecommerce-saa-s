@@ -153,7 +153,7 @@ function calcItem(item: Partial<FacturaItem>): FacturaItem {
   }
 }
 
-const EMPTY_ITEM = (ivaDefault = 21): Partial<FacturaItem> => ({
+const EMPTY_ITEM = (ivaDefault: 0 | 10.5 | 21 | 27 = 21): Partial<FacturaItem> => ({
   descripcion: "", cantidad: 1, precio_unitario: 0, alicuota_iva: ivaDefault, subtotal: 0, iva: 0,
 })
 
@@ -464,7 +464,7 @@ export default function BillingPage() {
       if (d.ok) {
         setShowNew(false)
         setNewForm({ tipo_comprobante: "6", concepto: "1", tipo_doc_receptor: "99", nro_doc_receptor: "", receptor_nombre: "", receptor_domicilio: "", receptor_condicion_iva: "consumidor_final", moneda: "PES" })
-        setItems([EMPTY_ITEM(configForm.iva_default)])
+        setItems([EMPTY_ITEM(configForm.iva_default as 0 | 10.5 | 21 | 27)])
         setPadronStatus("idle"); setPadronMsg("")
         loadFacturas(0); setPage(0)
       } else {
@@ -527,7 +527,7 @@ export default function BillingPage() {
     }
   }
 
-  const addItem = () => setItems(prev => [...prev, EMPTY_ITEM(configForm.iva_default)])
+  const addItem = () => setItems(prev => [...prev, EMPTY_ITEM(configForm.iva_default as 0 | 10.5 | 21 | 27)])
   const removeItem = (idx: number) => setItems(prev => prev.filter((_, i) => i !== idx))
 
   const calcedItems = items.map(calcItem)
@@ -558,7 +558,7 @@ export default function BillingPage() {
           onClick={() => {
             if (!config) { setActiveTab("config") }
             else {
-              setItems([EMPTY_ITEM(configForm.iva_default)])
+              setItems([EMPTY_ITEM(configForm.iva_default as 0 | 10.5 | 21 | 27)])
               setSkuInput([""]); setSkuStatus(["idle"])
               setPadronStatus("idle"); setPadronMsg("")
               setShowNew(true)
@@ -1385,7 +1385,7 @@ export default function BillingPage() {
       {/* ── Modal nueva factura ── */}
       <Dialog open={showNew} onOpenChange={(open) => {
         if (open) {
-          setItems([EMPTY_ITEM(configForm.iva_default)])
+          setItems([EMPTY_ITEM(configForm.iva_default as 0 | 10.5 | 21 | 27)])
           setSkuInput([""]); setSkuStatus(["idle"])
           setPadronStatus("idle"); setPadronMsg("")
         }

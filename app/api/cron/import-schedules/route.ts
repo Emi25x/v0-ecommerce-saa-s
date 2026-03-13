@@ -123,7 +123,7 @@ export async function GET(request: Request) {
         
         // TODO: Si es una importación de stock/precio, sincronizar con ML
         // Esto se implementará como función directa cuando el cron funcione en producción
-        if (source.feed_type === "stock_price" && (importResult.success || importResult.updated > 0)) {
+        if (source.feed_type === "stock_price" && (importResult.success || (importResult.updated ?? 0) > 0)) {
           console.log(`[v0] Importación de stock completada. Sync con ML pendiente de implementar como función directa.`)
           // La sincronización con ML se puede hacer manualmente desde la UI por ahora
         }

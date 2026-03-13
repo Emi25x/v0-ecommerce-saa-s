@@ -76,7 +76,7 @@ export default function ShopifyConfigPage() {
   // Store settings (editable)
   const [vendor, setVendor]                     = useState("")
   const [productCategory, setProductCategory]   = useState("Media > Books > Print Books")
-  const [priceSource, setPriceSource]           = useState<"products.price" | "product_prices">("products.price")
+  const [priceSource, setPriceSource]           = useState<"products.price" | "product_prices" | "custom_fields_precio_ars">("products.price")
   const [priceListId, setPriceListId]           = useState<string>("")
   const [warehouseId, setWarehouseId]           = useState<string>("")
   const [sucursalCode, setSucursalCode]         = useState<string>("")

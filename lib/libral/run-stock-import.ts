@@ -77,7 +77,7 @@ export async function runLibralStockImport(
       take: PAGE_SIZE,
       skip: page * PAGE_SIZE,
       select: ["id", "ean", "stockdisponibletotal", "activo"],
-      filter: ["activo", "=", true],
+      filter: ["activo", "=", "true"],
       requireTotalCount: page === 0,
     })
 

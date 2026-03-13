@@ -308,7 +308,7 @@ export async function getLibralProducts(
       "alto",
       "grosor",
     ],
-    filter: ["activo", "=", true],
+    filter: ["activo", "=", "true"],
     sort: [{ selector: "fechaultimactualizacion", desc: true }],
     requireTotalCount: true,
   })

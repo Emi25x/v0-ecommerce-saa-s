@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
     const fileBuffer = Buffer.from(await fileResponse.arrayBuffer())
     const isZip = fileBuffer.length >= 4 && fileBuffer[0] === 0x50 && fileBuffer[1] === 0x4B
 
-    let csvText: string
+    let csvText: string = ""
 
     if (isZip) {
       let offset_zip = 0

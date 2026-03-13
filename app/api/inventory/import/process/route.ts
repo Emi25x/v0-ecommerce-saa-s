@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     let bestDelimiter = ","
     for (const delimiter of delimiters) {
       const parsed = Papa.parse(csvText, { delimiter, preview: 1 })
-      const columnCount = parsed.data[0]?.length || 0
+      const columnCount = (parsed.data[0] as string[])?.length || 0
       if (columnCount > maxColumns) {
         maxColumns = columnCount
         bestDelimiter = delimiter

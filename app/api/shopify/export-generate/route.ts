@@ -179,7 +179,7 @@ export async function POST(request: NextRequest) {
       (tpl?.defaults_json as Record<string, string> | null) ?? {}
 
     // 3. Load products by EAN or ISBN
-    const { data: products, error: prodError } = await supabase
+    const { data: productsRaw, error: prodError } = await supabase
       .from("products")
       .select(
         "id, title, description, brand, sku, ean, isbn, price, cost_price, stock, " +
@@ -188,6 +188,7 @@ export async function POST(request: NextRequest) {
         "ibic_subjects, edition_date, year_edition, subject, course, condition"
       )
       .or(eans.map((e) => `ean.eq.${e},isbn.eq.${e}`).join(","))
+    const products = productsRaw as any[] | null
 
     if (prodError) return NextResponse.json({ error: prodError.message }, { status: 500 })
     if (!products?.length) {
@@ -357,11 +358,11 @@ export async function POST(request: NextRequest) {
           case "Metafield: custom.anio_edicion [single_line_text_field]":
             return p.year_edition ?? p.edition_date ?? (customFields.anio_edicion as string) ?? ""
           case "Metafield: custom.alto_mm [number_integer]":
-            return alto
+            return alto as string | number
           case "Metafield: custom.ancho_mm [number_integer]":
-            return ancho
+            return ancho as string | number
           case "Metafield: custom.espesor_mm [number_integer]":
-            return espesor
+            return espesor as string | number
           case "Metafield: custom.peso_g [number_integer]":
             return weightG
           case "Metafield: custom.condicion [single_line_text_field]":

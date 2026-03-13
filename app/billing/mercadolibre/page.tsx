@@ -743,7 +743,7 @@ export default function MLBillingPage() {
             <div className="flex items-center justify-between">
               <Label className="text-xs">Estado del envío</Label>
               <button
-                onClick={sincronizarEnvios}
+                onClick={() => sincronizarEnvios()}
                 disabled={syncingEnvios}
                 className="text-[10px] text-muted-foreground hover:text-foreground underline underline-offset-2 disabled:opacity-40"
                 title="Actualiza el estado de envío de las últimas 250 órdenes desde MercadoLibre"

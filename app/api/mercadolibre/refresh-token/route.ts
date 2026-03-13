@@ -3,7 +3,7 @@ import { NextResponse } from "next/server"
 
 export async function POST() {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     
     // Obtener la cuenta de ML
     const { data: account, error: accountError } = await supabase
@@ -83,7 +83,7 @@ export async function POST() {
 // GET para verificar estado del token
 export async function GET() {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     
     const { data: account } = await supabase
       .from("ml_accounts")

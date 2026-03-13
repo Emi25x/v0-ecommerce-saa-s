@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     while (hasMore) {
       console.log("[v0] Libral Import - Fetching page:", page)
 
-      const result = await getLibralProducts(token, page, pageSize)
+      const result = await getLibralProducts(page, pageSize)
 
       if (result.data.length === 0) {
         hasMore = false

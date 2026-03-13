@@ -179,7 +179,7 @@ export async function POST(req: NextRequest) {
   const formData = new FormData()
   formData.append(
     "fiscal_document",
-    new Blob([fileBuffer], { type: "application/pdf" }),
+    new Blob([fileBuffer as unknown as BlobPart], { type: "application/pdf" }),
     fileName,
   )
 
