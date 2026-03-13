@@ -1,141 +1,173 @@
 /**
  * FastMail Argentina — API v2 client
  *
- * Documentación: https://epresislv.fastmail.com.ar/docs/index.html#apis-v2
- * (Requiere credenciales de cliente para acceder)
+ * Autenticación: `api_token` en el body de cada request POST (no Authorization header)
+ * Base URL: https://epresislv.fastmail.com.ar
  *
- * Para activar la integración:
- *   1. Configurar user/password en la tabla carriers donde slug = 'fastmail'
- *   2. Cambiar active = true
- *
- * Endpoints implementados (basados en estructura típica de API v2 de FastMail):
- *   POST /api/v2/envios         — crear envío y obtener etiqueta
- *   GET  /api/v2/envios/{id}    — consultar estado
- *   GET  /api/v2/tracking/{nro} — tracking por número de guía
- *   POST /api/v2/cotizar        — cotizar envío
+ * Endpoints implementados:
+ *   POST /api/v2/dummy-test.json      — health check / verificar credenciales
+ *   POST /api/v2/consultarStock       — consultar stock por SKU
+ *   POST /api/v2/listarCps            — listar códigos postales disponibles
+ *   POST /api/v2/generaRecepcion.json — generar remito de recepción (WMS)
+ *   POST /api/v2/editarSucursal.json  — editar datos de sucursal
  */
 
 export interface FastMailCredentials {
-  token?:   string   // API token (Bearer) — método preferido
-  user?:    string   // Usuario (fallback Basic Auth)
-  password?: string  // Contraseña (fallback Basic Auth)
+  token: string  // API token — requerido para todos los endpoints
+  user?: string  // No usado en la API real, solo guardado por compatibilidad
+  password?: string
 }
 
 export interface FastMailConfig {
   base_url:    string
-  api_version: string
+  api_version?: string
   timeout_ms:  number
 }
 
-export interface FastMailAddress {
+// ── Tipos de respuesta ───────────────────────────────────────────────────────
+
+export interface FastMailHealthCheckResponse {
+  server:   string   // "OK"
+  user:     string   // "OK"
+  cliente?: string   // Nombre del cliente, ej: "Presis Consultores"
+  error?:   string
+}
+
+export interface FastMailStockItem {
+  sku:        string
+  descripcion?: string
+  stock:      number
+  [key: string]: unknown
+}
+
+export interface FastMailConsultarStockResponse {
+  items?: FastMailStockItem[]
+  error?: string
+  [key: string]: unknown
+}
+
+export interface FastMailCp {
+  cp:        string
+  localidad?: string
+  provincia?: string
+  [key: string]: unknown
+}
+
+export interface FastMailListarCpsResponse {
+  cps?:  FastMailCp[]
+  error?: string
+  [key: string]: unknown
+}
+
+export interface FastMailProductoRecepcion {
+  sku:         string
+  descripcion: string
+  cajas:       number
+  cantidad:    number
+  trazable?:   boolean
+}
+
+export interface FastMailContacto {
   nombre:    string
-  direccion: string
+  calle:     string
+  cp:        string
   localidad: string
   provincia: string
-  cp:        string
-  telefono?: string
   email?:    string
+  telefono?: string
 }
 
-export interface FastMailItem {
-  descripcion: string
-  cantidad:    number
-  peso_g:      number
-  valor:       number
+export interface FastMailGeneraRecepcionRequest {
+  remito:           string
+  operacion:        "RECEPCION" | string
+  fecha_pactada?:   string   // ISO date, ej: "2026-03-15"
+  permite_parcial?: boolean
+  contacto:         FastMailContacto
+  productos:        FastMailProductoRecepcion[]
 }
 
-export interface FastMailShipmentRequest {
-  remitente:    FastMailAddress
-  destinatario: FastMailAddress
-  items:        FastMailItem[]
-  peso_total_g: number
-  valor_declarado: number
-  servicio?:    "standard" | "express" | "economico"
-  referencia?:  string  // nuestro ID interno
+export interface FastMailGeneraRecepcionResponse {
+  ok?:     boolean
+  id?:     string
+  error?:  string
+  [key: string]: unknown
 }
 
-export interface FastMailShipmentResponse {
-  id:              string
-  numero_guia:     string
-  estado:          string
-  url_etiqueta?:   string
-  url_seguimiento?: string
-  costo?:          number
-  error?:          string
+export interface FastMailEditarSucursalResponse {
+  ok?:    boolean
+  error?: string
+  [key: string]: unknown
 }
 
-export interface FastMailTrackingEvent {
-  estado:      string
-  descripcion: string
-  ubicacion?:  string
-  fecha:       string
-}
-
-export interface FastMailTrackingResponse {
-  numero_guia: string
-  estado:      string
-  eventos:     FastMailTrackingEvent[]
-  error?:      string
-}
-
+// Tipos legacy mantenidos para compatibilidad con routes existentes
 export interface FastMailQuoteRequest {
-  origen_cp:   string
-  destino_cp:  string
-  peso_g:      number
-  valor:       number
+  origen_cp:    string
+  destino_cp:   string
+  peso_g:       number
+  valor:        number
   dimensiones?: { largo_cm: number; ancho_cm: number; alto_cm: number }
 }
 
 export interface FastMailQuoteResponse {
   servicios: Array<{
-    codigo:      string
-    nombre:      string
-    plazo_dias:  number
-    precio:      number
+    codigo:     string
+    nombre:     string
+    plazo_dias: number
+    precio:     number
   }>
   error?: string
 }
 
+export interface FastMailShipmentRequest {
+  remitente:       FastMailContacto
+  destinatario:    FastMailContacto
+  peso_g:          number
+  valor_declarado: number
+  referencia?:     string
+}
+
+export interface FastMailShipmentResponse {
+  id?:              string
+  numero_guia?:     string
+  estado?:          string
+  url_etiqueta?:    string
+  url_seguimiento?: string
+  costo?:           number
+  error?:           string
+}
+
+// ── Cliente ──────────────────────────────────────────────────────────────────
+
 export class FastMailClient {
-  private readonly baseUrl:  string
-  private readonly token:    string | undefined
-  private readonly user:     string
-  private readonly password: string
-  private readonly timeout:  number
+  private readonly baseUrl: string
+  private readonly token:   string
+  private readonly timeout: number
 
   constructor(config: FastMailConfig, credentials: FastMailCredentials) {
-    this.baseUrl  = config.base_url.replace(/\/$/, "")
-    this.token    = credentials.token
-    this.user     = credentials.user     ?? ""
-    this.password = credentials.password ?? ""
-    this.timeout  = config.timeout_ms ?? 15000
+    this.baseUrl = config.base_url.replace(/\/$/, "")
+    this.token   = credentials.token
+    this.timeout = config.timeout_ms ?? 15_000
   }
 
-  private authHeader(): string {
-    if (this.token) return `Bearer ${this.token}`
-    const encoded = Buffer.from(`${this.user}:${this.password}`).toString("base64")
-    return `Basic ${encoded}`
+  /** Body base con el api_token que va en todos los requests */
+  private withToken(extra?: Record<string, unknown>): Record<string, unknown> {
+    return { api_token: this.token, ...extra }
   }
 
-  private async request<T>(
-    method: "GET" | "POST",
-    path:   string,
-    body?:  unknown
-  ): Promise<T> {
+  private async post<T>(path: string, body?: Record<string, unknown>): Promise<T> {
     const url = `${this.baseUrl}${path}`
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.timeout)
 
     try {
       const res = await fetch(url, {
-        method,
-        signal: controller.signal,
+        method:  "POST",
+        signal:  controller.signal,
         headers: {
-          "Content-Type":  "application/json",
-          "Authorization": this.authHeader(),
-          "Accept":        "application/json",
+          "Content-Type": "application/json",
+          "Accept":       "application/json",
         },
-        ...(body ? { body: JSON.stringify(body) } : {}),
+        body: JSON.stringify(this.withToken(body)),
       })
 
       const data = await res.json().catch(() => ({}))
@@ -152,57 +184,63 @@ export class FastMailClient {
     }
   }
 
-  /** Crear un nuevo envío y obtener la etiqueta */
-  async createShipment(req: FastMailShipmentRequest): Promise<FastMailShipmentResponse> {
-    return this.request<FastMailShipmentResponse>("POST", "/api/v2/envios", req)
+  // ── Endpoints reales ───────────────────────────────────────────────────────
+
+  /**
+   * Verifica conectividad y valida el api_token.
+   * Respuesta esperada: { server: "OK", user: "OK", cliente: "..." }
+   */
+  async healthCheck(): Promise<{ ok: boolean; message: string }> {
+    try {
+      const res = await this.post<FastMailHealthCheckResponse>("/api/v2/dummy-test.json")
+      if (res.server === "OK" && res.user === "OK") {
+        const nombre = res.cliente ? ` — cliente: ${res.cliente}` : ""
+        return { ok: true, message: `Conexión exitosa con FastMail API v2${nombre}` }
+      }
+      return { ok: false, message: `FastMail respondió inesperadamente: ${JSON.stringify(res)}` }
+    } catch (err: any) {
+      if (err.name === "AbortError") {
+        return { ok: false, message: "FastMail: timeout — sin respuesta del servidor" }
+      }
+      return { ok: false, message: err.message }
+    }
   }
 
-  /** Obtener estado de un envío por su ID de FastMail */
-  async getShipment(id: string): Promise<FastMailShipmentResponse> {
-    return this.request<FastMailShipmentResponse>("GET", `/api/v2/envios/${encodeURIComponent(id)}`)
+  /** Consultar stock de productos por SKU */
+  async consultarStock(skus: string[]): Promise<FastMailConsultarStockResponse> {
+    return this.post<FastMailConsultarStockResponse>("/api/v2/consultarStock", { skus })
   }
 
-  /** Tracking por número de guía */
-  async getTracking(trackingNumber: string): Promise<FastMailTrackingResponse> {
-    return this.request<FastMailTrackingResponse>(
-      "GET",
-      `/api/v2/tracking/${encodeURIComponent(trackingNumber)}`
-    )
-  }
-
-  /** Cotizar envío */
-  async quote(req: FastMailQuoteRequest): Promise<FastMailQuoteResponse> {
-    return this.request<FastMailQuoteResponse>("POST", "/api/v2/cotizar", req)
+  /** Listar códigos postales disponibles para envíos */
+  async listarCps(): Promise<FastMailListarCpsResponse> {
+    return this.post<FastMailListarCpsResponse>("/api/v2/listarCps")
   }
 
   /**
-   * Verifica conectividad y credenciales sin crear recursos.
-   * Hace un GET a /api/v2/envios: 200 = ok, 401/403 = credenciales inválidas, otro = error.
+   * Generar remito de recepción (WMS).
+   * Nota: URL provisoria — confirmar con FastMail si difiere de /api/v2/generaRecepcion.json
    */
-  async healthCheck(): Promise<{ ok: boolean; message: string }> {
-    const url = `${this.baseUrl}/api/v2/envios`
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), this.timeout)
-    try {
-      const res = await fetch(url, {
-        method: "GET",
-        signal: controller.signal,
-        headers: {
-          "Authorization": this.authHeader(),
-          "Accept": "application/json",
-        },
-      })
-      if (res.ok) return { ok: true, message: "Conexión exitosa con FastMail API v2" }
-      if (res.status === 401 || res.status === 403) {
-        return { ok: false, message: "FastMail: credenciales inválidas (401/403) — verificá el Token API" }
-      }
-      return { ok: false, message: `FastMail respondió con estado ${res.status}` }
-    } catch (err: any) {
-      if (err.name === "AbortError") return { ok: false, message: "FastMail: timeout — sin respuesta del servidor" }
-      return { ok: false, message: `FastMail: no se pudo conectar — ${err.message}` }
-    } finally {
-      clearTimeout(timer)
-    }
+  async generaRecepcion(req: FastMailGeneraRecepcionRequest): Promise<FastMailGeneraRecepcionResponse> {
+    return this.post<FastMailGeneraRecepcionResponse>("/api/v2/generaRecepcion.json", req as unknown as Record<string, unknown>)
+  }
+
+  /** Editar datos de sucursal */
+  async editarSucursal(data: Record<string, unknown>): Promise<FastMailEditarSucursalResponse> {
+    return this.post<FastMailEditarSucursalResponse>("/api/v2/editarSucursal.json", data)
+  }
+
+  // ── Aliases legacy para compatibilidad con routes existentes ─────────────
+
+  /** @deprecated Use healthCheck() para verificar conexión */
+  async quote(req: FastMailQuoteRequest): Promise<FastMailQuoteResponse> {
+    // La API real no tiene endpoint de cotización documentado públicamente.
+    // Retorna error controlado en lugar de romper.
+    return { servicios: [], error: "Cotización no disponible en FastMail API v2" }
+  }
+
+  /** @deprecated No hay endpoint de creación directa documentado */
+  async createShipment(req: FastMailShipmentRequest): Promise<FastMailShipmentResponse> {
+    return { error: "Creación de envío: usá generaRecepcion() con operacion=RECEPCION" }
   }
 }
 
@@ -211,8 +249,8 @@ export function createFastMailClient(
   config: FastMailConfig,
   credentials: FastMailCredentials
 ): FastMailClient {
-  if (!credentials.token && (!credentials.user || !credentials.password)) {
-    throw new Error("FastMail: configurá el token API o el usuario/contraseña en Transportistas → Fast Mail")
+  if (!credentials.token) {
+    throw new Error("FastMail: configurá el Token API en Transportistas → Fast Mail")
   }
   return new FastMailClient(config, credentials)
 }
