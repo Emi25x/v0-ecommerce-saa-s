@@ -42,7 +42,7 @@ export async function POST(_req: NextRequest, { params }: { params: { slug: stri
       }
       const client = createCabifyClient(
         (carrier as any).config as CabifyConfig,
-        creds as CabifyCredentials
+        creds as unknown as CabifyCredentials
       )
       const res = await client.healthCheck()
       return NextResponse.json(res)

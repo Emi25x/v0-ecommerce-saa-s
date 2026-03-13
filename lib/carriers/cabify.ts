@@ -31,65 +31,59 @@ export interface CabifyConfig {
   timeout_ms: number
 }
 
-// ── Tipos de servicio ──────────────────────────────────────────────────────────
-export type CabifyService =
-  | "express"       // Entrega inmediata (horas)
-  | "same_day"      // Mismo día
-  | "next_day"      // Día siguiente
-  | "scheduled"     // Entrega programada
+// ── Modalidades de envío ───────────────────────────────────────────────────────
+export type CabifyModality = "express" | "same_day" | "next_day" | "groceries"
 
-// ── Dirección ─────────────────────────────────────────────────────────────────
-export interface CabifyAddress {
+// ── Tipos de envío disponibles ────────────────────────────────────────────────
+export interface CabifyShippingType {
+  id:          string          // UUID
   name:        string
-  phone:       string
-  email?:      string
-  street:      string
-  city:        string
-  state:       string
-  postal_code: string
-  country:     string   // "AR"
+  modality:    CabifyModality
+  description: string
+}
+
+// ── Hub (depósito/punto de pickup) ────────────────────────────────────────────
+export interface CabifyHubRequest {
+  external_id:   string
+  address:       string
+  location?:     { latitude: number; longitude: number }
   instructions?: string
+  contact?:      { name?: string; phone?: string; email?: string }
 }
 
-// ── Item del paquete ───────────────────────────────────────────────────────────
-export interface CabifyPackageItem {
-  description:    string
-  quantity:       number
-  unit_price_ars: number
-  weight_g?:      number
+// ── Solicitud de envío (ship parcels) ─────────────────────────────────────────
+export interface CabifyShipRequest {
+  parcel_ids:       string[]    // UUIDs de los parcels ya creados
+  shipping_type_id: string      // UUID del shipping type elegido
+  pickup_time?:     string      // ISO 8601 — solo para modalidad express
 }
 
-// ── Solicitud de creación de envío ────────────────────────────────────────────
-export interface CabifyShipmentRequest {
-  reference?:       string
-  service:          CabifyService
-  pickup:           CabifyAddress
-  delivery:         CabifyAddress
-  items:            CabifyPackageItem[]
-  weight_g:         number
-  declared_value:   number
-  dimensions?: {
-    length_cm: number
-    width_cm:  number
-    height_cm: number
+export interface CabifyShipResponse {
+  parcels: Array<{
+    id:               string
+    tracking_url?:    string
+    shipping_type_id: string
+  }>
+  error?: string
+}
+
+// ── Estimación de envío ────────────────────────────────────────────────────────
+export interface CabifyEstimateRequest {
+  parcels: Array<{
+    shipping_type_id: string    // UUID del shipping type a estimar
+    pickup_time?:     string    // ISO 8601 — solo para express
+  }>
+}
+
+export interface CabifyEstimateResponse {
+  deliveries?: {
+    parcels?:    Record<string, unknown>
+    estimation?: Record<string, unknown>
   }
-  notes?: string
+  error?: string
 }
 
-// ── Respuesta de creación ──────────────────────────────────────────────────────
-export interface CabifyShipmentResponse {
-  id:               string
-  tracking_code:    string
-  status:           string
-  label_url?:       string
-  tracking_url?:    string
-  estimated_cost?:  number
-  estimated_pickup?: string
-  estimated_delivery?: string
-  error?:           string
-}
-
-// ── Evento de seguimiento ──────────────────────────────────────────────────────
+// ── Tracking ───────────────────────────────────────────────────────────────────
 export interface CabifyTrackingEvent {
   status:      string
   description: string
@@ -98,35 +92,37 @@ export interface CabifyTrackingEvent {
 }
 
 export interface CabifyTrackingResponse {
-  package_id:    string
+  parcel_id:     string
   tracking_code: string
   status:        string
   events:        CabifyTrackingEvent[]
   error?:        string
 }
 
-// ── Cotización ─────────────────────────────────────────────────────────────────
+// ── Compatibilidad hacia atrás (usado en create-shipment y quote routes) ───────
+export interface CabifyShipmentRequest {
+  parcel_ids:       string[]
+  shipping_type_id: string
+  pickup_time?:     string
+}
+export interface CabifyShipmentResponse {
+  id?:             string
+  tracking_code?:  string
+  tracking_url?:   string
+  label_url?:      string
+  estimated_cost?: number
+  status?:         string
+  error?:          string
+}
 export interface CabifyQuoteRequest {
   pickup_postal_code:   string
   delivery_postal_code: string
   weight_g:             number
-  declared_value:       number
-  dimensions?: {
-    length_cm: number
-    width_cm:  number
-    height_cm: number
-  }
+  declared_value?:      number
 }
-
 export interface CabifyQuoteResponse {
-  services: Array<{
-    service:         CabifyService
-    name:            string
-    price_ars:       number
-    estimated_days:  number
-    description:     string
-  }>
-  error?: string
+  services: CabifyShippingType[]
+  error?:   string
 }
 
 // ── Token cache en memoria ─────────────────────────────────────────────────────
@@ -146,8 +142,13 @@ export class CabifyLogisticsClient {
   private readonly timeout:      number
 
   private static readonly BASE_PATHS = {
-    packages: "/v1/packages",
-    quotes:   "/v1/quotes",
+    parcels:       "/v1/parcels",
+    ship:          "/v1/parcels/ship",
+    estimate:      "/v3/parcels/estimate",
+    shippingTypes: "/v1/shipping_types/available",
+    hubs:          "/v1/hubs",
+    webhooks:      "/v1/webhooks",
+    users:         "/v1/users",
   }
 
   constructor(config: CabifyConfig, credentials: CabifyCredentials) {
@@ -212,7 +213,7 @@ export class CabifyLogisticsClient {
   // ── HTTP helper ───────────────────────────────────────────────────────────────
 
   private async request<T>(
-    method: "GET" | "POST" | "PATCH",
+    method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE",
     path:   string,
     body?:  unknown
   ): Promise<T> {
@@ -248,44 +249,158 @@ export class CabifyLogisticsClient {
 
   // ── Métodos públicos ──────────────────────────────────────────────────────────
 
-  /** Crear un nuevo envío */
-  async createShipment(req: CabifyShipmentRequest): Promise<CabifyShipmentResponse> {
-    return this.request<CabifyShipmentResponse>("POST", CabifyLogisticsClient.BASE_PATHS.packages, req)
+  /**
+   * Tipos de envío disponibles para una ubicación.
+   * GET /v1/shipping_types/available?location=lat,lon
+   * Usado también como healthcheck.
+   */
+  async getShippingTypes(lat = -34.603722, lon = -58.381592): Promise<CabifyShippingType[]> {
+    const token      = await this.getBearerToken()
+    const url        = `${this.baseUrl}${CabifyLogisticsClient.BASE_PATHS.shippingTypes}?location=${lat},${lon}`
+    const controller = new AbortController()
+    const timer      = setTimeout(() => controller.abort(), this.timeout)
+    try {
+      const res = await fetch(url, {
+        method:  "GET",
+        signal:  controller.signal,
+        headers: { "Authorization": `Bearer ${token}`, "Accept": "application/json" },
+      })
+      const data = await res.json().catch(() => [])
+      if (!res.ok) {
+        const msg = (data as any)?.message ?? (data as any)?.error ?? res.statusText
+        throw new Error(`Cabify Logistics API error ${res.status}: ${msg}`)
+      }
+      return Array.isArray(data) ? data : []
+    } finally {
+      clearTimeout(timer)
+    }
   }
 
-  /** Obtener estado de un envío */
-  async getShipment(packageId: string): Promise<CabifyShipmentResponse> {
-    return this.request<CabifyShipmentResponse>(
-      "GET",
-      `${CabifyLogisticsClient.BASE_PATHS.packages}/${encodeURIComponent(packageId)}`
-    )
+  /**
+   * Enviar parcels ya creados.
+   * POST /v1/parcels/ship
+   */
+  async shipParcels(req: CabifyShipRequest): Promise<CabifyShipResponse> {
+    return this.request<CabifyShipResponse>("POST", CabifyLogisticsClient.BASE_PATHS.ship, req)
   }
 
-  /** Marcar paquete como listo para recoger */
-  async markReady(packageId: string): Promise<{ ok: boolean; error?: string }> {
-    return this.request<{ ok: boolean; error?: string }>(
-      "PATCH",
-      `${CabifyLogisticsClient.BASE_PATHS.packages}/${encodeURIComponent(packageId)}/ready`
-    )
+  /**
+   * Estimar precio y tiempo de envío para parcels ya creados.
+   * POST /v3/parcels/estimate
+   * Nota: usa /v3/, no /v1/
+   */
+  async estimate(req: CabifyEstimateRequest): Promise<CabifyEstimateResponse> {
+    const token      = await this.getBearerToken()
+    const url        = `${this.baseUrl}${CabifyLogisticsClient.BASE_PATHS.estimate}`
+    const controller = new AbortController()
+    const timer      = setTimeout(() => controller.abort(), this.timeout)
+    try {
+      const res = await fetch(url, {
+        method:  "POST",
+        signal:  controller.signal,
+        headers: {
+          "Content-Type":  "application/json",
+          "Authorization": `Bearer ${token}`,
+          "Accept":        "application/json",
+        },
+        body: JSON.stringify(req),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const msg = (data as any)?.message ?? (data as any)?.error ?? res.statusText
+        throw new Error(`Cabify Logistics API error ${res.status}: ${msg}`)
+      }
+      return data as CabifyEstimateResponse
+    } finally {
+      clearTimeout(timer)
+    }
   }
 
-  /** Tracking por ID de paquete Cabify */
-  async getTracking(packageId: string): Promise<CabifyTrackingResponse> {
+  /** Obtener estado y tracking de un parcel */
+  async getTracking(parcelId: string): Promise<CabifyTrackingResponse> {
     return this.request<CabifyTrackingResponse>(
       "GET",
-      `${CabifyLogisticsClient.BASE_PATHS.packages}/${encodeURIComponent(packageId)}/tracking`
+      `${CabifyLogisticsClient.BASE_PATHS.parcels}/${encodeURIComponent(parcelId)}/tracking`
     )
   }
 
-  /** Cotizar un envío sin crearlo */
-  async quote(req: CabifyQuoteRequest): Promise<CabifyQuoteResponse> {
-    return this.request<CabifyQuoteResponse>("POST", CabifyLogisticsClient.BASE_PATHS.quotes, req)
+  // ── Hubs ──────────────────────────────────────────────────────────────────────
+
+  /** Listar hubs del cliente */
+  async listHubs(): Promise<{ client_hubs: any[] }> {
+    return this.request("GET", CabifyLogisticsClient.BASE_PATHS.hubs)
+  }
+
+  /** Crear un hub (punto de pickup/depósito) */
+  async createHub(req: CabifyHubRequest): Promise<any> {
+    return this.request("POST", CabifyLogisticsClient.BASE_PATHS.hubs, req)
+  }
+
+  /** Obtener hub por external_id */
+  async getHub(externalId: string): Promise<any> {
+    return this.request("GET", `/v1/hubs/none/${encodeURIComponent(externalId)}`)
+  }
+
+  /** Actualizar hub por external_id */
+  async updateHub(externalId: string, data: Partial<CabifyHubRequest>): Promise<any> {
+    return this.request("PUT" as any, `/v1/hubs/none/${encodeURIComponent(externalId)}`, data)
+  }
+
+  // ── Webhooks ──────────────────────────────────────────────────────────────────
+
+  /** Suscribirse a actualizaciones de parcels */
+  async subscribeWebhook(hook: "parcel" | "parcelLocation" | "proofCodeGenerated", callbackUrl: string, headers?: Array<{ name: string; value: string }>): Promise<any> {
+    return this.request("POST", CabifyLogisticsClient.BASE_PATHS.webhooks, { hook, callback_url: callbackUrl, headers })
+  }
+
+  /** Ver suscripciones activas */
+  async listWebhooks(): Promise<{ subscriptions: any[] }> {
+    return this.request("GET", CabifyLogisticsClient.BASE_PATHS.webhooks)
+  }
+
+  /** Eliminar suscripción de webhook */
+  async deleteWebhook(hook: "parcel" | "parcelLocation" | "proofCodeGenerated"): Promise<void> {
+    return this.request("DELETE", `${CabifyLogisticsClient.BASE_PATHS.webhooks}/${encodeURIComponent(hook)}`)
+  }
+
+  // ── Usuarios ──────────────────────────────────────────────────────────────────
+
+  /** Listar usuarios del cliente */
+  async listUsers(): Promise<Array<{ id: string; name: string; email: string; payment_method_available: boolean }>> {
+    return this.request("GET", CabifyLogisticsClient.BASE_PATHS.users)
+  }
+
+  // ── Compatibilidad con routes existentes ──────────────────────────────────────
+
+  /**
+   * Alias para shipParcels() — usado por create-shipment/route.ts.
+   * Recibe { parcel_ids, shipping_type_id, pickup_time? }
+   */
+  async createShipment(req: CabifyShipmentRequest): Promise<CabifyShipmentResponse> {
+    const res = await this.shipParcels(req)
+    const first = res.parcels?.[0]
+    return {
+      id:            first?.id,
+      tracking_code: first?.id,
+      tracking_url:  first?.tracking_url,
+      status:        "pending",
+      error:         res.error,
+    }
+  }
+
+  /**
+   * Alias para getShippingTypes() — usado por quote/route.ts.
+   * Devuelve los shipping types disponibles como "servicios".
+   */
+  async quote(_req: CabifyQuoteRequest): Promise<CabifyQuoteResponse> {
+    const types = await this.getShippingTypes()
+    return { services: types }
   }
 
   /**
    * Verifica conectividad y credenciales.
-   * Paso 1: obtener token OAuth (valida client_id y client_secret).
-   * Paso 2: hacer GET /v1/packages para confirmar acceso a la API de logística.
+   * 1. Obtiene token OAuth (valida client_id/client_secret).
+   * 2. GET /v1/shipping_types/available para confirmar acceso a la API.
    */
   async healthCheck(): Promise<{ ok: boolean; message: string }> {
     try {
@@ -293,28 +408,15 @@ export class CabifyLogisticsClient {
     } catch (err: any) {
       return { ok: false, message: err.message }
     }
-
-    const url        = `${this.baseUrl}${CabifyLogisticsClient.BASE_PATHS.packages}`
-    const controller = new AbortController()
-    const timer      = setTimeout(() => controller.abort(), this.timeout)
     try {
-      const token = await this.getBearerToken()
-      const res   = await fetch(url, {
-        method:  "GET",
-        signal:  controller.signal,
-        headers: {
-          "Authorization": `Bearer ${token}`,
-          "Accept":        "application/json",
-        },
-      })
-      if (res.ok)                            return { ok: true,  message: "Conexión exitosa con Cabify Logistics API" }
-      if (res.status === 401 || res.status === 403) return { ok: false, message: "Cabify Logistics: credenciales inválidas — verificá el Client ID y el Client Secret" }
-      return { ok: false, message: `Cabify Logistics respondió con estado ${res.status}` }
+      const types = await this.getShippingTypes()
+      return {
+        ok:      true,
+        message: `Conexión exitosa con Cabify Logistics API — ${types.length} tipo(s) de envío disponibles`,
+      }
     } catch (err: any) {
       if (err.name === "AbortError") return { ok: false, message: "Cabify Logistics: timeout — sin respuesta del servidor" }
-      return { ok: false, message: `Cabify Logistics: no se pudo conectar — ${err.message}` }
-    } finally {
-      clearTimeout(timer)
+      return { ok: false, message: err.message }
     }
   }
 }

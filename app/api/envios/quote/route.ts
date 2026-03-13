@@ -43,13 +43,6 @@ export async function POST(request: NextRequest) {
         delivery_postal_code: destino_cp,
         weight_g:             peso_g,
         declared_value:       valor ?? 0,
-        dimensions:           dimensiones
-          ? {
-              length_cm: dimensiones.largo_cm ?? dimensiones.length_cm ?? 0,
-              width_cm:  dimensiones.ancho_cm ?? dimensiones.width_cm  ?? 0,
-              height_cm: dimensiones.alto_cm  ?? dimensiones.height_cm ?? 0,
-            }
-          : undefined,
       })
 
       if (quote.error) {
@@ -57,11 +50,12 @@ export async function POST(request: NextRequest) {
       }
 
       // Normalizar al formato de respuesta unificado
+      // CabifyShippingType tiene: id, name, modality, description
       const servicios = quote.services.map(s => ({
-        codigo:     s.service,
-        nombre:     s.name,
-        plazo_dias: s.estimated_days,
-        precio:     s.price_ars,
+        codigo:      s.modality ?? s.id,
+        nombre:      s.name,
+        plazo_dias:  null,
+        precio:      null,
         descripcion: s.description,
       }))
 
