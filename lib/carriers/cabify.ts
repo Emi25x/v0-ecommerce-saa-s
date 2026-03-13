@@ -434,6 +434,32 @@ export class CabifyLogisticsClient {
   }
 
   /**
+   * Obtener etiqueta PDF de un parcel.
+   * GET /v1/parcels/{id}/label → devuelve ArrayBuffer (PDF binario).
+   * Esta etiqueta es escaneada por el driver durante las operaciones.
+   */
+  async getLabel(parcelId: string): Promise<ArrayBuffer> {
+    const token      = await this.getBearerToken()
+    const url        = `${this.baseUrl}${CabifyLogisticsClient.BASE_PATHS.parcels}/${encodeURIComponent(parcelId)}/label`
+    const controller = new AbortController()
+    const timer      = setTimeout(() => controller.abort(), this.timeout)
+    try {
+      const res = await fetch(url, {
+        method:  "GET",
+        signal:  controller.signal,
+        headers: { "Authorization": `Bearer ${token}`, "Accept": "application/pdf" },
+      })
+      if (!res.ok) {
+        const msg = res.status === 404 ? "Parcel no encontrado" : `Error ${res.status}`
+        throw new Error(`Cabify label error: ${msg}`)
+      }
+      return res.arrayBuffer()
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  /**
    * Tipos de envío disponibles para una ubicación.
    * GET /v1/shipping_types/available?location=lat,lon
    * Usado también como healthcheck.
