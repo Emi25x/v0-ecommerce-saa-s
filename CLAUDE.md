@@ -42,11 +42,16 @@ Centraliza productos, stock, pedidos, envíos y facturación de múltiples canal
 ### Transportistas (Argentina)
 - **Cabify Logistics** — OAuth 2.0, cotización, etiquetas, tracking
   - `lib/carriers/cabify.ts`
+  - Base URL: `https://logistics.api.cabify.com` (corregida, la anterior `https://api.cabify.com` era incorrecta)
+  - Auth URL: `https://cabify.com/auth/api/authorization`
+  - `getShippingTypes()` usa params `lat=&lon=` (no `location=lat,lon`)
+  - Conexión verificada ✅ (0 tipos disponibles = cuenta sin servicios activados del lado de Cabify)
 - **FastMail** — API v2, autenticación via `api_token` en body POST
   - `lib/carriers/fastmail.ts`
   - Base URL: `https://epresislv.fastmail.com.ar`
   - Todos los endpoints usan POST con `{ api_token, ...params }` en el body
   - Endpoints implementados: `dummy-test.json` (health), `consultarStock`, `listarCps`, `generaRecepcion.json`, `editarSucursal.json`, `seguirEnvio.json` (tracking)
+  - Conexión verificada ✅
   - ⚠️ El endpoint de tracking `seguirEnvio.json` es provisorio — confirmar con el manual oficial
 
 ### Marketing (15+ plataformas)
@@ -64,9 +69,12 @@ Klaviyo, Mailchimp, Brevo, HubSpot, ActiveCampaign, WhatsApp Business
 - `shopify_stores` — tiendas Shopify (tokens OAuth)
 - `carriers` — transportistas (slug, config JSONB, credentials JSONB)
 - `shipments` — envíos (tracking_number, status, carrier_slug, external_id)
-- `remitentes` — direcciones de origen para envíos
+- `remitentes` — direcciones de origen para envíos (ABM en `/envios/remitentes`)
 - `marketing_connections` — tokens de plataformas de marketing
 - `repricing_rules` — reglas de repricing automático
+- `cs_conversations` — conversaciones de atención al cliente (ML, Shopify, WhatsApp)
+- `cs_messages` — mensajes individuales por conversación
+- `cs_response_templates` — plantillas de respuesta rápida
 
 ### Funciones PL/pgSQL
 - `bulk_update_azeta_stock(ean[], stock[])` — actualización masiva de stock
@@ -143,9 +151,34 @@ Envíos → carrier API → tracking updates en shipments
 
 ---
 
+## Módulo de Atención al Cliente (`/atencion`)
+
+### Páginas
+- `/atencion/inbox` — inbox unificado multi-canal
+- `/atencion/ml-preguntas` — preguntas ML con selector de cuenta (todas / cuenta específica)
+- `/atencion/config` — plantillas de respuesta y configuración de canales
+
+### API routes (`/api/cs/`)
+- `GET /api/cs/conversations` — lista conversaciones. Soporta filtros: `channel`, `status`, `q`, `ml_account_id`
+- `GET /api/cs/ml-questions?sync=1&account_id=...` — sincroniza preguntas desde ML API
+- `POST /api/cs/conversations/[id]/reply` — responde una pregunta (postea a ML y guarda localmente)
+- `/api/cs/templates` — CRUD de plantillas
+
+### Flujo de sync ML
+1. Usuario hace click en "Sincronizar" → `GET /api/cs/ml-questions?sync=1[&account_id=...]`
+2. API itera sobre cuentas ML del usuario, refresca tokens y llama `questions/search?seller_id=...&status=UNANSWERED`
+3. Hace upsert en `cs_conversations` + `cs_messages`
+4. La UI recarga desde `/api/cs/conversations?channel=ml_question`
+
+### Para listar cuentas ML disponibles
+`GET /api/mercadolibre/accounts` — devuelve `{ accounts: [{ id, nickname, ... }] }`
+
+---
+
 ## Contexto de trabajo en curso
 
-- Se está construyendo la integración con **FastMail API v2** para envíos en Argentina
-- El manual de FastMail API v2 está en proceso de conseguirse para confirmar endpoints exactos
-- Cabify Logistics está completamente integrado (OAuth, parcels, tracking, etiquetas)
-- Los módulos de marketing, competencia y atención al cliente son recientes (en desarrollo)
+- FastMail API v2 integrado y conexión verificada ✅
+- Cabify Logistics integrado y conexión verificada ✅ (pendiente activación de servicios en panel Cabify)
+- Módulo de atención al cliente: preguntas ML funcionando con selector de cuenta
+- Módulo de marketing: en desarrollo (15+ plataformas, pendiente integración OAuth real)
+- Remitentes: ABM completo en `/envios/remitentes` (accesible desde sidebar)

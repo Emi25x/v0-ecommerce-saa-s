@@ -68,12 +68,19 @@ interface Template {
   body: string
 }
 
+interface MLAccount {
+  id: string
+  nickname: string
+}
+
 export default function MLPreguntasPage() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loading, setLoading]             = useState(false)
   const [syncing, setSyncing]             = useState(false)
   const [searchQ, setSearchQ]             = useState("")
   const [statusFilter, setStatusFilter]   = useState("pending_reply")
+  const [mlAccounts, setMlAccounts]       = useState<MLAccount[]>([])
+  const [accountFilter, setAccountFilter] = useState("all")
 
   const [selected, setSelected]           = useState<Conversation | null>(null)
   const [messages, setMessages]           = useState<Message[]>([])
@@ -83,19 +90,27 @@ export default function MLPreguntasPage() {
   const [sendError, setSendError]         = useState<string | null>(null)
   const [loadingMessages, setLoadingMessages] = useState(false)
 
+  useEffect(() => {
+    fetch("/api/mercadolibre/accounts")
+      .then(r => r.json())
+      .then(d => setMlAccounts(d.accounts ?? []))
+      .catch(() => {})
+  }, [])
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams({ channel: "ml_question", limit: "100" })
       if (statusFilter !== "all") params.set("status", statusFilter)
       if (searchQ.trim()) params.set("q", searchQ.trim())
+      if (accountFilter !== "all") params.set("ml_account_id", accountFilter)
       const res = await fetch(`/api/cs/conversations?${params}`)
       const data = await res.json()
       setConversations(data.conversations ?? [])
     } finally {
       setLoading(false)
     }
-  }, [statusFilter, searchQ])
+  }, [statusFilter, searchQ, accountFilter])
 
   useEffect(() => { load() }, [load])
 
@@ -109,7 +124,9 @@ export default function MLPreguntasPage() {
   const sync = async () => {
     setSyncing(true)
     try {
-      await fetch("/api/cs/ml-questions?sync=1")
+      const params = new URLSearchParams({ sync: "1" })
+      if (accountFilter !== "all") params.set("account_id", accountFilter)
+      await fetch(`/api/cs/ml-questions?${params}`)
       await load()
     } finally {
       setSyncing(false)
@@ -182,7 +199,7 @@ export default function MLPreguntasPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -192,6 +209,19 @@ export default function MLPreguntasPage() {
             onChange={e => setSearchQ(e.target.value)}
           />
         </div>
+        {mlAccounts.length > 1 && (
+          <Select value={accountFilter} onValueChange={setAccountFilter}>
+            <SelectTrigger className="h-8 w-48 text-sm">
+              <SelectValue placeholder="Todas las cuentas" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas las cuentas</SelectItem>
+              {mlAccounts.map(acc => (
+                <SelectItem key={acc.id} value={acc.id}>{acc.nickname}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="h-8 w-40 text-sm">
             <SelectValue />
