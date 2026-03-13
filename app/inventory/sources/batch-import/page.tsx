@@ -118,7 +118,7 @@ export default function BatchImportPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ source_id: urlSourceId }),
         })
-        const result = await res.json().catch(() => ({}))
+        const result = await res.json().catch(() => ({ error: `HTTP ${res.status} (respuesta inválida del servidor)` }))
         if (!res.ok) {
           addLog(`Error: ${result.error || `HTTP ${res.status}`}`)
           setStatus("Error")

@@ -21,6 +21,13 @@ import { createAdminClient } from "@/lib/supabase/admin"
 const AZETA_TOTAL_URL =
   "https://www.azetadistribuciones.es/servicios_web/csv.php?user=680899&password=badajoz24"
 
+// Headers para que el servidor de Azeta no bloquee la petición
+const FETCH_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Accept": "*/*",
+  "Connection": "keep-alive",
+}
+
 export interface CatalogImportResult {
   success:          boolean
   created?:         number
@@ -68,27 +75,33 @@ export async function runCatalogImport(opts?: {
 
   try {
     console.log(`[AZETA][FETCH] GET ${url}`)
-    const res = await fetch(url, { method: "GET" })
-    console.log(`[AZETA][FETCH] status=${res.status} content-type=${res.headers.get("content-type")}`)
+    const res = await fetch(url, { method: "GET", headers: FETCH_HEADERS })
+    console.log(`[AZETA][FETCH] status=${res.status} content-type=${res.headers.get("content-type")} content-length=${res.headers.get("content-length")}`)
 
     if (!res.ok) {
-      const preview = await res.text().then(t => t.slice(0, 200)).catch(() => "")
-      return { success: false, error: `Error ${res.status} servidor AZETA — ${preview}` }
+      const preview = await res.text().then(t => t.slice(0, 300)).catch(() => "")
+      const isHtml = preview.toLowerCase().includes("<html")
+      return {
+        success: false,
+        error: isHtml
+          ? `Servidor AZETA devolvió HTML (error ${res.status}) — posible error de credenciales o sesión caducada`
+          : `Error ${res.status} servidor AZETA — ${preview}`,
+      }
     }
 
-    // Descargar el archivo comprimido completo (230MB como Uint8Array — manejable)
-    const chunks: Uint8Array[] = []
-    const reader = res.body!.getReader()
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      if (value) chunks.push(value)
-    }
-    const totalLen = chunks.reduce((s, c) => s + c.length, 0)
-    const fileBuf  = new Uint8Array(totalLen)
-    let pos = 0
-    for (const c of chunks) { fileBuf.set(c, pos); pos += c.length }
+    // Descargar el archivo completo en un Buffer de Node.js
+    const arrayBuf = await res.arrayBuffer()
+    const fileBuf  = Buffer.from(arrayBuf)
     console.log(`[AZETA] Descargado: ${(fileBuf.length / 1024 / 1024).toFixed(1)}MB en ${((Date.now() - startTime) / 1000).toFixed(1)}s`)
+
+    // Verificar que no sea una página HTML (credenciales inválidas, etc.)
+    const preview200 = fileBuf.slice(0, 200).toString("utf8")
+    if (preview200.toLowerCase().includes("<html") || preview200.toLowerCase().includes("<!doctype")) {
+      return {
+        success: false,
+        error: `Servidor AZETA devolvió HTML en lugar del catálogo. Posible error de credenciales o URL incorrecta. Preview: ${preview200.slice(0, 150)}`,
+      }
+    }
 
     const isZip = fileBuf[0] === 0x50 && fileBuf[1] === 0x4b
     console.log(`[AZETA] Formato: ${isZip ? "ZIP" : "CSV"}`)
@@ -180,82 +193,41 @@ export async function runCatalogImport(opts?: {
     }
 
     // ── Descompresión y parseo línea a línea ──────────────────────────────────
+    let csvText: string
     if (isZip) {
-      // fflate Unzip: streaming — nunca construye el CSV completo en memoria
-      await new Promise<void>((resolve, reject) => {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { Unzip, UnzipInflate } = require("fflate") as typeof import("fflate")
-        let foundFile  = false
-        let lineBuffer = new Uint8Array(0)
-        const decoder  = new TextDecoder("latin1")
-
-        const unzipper = new Unzip()
-        ;(unzipper as any).register(UnzipInflate)
-
-        unzipper.onfile = (file: any) => {
-          if (!foundFile && /\.(csv|txt)$/i.test(file.name) && !file.name.endsWith("/")) {
-            foundFile = true
-            console.log(`[AZETA][ZIP] Procesando entrada: ${file.name}`)
-
-            file.ondata = (err: Error | null, data: Uint8Array, final: boolean) => {
-              if (err) { reject(err); return }
-
-              // Concatenar con buffer incompleto de la iteración anterior
-              const combined = new Uint8Array(lineBuffer.length + data.length)
-              combined.set(lineBuffer)
-              combined.set(data, lineBuffer.length)
-
-              // Procesar líneas completas (terminadas en \n)
-              let start = 0
-              for (let i = 0; i < combined.length; i++) {
-                if (combined[i] === 0x0a) {
-                  const slice = combined.slice(start, i)
-                  // Eliminar \r si viene de CRLF
-                  const lineBytes = slice.length > 0 && slice[slice.length - 1] === 0x0d
-                    ? slice.slice(0, -1) : slice
-                  processLine(decoder.decode(lineBytes))
-                  start = i + 1
-                }
-              }
-              lineBuffer = combined.slice(start)
-
-              if (final) {
-                if (lineBuffer.length > 0) processLine(decoder.decode(lineBuffer))
-                resolve()
-              }
-            }
-
-            file.start()
-          } else {
-            file.terminate()
-          }
+      // adm-zip: más robusto y ya instalado, soporta ZIPs sin sizes en header local
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const AdmZip = require("adm-zip")
+      const zip = new AdmZip(fileBuf)
+      const entries = zip.getEntries()
+      let csvEntry: any = null
+      for (const entry of entries) {
+        console.log(`[AZETA][ZIP] entry="${entry.entryName}" dir=${entry.isDirectory}`)
+        if (!entry.isDirectory && /\.(csv|txt)$/i.test(entry.entryName)) {
+          csvEntry = entry; break
         }
-
-        // Alimentar el descompresor con el buffer completo (230MB Uint8Array)
-        unzipper.push(fileBuf, true)
-      })
-    } else {
-      // CSV sin comprimir: procesar por chunks de 1MB para evitar string gigante
-      const decoder  = new TextDecoder("latin1")
-      const CHUNK    = 1024 * 1024
-      let lineBuffer = new Uint8Array(0)
-      for (let i = 0; i < fileBuf.length; i += CHUNK) {
-        const piece    = fileBuf.slice(i, Math.min(i + CHUNK, fileBuf.length))
-        const combined = new Uint8Array(lineBuffer.length + piece.length)
-        combined.set(lineBuffer)
-        combined.set(piece, lineBuffer.length)
-        let start = 0
-        for (let j = 0; j < combined.length; j++) {
-          if (combined[j] === 0x0a) {
-            const slice     = combined.slice(start, j)
-            const lineBytes = slice.length > 0 && slice[slice.length - 1] === 0x0d ? slice.slice(0, -1) : slice
-            processLine(decoder.decode(lineBytes))
-            start = j + 1
-          }
-        }
-        lineBuffer = combined.slice(start)
       }
-      if (lineBuffer.length > 0) processLine(decoder.decode(lineBuffer))
+      if (!csvEntry) {
+        // Si no hay .csv/.txt, intentar la primera entrada no-directorio
+        for (const entry of entries) {
+          if (!entry.isDirectory) { csvEntry = entry; break }
+        }
+      }
+      if (!csvEntry) {
+        return { success: false, error: "No se encontró archivo CSV/TXT dentro del ZIP de Azeta" }
+      }
+      console.log(`[AZETA][ZIP] Extrayendo "${csvEntry.entryName}" (${(csvEntry.header.size / 1024 / 1024).toFixed(1)}MB descomprimido)`)
+      const decompressed = csvEntry.getData() as Buffer
+      csvText = new TextDecoder("latin1").decode(decompressed)
+    } else {
+      // CSV sin comprimir
+      csvText = new TextDecoder("latin1").decode(fileBuf)
+    }
+
+    // Parsear línea a línea
+    const lines = csvText.split(/\r?\n/)
+    for (const line of lines) {
+      processLine(line)
     }
 
     // Validación post-parseo

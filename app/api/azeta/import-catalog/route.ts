@@ -27,11 +27,18 @@ export async function POST(request: NextRequest) {
   } catch {}
 
   // Sin parámetros → cron, importa Azeta Total
-  const result = await runCatalogImport(
-    source_id   ? { source_id }   :
-    source_name ? { source_name } :
-    undefined
-  )
-
-  return NextResponse.json(result, { status: result.success ? 200 : 500 })
+  try {
+    const result = await runCatalogImport(
+      source_id   ? { source_id }   :
+      source_name ? { source_name } :
+      undefined
+    )
+    return NextResponse.json(result, { status: result.success ? 200 : 500 })
+  } catch (err: any) {
+    console.error("[import-catalog] Unhandled error:", err)
+    return NextResponse.json(
+      { success: false, error: err?.message ?? "Error interno del servidor" },
+      { status: 500 }
+    )
+  }
 }
