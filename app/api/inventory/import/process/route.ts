@@ -227,7 +227,7 @@ export async function POST(request: NextRequest) {
           const prevStockBySource: Record<string, number> = existingEntry?.stock_by_source || {}
           const newStockBySource = { ...prevStockBySource, [source.id]: stockQty }
           // El total es la suma de todos los almacenes/fuentes
-          const totalStock = Object.values(newStockBySource).reduce((s, v) => s + (v || 0), 0)
+          const totalStock = Object.values(newStockBySource).reduce((s: number, v) => s + (Number(v) || 0), 0)
 
           // Construir datos del producto
           let productData: any = {

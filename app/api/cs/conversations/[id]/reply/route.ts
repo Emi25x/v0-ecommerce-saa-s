@@ -109,11 +109,12 @@ export async function POST(
 
   // Update template last_used_at if a template was used (use_count requires DB-side increment)
   if (template_id) {
-    await adminSupabase
-      .from("cs_response_templates")
-      .update({ last_used_at: new Date().toISOString() })
-      .eq("id", template_id)
-      .catch(() => {})
+    try {
+      await adminSupabase
+        .from("cs_response_templates")
+        .update({ last_used_at: new Date().toISOString() })
+        .eq("id", template_id)
+    } catch { /* ignore */ }
   }
 
   return NextResponse.json({

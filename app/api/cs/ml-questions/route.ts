@@ -78,23 +78,24 @@ export async function GET(request: NextRequest) {
 
           if (conv?.id) {
             // Upsert the question as an inbound message
-            await adminSupabase
-              .from("cs_messages")
-              .upsert(
-                {
-                  conversation_id: conv.id,
-                  user_id: user.id,
-                  direction: "inbound",
-                  author_type: "customer",
-                  author_name: q.from?.nickname ?? "Comprador",
-                  content: q.text,
-                  content_type: "text",
-                  external_id: `q_${extId}`,
-                  created_at: q.date_created ?? new Date().toISOString(),
-                },
-                { onConflict: "conversation_id,external_id" }
-              )
-              .catch(() => {})
+            try {
+              await adminSupabase
+                .from("cs_messages")
+                .upsert(
+                  {
+                    conversation_id: conv.id,
+                    user_id: user.id,
+                    direction: "inbound",
+                    author_type: "customer",
+                    author_name: q.from?.nickname ?? "Comprador",
+                    content: q.text,
+                    content_type: "text",
+                    external_id: `q_${extId}`,
+                    created_at: q.date_created ?? new Date().toISOString(),
+                  },
+                  { onConflict: "conversation_id,external_id" }
+                )
+            } catch { /* ignore */ }
           }
           synced++
         }

@@ -194,7 +194,7 @@ export async function POST(
     const updates = prods.map((p: any) => {
       const newQty = stockMap.get(p.ean!) ?? 0
       const merged = { ...(p.stock_by_source ?? {}), [sourceKey]: newQty }
-      const totalStock = Object.values(merged).reduce((s, v) => s + (Number(v) || 0), 0)
+      const totalStock = Object.values(merged).reduce((s: number, v) => s + (Number(v) || 0), 0)
       return { id: p.id, stock_by_source: merged, stock: totalStock }
     })
 
@@ -214,7 +214,7 @@ export async function POST(
 
     const updates = prods.map((p: any) => {
       const merged = { ...(p.stock_by_source ?? {}), [sourceKey]: 0 }
-      const totalStock = Object.values(merged).reduce((s, v) => s + (Number(v) || 0), 0)
+      const totalStock = Object.values(merged).reduce((s: number, v) => s + (Number(v) || 0), 0)
       return { id: p.id, stock_by_source: merged, stock: totalStock }
     })
 

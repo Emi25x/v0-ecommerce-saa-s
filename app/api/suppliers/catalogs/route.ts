@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { NextResponse } from "next/server"
 import { put } from "@vercel/blob"
 
@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const supplierId = searchParams.get("supplier_id")
 
-    const supabase = await createClient({ useServiceRole: true })
+    const supabase = createAdminClient()
 
     let query = supabase
       .from("supplier_catalogs")
@@ -44,7 +44,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const contentType = request.headers.get("content-type") ?? ""
-    const supabase    = await createClient({ useServiceRole: true })
+    const supabase    = createAdminClient()
 
     // ── JSON path: file already uploaded to Blob by client ─────────────────
     if (contentType.includes("application/json")) {

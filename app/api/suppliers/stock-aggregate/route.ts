@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { NextRequest, NextResponse } from "next/server"
 
 /**
@@ -11,7 +11,7 @@ import { NextRequest, NextResponse } from "next/server"
  * Body: { warehouse_id: string, dry_run?: boolean }
  */
 export async function POST(request: NextRequest) {
-  const supabase = await createClient({ useServiceRole: true })
+  const supabase = createAdminClient()
   const body     = await request.json()
 
   const warehouseId: string = body.warehouse_id
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
  * Devuelve resumen de stock por proveedor para un warehouse
  */
 export async function GET(request: NextRequest) {
-  const supabase    = await createClient({ useServiceRole: true })
+  const supabase    = createAdminClient()
   const warehouseId = new URL(request.url).searchParams.get("warehouse_id")
 
   const query = supabase
