@@ -227,7 +227,7 @@ export async function POST(req: NextRequest) {
       { namespace: "custom", key: "isbn",                value: product.isbn      ?? "",               type: "single_line_text_field" },
       { namespace: "custom", key: "tematica",            value: product.category  ?? (cf.tematica ?? ""), type: "single_line_text_field" },
       { namespace: "custom", key: "tematica_especifica", value: cf.tematica_especifica ?? product.ibic_subjects ?? "", type: "single_line_text_field" },
-      { namespace: "custom", key: "numero_de_paginas",   value: product.pages != null ? String(product.pages) : "", type: "number_integer" },
+      { namespace: "custom", key: "paginas",              value: product.pages != null ? String(product.pages) : "", type: "number_integer" },
       { namespace: "custom", key: "encuadernacion",      value: product.binding   ?? (cf.encuadernacion ?? ""), type: "single_line_text_field" },
       { namespace: "custom", key: "fecha_de_publicacion",value: fechaPublicacion,                      type: "single_line_text_field" },
       { namespace: "custom", key: "n_edicion",           value: cf.n_edicion      ?? "",               type: "single_line_text_field" },
@@ -241,6 +241,7 @@ export async function POST(req: NextRequest) {
       { namespace: "custom", key: "ean",                 value: product.ean       ?? "",               type: "single_line_text_field" },
       { namespace: "custom", key: "materia",             value: product.subject   ?? (cf.materia ?? ""), type: "single_line_text_field" },
       { namespace: "custom", key: "curso",               value: product.course    ?? (cf.curso ?? ""),  type: "single_line_text_field" },
+      { namespace: "mm-google-shopping", key: "google_product_category", value: cf.google_product_category ? String(cf.google_product_category) : "", type: "single_line_text_field" },
     ].filter(m => m.value !== "")
 
     // ── 7. Payload del producto Shopify ────────────────────────────────────

@@ -84,16 +84,22 @@ export const SHOPIFY_COLUMNS = [
   "Metafield: custom.tematica_especifica [single_line_text_field]",
   "Metafield: custom.paginas [number_integer]",
   "Metafield: custom.encuadernacion [single_line_text_field]",
-  "Metafield: custom.anio_edicion [single_line_text_field]",
+  "Metafield: custom.fecha_de_publicacion [single_line_text_field]",
   "Metafield: custom.alto_mm [number_integer]",
   "Metafield: custom.ancho_mm [number_integer]",
   "Metafield: custom.espesor_mm [number_integer]",
-  "Metafield: custom.peso_g [number_integer]",
+  "Metafield: custom.peso [single_line_text_field]",
+  "Metafield: custom.dimensiones [single_line_text_field]",
+  "Metafield: custom.pais_de_origen [single_line_text_field]",
+  "Metafield: custom.sucursal_stock [single_line_text_field]",
+  "Metafield: custom.n_edicion [single_line_text_field]",
+  "Metafield: custom.short_description [single_line_text_field]",
   "Metafield: custom.condicion [single_line_text_field]",
   "Metafield: custom.codigo_ibic [single_line_text_field]",
   "Metafield: custom.ean [single_line_text_field]",
   "Metafield: custom.materia [single_line_text_field]",
   "Metafield: custom.curso [single_line_text_field]",
+  "Metafield: mm-google-shopping.google_product_category [single_line_text_field]",
 ]
 
 // ── Title-range tag helper ────────────────────────────────────────────────
@@ -156,7 +162,7 @@ export async function POST(request: NextRequest) {
     // 1. Verify store ownership
     const { data: store } = await supabase
       .from("shopify_stores")
-      .select("id, shop_domain, name")
+      .select("id, shop_domain, name, sucursal_stock_code")
       .eq("id", store_id)
       .eq("owner_user_id", user.id)
       .maybeSingle()
@@ -236,6 +242,25 @@ export async function POST(request: NextRequest) {
       const alto    = p.height    != null ? Math.round(p.height * 10)    : (customFields.alto_mm    ?? "")
       const ancho   = p.width     != null ? Math.round(p.width * 10)     : (customFields.ancho_mm   ?? "")
       const espesor = p.thickness != null ? Math.round(p.thickness * 10) : (customFields.espesor_mm ?? "")
+
+      // ── Peso en kg (string) ────────────────────────────────────────────
+      const pesoKg = p.canonical_weight_g
+        ? `${(Number(p.canonical_weight_g) / 1000).toFixed(2).replace(/\.?0+$/, "")} kg`
+        : (customFields.peso ? String(customFields.peso) : "")
+
+      // ── Dimensiones como string "alto x ancho x espesor" ──────────────
+      const dimensionesStr = (p.height != null && p.width != null)
+        ? `${p.height} x ${p.width} x ${p.thickness ?? 0}`
+        : ((customFields.dimensiones as string) ?? "")
+
+      // ── Fecha de publicación ────────────────────────────────────────────
+      const fechaPublicacion = p.edition_date
+        ?? (p.year_edition ? String(p.year_edition) : "")
+        ?? ((customFields.fecha_de_publicacion as string) ?? "")
+
+      // ── Short description ──────────────────────────────────────────────
+      const shortDesc = (customFields.short_description as string)
+        || (p.description ? p.description.slice(0, 160) : "")
 
       // ── Tags ─────────────────────────────────────────────────────────
       const tagParts: string[] = []
@@ -355,16 +380,26 @@ export async function POST(request: NextRequest) {
             return p.pages != null ? p.pages : ((customFields.paginas as number) ?? "")
           case "Metafield: custom.encuadernacion [single_line_text_field]":
             return p.binding ?? (customFields.encuadernacion as string) ?? ""
-          case "Metafield: custom.anio_edicion [single_line_text_field]":
-            return p.year_edition ?? p.edition_date ?? (customFields.anio_edicion as string) ?? ""
+          case "Metafield: custom.fecha_de_publicacion [single_line_text_field]":
+            return fechaPublicacion
           case "Metafield: custom.alto_mm [number_integer]":
             return alto as string | number
           case "Metafield: custom.ancho_mm [number_integer]":
             return ancho as string | number
           case "Metafield: custom.espesor_mm [number_integer]":
             return espesor as string | number
-          case "Metafield: custom.peso_g [number_integer]":
-            return weightG
+          case "Metafield: custom.peso [single_line_text_field]":
+            return pesoKg
+          case "Metafield: custom.dimensiones [single_line_text_field]":
+            return dimensionesStr
+          case "Metafield: custom.pais_de_origen [single_line_text_field]":
+            return (customFields.pais_de_origen as string) ?? ""
+          case "Metafield: custom.sucursal_stock [single_line_text_field]":
+            return (store as any)?.sucursal_stock_code ?? (customFields.sucursal_stock as string) ?? ""
+          case "Metafield: custom.n_edicion [single_line_text_field]":
+            return (customFields.n_edicion as string) ?? ""
+          case "Metafield: custom.short_description [single_line_text_field]":
+            return shortDesc
           case "Metafield: custom.condicion [single_line_text_field]":
             return p.condition ?? (customFields.condicion as string) ?? "Nuevo"
           case "Metafield: custom.codigo_ibic [single_line_text_field]":
@@ -375,6 +410,8 @@ export async function POST(request: NextRequest) {
             return p.subject ?? (customFields.materia as string) ?? ""
           case "Metafield: custom.curso [single_line_text_field]":
             return p.course ?? (customFields.curso as string) ?? ""
+          case "Metafield: mm-google-shopping.google_product_category [single_line_text_field]":
+            return (customFields.google_product_category as string) ?? (defaults["Google Shopping / Google Product Category"] ?? "")
 
           default:
             // Fall back to defaults, then custom_fields
