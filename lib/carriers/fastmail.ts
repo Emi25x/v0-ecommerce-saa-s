@@ -4,25 +4,32 @@
  * Autenticación: `api_token` en el body de cada request POST (no Authorization header)
  * Base URL: https://epresislv.fastmail.com.ar
  *
- * Endpoints implementados (v2):
- *   POST /api/v2/dummy-test.json              — health check / verificar credenciales
- *   POST /api/v2/seguimiento.json             — tracking por remito o nro_guia
- *   POST /api/v2/guias.json                   — generar guía de envío
- *   POST /api/v2/cotizador.json               — cotizar envío
- *   POST /api/v2/seguro.json                  — calcular seguro por valor declarado
- *   POST /api/v2/servicios-cliente.json       — servicios habilitados por cliente
- *   POST /api/v2/precio-servicio.json         — precio por servicio y destino
- *   POST /api/v2/sucursalesByCliente.json     — sucursales del cliente
- *   POST /api/v2/localidades.json             — localidades, CPs y provincias
- *   POST /api/v2/listarTipoOperacion          — tipos de operación disponibles
- *   POST /api/v2/print-etiquetas-custom       — imprimir etiquetas (HTML)
- *   POST /api/v2/etiquetas-cliente            — listar etiquetas disponibles
- *   POST /api/v2/integracion.json             — registrar webhook de cambios de estado
- *   POST /api/v2/solicitarRetiro.json         — solicitar recolección
- *   POST /api/v2/generaRecepcion.json         — generar orden de recepción de stock (WMS)
- *   POST /api/v2/consultarStock               — consultar stock por SKU
- *   POST /api/v2/listarCps                    — listar códigos postales
- *   POST /api/v2/editarSucursal.json          — editar datos de sucursal
+ * Endpoints implementados (v2) — confirmados con manual oficial:
+ *   POST /api/v2/dummy-test.json                      — health check / verificar credenciales
+ *   POST /api/v2/seguimiento.json                     — tracking por remito o nro_guia
+ *   POST /api/v2/guias.json                           — generar guía de envío
+ *   POST /api/v2/cotizador.json                       — cotizar envío (params internos no documentados)
+ *   POST /api/v2/seguro.json                          — calcular seguro por valor declarado
+ *   POST /api/v2/servicios-cliente.json               — servicios habilitados por cliente
+ *   POST /api/v2/serviciosByIntegracionPresis.json    — servicios via integración Presis
+ *   POST /api/v2/precio-servicio.json                 — precio por servicio y destino
+ *   POST /api/v2/sucursalesByCliente.json             — sucursales del cliente
+ *   POST /api/v2/localidades.json                     — localidades, CPs y provincias
+ *   POST /api/v2/listarTipoOperacion                  — tipos de operación disponibles
+ *   POST /api/v2/print-etiquetas-custom               — imprimir etiquetas (HTML)
+ *   POST /api/v2/etiquetas-cliente                    — listar etiquetas disponibles
+ *   POST /api/v2/integracion.json                     — registrar webhook de cambios de estado
+ *   POST /api/v2/solicitarRetiro.json                 — solicitar recolección
+ *   POST /api/v2/generaRecepcion.json                 — generar orden de recepción de stock (WMS)
+ *   POST /api/v2/consultarStock                       — consultar stock por SKU
+ *   POST /api/v2/listarCps                            — listar códigos postales
+ *   POST /api/v2/editarSucursal.json                  — editar datos de sucursal
+ *
+ * Notas del manual v2:
+ *   - FastMailGuiaRequest usa valorDeclarado (camelCase), no valor_declarado
+ *   - FastMailConfig.sucursal es requerido por guías, cotizador y precio-servicio
+ *   - Tracking response: { status, guia: { fechas: [{ fecha, hora, estado, receptor, fecha_pactada }] } }
+ *   - Webhook payload: { usuario, token, codigo_estado, remito, guia }
  */
 
 export interface FastMailCredentials {
@@ -32,9 +39,11 @@ export interface FastMailCredentials {
 }
 
 export interface FastMailConfig {
-  base_url:     string
-  api_version?: string
-  timeout_ms:   number
+  base_url:        string
+  api_version?:    string
+  timeout_ms:      number
+  sucursal?:       string   // Código de sucursal del cliente (requerido por cotizador, guías, etc.)
+  servicio_default?: string // Código de servicio por defecto para crear guías
 }
 
 // ── Tipos de respuesta ───────────────────────────────────────────────────────
@@ -117,7 +126,7 @@ export interface FastMailGuiaRequest {
   guia_agente?:     string
   fob?:             string
   internacional:    boolean
-  valor_declarado?: number
+  valorDeclarado?:  number   // camelCase según manual v2
   isInversa:        boolean
   observaciones?:   string
   codigo_ceco?:     string
@@ -377,14 +386,18 @@ export interface FastMailShipmentResponse {
 // ── Cliente ───────────────────────────────────────────────────────────────────
 
 export class FastMailClient {
-  private readonly baseUrl: string
-  private readonly token:   string
-  private readonly timeout: number
+  private readonly baseUrl:        string
+  private readonly token:          string
+  private readonly timeout:        number
+  private readonly sucursal:       string
+  private readonly servicioDefault: string
 
   constructor(config: FastMailConfig, credentials: FastMailCredentials) {
-    this.baseUrl = config.base_url.replace(/\/$/, "")
-    this.token   = credentials.token
-    this.timeout = config.timeout_ms ?? 15_000
+    this.baseUrl        = config.base_url.replace(/\/$/, "")
+    this.token          = credentials.token
+    this.timeout        = config.timeout_ms ?? 15_000
+    this.sucursal       = config.sucursal       ?? ""
+    this.servicioDefault = config.servicio_default ?? ""
   }
 
   /** Body base con el api_token que va en todos los requests */
@@ -515,6 +528,11 @@ export class FastMailClient {
     return this.post<FastMailServicio[]>("/api/v2/servicios-cliente.json")
   }
 
+  /** Servicios del cliente via integración Presis. POST /api/v2/serviciosByIntegracionPresis.json */
+  async serviciosByIntegracionPresis(): Promise<FastMailServicio[]> {
+    return this.post<FastMailServicio[]>("/api/v2/serviciosByIntegracionPresis.json")
+  }
+
   /** Precio por servicio según destino y productos. POST /api/v2/precio-servicio.json */
   async precioServicio(req: FastMailPrecioServicioRequest): Promise<unknown> {
     return this.post<unknown>("/api/v2/precio-servicio.json", req as unknown as Record<string, unknown>)
@@ -619,6 +637,7 @@ export class FastMailClient {
 
     const cotReq: FastMailCotizadorRequest = {
       cp_entrega: req.destino_cp,
+      sucursal:   this.sucursal || undefined,
       productos: [{
         bultos:      1,
         peso:        pesoKg,
@@ -659,11 +678,57 @@ export class FastMailClient {
   }
 
   /**
-   * @deprecated Usá generarGuia() para crear envíos.
-   * Mantenido para compatibilidad con la route /api/envios/create-shipment.
+   * Alias compatible con /api/envios/create-shipment.
+   * Mapea FastMailShipmentRequest → FastMailGuiaRequest y llama a generarGuia().
+   * Usa defaults de config: sucursal, servicio_default, pago_en=DESTINO, tipo_operacion=ENT.
    */
-  async createShipment(_req: FastMailShipmentRequest): Promise<FastMailShipmentResponse> {
-    return { error: "Creación de envío: usá generarGuia() con los datos del destinatario" }
+  async createShipment(req: FastMailShipmentRequest): Promise<FastMailShipmentResponse> {
+    // Separar calle y altura del destinatario (ej: "Av Rivadavia 1234" → calle + 1234)
+    const matchAltura = req.destinatario.calle.match(/^(.*?)\s+(\d+)\s*$/)
+    const calle  = matchAltura ? matchAltura[1].trim() : req.destinatario.calle
+    const altura = matchAltura ? parseInt(matchAltura[2]) : 0
+
+    const guiaReq: FastMailGuiaRequest = {
+      codigo_sucursal: this.sucursal,
+      codigo_servicio: this.servicioDefault || "STD",
+      internacional:   false,
+      valorDeclarado:  req.valor_declarado,
+      isInversa:       false,
+      pago_en:         "DESTINO",
+      tipo_operacion:  "ENT",
+      is_urgente:      false,
+      remito:          req.referencia ?? undefined,
+      comprador: {
+        destinatario: req.destinatario.nombre,
+        calle,
+        altura,
+        localidad:    req.destinatario.localidad,
+        provincia:    req.destinatario.provincia,
+        cp:           parseInt(req.destinatario.cp as any) || 0,
+        email:        req.destinatario.email    ?? undefined,
+        celular:      req.destinatario.telefono ?? undefined,
+      },
+      productos: [{
+        bultos:      1,
+        peso:        req.peso_g / 1000,
+        descripcion: "Paquete",
+        dimensiones: { alto: 10, largo: 20, profundidad: 15 },
+      }],
+    }
+
+    try {
+      const res = await this.generarGuia(guiaReq)
+      if (res.error) return { error: String(res.error) }
+      const nroGuia = String(res.guia ?? "")
+      return {
+        id:          nroGuia,
+        numero_guia: nroGuia,
+        estado:      "pending",
+        costo:       res.importe ?? undefined,
+      }
+    } catch (err: any) {
+      return { error: err.message }
+    }
   }
 }
 
