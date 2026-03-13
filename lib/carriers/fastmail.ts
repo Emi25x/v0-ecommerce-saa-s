@@ -610,11 +610,52 @@ export class FastMailClient {
   // ── Legacy ─────────────────────────────────────────────────────────────────
 
   /**
-   * @deprecated Usá cotizador() o precioServicio() para cotizar envíos.
-   * Mantenido para compatibilidad con la route /api/envios/quote.
+   * Cotización via cotizador().
+   * Mapea FastMailQuoteRequest → FastMailCotizadorRequest y normaliza la respuesta.
    */
-  async quote(_req: FastMailQuoteRequest): Promise<FastMailQuoteResponse> {
-    return { servicios: [], error: "Cotización no disponible en FastMail API v2 — usá cotizador()" }
+  async quote(req: FastMailQuoteRequest): Promise<FastMailQuoteResponse> {
+    const pesoKg = req.peso_g / 1000
+    const dim    = req.dimensiones
+
+    const cotReq: FastMailCotizadorRequest = {
+      cp_entrega: req.destino_cp,
+      productos: [{
+        bultos:      1,
+        peso:        pesoKg,
+        descripcion: "Paquete",
+        dimensiones: {
+          alto:        dim?.alto_cm      ?? 10,
+          largo:       dim?.largo_cm     ?? 20,
+          profundidad: dim?.ancho_cm     ?? 15,
+        },
+      }],
+    }
+
+    const raw = await this.cotizador(cotReq) as any
+
+    // Normalizar respuesta — FastMail puede devolver array en raw.message o raw.servicios
+    const items: any[] = Array.isArray(raw?.message)
+      ? raw.message
+      : Array.isArray(raw?.servicios)
+      ? raw.servicios
+      : Array.isArray(raw?.data)
+      ? raw.data
+      : raw?.precio != null
+      ? [raw]
+      : []
+
+    if (!items.length && raw?.error) {
+      return { servicios: [], error: String(raw.error) }
+    }
+
+    const servicios = items.map((s: any) => ({
+      codigo:     String(s.codigo_servicio ?? s.servicio ?? s.codigo ?? "STD"),
+      nombre:     String(s.nombre_servicio ?? s.nombre   ?? s.servicio ?? "Estándar"),
+      plazo_dias: Number(s.plazo_dias ?? s.plazo ?? 0),
+      precio:     Number(s.precio     ?? s.importe ?? s.costo ?? 0),
+    }))
+
+    return { servicios }
   }
 
   /**
