@@ -51,6 +51,49 @@ export interface CabifyHubRequest {
   contact?:      { name?: string; phone?: string; email?: string }
 }
 
+// ── Parcel (paquete) ───────────────────────────────────────────────────────────
+export interface CabifyParcelLocation {
+  loc?:             [number, number]  // [lat, lon]
+  addr?:            string            // dirección en texto
+  hub_external_id?: string            // ID externo del hub
+  name?:            string
+  phone?:           string
+  email?:           string
+  instructions?:    string
+}
+
+export interface CabifyParcelInput {
+  external_id?:  string               // tu propio ID de referencia
+  pickup_info:   CabifyParcelLocation
+  dropoff_info:  CabifyParcelLocation
+  dimensions?: {
+    length_cm: number
+    width_cm:  number
+    height_cm: number
+  }
+  weight?: {
+    value: number
+    unit:  "g" | "kg"
+  }
+}
+
+export interface CabifyParcel {
+  id:           string
+  external_id?: string
+  pickup_info:  CabifyParcelLocation
+  dropoff_info: CabifyParcelLocation
+  dimensions?:  Record<string, unknown>
+  weight?:      Record<string, unknown>
+  price?:       Record<string, unknown>
+  created_at:   string
+  updated_at:   string
+}
+
+export interface CabifyCreateParcelsResponse {
+  parcels: CabifyParcel[]
+  error?:  string
+}
+
 // ── Solicitud de envío (ship parcels) ─────────────────────────────────────────
 export interface CabifyShipRequest {
   parcel_ids:       string[]    // UUIDs de los parcels ya creados
@@ -248,6 +291,18 @@ export class CabifyLogisticsClient {
   }
 
   // ── Métodos públicos ──────────────────────────────────────────────────────────
+
+  // ── Parcels ───────────────────────────────────────────────────────────────────
+
+  /**
+   * Crear uno o varios parcels.
+   * POST /v1/parcels
+   * Los parcels quedan pendientes hasta llamar a shipParcels().
+   * pickup_info y dropoff_info requieren al menos uno de: loc, addr, hub_external_id.
+   */
+  async createParcels(parcels: CabifyParcelInput[]): Promise<CabifyCreateParcelsResponse> {
+    return this.request<CabifyCreateParcelsResponse>("POST", CabifyLogisticsClient.BASE_PATHS.parcels, { parcels })
+  }
 
   /**
    * Tipos de envío disponibles para una ubicación.
