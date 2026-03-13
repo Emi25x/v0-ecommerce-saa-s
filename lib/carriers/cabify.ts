@@ -549,7 +549,7 @@ export class CabifyLogisticsClient {
    */
   async getShippingTypes(lat = -34.603722, lon = -58.381592): Promise<CabifyShippingType[]> {
     const token      = await this.getBearerToken()
-    const url        = `${this.baseUrl}${CabifyLogisticsClient.BASE_PATHS.shippingTypes}?lat=${lat}&lon=${lon}`
+    const url        = `${this.baseUrl}${CabifyLogisticsClient.BASE_PATHS.shippingTypes}?location=${lat},${lon}`
     const controller = new AbortController()
     const timer      = setTimeout(() => controller.abort(), this.timeout)
     try {
