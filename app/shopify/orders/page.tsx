@@ -190,7 +190,9 @@ export default function ShopifyOrdersPage() {
                         {(() => {
                           const sa = order.shipping_address
                           const params = new URLSearchParams({
-                            ref: order.name,
+                            ref:              order.name,
+                            shopify_order_id: String(order.id),
+                            store_id:         selectedStoreId,
                             ...(sa?.name     ? { dest_nombre:    sa.name }     : order.customer ? { dest_nombre: `${order.customer.first_name ?? ""} ${order.customer.last_name ?? ""}`.trim() } : {}),
                             ...(sa?.address1 ? { dest_direccion: sa.address1 } : {}),
                             ...(sa?.city     ? { dest_localidad: sa.city }     : {}),
