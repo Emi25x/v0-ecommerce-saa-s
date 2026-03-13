@@ -135,6 +135,87 @@ export interface CabifyCreateParcelsResponse {
   error?:  string
 }
 
+// ── Status del parcel ──────────────────────────────────────────────────────────
+
+export type CabifyFailureReason =
+  | "unknown"
+  | "payment_method_declined"
+  | "no_payment_methods"
+  | "requester_not_found_or_unauthorized"
+  | "product_does_not_exist"
+  | "invalid_pick_up_location"
+  | "delivery_already_exist"
+
+export type CabifyDeliveryFailReason =
+  | "recipient_not_found"
+  | "rejected"
+  | "wrong_address"
+  | "zone_unsafe"
+  | "invalid_proof"
+  | "other"
+
+export type CabifyPickupFailReason =
+  | "sender_no_show" | "sender_too_late" | "address_wrong" | "address_not_found"
+  | "address_unsafe" | "parcel_suspicious" | "parcel_packaging" | "parcel_too_big_or_heavy"
+  | "payment_requested" | "payment_fake" | "other_with_feedback" | "place_closed"
+  | "delivery_not_found" | "already_picked_up" | "delivery_cancelled"
+
+export type CabifyAssetKind = "bicycle" | "car" | "moped" | "scooter" | "van"
+
+export interface CabifyParcelStatus {
+  id?:              string
+  external_id?:     string
+  state?:           CabifyParcelState
+  failure_reason?:  CabifyFailureReason
+  delivery_attempt?: {
+    id_proof_of_delivery?: { recipient_name?: string; recipient_id_number?: string } | null
+    photo_proof_of_delivery?: { photo_url?: string } | null
+    comment_proof_of_delivery?: { comment?: string } | null
+    fail_reason?:   CabifyDeliveryFailReason
+    support_ticket?: string | null
+    feedback?:      string | null
+  }
+  tracking?: {
+    eta_to_accept?: number | null
+    location?:      CabifyPoint | null
+    routes?: {
+      pick_up?:  { eta: number; path: string }
+      drop_off?: { eta: number; path: string }
+    }
+    tracking_url?: string
+  } | null
+  asset?: {
+    reg_plate?: string | null
+    name?:      string
+    color?:     string
+    asset_kind?: CabifyAssetKind
+  }
+  driver?: {
+    photo_url?: string
+    name?:      string
+    phone?:     string
+  } | null
+  pickup_failed?: {
+    reason?:          CabifyPickupFailReason
+    failed_at?:       string
+    driver_comments?: string
+  }
+  shipping_type?: {
+    id?:       string
+    name?:     string
+    modality?: CabifyModality
+  } | null
+}
+
+export interface CabifyParcelTimeline {
+  id:          string
+  external_id?: string
+  timeline:    Array<{
+    state:            CabifyParcelState
+    state_updated_at: string
+  }>
+}
+
 /** Estados posibles de un parcel */
 export type CabifyParcelState =
   | "ready"
@@ -526,12 +607,49 @@ export class CabifyLogisticsClient {
     }
   }
 
-  /** Obtener estado y tracking de un parcel */
-  async getTracking(parcelId: string): Promise<CabifyTrackingResponse> {
-    return this.request<CabifyTrackingResponse>(
+  /**
+   * Estado completo del parcel (posición, driver, rutas, prueba de entrega).
+   * GET /v1/parcels/{id}/status
+   */
+  async getStatus(parcelId: string): Promise<CabifyParcelStatus> {
+    return this.request<CabifyParcelStatus>(
       "GET",
-      `${CabifyLogisticsClient.BASE_PATHS.parcels}/${encodeURIComponent(parcelId)}/tracking`
+      `${CabifyLogisticsClient.BASE_PATHS.parcels}/${encodeURIComponent(parcelId)}/status`
     )
+  }
+
+  /**
+   * Historial de cambios de estado del parcel (últimos 7 días).
+   * GET /v1/parcels/{id}/timeline
+   */
+  async getTimeline(parcelId: string): Promise<CabifyParcelTimeline> {
+    return this.request<CabifyParcelTimeline>(
+      "GET",
+      `${CabifyLogisticsClient.BASE_PATHS.parcels}/${encodeURIComponent(parcelId)}/timeline`
+    )
+  }
+
+  /**
+   * Tracking unificado — combina status + timeline.
+   * Alias compatible con track/[number]/route.ts.
+   */
+  async getTracking(parcelId: string): Promise<CabifyTrackingResponse> {
+    const [statusRes, timelineRes] = await Promise.all([
+      this.getStatus(parcelId).catch(() => null),
+      this.getTimeline(parcelId).catch(() => null),
+    ])
+    const events = (timelineRes?.timeline ?? []).map(e => ({
+      status:      e.state,
+      description: e.state,
+      location:    undefined,
+      timestamp:   e.state_updated_at,
+    }))
+    return {
+      parcel_id:     parcelId,
+      tracking_code: statusRes?.id ?? parcelId,
+      status:        statusRes?.state ?? "unknown",
+      events,
+    }
   }
 
   // ── Hubs ──────────────────────────────────────────────────────────────────────
