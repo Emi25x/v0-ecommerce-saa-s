@@ -52,39 +52,80 @@ export interface CabifyHubRequest {
 }
 
 // ── Parcel (paquete) ───────────────────────────────────────────────────────────
-export interface CabifyParcelLocation {
-  loc?:             [number, number]  // [lat, lon]
-  addr?:            string            // dirección en texto
-  hub_external_id?: string            // ID externo del hub
-  name?:            string
-  phone?:           string
-  email?:           string
-  instructions?:    string
+
+/** Coordenadas geográficas */
+export interface CabifyPoint {
+  lat: number
+  lon: number
+}
+
+/** Precio/valor declarado (valores en centavos, ISO 4217) */
+export interface CabifyPrice {
+  declared_value?:  number   // ej: 630 = 6,30 ARS
+  collected_value?: number
+  currency?:        string   // "ARS"
+}
+
+export interface CabifyParcelDimensions {
+  height?: number
+  length?: number
+  width?:  number
+  unit?:   "cm"
+}
+
+export interface CabifyParcelWeight {
+  value?: number   // en gramos
+  unit?:  "g"
+}
+
+/** Contacto en el punto de pickup (name y phone opcionales) */
+export interface CabifyPickupContact {
+  name?:  string | null
+  phone?: string | null
+}
+
+/** Contacto en el punto de dropoff (name requerido) */
+export interface CabifyDropoffContact {
+  name:   string
+  phone?: string | null
+}
+
+export interface CabifyPickupInfo {
+  contact:          CabifyPickupContact   // requerido
+  addr?:            string                // dirección en texto
+  loc?:             CabifyPoint           // coordenadas {lat, lon}
+  hub_external_id?: string                // ID externo del hub
+  instr?:           string | null         // instrucciones para el driver
+  code?:            string | null         // código alfanumérico de retiro
+}
+
+export interface CabifyDropoffInfo {
+  contact:          CabifyDropoffContact  // requerido
+  addr?:            string
+  loc?:             CabifyPoint
+  hub_external_id?: string
+  instr?:           string | null
 }
 
 export interface CabifyParcelInput {
-  external_id?:  string               // tu propio ID de referencia
-  pickup_info:   CabifyParcelLocation
-  dropoff_info:  CabifyParcelLocation
-  dimensions?: {
-    length_cm: number
-    width_cm:  number
-    height_cm: number
-  }
-  weight?: {
-    value: number
-    unit:  "g" | "kg"
-  }
+  external_id?:  string
+  pickup_info:   CabifyPickupInfo
+  dropoff_info:  CabifyDropoffInfo
+  dimensions?:   CabifyParcelDimensions
+  weight?:       CabifyParcelWeight
+  price?:        CabifyPrice
+  delivery_from?: string   // ISO 8601 — inicio ventana de entrega
+  delivery_to?:   string   // ISO 8601 — fin ventana de entrega
 }
 
 export interface CabifyParcel {
   id:           string
   external_id?: string
-  pickup_info:  CabifyParcelLocation
-  dropoff_info: CabifyParcelLocation
-  dimensions?:  Record<string, unknown>
-  weight?:      Record<string, unknown>
-  price?:       Record<string, unknown>
+  pickup_info:  CabifyPickupInfo
+  dropoff_info: CabifyDropoffInfo
+  dimensions?:  CabifyParcelDimensions
+  weight?:      CabifyParcelWeight
+  price?:       CabifyPrice
   created_at:   string
   updated_at:   string
 }
@@ -92,6 +133,37 @@ export interface CabifyParcel {
 export interface CabifyCreateParcelsResponse {
   parcels: CabifyParcel[]
   error?:  string
+}
+
+/** Estados posibles de un parcel */
+export type CabifyParcelState =
+  | "ready"
+  | "qualifiedforpickup"
+  | "onroutetopickup"
+  | "pickingup"
+  | "intransit"
+  | "delivering"
+  | "delivered"
+  | "returning"
+  | "returned"
+  | "incident"
+  | "requestercancel"
+  | "internalcancel"
+  | "pickupfailed"
+  | "readytopickup"
+  | "onroutetofinalhub"
+  | "receivedonfinalhub"
+  | "readytodispatch"
+  | "onroutetodelivery"
+  | "undelivered"
+  | "onroutetoreturn"
+  | "returnrejected"
+
+export interface CabifyPaginatedParcels {
+  parcels:    CabifyParcel[]
+  page:       number
+  page_size:  number
+  more_pages: boolean
 }
 
 // ── Solicitud de envío (ship parcels) ─────────────────────────────────────────
@@ -294,6 +366,8 @@ export class CabifyLogisticsClient {
 
   // ── Parcels ───────────────────────────────────────────────────────────────────
 
+  // ── Parcels CRUD ──────────────────────────────────────────────────────────────
+
   /**
    * Crear uno o varios parcels.
    * POST /v1/parcels
@@ -302,6 +376,61 @@ export class CabifyLogisticsClient {
    */
   async createParcels(parcels: CabifyParcelInput[]): Promise<CabifyCreateParcelsResponse> {
     return this.request<CabifyCreateParcelsResponse>("POST", CabifyLogisticsClient.BASE_PATHS.parcels, { parcels })
+  }
+
+  /**
+   * Listar/buscar parcels por estado.
+   * GET /v1/parcels?states[]=ready&states[]=intransit&page=1
+   */
+  async getParcels(states: CabifyParcelState[], page = 1): Promise<CabifyPaginatedParcels> {
+    const token      = await this.getBearerToken()
+    const params     = new URLSearchParams({ page: String(page) })
+    states.forEach(s => params.append("states[]", s))
+    const url        = `${this.baseUrl}${CabifyLogisticsClient.BASE_PATHS.parcels}?${params}`
+    const controller = new AbortController()
+    const timer      = setTimeout(() => controller.abort(), this.timeout)
+    try {
+      const res = await fetch(url, {
+        method:  "GET",
+        signal:  controller.signal,
+        headers: { "Authorization": `Bearer ${token}`, "Accept": "application/json" },
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(`Cabify Logistics API error ${res.status}: ${(data as any)?.message ?? res.statusText}`)
+      return data as CabifyPaginatedParcels
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  /** Obtener un parcel por ID. GET /v1/parcels/{id} */
+  async getParcel(parcelId: string): Promise<CabifyParcel> {
+    return this.request<CabifyParcel>("GET", `${CabifyLogisticsClient.BASE_PATHS.parcels}/${encodeURIComponent(parcelId)}`)
+  }
+
+  /**
+   * Actualizar un parcel (solo en estado ready, requestercancel o pickupfailed).
+   * PUT /v1/parcels/{id}
+   */
+  async updateParcel(parcelId: string, data: Partial<CabifyParcelInput>): Promise<CabifyParcel> {
+    return this.request<CabifyParcel>("PUT", `${CabifyLogisticsClient.BASE_PATHS.parcels}/${encodeURIComponent(parcelId)}`, data)
+  }
+
+  /**
+   * Eliminar parcels no enviados.
+   * POST /v1/parcels/delete — "all or nothing": si uno falla, ninguno se elimina.
+   */
+  async deleteParcels(parcelIds: string[]): Promise<void> {
+    return this.request("POST", `${CabifyLogisticsClient.BASE_PATHS.parcels}/delete`, { parcel_ids: parcelIds })
+  }
+
+  /**
+   * Notificar evento a un parcel.
+   * POST /v1/parcels/{id}/notify
+   * Actualmente solo soporta: "ready_to_pickup" (usado en food delivery).
+   */
+  async notifyParcel(parcelId: string, event: "ready_to_pickup"): Promise<void> {
+    return this.request("POST", `${CabifyLogisticsClient.BASE_PATHS.parcels}/${encodeURIComponent(parcelId)}/notify`, { event })
   }
 
   /**
