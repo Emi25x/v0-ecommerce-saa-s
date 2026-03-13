@@ -28,8 +28,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { slug: stri
     body.credentials_user ||
     body.credentials_password ||
     body.credentials_token ||
-    body.credentials_uuid ||
-    body.credentials_secret
+    body.credentials_client_id ||
+    body.credentials_client_secret
 
   if (hasCredentials) {
     // Fetch existing credentials first
@@ -40,11 +40,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { slug: stri
       .maybeSingle()
 
     const creds = (existing as any)?.credentials ?? {}
-    if (body.credentials_user)     creds.user     = body.credentials_user
-    if (body.credentials_password) creds.password  = body.credentials_password
-    if (body.credentials_token)    creds.token     = body.credentials_token
-    if (body.credentials_uuid)     creds.uuid      = body.credentials_uuid
-    if (body.credentials_secret)   creds.secret    = body.credentials_secret
+    if (body.credentials_user)          creds.user          = body.credentials_user
+    if (body.credentials_password)      creds.password       = body.credentials_password
+    if (body.credentials_token)         creds.token          = body.credentials_token
+    if (body.credentials_client_id)     creds.client_id      = body.credentials_client_id
+    if (body.credentials_client_secret) creds.client_secret  = body.credentials_client_secret
     update.credentials = creds
   }
 

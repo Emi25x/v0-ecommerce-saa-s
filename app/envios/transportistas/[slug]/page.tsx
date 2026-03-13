@@ -35,8 +35,8 @@ export default function CarrierConfigPage() {
   const [token, setToken]             = useState("")
   const [user, setUser]               = useState("")
   const [password, setPassword]       = useState("")
-  const [cabifyUuid, setCabifyUuid]   = useState("")
-  const [cabifySecret, setCabifySecret] = useState("")
+  const [cabifyClientId, setCabifyClientId]         = useState("")
+  const [cabifyClientSecret, setCabifyClientSecret] = useState("")
   const [baseUrl, setBaseUrl]         = useState("")
 
   const isCabify    = slug === "cabify"
@@ -61,8 +61,8 @@ export default function CarrierConfigPage() {
       config: { ...carrier.config, base_url: baseUrl },
     }
     if (isCabify) {
-      if (cabifyUuid)   body.credentials_uuid   = cabifyUuid
-      if (cabifySecret) body.credentials_secret = cabifySecret
+      if (cabifyClientId)     body.credentials_client_id     = cabifyClientId
+      if (cabifyClientSecret) body.credentials_client_secret = cabifyClientSecret
     } else if (isFastmail) {
       if (token)    body.credentials_token    = token
       if (user)     body.credentials_user     = user
@@ -83,8 +83,8 @@ export default function CarrierConfigPage() {
       setToken("")
       setUser("")
       setPassword("")
-      setCabifyUuid("")
-      setCabifySecret("")
+      setCabifyClientId("")
+      setCabifyClientSecret("")
       load()
       setTimeout(() => setSaved(false), 3000)
     }
@@ -144,28 +144,28 @@ export default function CarrierConfigPage() {
           {isCabify ? (
             <>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="cabify_uuid">UUID</Label>
+                <Label htmlFor="cabify_client_id">Client ID (OAUTH_ID)</Label>
                 <Input
-                  id="cabify_uuid"
-                  value={cabifyUuid}
-                  onChange={e => setCabifyUuid(e.target.value)}
+                  id="cabify_client_id"
+                  value={cabifyClientId}
+                  onChange={e => setCabifyClientId(e.target.value)}
                   placeholder="ej: a9a5f86f-cee1-4682-be5b-c328403e1508"
                   autoComplete="off"
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="cabify_secret">Secreto</Label>
+                <Label htmlFor="cabify_client_secret">Client Secret</Label>
                 <Input
-                  id="cabify_secret"
+                  id="cabify_client_secret"
                   type="password"
-                  value={cabifySecret}
-                  onChange={e => setCabifySecret(e.target.value)}
+                  value={cabifyClientSecret}
+                  onChange={e => setCabifyClientSecret(e.target.value)}
                   placeholder="••••••••••••••••"
                   autoComplete="new-password"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Generalos en Cabify Logistics → Configuración → API → Generar claves.
-                  El Secreto solo se muestra una vez al generarlo.
+                  Generá las claves en Cabify Logistics → Configuración → API.
+                  La autenticación usa OAuth 2.0 — el Client Secret solo se muestra una vez al generarlo.
                   Dejá en blanco los campos que no querés modificar.
                 </p>
               </div>

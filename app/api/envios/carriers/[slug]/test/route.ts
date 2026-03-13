@@ -34,10 +34,10 @@ export async function POST(_req: NextRequest, { params }: { params: { slug: stri
     }
 
     if (params.slug === "cabify") {
-      if (!creds?.uuid || !creds?.secret) {
+      if (!creds?.client_id || !creds?.client_secret) {
         return NextResponse.json({
           ok: false,
-          message: "Credenciales incompletas. Guardá el UUID y el Secreto de Cabify Logistics primero.",
+          message: "Credenciales incompletas. Guardá el Client ID y el Client Secret de Cabify Logistics primero.",
         })
       }
       const client = createCabifyClient(

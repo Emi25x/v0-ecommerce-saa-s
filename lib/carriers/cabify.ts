@@ -1,40 +1,34 @@
 /**
  * Cabify Logistics Argentina — API REST client
  *
- * Documentación oficial: https://developers.cabify.com/reference/logistics-introduction
- * (Requiere cuenta activa en Cabify Logistics para acceder al portal de desarrolladores)
+ * Documentación oficial: https://developers.cabify.com/docs/introduction
+ *
+ * Autenticación: OAuth 2.0 client_credentials
+ *   1. POST https://cabify.com/auth/api/authorization
+ *      body: grant_type=client_credentials&client_id=OAUTH_ID&client_secret=SECRET
+ *   2. Usar access_token como Bearer en todos los requests subsiguientes
+ *
+ * Base URL Logistics API: https://logistics.api.cabify.com
  *
  * Para activar la integración:
  *   1. En Cabify Logistics → Configuración → API → Generar claves de producción
  *   2. Guardar en tabla `carriers`:
- *        credentials.uuid   = el UUID que muestra Cabify
- *        credentials.secret = el Secreto que muestra Cabify (¡copiarlo al generarlo, no se vuelve a mostrar!)
+ *        credentials.client_id     = OAUTH_ID que muestra Cabify
+ *        credentials.client_secret = Secreto que muestra Cabify
  *   3. Cambiar active = true
  *
- * Autenticación: Basic Auth → base64(UUID:Secret)
- *   Header: Authorization: Basic <base64(uuid:secret)>
- *
  * Cobertura actual: Buenos Aires (CABA y GBA), Córdoba
- *
- * Endpoints implementados:
- *   POST   /logistics/v1/packages           — crear envío
- *   GET    /logistics/v1/packages/{id}      — obtener estado
- *   PATCH  /logistics/v1/packages/{id}/ready — marcar listo para recoger
- *   GET    /logistics/v1/packages/{id}/tracking — eventos de seguimiento
- *   POST   /logistics/v1/quotes             — cotizar envío
- *
- * NOTA: Si algún endpoint difiere de la versión actual de la API, ajustar
- * en BASE_PATHS abajo y confirmar con docs o soporte: apisupport@cabify.com
  */
 
 export interface CabifyCredentials {
-  uuid:   string   // UUID generado en Cabify Logistics → Configuración → API
-  secret: string   // Secreto generado junto al UUID (solo visible al generarlo)
+  client_id:     string   // OAUTH_ID de Cabify Logistics → Configuración → API
+  client_secret: string   // Secreto generado junto al client_id
 }
 
 export interface CabifyConfig {
-  base_url:    string  // default: "https://api.cabify.com"
-  timeout_ms:  number  // default: 15000
+  base_url:   string   // https://logistics.api.cabify.com
+  auth_url:   string   // https://cabify.com/auth/api/authorization
+  timeout_ms: number
 }
 
 // ── Tipos de servicio ──────────────────────────────────────────────────────────
@@ -46,52 +40,52 @@ export type CabifyService =
 
 // ── Dirección ─────────────────────────────────────────────────────────────────
 export interface CabifyAddress {
-  name:        string   // Nombre del contacto
-  phone:       string   // Teléfono de contacto
+  name:        string
+  phone:       string
   email?:      string
-  street:      string   // Calle y número
-  city:        string   // Ciudad
-  state:       string   // Provincia (e.g. "Buenos Aires")
-  postal_code: string   // Código postal
+  street:      string
+  city:        string
+  state:       string
+  postal_code: string
   country:     string   // "AR"
-  instructions?: string // Instrucciones adicionales para el repartidor
+  instructions?: string
 }
 
 // ── Item del paquete ───────────────────────────────────────────────────────────
 export interface CabifyPackageItem {
   description:    string
   quantity:       number
-  unit_price_ars: number  // Precio unitario en ARS
+  unit_price_ars: number
   weight_g?:      number
 }
 
 // ── Solicitud de creación de envío ────────────────────────────────────────────
 export interface CabifyShipmentRequest {
-  reference?:       string          // ID interno propio (número de pedido, etc.)
+  reference?:       string
   service:          CabifyService
   pickup:           CabifyAddress
   delivery:         CabifyAddress
   items:            CabifyPackageItem[]
-  weight_g:         number          // Peso total del paquete en gramos
-  declared_value:   number          // Valor declarado en ARS
+  weight_g:         number
+  declared_value:   number
   dimensions?: {
     length_cm: number
     width_cm:  number
     height_cm: number
   }
-  notes?: string                    // Nota interna del envío
+  notes?: string
 }
 
 // ── Respuesta de creación ──────────────────────────────────────────────────────
 export interface CabifyShipmentResponse {
   id:               string
-  tracking_code:    string          // Código de seguimiento público
-  status:           string          // "pending" | "assigned" | "in_transit" | "delivered" | "failed"
-  label_url?:       string          // URL de la etiqueta PDF
-  tracking_url?:    string          // URL de seguimiento para el cliente
-  estimated_cost?:  number          // Costo estimado en ARS
-  estimated_pickup?: string         // ISO datetime estimado de recolección
-  estimated_delivery?: string       // ISO datetime estimado de entrega
+  tracking_code:    string
+  status:           string
+  label_url?:       string
+  tracking_url?:    string
+  estimated_cost?:  number
+  estimated_pickup?: string
+  estimated_delivery?: string
   error?:           string
 }
 
@@ -100,7 +94,7 @@ export interface CabifyTrackingEvent {
   status:      string
   description: string
   location?:   string
-  timestamp:   string   // ISO datetime
+  timestamp:   string
 }
 
 export interface CabifyTrackingResponse {
@@ -135,37 +129,94 @@ export interface CabifyQuoteResponse {
   error?: string
 }
 
+// ── Token cache en memoria ─────────────────────────────────────────────────────
+interface TokenEntry {
+  access_token:  string
+  refresh_token: string
+  expires_at:    number   // epoch ms
+}
+const tokenCache = new Map<string, TokenEntry>()
+
 // ── Cliente ────────────────────────────────────────────────────────────────────
 export class CabifyLogisticsClient {
-  private readonly baseUrl: string
-  private readonly uuid:    string
-  private readonly secret:  string
-  private readonly timeout: number
+  private readonly baseUrl:      string
+  private readonly authUrl:      string
+  private readonly clientId:     string
+  private readonly clientSecret: string
+  private readonly timeout:      number
 
-  // Paths de la API — ajustar si Cabify actualiza versiones
   private static readonly BASE_PATHS = {
-    packages:  "/logistics/v1/packages",
-    quotes:    "/logistics/v1/quotes",
+    packages: "/v1/packages",
+    quotes:   "/v1/quotes",
   }
 
   constructor(config: CabifyConfig, credentials: CabifyCredentials) {
-    this.baseUrl = (config.base_url ?? "https://api.cabify.com").replace(/\/$/, "")
-    this.uuid    = credentials.uuid
-    this.secret  = credentials.secret
-    this.timeout = config.timeout_ms ?? 15000
+    this.baseUrl      = (config.base_url  ?? "https://logistics.api.cabify.com").replace(/\/$/, "")
+    this.authUrl      = (config.auth_url  ?? "https://cabify.com/auth/api/authorization").replace(/\/$/, "")
+    this.clientId     = credentials.client_id
+    this.clientSecret = credentials.client_secret
+    this.timeout      = config.timeout_ms ?? 15000
   }
 
-  /** Basic Auth: base64(uuid:secret) */
-  private authHeader(): string {
-    const encoded = Buffer.from(`${this.uuid}:${this.secret}`).toString("base64")
-    return `Basic ${encoded}`
+  // ── OAuth 2.0 ────────────────────────────────────────────────────────────────
+
+  private cacheKey(): string {
+    return `${this.authUrl}::${this.clientId}`
   }
+
+  /** Obtiene un Bearer token válido, usando caché si no expiró */
+  private async getBearerToken(): Promise<string> {
+    const key    = this.cacheKey()
+    const cached = tokenCache.get(key)
+    // Renovar si falta menos de 5 minutos para expirar
+    if (cached && cached.expires_at > Date.now() + 5 * 60 * 1000) {
+      return cached.access_token
+    }
+
+    const body = new URLSearchParams({
+      grant_type:    "client_credentials",
+      client_id:     this.clientId,
+      client_secret: this.clientSecret,
+    })
+
+    const controller = new AbortController()
+    const timer      = setTimeout(() => controller.abort(), this.timeout)
+    try {
+      const res = await fetch(this.authUrl, {
+        method:  "POST",
+        signal:  controller.signal,
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body:    body.toString(),
+      })
+
+      const data = await res.json().catch(() => ({})) as any
+
+      if (!res.ok) {
+        throw new Error(
+          `Cabify OAuth error ${res.status}: ${data?.error_description ?? data?.error ?? res.statusText}`
+        )
+      }
+
+      const entry: TokenEntry = {
+        access_token:  data.access_token,
+        refresh_token: data.refresh_token ?? "",
+        expires_at:    Date.now() + (data.expires_in ?? 3600) * 1000,
+      }
+      tokenCache.set(key, entry)
+      return entry.access_token
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  // ── HTTP helper ───────────────────────────────────────────────────────────────
 
   private async request<T>(
     method: "GET" | "POST" | "PATCH",
     path:   string,
     body?:  unknown
   ): Promise<T> {
+    const token      = await this.getBearerToken()
     const url        = `${this.baseUrl}${path}`
     const controller = new AbortController()
     const timer      = setTimeout(() => controller.abort(), this.timeout)
@@ -176,7 +227,7 @@ export class CabifyLogisticsClient {
         signal:  controller.signal,
         headers: {
           "Content-Type":  "application/json",
-          "Authorization": this.authHeader(),
+          "Authorization": `Bearer ${token}`,
           "Accept":        "application/json",
         },
         ...(body ? { body: JSON.stringify(body) } : {}),
@@ -195,19 +246,14 @@ export class CabifyLogisticsClient {
     }
   }
 
-  /**
-   * Crear un nuevo envío.
-   * El paquete quedará en estado "pending" hasta llamar a markReady().
-   */
+  // ── Métodos públicos ──────────────────────────────────────────────────────────
+
+  /** Crear un nuevo envío */
   async createShipment(req: CabifyShipmentRequest): Promise<CabifyShipmentResponse> {
-    return this.request<CabifyShipmentResponse>(
-      "POST",
-      CabifyLogisticsClient.BASE_PATHS.packages,
-      req
-    )
+    return this.request<CabifyShipmentResponse>("POST", CabifyLogisticsClient.BASE_PATHS.packages, req)
   }
 
-  /** Obtener estado y datos de un envío por su ID de Cabify */
+  /** Obtener estado de un envío */
   async getShipment(packageId: string): Promise<CabifyShipmentResponse> {
     return this.request<CabifyShipmentResponse>(
       "GET",
@@ -215,10 +261,7 @@ export class CabifyLogisticsClient {
     )
   }
 
-  /**
-   * Marcar el paquete como listo para recoger.
-   * Cabify asignará un repartidor una vez recibida esta señal.
-   */
+  /** Marcar paquete como listo para recoger */
   async markReady(packageId: string): Promise<{ ok: boolean; error?: string }> {
     return this.request<{ ok: boolean; error?: string }>(
       "PATCH",
@@ -226,7 +269,7 @@ export class CabifyLogisticsClient {
     )
   }
 
-  /** Obtener historial de eventos de seguimiento */
+  /** Tracking por ID de paquete Cabify */
   async getTracking(packageId: string): Promise<CabifyTrackingResponse> {
     return this.request<CabifyTrackingResponse>(
       "GET",
@@ -236,34 +279,36 @@ export class CabifyLogisticsClient {
 
   /** Cotizar un envío sin crearlo */
   async quote(req: CabifyQuoteRequest): Promise<CabifyQuoteResponse> {
-    return this.request<CabifyQuoteResponse>(
-      "POST",
-      CabifyLogisticsClient.BASE_PATHS.quotes,
-      req
-    )
+    return this.request<CabifyQuoteResponse>("POST", CabifyLogisticsClient.BASE_PATHS.quotes, req)
   }
 
   /**
-   * Verifica conectividad y credenciales sin crear recursos.
-   * Hace un GET a /logistics/v1/packages: 200 = ok, 401/403 = credenciales inválidas, otro = error.
+   * Verifica conectividad y credenciales.
+   * Paso 1: obtener token OAuth (valida client_id y client_secret).
+   * Paso 2: hacer GET /v1/packages para confirmar acceso a la API de logística.
    */
   async healthCheck(): Promise<{ ok: boolean; message: string }> {
-    const url = `${this.baseUrl}/logistics/v1/packages`
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), this.timeout)
     try {
-      const res = await fetch(url, {
-        method: "GET",
-        signal: controller.signal,
+      await this.getBearerToken()
+    } catch (err: any) {
+      return { ok: false, message: err.message }
+    }
+
+    const url        = `${this.baseUrl}${CabifyLogisticsClient.BASE_PATHS.packages}`
+    const controller = new AbortController()
+    const timer      = setTimeout(() => controller.abort(), this.timeout)
+    try {
+      const token = await this.getBearerToken()
+      const res   = await fetch(url, {
+        method:  "GET",
+        signal:  controller.signal,
         headers: {
-          "Authorization": this.authHeader(),
-          "Accept": "application/json",
+          "Authorization": `Bearer ${token}`,
+          "Accept":        "application/json",
         },
       })
-      if (res.ok) return { ok: true, message: "Conexión exitosa con Cabify Logistics API" }
-      if (res.status === 401 || res.status === 403) {
-        return { ok: false, message: "Cabify Logistics: credenciales inválidas (401/403) — verificá el UUID y el Secreto" }
-      }
+      if (res.ok)                            return { ok: true,  message: "Conexión exitosa con Cabify Logistics API" }
+      if (res.status === 401 || res.status === 403) return { ok: false, message: "Cabify Logistics: credenciales inválidas — verificá el Client ID y el Client Secret" }
       return { ok: false, message: `Cabify Logistics respondió con estado ${res.status}` }
     } catch (err: any) {
       if (err.name === "AbortError") return { ok: false, message: "Cabify Logistics: timeout — sin respuesta del servidor" }
@@ -279,8 +324,8 @@ export function createCabifyClient(
   config:      CabifyConfig,
   credentials: CabifyCredentials
 ): CabifyLogisticsClient {
-  if (!credentials?.uuid || !credentials?.secret) {
-    throw new Error("Cabify Logistics: uuid y secret son requeridos — generarlos en Cabify Logistics → Configuración → API")
+  if (!credentials?.client_id || !credentials?.client_secret) {
+    throw new Error("Cabify Logistics: client_id y client_secret son requeridos — generarlos en Cabify Logistics → Configuración → API")
   }
   return new CabifyLogisticsClient(config ?? {}, credentials)
 }
@@ -290,7 +335,7 @@ export function mapCabifyStatus(status: string): string {
   const s = status?.toLowerCase() ?? ""
   if (s === "delivered")                           return "delivered"
   if (s === "in_transit" || s === "assigned")      return "in_transit"
-  if (s === "failed" || s === "cancelled")         return "failed"
+  if (s === "failed"     || s === "cancelled")     return "failed"
   if (s === "returned")                            return "returned"
   return "pending"
 }
