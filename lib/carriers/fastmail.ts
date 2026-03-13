@@ -99,6 +99,20 @@ export interface FastMailEditarSucursalResponse {
   [key: string]: unknown
 }
 
+export interface FastMailTrackingEvent {
+  estado:      string
+  descripcion: string
+  ubicacion?:  string
+  fecha:       string
+}
+
+export interface FastMailTrackingResponse {
+  numero_guia?: string
+  estado?:      string
+  eventos?:     FastMailTrackingEvent[]
+  error?:       string
+}
+
 // Tipos legacy mantenidos para compatibilidad con routes existentes
 export interface FastMailQuoteRequest {
   origen_cp:    string
@@ -227,6 +241,20 @@ export class FastMailClient {
   /** Editar datos de sucursal */
   async editarSucursal(data: Record<string, unknown>): Promise<FastMailEditarSucursalResponse> {
     return this.post<FastMailEditarSucursalResponse>("/api/v2/editarSucursal.json", data)
+  }
+
+  /**
+   * Tracking de envío por número de guía.
+   * Nota: endpoint provisionario — confirmar URL exacta con el manual de FastMail API v2.
+   */
+  async getTracking(trackingNumber: string): Promise<FastMailTrackingResponse> {
+    try {
+      return await this.post<FastMailTrackingResponse>("/api/v2/seguirEnvio.json", {
+        numero_guia: trackingNumber,
+      })
+    } catch (err: any) {
+      return { error: err.message }
+    }
   }
 
   // ── Aliases legacy para compatibilidad con routes existentes ─────────────

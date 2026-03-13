@@ -27,7 +27,7 @@ export async function POST(_req: NextRequest, { params }: { params: { slug: stri
       }
       const client = createFastMailClient(
         (carrier as any).config as FastMailConfig,
-        creds as FastMailCredentials
+        creds as unknown as FastMailCredentials
       )
       const res = await client.healthCheck()
       return NextResponse.json(res)
