@@ -343,6 +343,8 @@ export class CabifyLogisticsClient {
     estimate:      "/v3/parcels/estimate",
     shippingTypes: "/v1/shipping_types/available",
     hubs:          "/v1/hubs",
+    cancelDelivery: "/v1/parcels/deliver/cancel",
+    deliverPickup:  "/v1/parcels/deliver/pickup",
     webhooks:      "/v1/webhooks",
     users:         "/v1/users",
   }
@@ -672,6 +674,43 @@ export class CabifyLogisticsClient {
   /** Actualizar hub por external_id */
   async updateHub(externalId: string, data: Partial<CabifyHubRequest>): Promise<any> {
     return this.request("PUT" as any, `/v1/hubs/none/${encodeURIComponent(externalId)}`, data)
+  }
+
+  // ── Delivery ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Verificar si una dirección está dentro de la zona operativa.
+   * GET /v1/parcels/deliver/pickup?address=...&pickup_point=lat,lon
+   * 200 = zona cubierta; 404 = fuera de cobertura.
+   */
+  async checkPickupArea(params: { address?: string; pickup_point?: string }): Promise<boolean> {
+    const token      = await this.getBearerToken()
+    const qs         = new URLSearchParams()
+    if (params.address)      qs.set("address",      params.address)
+    if (params.pickup_point) qs.set("pickup_point", params.pickup_point)
+    const url        = `${this.baseUrl}${CabifyLogisticsClient.BASE_PATHS.deliverPickup}?${qs}`
+    const controller = new AbortController()
+    const timer      = setTimeout(() => controller.abort(), this.timeout)
+    try {
+      const res = await fetch(url, {
+        method:  "GET",
+        signal:  controller.signal,
+        headers: { "Authorization": `Bearer ${token}`, "Accept": "application/json" },
+      })
+      return res.ok   // 200 = en zona; 404 = fuera de cobertura
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  /**
+   * Cancelar la entrega de parcels en curso.
+   * POST /v1/parcels/deliver/cancel
+   * Solo permite cancelar en estados: qualifiedforpickup, onroutetopickup, pickingup.
+   * Nota: puede generar costos.
+   */
+  async cancelDelivery(parcelIds: string[]): Promise<void> {
+    return this.request("POST", CabifyLogisticsClient.BASE_PATHS.cancelDelivery, { parcel_ids: parcelIds })
   }
 
   // ── Webhooks ──────────────────────────────────────────────────────────────────
