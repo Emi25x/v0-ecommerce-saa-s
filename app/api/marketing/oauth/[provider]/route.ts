@@ -9,7 +9,7 @@ export async function GET(
   { params }: { params: Promise<{ provider: string }> }
 ) {
   const { provider } = await params
-  const origin = request.headers.get("origin") || process.env.NEXT_PUBLIC_APP_URL || ""
+  const origin = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
   const redirectUri = `${origin}/api/marketing/oauth/callback`
 
   // Load credentials from DB

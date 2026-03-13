@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code")
   const state = searchParams.get("state") // platform identifier
   const error = searchParams.get("error")
-  const origin = request.headers.get("origin") || process.env.NEXT_PUBLIC_APP_URL || ""
+  const origin = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
   const redirectUri = `${origin}/api/marketing/oauth/callback`
 
   if (error) {
