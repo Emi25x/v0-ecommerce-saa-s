@@ -5,9 +5,14 @@
  * (Requiere cuenta activa en Cabify Logistics para acceder al portal de desarrolladores)
  *
  * Para activar la integración:
- *   1. Obtener el API Key en el panel de Cabify Logistics → Configuración → API
- *   2. Guardar en tabla `carriers` con slug = 'cabify', credentials.api_key = <tu_key>
+ *   1. En Cabify Logistics → Configuración → API → Generar claves de producción
+ *   2. Guardar en tabla `carriers`:
+ *        credentials.uuid   = el UUID que muestra Cabify
+ *        credentials.secret = el Secreto que muestra Cabify (¡copiarlo al generarlo, no se vuelve a mostrar!)
  *   3. Cambiar active = true
+ *
+ * Autenticación: Basic Auth → base64(UUID:Secret)
+ *   Header: Authorization: Basic <base64(uuid:secret)>
  *
  * Cobertura actual: Buenos Aires (CABA y GBA), Córdoba
  *
@@ -23,7 +28,8 @@
  */
 
 export interface CabifyCredentials {
-  api_key: string
+  uuid:   string   // UUID generado en Cabify Logistics → Configuración → API
+  secret: string   // Secreto generado junto al UUID (solo visible al generarlo)
 }
 
 export interface CabifyConfig {
@@ -132,7 +138,8 @@ export interface CabifyQuoteResponse {
 // ── Cliente ────────────────────────────────────────────────────────────────────
 export class CabifyLogisticsClient {
   private readonly baseUrl: string
-  private readonly apiKey:  string
+  private readonly uuid:    string
+  private readonly secret:  string
   private readonly timeout: number
 
   // Paths de la API — ajustar si Cabify actualiza versiones
@@ -143,8 +150,15 @@ export class CabifyLogisticsClient {
 
   constructor(config: CabifyConfig, credentials: CabifyCredentials) {
     this.baseUrl = (config.base_url ?? "https://api.cabify.com").replace(/\/$/, "")
-    this.apiKey  = credentials.api_key
+    this.uuid    = credentials.uuid
+    this.secret  = credentials.secret
     this.timeout = config.timeout_ms ?? 15000
+  }
+
+  /** Basic Auth: base64(uuid:secret) */
+  private authHeader(): string {
+    const encoded = Buffer.from(`${this.uuid}:${this.secret}`).toString("base64")
+    return `Basic ${encoded}`
   }
 
   private async request<T>(
@@ -162,7 +176,7 @@ export class CabifyLogisticsClient {
         signal:  controller.signal,
         headers: {
           "Content-Type":  "application/json",
-          "Authorization": `Bearer ${this.apiKey}`,
+          "Authorization": this.authHeader(),
           "Accept":        "application/json",
         },
         ...(body ? { body: JSON.stringify(body) } : {}),
@@ -235,8 +249,8 @@ export function createCabifyClient(
   config:      CabifyConfig,
   credentials: CabifyCredentials
 ): CabifyLogisticsClient {
-  if (!credentials?.api_key) {
-    throw new Error("Cabify Logistics: api_key no configurada — obtenerla en el panel de Cabify Logistics")
+  if (!credentials?.uuid || !credentials?.secret) {
+    throw new Error("Cabify Logistics: uuid y secret son requeridos — generarlos en Cabify Logistics → Configuración → API")
   }
   return new CabifyLogisticsClient(config ?? {}, credentials)
 }

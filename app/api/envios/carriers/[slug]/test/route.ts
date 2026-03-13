@@ -40,10 +40,10 @@ export async function POST(_req: NextRequest, { params }: { params: { slug: stri
     }
 
     if (params.slug === "cabify") {
-      if (!creds?.api_key) {
+      if (!creds?.uuid || !creds?.secret) {
         return NextResponse.json({
           ok: false,
-          message: "API Key no configurada. Guardá tu api_key de Cabify Logistics primero.",
+          message: "Credenciales incompletas. Guardá el UUID y el Secreto de Cabify Logistics primero.",
         })
       }
       const client = createCabifyClient(

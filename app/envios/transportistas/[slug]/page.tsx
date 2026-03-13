@@ -34,7 +34,8 @@ export default function CarrierConfigPage() {
   // Campos del formulario
   const [user, setUser]               = useState("")
   const [password, setPassword]       = useState("")
-  const [apiKey, setApiKey]           = useState("")
+  const [cabifyUuid, setCabifyUuid]   = useState("")
+  const [cabifySecret, setCabifySecret] = useState("")
   const [baseUrl, setBaseUrl]         = useState("")
 
   const isCabify = slug === "cabify"
@@ -58,7 +59,8 @@ export default function CarrierConfigPage() {
       config: { ...carrier.config, base_url: baseUrl },
     }
     if (isCabify) {
-      if (apiKey) body.credentials_api_key = apiKey
+      if (cabifyUuid)   body.credentials_uuid   = cabifyUuid
+      if (cabifySecret) body.credentials_secret = cabifySecret
     } else {
       if (user)     body.credentials_user     = user
       if (password) body.credentials_password = password
@@ -74,7 +76,8 @@ export default function CarrierConfigPage() {
       setSaved(true)
       setUser("")
       setPassword("")
-      setApiKey("")
+      setCabifyUuid("")
+      setCabifySecret("")
       load()
       setTimeout(() => setSaved(false), 3000)
     }
@@ -132,21 +135,34 @@ export default function CarrierConfigPage() {
             />
           </div>
           {isCabify ? (
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="api_key">API Key</Label>
-              <Input
-                id="api_key"
-                type="password"
-                value={apiKey}
-                onChange={e => setApiKey(e.target.value)}
-                placeholder="Ingresá tu API Key de Cabify Logistics"
-                autoComplete="new-password"
-              />
-              <p className="text-xs text-muted-foreground">
-                Obtenela en el panel de Cabify Logistics → Configuración → API.
-                Dejá en blanco para no modificar la key guardada.
-              </p>
-            </div>
+            <>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="cabify_uuid">UUID</Label>
+                <Input
+                  id="cabify_uuid"
+                  value={cabifyUuid}
+                  onChange={e => setCabifyUuid(e.target.value)}
+                  placeholder="ej: a9a5f86f-cee1-4682-be5b-c328403e1508"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="cabify_secret">Secreto</Label>
+                <Input
+                  id="cabify_secret"
+                  type="password"
+                  value={cabifySecret}
+                  onChange={e => setCabifySecret(e.target.value)}
+                  placeholder="••••••••••••••••"
+                  autoComplete="new-password"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Generalos en Cabify Logistics → Configuración → API → Generar claves.
+                  El Secreto solo se muestra una vez al generarlo.
+                  Dejá en blanco los campos que no querés modificar.
+                </p>
+              </div>
+            </>
           ) : (
             <>
               <div className="flex flex-col gap-1.5">

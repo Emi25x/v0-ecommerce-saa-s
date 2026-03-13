@@ -24,7 +24,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { slug: stri
   if (body.config) update.config = body.config
 
   // Credenciales: se guardan en columna separada, sólo si se envían
-  if (body.credentials_user || body.credentials_password || body.credentials_api_key) {
+  const hasCredentials =
+    body.credentials_user ||
+    body.credentials_password ||
+    body.credentials_uuid ||
+    body.credentials_secret
+
+  if (hasCredentials) {
     // Fetch existing credentials first
     const { data: existing } = await supabase
       .from("carriers")
@@ -33,9 +39,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { slug: stri
       .maybeSingle()
 
     const creds = (existing as any)?.credentials ?? {}
-    if (body.credentials_user)     creds.user    = body.credentials_user
-    if (body.credentials_password) creds.password = body.credentials_password
-    if (body.credentials_api_key)  creds.api_key  = body.credentials_api_key
+    if (body.credentials_user)     creds.user     = body.credentials_user
+    if (body.credentials_password) creds.password  = body.credentials_password
+    if (body.credentials_uuid)     creds.uuid      = body.credentials_uuid
+    if (body.credentials_secret)   creds.secret    = body.credentials_secret
     update.credentials = creds
   }
 
