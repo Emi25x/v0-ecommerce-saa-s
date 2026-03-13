@@ -452,6 +452,14 @@ export default function ShopifyProductsPage() {
 
 // ── Product Detail Sheet ───────────────────────────────────────────────────────
 
+interface ShopifyMetafield {
+  id: number
+  namespace: string
+  key: string
+  value: string
+  type: string
+}
+
 function ProductDetailSheet({
   product,
   store,
@@ -461,11 +469,51 @@ function ProductDetailSheet({
   store: ShopifyStore | null
   onClose: () => void
 }) {
+  const [metafields, setMetafields] = useState<ShopifyMetafield[]>([])
+  const [loadingMeta, setLoadingMeta] = useState(false)
+
+  useEffect(() => {
+    if (!product || !store) { setMetafields([]); return }
+    setLoadingMeta(true)
+    fetch(`/api/shopify/product-metafields?store_id=${store.id}&product_id=${product.id}`)
+      .then((r) => r.json())
+      .then((d) => setMetafields(d.metafields ?? []))
+      .catch(() => setMetafields([]))
+      .finally(() => setLoadingMeta(false))
+  }, [product?.id, store?.id])
+
   if (!product) return null
 
   const totalStock = product.variants?.reduce((s, v) => s + (v.inventory_quantity ?? 0), 0) ?? 0
   const isActive = product.status === "active"
   const tags = product.tags ? product.tags.split(",").map((t) => t.trim()).filter(Boolean) : []
+
+  // Metafields agrupados: primero los del namespace "custom", luego el resto
+  const customMfs = metafields.filter((m) => m.namespace === "custom")
+  const otherMfs  = metafields.filter((m) => m.namespace !== "custom")
+
+  const LABEL_MAP: Record<string, string> = {
+    autor: "Autor",
+    editorial: "Editorial",
+    idioma: "Idioma",
+    isbn: "ISBN",
+    tematica: "Temática",
+    tematica_especifica: "Temática específica",
+    numero_de_paginas: "Páginas",
+    encuadernacion: "Encuadernación",
+    fecha_de_publicacion: "Fecha de publicación",
+    n_edicion: "N° Edición",
+    pais_de_origen: "País de origen",
+    alto_mm: "Alto (mm)",
+    ancho_mm: "Ancho (mm)",
+    dimensiones: "Dimensiones",
+    peso: "Peso",
+    short_description: "Descripción corta",
+    sucursal_stock: "Sucursal stock",
+    ean: "EAN",
+    materia: "Materia",
+    curso: "Curso",
+  }
 
   return (
     <Sheet open={!!product} onOpenChange={(open) => { if (!open) onClose() }}>
@@ -581,6 +629,36 @@ function ProductDetailSheet({
             </div>
           </div>
 
+          {/* Metafields */}
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-2">
+              Metafields {loadingMeta ? "(cargando...)" : `(${metafields.length})`}
+            </p>
+            {!loadingMeta && customMfs.length > 0 && (
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm rounded-md border p-3 bg-muted/10">
+                {customMfs.map((mf) => (
+                  <div key={mf.id}>
+                    <p className="text-xs text-muted-foreground">{LABEL_MAP[mf.key] ?? mf.key}</p>
+                    <p className="font-medium break-words">{mf.value || "—"}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {!loadingMeta && otherMfs.length > 0 && (
+              <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-sm rounded-md border p-3 bg-muted/10">
+                {otherMfs.map((mf) => (
+                  <div key={mf.id}>
+                    <p className="text-xs text-muted-foreground">{mf.namespace}.{mf.key}</p>
+                    <p className="font-medium break-words">{mf.value || "—"}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            {!loadingMeta && metafields.length === 0 && (
+              <p className="text-xs text-muted-foreground">Sin metafields cargados.</p>
+            )}
+          </div>
+
           {/* Shopify link */}
           {store && (
             <a
@@ -626,6 +704,11 @@ function AddProductDialog({
   const [lookupLoading, setLookupLoading] = useState(false)
   const [localProduct, setLocalProduct] = useState<LocalProduct | null>(null)
   const [lookupDone, setLookupDone] = useState(false)
+  const [alreadyInShopify, setAlreadyInShopify] = useState<{
+    shopify_product_id: number
+    shopify_title: string
+    last_synced_at: string
+  } | null>(null)
 
   const [form, setForm] = useState({
     ean: "",
@@ -646,6 +729,7 @@ function AddProductDialog({
     setLookupDone(false)
     setLocalProduct(null)
     setPublishResult(null)
+    setAlreadyInShopify(null)
     try {
       const res = await fetch(`/api/inventory/products?search=${encodeURIComponent(q)}&limit=1`)
       const data = await res.json()
@@ -660,6 +744,14 @@ function AddProductDialog({
           price: found.price != null ? String(found.price) : "",
           language: found.language ?? "",
         })
+        // Verificar si ya está publicado en esta tienda
+        const checkRes = await fetch(
+          `/api/shopify/product-check?store_id=${encodeURIComponent(selectedStore)}&product_id=${encodeURIComponent(found.id)}`
+        )
+        const checkData = await checkRes.json()
+        if (checkData.exists && checkData.link) {
+          setAlreadyInShopify(checkData.link)
+        }
       } else {
         setForm((f) => ({ ...f, ean: q }))
       }
@@ -752,10 +844,26 @@ function AddProductDialog({
           {/* Product data form (pre-filled if found) */}
           {lookupDone && (
             <div className="rounded-md border p-3 space-y-3 bg-muted/20">
-              {localProduct && (
+              {localProduct && !alreadyInShopify && (
                 <p className="text-xs text-green-600 dark:text-green-400 font-medium">
                   ✓ Producto encontrado en catálogo local
                 </p>
+              )}
+              {alreadyInShopify && (
+                <div className="rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 p-2 space-y-0.5">
+                  <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                    ⚠ Este producto ya está publicado en esta tienda
+                  </p>
+                  <p className="text-xs text-amber-600 dark:text-amber-500">
+                    ID Shopify: {alreadyInShopify.shopify_product_id}
+                    {alreadyInShopify.last_synced_at && (
+                      <> · Último sync: {new Date(alreadyInShopify.last_synced_at).toLocaleDateString("es-AR")}</>
+                    )}
+                  </p>
+                  <p className="text-xs text-amber-600 dark:text-amber-500">
+                    Si publicás de nuevo se actualizarán los datos del producto.
+                  </p>
+                </div>
               )}
 
               {localProduct?.image_url && (

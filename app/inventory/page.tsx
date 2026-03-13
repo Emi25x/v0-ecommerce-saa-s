@@ -1372,24 +1372,52 @@ export default function InventoryPage() {
               </DialogHeader>
               {detailsProduct && (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  {/* Imagen */}
+                  {detailsProduct.image_url && (
+                    <div className="flex justify-center">
+                      <img
+                        src={detailsProduct.image_url}
+                        alt={detailsProduct.title}
+                        className="h-40 rounded-lg object-contain border bg-muted/20"
+                      />
+                    </div>
+                  )}
+
+                  {/* Identificadores */}
+                  <div className="grid grid-cols-3 gap-4">
                     <div>
                       <Label className="text-muted-foreground">SKU</Label>
-                      <p className="font-mono">{detailsProduct.sku}</p>
+                      <p className="font-mono text-sm">{detailsProduct.sku || "N/A"}</p>
                     </div>
                     <div>
-                      <Label className="text-muted-foreground">Código Interno</Label>
-                      <p className="font-mono">{detailsProduct.internal_code || "N/A"}</p>
+                      <Label className="text-muted-foreground">EAN</Label>
+                      <p className="font-mono text-sm">{detailsProduct.ean || "N/A"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">ISBN</Label>
+                      <p className="font-mono text-sm">{detailsProduct.isbn || "N/A"}</p>
                     </div>
                   </div>
+
+                  {/* Título */}
                   <div>
                     <Label className="text-muted-foreground">Título</Label>
                     <p>{detailsProduct.title}</p>
                   </div>
-                  <div>
-                    <Label className="text-muted-foreground">Descripción</Label>
-                    <p className="text-sm">{detailsProduct.description || "N/A"}</p>
+
+                  {/* Autor / Editorial */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-muted-foreground">Autor</Label>
+                      <p>{detailsProduct.author || "N/A"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">Editorial / Marca</Label>
+                      <p>{detailsProduct.brand || "N/A"}</p>
+                    </div>
                   </div>
+
+                  {/* Precio / Stock / Condición */}
                   <div className="grid grid-cols-3 gap-4">
                     <div>
                       <Label className="text-muted-foreground">Precio</Label>
@@ -1406,16 +1434,66 @@ export default function InventoryPage() {
                       <p>{detailsProduct.condition || "N/A"}</p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label className="text-muted-foreground">Marca</Label>
-                      <p>{detailsProduct.brand || "N/A"}</p>
-                    </div>
+
+                  {/* Categoría / Idioma / Año */}
+                  <div className="grid grid-cols-3 gap-4">
                     <div>
                       <Label className="text-muted-foreground">Categoría</Label>
                       <p>{detailsProduct.category || "N/A"}</p>
                     </div>
+                    <div>
+                      <Label className="text-muted-foreground">Idioma</Label>
+                      <p>{detailsProduct.language || "N/A"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">Año edición</Label>
+                      <p>{detailsProduct.year_edition || "N/A"}</p>
+                    </div>
                   </div>
+
+                  {/* Páginas / Encuadernación */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label className="text-muted-foreground">Páginas</Label>
+                      <p>{detailsProduct.pages ?? "N/A"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">Encuadernación</Label>
+                      <p>{detailsProduct.binding || "N/A"}</p>
+                    </div>
+                  </div>
+
+                  {/* Dimensiones / Peso */}
+                  {(detailsProduct.height || detailsProduct.width || detailsProduct.thickness || detailsProduct.canonical_weight_g) && (
+                    <div className="grid grid-cols-2 gap-4">
+                      {(detailsProduct.height || detailsProduct.width || detailsProduct.thickness) && (
+                        <div>
+                          <Label className="text-muted-foreground">Dimensiones (cm)</Label>
+                          <p className="font-mono text-sm">
+                            {[detailsProduct.height, detailsProduct.thickness, detailsProduct.width]
+                              .map(v => v ?? "—")
+                              .join(" × ")}
+                          </p>
+                        </div>
+                      )}
+                      {detailsProduct.canonical_weight_g && (
+                        <div>
+                          <Label className="text-muted-foreground">Peso</Label>
+                          <p>{detailsProduct.canonical_weight_g} g</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Descripción */}
+                  {detailsProduct.description && (
+                    <div>
+                      <Label className="text-muted-foreground">Descripción</Label>
+                      <p className="text-sm whitespace-pre-wrap">{detailsProduct.description}</p>
+                    </div>
+                  )}
+
+                  {/* Fuentes */}
                   <div>
                     <Label className="text-muted-foreground">Fuentes</Label>
                     {detailsProduct.source &&
@@ -1432,6 +1510,8 @@ export default function InventoryPage() {
                       <p className="text-sm">Sin fuentes</p>
                     )}
                   </div>
+
+                  {/* Fechas */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <Label className="text-muted-foreground">Fecha de Creación</Label>
