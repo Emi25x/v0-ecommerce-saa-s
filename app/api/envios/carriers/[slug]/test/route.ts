@@ -29,14 +29,8 @@ export async function POST(_req: NextRequest, { params }: { params: { slug: stri
         (carrier as any).config as FastMailConfig,
         creds as FastMailCredentials
       )
-      const res = await client.quote({
-        origen_cp:  "1000",
-        destino_cp: "5000",
-        peso_g:     300,
-        valor:      1000,
-      })
-      if (res.error) throw new Error(res.error)
-      return NextResponse.json({ ok: true, message: "Conexión exitosa con FastMail API v2" })
+      const res = await client.healthCheck()
+      return NextResponse.json(res)
     }
 
     if (params.slug === "cabify") {
@@ -50,15 +44,8 @@ export async function POST(_req: NextRequest, { params }: { params: { slug: stri
         (carrier as any).config as CabifyConfig,
         creds as CabifyCredentials
       )
-      // Cotización mínima como health check
-      const res = await client.quote({
-        pickup_postal_code:   "1000",
-        delivery_postal_code: "5000",
-        weight_g:             300,
-        declared_value:       1000,
-      })
-      if (res.error) throw new Error(res.error)
-      return NextResponse.json({ ok: true, message: `Conexión exitosa con Cabify Logistics — ${res.services?.length ?? 0} servicios disponibles` })
+      const res = await client.healthCheck()
+      return NextResponse.json(res)
     }
 
     return NextResponse.json({ ok: false, message: `Test no implementado para "${params.slug}"` })

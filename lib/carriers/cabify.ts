@@ -242,6 +242,36 @@ export class CabifyLogisticsClient {
       req
     )
   }
+
+  /**
+   * Verifica conectividad y credenciales sin crear recursos.
+   * Hace un GET a /logistics/v1/packages: 200 = ok, 401/403 = credenciales inválidas, otro = error.
+   */
+  async healthCheck(): Promise<{ ok: boolean; message: string }> {
+    const url = `${this.baseUrl}/logistics/v1/packages`
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), this.timeout)
+    try {
+      const res = await fetch(url, {
+        method: "GET",
+        signal: controller.signal,
+        headers: {
+          "Authorization": this.authHeader(),
+          "Accept": "application/json",
+        },
+      })
+      if (res.ok) return { ok: true, message: "Conexión exitosa con Cabify Logistics API" }
+      if (res.status === 401 || res.status === 403) {
+        return { ok: false, message: "Cabify Logistics: credenciales inválidas (401/403) — verificá el UUID y el Secreto" }
+      }
+      return { ok: false, message: `Cabify Logistics respondió con estado ${res.status}` }
+    } catch (err: any) {
+      if (err.name === "AbortError") return { ok: false, message: "Cabify Logistics: timeout — sin respuesta del servidor" }
+      return { ok: false, message: `Cabify Logistics: no se pudo conectar — ${err.message}` }
+    } finally {
+      clearTimeout(timer)
+    }
+  }
 }
 
 /** Crear cliente desde la configuración guardada en DB */

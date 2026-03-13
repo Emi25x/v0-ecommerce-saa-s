@@ -174,6 +174,36 @@ export class FastMailClient {
   async quote(req: FastMailQuoteRequest): Promise<FastMailQuoteResponse> {
     return this.request<FastMailQuoteResponse>("POST", "/api/v2/cotizar", req)
   }
+
+  /**
+   * Verifica conectividad y credenciales sin crear recursos.
+   * Hace un GET a /api/v2/envios: 200 = ok, 401/403 = credenciales inválidas, otro = error.
+   */
+  async healthCheck(): Promise<{ ok: boolean; message: string }> {
+    const url = `${this.baseUrl}/api/v2/envios`
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), this.timeout)
+    try {
+      const res = await fetch(url, {
+        method: "GET",
+        signal: controller.signal,
+        headers: {
+          "Authorization": this.authHeader(),
+          "Accept": "application/json",
+        },
+      })
+      if (res.ok) return { ok: true, message: "Conexión exitosa con FastMail API v2" }
+      if (res.status === 401 || res.status === 403) {
+        return { ok: false, message: "FastMail: credenciales inválidas (401/403) — verificá el Token API" }
+      }
+      return { ok: false, message: `FastMail respondió con estado ${res.status}` }
+    } catch (err: any) {
+      if (err.name === "AbortError") return { ok: false, message: "FastMail: timeout — sin respuesta del servidor" }
+      return { ok: false, message: `FastMail: no se pudo conectar — ${err.message}` }
+    } finally {
+      clearTimeout(timer)
+    }
+  }
 }
 
 /** Crear cliente desde la configuración guardada en DB */
