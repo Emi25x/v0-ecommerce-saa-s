@@ -9,7 +9,19 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, Calculator, Package, Truck, ExternalLink, CheckCircle, Send } from "lucide-react"
+import { ArrowLeft, Calculator, Package, Truck, ExternalLink, CheckCircle, Send, User } from "lucide-react"
+
+interface Remitente {
+  id:        string
+  nombre:    string
+  direccion: string
+  localidad: string
+  provincia: string
+  cp:        string
+  telefono:  string | null
+  email:     string | null
+  es_default: boolean
+}
 
 interface QuoteService {
   codigo:     string
@@ -32,6 +44,10 @@ export default function NuevoEnvioPage() {
   // Carriers disponibles
   const [carriers, setCarriers]         = useState<Carrier[]>([])
   const [carrierSlug, setCarrierSlug]   = useState("cabify")
+
+  // Remitentes guardados
+  const [remitentes, setRemitentes]         = useState<Remitente[]>([])
+  const [remitenteId, setRemitenteId]       = useState<string>("")
 
   // Datos de Shopify (si viene desde la lista de pedidos)
   const shopifyOrderId  = searchParams.get("shopify_order_id")  ?? ""
@@ -74,19 +90,56 @@ export default function NuevoEnvioPage() {
   const [fulfilling, setFulfilling]     = useState(false)
   const [fulfillResult, setFulfillResult] = useState<{ ok: boolean; message: string } | null>(null)
 
-  // Cargar transportistas activos
+  // Cargar transportistas activos y remitentes
   useEffect(() => {
     fetch("/api/envios/carriers")
       .then(r => r.json())
       .then(d => {
         const active = (d.data ?? []).filter((c: any) => c.active)
         setCarriers(active)
-        // Si cabify está activo usarlo por defecto, sino el primero disponible
         const hasCabify = active.some((c: any) => c.slug === "cabify")
         if (!hasCabify && active.length > 0) setCarrierSlug(active[0].slug)
       })
       .catch(console.error)
+
+    fetch("/api/envios/remitentes")
+      .then(r => r.json())
+      .then(d => {
+        const list: Remitente[] = d.data ?? []
+        setRemitentes(list)
+        const def = list.find(r => r.es_default)
+        if (def) {
+          setRemitenteId(def.id)
+          setRemitente({
+            nombre:    def.nombre,
+            direccion: def.direccion,
+            localidad: def.localidad,
+            provincia: def.provincia,
+            cp:        def.cp,
+            telefono:  def.telefono  ?? "",
+            email:     def.email     ?? "",
+          })
+        }
+      })
+      .catch(console.error)
   }, [])
+
+  function selectRemitente(id: string) {
+    setRemitenteId(id)
+    const r = remitentes.find(r => r.id === id)
+    if (r) {
+      setRemitente({
+        nombre:    r.nombre,
+        direccion: r.direccion,
+        localidad: r.localidad,
+        provincia: r.provincia,
+        cp:        r.cp,
+        telefono:  r.telefono  ?? "",
+        email:     r.email     ?? "",
+      })
+      setQuotes(null)
+    }
+  }
 
   async function getCotizacion() {
     if (!remitente.cp || !destinatario.cp || !pesoG) return
@@ -346,15 +399,37 @@ export default function NuevoEnvioPage() {
         {/* Remitente */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Remitente (origen)</CardTitle>
+            <CardTitle className="text-base flex items-center justify-between">
+              <span className="flex items-center gap-2"><User className="h-4 w-4" />Remitente (origen)</span>
+              <Link href="/envios/remitentes" className="text-xs text-muted-foreground hover:underline font-normal">
+                Gestionar remitentes
+              </Link>
+            </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
+            {remitentes.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <Label className="text-xs">Remitente guardado</Label>
+                <Select value={remitenteId} onValueChange={selectRemitente}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar remitente guardado…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {remitentes.map(r => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.nombre}{r.es_default ? " (por defecto)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             {(["nombre", "direccion", "localidad", "provincia", "cp", "telefono", "email"] as const).map(f => (
               <div key={f} className="flex flex-col gap-1">
-                <Label className="capitalize text-xs">{f}</Label>
+                <Label className="capitalize text-xs">{f === "cp" ? "Código postal" : f}</Label>
                 <Input
                   value={remitente[f]}
-                  onChange={e => setRemitente(prev => ({ ...prev, [f]: e.target.value }))}
+                  onChange={e => { setRemitenteId(""); setRemitente(prev => ({ ...prev, [f]: e.target.value })) }}
                   placeholder={f === "cp" ? "Código postal" : f === "email" ? "correo@ejemplo.com" : ""}
                 />
               </div>

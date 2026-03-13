@@ -16,8 +16,9 @@
  */
 
 export interface FastMailCredentials {
-  user:     string
-  password: string
+  token?:   string   // API token (Bearer) — método preferido
+  user?:    string   // Usuario (fallback Basic Auth)
+  password?: string  // Contraseña (fallback Basic Auth)
 }
 
 export interface FastMailConfig {
@@ -97,18 +98,21 @@ export interface FastMailQuoteResponse {
 
 export class FastMailClient {
   private readonly baseUrl:  string
+  private readonly token:    string | undefined
   private readonly user:     string
   private readonly password: string
   private readonly timeout:  number
 
   constructor(config: FastMailConfig, credentials: FastMailCredentials) {
     this.baseUrl  = config.base_url.replace(/\/$/, "")
-    this.user     = credentials.user
-    this.password = credentials.password
+    this.token    = credentials.token
+    this.user     = credentials.user     ?? ""
+    this.password = credentials.password ?? ""
     this.timeout  = config.timeout_ms ?? 15000
   }
 
   private authHeader(): string {
+    if (this.token) return `Bearer ${this.token}`
     const encoded = Buffer.from(`${this.user}:${this.password}`).toString("base64")
     return `Basic ${encoded}`
   }
@@ -177,8 +181,8 @@ export function createFastMailClient(
   config: FastMailConfig,
   credentials: FastMailCredentials
 ): FastMailClient {
-  if (!credentials.user || !credentials.password) {
-    throw new Error("FastMail: credenciales no configuradas (user/password requeridos)")
+  if (!credentials.token && (!credentials.user || !credentials.password)) {
+    throw new Error("FastMail: configurá el token API o el usuario/contraseña en Transportistas → Fast Mail")
   }
   return new FastMailClient(config, credentials)
 }

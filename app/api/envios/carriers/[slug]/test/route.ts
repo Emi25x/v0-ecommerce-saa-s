@@ -19,10 +19,10 @@ export async function POST(_req: NextRequest, { params }: { params: { slug: stri
 
   try {
     if (params.slug === "fastmail") {
-      if (!creds?.user || !creds?.password) {
+      if (!creds?.token && (!creds?.user || !creds?.password)) {
         return NextResponse.json({
           ok: false,
-          message: "Credenciales no configuradas. Guardá usuario y contraseña primero.",
+          message: "Credenciales no configuradas. Guardá el Token API (o usuario y contraseña) primero.",
         })
       }
       const client = createFastMailClient(

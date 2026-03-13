@@ -32,13 +32,15 @@ export default function CarrierConfigPage() {
   const [saved, setSaved]             = useState(false)
 
   // Campos del formulario
+  const [token, setToken]             = useState("")
   const [user, setUser]               = useState("")
   const [password, setPassword]       = useState("")
   const [cabifyUuid, setCabifyUuid]   = useState("")
   const [cabifySecret, setCabifySecret] = useState("")
   const [baseUrl, setBaseUrl]         = useState("")
 
-  const isCabify = slug === "cabify"
+  const isCabify    = slug === "cabify"
+  const isFastmail  = slug === "fastmail"
 
   async function load() {
     setLoading(true)
@@ -61,6 +63,10 @@ export default function CarrierConfigPage() {
     if (isCabify) {
       if (cabifyUuid)   body.credentials_uuid   = cabifyUuid
       if (cabifySecret) body.credentials_secret = cabifySecret
+    } else if (isFastmail) {
+      if (token)    body.credentials_token    = token
+      if (user)     body.credentials_user     = user
+      if (password) body.credentials_password = password
     } else {
       if (user)     body.credentials_user     = user
       if (password) body.credentials_password = password
@@ -74,6 +80,7 @@ export default function CarrierConfigPage() {
     setSaving(false)
     if (res.ok) {
       setSaved(true)
+      setToken("")
       setUser("")
       setPassword("")
       setCabifyUuid("")
@@ -159,6 +166,49 @@ export default function CarrierConfigPage() {
                 <p className="text-xs text-muted-foreground">
                   Generalos en Cabify Logistics → Configuración → API → Generar claves.
                   El Secreto solo se muestra una vez al generarlo.
+                  Dejá en blanco los campos que no querés modificar.
+                </p>
+              </div>
+            </>
+          ) : isFastmail ? (
+            <>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="api_token">Token API</Label>
+                <Input
+                  id="api_token"
+                  type="password"
+                  value={token}
+                  onChange={e => setToken(e.target.value)}
+                  placeholder="••••••••••••••••••••••••••••••••"
+                  autoComplete="new-password"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Generalo en Fast Mail → Configuración → API → Generar claves.
+                  Dejá en blanco para no modificarlo.
+                </p>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="user">Usuario (opcional)</Label>
+                <Input
+                  id="user"
+                  value={user}
+                  onChange={e => setUser(e.target.value)}
+                  placeholder="LIBROIDE"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="password">Contraseña (opcional)</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="new-password"
+                />
+                <p className="text-xs text-muted-foreground">
+                  El token API tiene prioridad. Usuario/contraseña solo se usa como alternativa.
                   Dejá en blanco los campos que no querés modificar.
                 </p>
               </div>
