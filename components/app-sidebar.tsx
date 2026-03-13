@@ -233,6 +233,7 @@ export function AppSidebar() {
   const [enviosExpanded, setEnviosExpanded]   = useState(true)
 
   const [atencionExpanded, setAtencionExpanded] = useState(true)
+  const [marketingExpanded, setMarketingExpanded] = useState(true)
   const [lastVisits, setLastVisits] = useState({
     orders: null as string | null,
     products: null as string | null,
@@ -1097,6 +1098,106 @@ export function AppSidebar() {
                 href="/atencion/config"
                 className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
                   pathname?.startsWith("/atencion/config")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+                <span>Configuración</span>
+              </Link>
+            </div>
+          )}
+        </div>
+
+        {/* ── Marketing ─────────────────────────────────────────────────────── */}
+        <div className="px-3 py-1">
+          <button
+            onClick={() => setMarketingExpanded(!marketingExpanded)}
+            className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-sm font-semibold text-sidebar-foreground hover:bg-sidebar-accent"
+          >
+            <div className="flex items-center gap-2">
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+              </svg>
+              Marketing
+            </div>
+            <svg className={`h-4 w-4 transition-transform ${marketingExpanded ? "rotate-180" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="m6 9 6 6 6-6"/>
+            </svg>
+          </button>
+          {marketingExpanded && (
+            <div className="mt-1 ml-2 space-y-0.5">
+              <Link
+                href="/marketing"
+                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
+                  pathname === "/marketing"
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>
+                </svg>
+                <span>Dashboard</span>
+              </Link>
+              <Link
+                href="/marketing/google"
+                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
+                  pathname?.startsWith("/marketing/google")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+                </svg>
+                <span>Google Marketing</span>
+              </Link>
+              <Link
+                href="/marketing/meta"
+                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
+                  pathname?.startsWith("/marketing/meta")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
+                </svg>
+                <span>Meta Ads</span>
+              </Link>
+              <Link
+                href="/marketing/tiktok"
+                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
+                  pathname?.startsWith("/marketing/tiktok")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5"/>
+                </svg>
+                <span>TikTok Ads</span>
+              </Link>
+              <Link
+                href="/marketing/email"
+                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
+                  pathname?.startsWith("/marketing/email")
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                }`}
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+                </svg>
+                <span>Email Marketing</span>
+              </Link>
+              <Link
+                href="/marketing/config"
+                className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
+                  pathname?.startsWith("/marketing/config")
                     ? "bg-sidebar-accent text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
                 }`}
