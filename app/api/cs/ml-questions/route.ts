@@ -22,34 +22,41 @@ export async function GET(request: NextRequest) {
 
   const adminSupabase = createAdminClient()
 
-  // Load ML accounts
+  // Load ML accounts (admin client para evitar problemas de RLS con cuentas compartidas)
   let accQuery = adminSupabase
     .from("ml_accounts")
-    .select("id, nickname, ml_user_id, access_token, refresh_token, expires_at")
+    .select("id, nickname, ml_user_id")
     .or(`user_id.eq.${user.id},user_id.is.null`)
   if (accountId) accQuery = accQuery.eq("id", accountId)
 
-  const { data: accounts } = await accQuery
-  if (!accounts?.length) return NextResponse.json({ conversations: [], synced: 0 })
+  const { data: accounts, error: accError } = await accQuery
+  if (accError) return NextResponse.json({ error: accError.message }, { status: 500 })
+  if (!accounts?.length) return NextResponse.json({ conversations: [], synced: 0, errors: ["No hay cuentas ML conectadas"] })
 
   let synced = 0
+  const syncErrors: string[] = []
 
   if (doSync) {
-    const { refreshTokenIfNeeded } = await import("@/lib/mercadolibre")
+    const { getValidAccessToken } = await import("@/lib/mercadolibre")
 
     for (const acc of accounts) {
       try {
-        const token = await refreshTokenIfNeeded(acc.id)
+        const token = await getValidAccessToken(acc.id)
 
-        // Fetch unanswered questions (ML API)
+        // Fetch unanswered questions from ML API
         const qRes = await fetch(
           `https://api.mercadolibre.com/questions/search?seller_id=${acc.ml_user_id}&status=UNANSWERED&limit=50`,
           { headers: { Authorization: `Bearer ${token}` } }
         )
+
         if (!qRes.ok) {
-          console.warn(`[CS][ML] Failed to fetch questions for account ${acc.id}: HTTP ${qRes.status}`)
+          const errBody = await qRes.text().catch(() => "")
+          const msg = `[${acc.nickname}] ML API ${qRes.status}: ${errBody}`
+          console.warn("[CS][ML]", msg)
+          syncErrors.push(msg)
           continue
         }
+
         const qData = await qRes.json()
         const questions: any[] = qData.questions ?? []
 
@@ -61,14 +68,14 @@ export async function GET(request: NextRequest) {
             .from("cs_conversations")
             .upsert(
               {
-                user_id: user.id,
-                channel: "ml_question",
-                external_id: extId,
-                ml_account_id: acc.id,
-                customer_name: q.from?.nickname ?? `Comprador ${q.from?.id ?? ""}`,
-                customer_id: String(q.from?.id ?? ""),
-                subject: q.text,
-                status: q.status === "UNANSWERED" ? "pending_reply" : "answered",
+                user_id:        user.id,
+                channel:        "ml_question",
+                external_id:    extId,
+                ml_account_id:  acc.id,
+                customer_name:  q.from?.nickname ?? `Comprador ${q.from?.id ?? ""}`,
+                customer_id:    String(q.from?.id ?? ""),
+                subject:        q.text,
+                status:         q.status === "UNANSWERED" ? "pending_reply" : "answered",
                 last_message_at: q.date_created ?? new Date().toISOString(),
               },
               { onConflict: "channel,external_id,user_id" }
@@ -77,30 +84,30 @@ export async function GET(request: NextRequest) {
             .single()
 
           if (conv?.id) {
-            // Upsert the question as an inbound message
-            try {
-              await adminSupabase
-                .from("cs_messages")
-                .upsert(
-                  {
-                    conversation_id: conv.id,
-                    user_id: user.id,
-                    direction: "inbound",
-                    author_type: "customer",
-                    author_name: q.from?.nickname ?? "Comprador",
-                    content: q.text,
-                    content_type: "text",
-                    external_id: `q_${extId}`,
-                    created_at: q.date_created ?? new Date().toISOString(),
-                  },
-                  { onConflict: "conversation_id,external_id" }
-                )
-            } catch { /* ignore */ }
+            await adminSupabase
+              .from("cs_messages")
+              .upsert(
+                {
+                  conversation_id: conv.id,
+                  user_id:         user.id,
+                  direction:       "inbound",
+                  author_type:     "customer",
+                  author_name:     q.from?.nickname ?? "Comprador",
+                  content:         q.text,
+                  content_type:    "text",
+                  external_id:     `q_${extId}`,
+                  created_at:      q.date_created ?? new Date().toISOString(),
+                },
+                { onConflict: "conversation_id,external_id" }
+              )
+              .catch(() => {})
           }
           synced++
         }
       } catch (err: any) {
-        console.error(`[CS][ML] Error syncing account ${acc.id}:`, err.message)
+        const msg = `[${acc.nickname}] ${err.message}`
+        console.error("[CS][ML] Error syncing account:", msg)
+        syncErrors.push(msg)
       }
     }
   }
@@ -114,5 +121,9 @@ export async function GET(request: NextRequest) {
     .order("last_message_at", { ascending: false })
     .limit(100)
 
-  return NextResponse.json({ conversations: conversations ?? [], synced })
+  return NextResponse.json({
+    conversations: conversations ?? [],
+    synced,
+    ...(syncErrors.length ? { errors: syncErrors } : {}),
+  })
 }

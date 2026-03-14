@@ -89,6 +89,7 @@ export default function MLPreguntasPage() {
   const [sending, setSending]             = useState(false)
   const [sendError, setSendError]         = useState<string | null>(null)
   const [loadingMessages, setLoadingMessages] = useState(false)
+  const [syncErrors, setSyncErrors]       = useState<string[]>([])
 
   useEffect(() => {
     fetch("/api/mercadolibre/accounts")
@@ -123,10 +124,13 @@ export default function MLPreguntasPage() {
 
   const sync = async () => {
     setSyncing(true)
+    setSyncErrors([])
     try {
       const params = new URLSearchParams({ sync: "1" })
       if (accountFilter !== "all") params.set("account_id", accountFilter)
-      await fetch(`/api/cs/ml-questions?${params}`)
+      const res  = await fetch(`/api/cs/ml-questions?${params}`)
+      const data = await res.json()
+      if (data.errors?.length) setSyncErrors(data.errors)
       await load()
     } finally {
       setSyncing(false)
