@@ -635,9 +635,25 @@ export class FastMailClient {
     const pesoKg = req.peso_g / 1000
     const dim    = req.dimensiones
 
+    // codigo_servicio es requerido por el cotizador — usar el default de config
+    // o auto-detectar el primero disponible via serviciosCliente()
+    let codigoServicio = this.servicioDefault
+    if (!codigoServicio) {
+      try {
+        const servicios = await this.serviciosCliente()
+        const primero   = Array.isArray(servicios) ? servicios.find(s => s.cotiza === "SI") ?? servicios[0] : null
+        codigoServicio  = primero?.codigo_servicio ?? ""
+      } catch { /* si falla, intentar sin servicio */ }
+    }
+
+    if (!codigoServicio) {
+      return { servicios: [], error: "Configurá un código de servicio por defecto en FastMail → Transportistas" }
+    }
+
     const cotReq: FastMailCotizadorRequest = {
-      cp_entrega: req.destino_cp,
-      sucursal:   this.sucursal || undefined,
+      cp_entrega:      req.destino_cp,
+      sucursal:        this.sucursal || undefined,
+      codigo_servicio: codigoServicio,
       productos: [{
         bultos:      1,
         peso:        pesoKg,
