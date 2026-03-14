@@ -494,16 +494,29 @@ function parsePrecioServicioResponse(raw: any): FastMailQuoteResponse["servicios
     []
 
   return candidates
-    .filter(s => {
+    .map(s => {
+      // Formato real de precio-servicio.json: { servicio: { cod_serv, descripcion, alias }, precio: { importe_total_flete, ... } }
+      if (s.servicio && typeof s.precio === "object" && s.precio !== null) {
+        const total = Number(s.precio.importe_total_flete ?? s.precio.retiro_precio ?? 0)
+        if (total <= 0) return null
+        return {
+          codigo:     String(s.servicio.cod_serv ?? s.servicio.codigo_servicio ?? ""),
+          nombre:     String(s.servicio.alias ?? s.servicio.descripcion ?? s.servicio.nombre ?? "Servicio"),
+          plazo_dias: Number(s.servicio.tiempo_entrega ?? 0),
+          precio:     total,
+        }
+      }
+      // Formato plano (cotizador.json y respuestas legacy)
       const precio = Number(s.precio ?? s.importe ?? s.costo ?? 0)
-      return precio > 0
+      if (precio <= 0) return null
+      return {
+        codigo:     String(s.codigo_servicio ?? s.codigo ?? s.servicio ?? ""),
+        nombre:     String(s.nombre_servicio ?? s.nombre ?? s.descripcion ?? s.servicio ?? "Servicio"),
+        plazo_dias: Number(s.plazo_dias ?? s.plazo ?? 0),
+        precio,
+      }
     })
-    .map(s => ({
-      codigo:     String(s.codigo_servicio ?? s.codigo ?? s.servicio ?? ""),
-      nombre:     String(s.nombre_servicio ?? s.nombre ?? s.descripcion ?? s.servicio ?? "Servicio"),
-      plazo_dias: Number(s.plazo_dias ?? s.plazo ?? 0),
-      precio:     Number(s.precio     ?? s.importe ?? s.costo ?? 0),
-    }))
+    .filter((s): s is NonNullable<typeof s> => s !== null)
 }
 
 // ── Cliente ───────────────────────────────────────────────────────────────────
