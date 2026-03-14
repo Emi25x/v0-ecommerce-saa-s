@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 
+// Estimado de bytes restantes para barra de progreso (CSV Azeta ~150MB descomprimido)
+const CHUNK_ESTIMATE = 150 * 1024 * 1024
+
 export default function BatchImportPage() {
   const searchParams = useSearchParams()
   const [isRunning, setIsRunning] = useState(false)
@@ -107,41 +110,114 @@ export default function BatchImportPage() {
           return
         }
 
-        // Azeta Total/Parcial: llama directamente a import-catalog (maxDuration=300s en Vercel Pro).
-        // Descarga, descomprime y procesa el ZIP/CSV en streaming server-side sin pasar por Blob.
-        setStatus("Importando catálogo AZETA...")
-        addLog("Descargando y procesando catálogo AZETA (puede tardar 2-5 minutos)...")
-        addLog("El servidor descarga el ZIP, lo descomprime en streaming y hace upsert en la DB.")
+        // Azeta Total/Parcial: flujo en dos fases:
+        //   Fase 1 — download: ZIP → fflate streaming → Vercel Blob CSV (maxDuration=300s)
+        //   Fase 2 — process: chunks de 4MB desde Blob, upsert en batches de 2000 (maxDuration=60s/chunk)
+        // Esto evita el timeout de 300s que ocurría al procesar 400k registros en un solo request.
+        setStatus("Descargando catálogo AZETA...")
+        addLog("Fase 1/2: Descargando ZIP de AZETA (~230MB, puede tardar 1-2 min)...")
 
-        const impRes = await fetch("/api/azeta/import-catalog", {
+        const dlRes = await fetch("/api/azeta/download", {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ source_id: urlSourceId }),
           signal: AbortSignal.timeout(295_000),
         })
-        const impResult = await impRes.json().catch(() => ({ error: `HTTP ${impRes.status} (respuesta inválida)` }))
+        const dlResult = await dlRes.json().catch(() => ({ error: `HTTP ${dlRes.status} (respuesta inválida)` }))
 
-        if (!impRes.ok || impResult.error) {
-          addLog(`Error: ${impResult.error || `HTTP ${impRes.status}`}`)
-          setStatus("Error en importacion")
+        if (!dlRes.ok || !dlResult.blob_url) {
+          addLog(`Error en descarga: ${dlResult.error || `HTTP ${dlRes.status}`}`)
+          setStatus("Error en descarga")
           setIsRunning(false)
           return
         }
 
-        const created = impResult.created || 0
-        const updated = impResult.updated || 0
-        const errors  = impResult.errors  || 0
-        const total   = impResult.total_rows || (created + updated + errors)
-        const elapsed = impResult.elapsed_seconds ? `${impResult.elapsed_seconds}s` : ""
+        const blobUrl: string = dlResult.blob_url
+        addLog(`ZIP descargado y descomprimido en ${dlResult.elapsed_seconds ?? "?"}s. Iniciando procesamiento...`)
+        addLog("Fase 2/2: Procesando CSV en chunks de 4MB...")
 
-        setTotalCreated(created)
-        setTotalUpdated(updated)
-        setTotalProcessed(total)
-        setTotalRows(total)
-        setProgress(100)
-        addLog(`Completado${elapsed ? ` en ${elapsed}` : ""}: ${created} creados, ${updated} actualizados, ${errors} errores`)
-        setStatus("Importacion completada")
+        let byteStart = 0
+        let headerLine: string | null = null
+        let pCreated = 0, pUpdated = 0, pErrors = 0, pDiscarded = 0, pProcessed = 0
+        let chunkNum = 0
+        let processDone = false
+
+        while (!processDone && !abortRef.current) {
+          chunkNum++
+          setStatus(`Procesando chunk ${chunkNum} (offset ${byteStart.toLocaleString("es-ES")} bytes)...`)
+
+          let procResult: any
+          try {
+            const procRes = await fetch("/api/azeta/process", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                blob_url:    blobUrl,
+                byte_start:  byteStart,
+                header_line: headerLine,
+                source_id:   urlSourceId,
+              }),
+              signal: AbortSignal.timeout(90_000),
+            })
+            procResult = await procRes.json().catch(() => ({ error: `HTTP ${procRes.status}` }))
+            if (!procRes.ok) {
+              addLog(`Error en chunk ${chunkNum}: ${procResult.error || `HTTP ${procRes.status}`}`)
+              break
+            }
+          } catch (chunkErr: any) {
+            addLog(`Error de conexion en chunk ${chunkNum}: ${chunkErr.message}`)
+            break
+          }
+
+          if (procResult.header_line) headerLine = procResult.header_line
+          pCreated   += procResult.created   || 0
+          pUpdated   += procResult.updated   || 0
+          pErrors    += procResult.errors    || 0
+          pDiscarded += procResult.discarded || 0
+          pProcessed += procResult.rows_processed || 0
+
+          setTotalCreated(pCreated)
+          setTotalUpdated(pUpdated)
+          setTotalProcessed(pProcessed)
+          // Progreso estimado por bytes (aproximado)
+          if (!procResult.done && procResult.next_byte_start) {
+            setProgress(Math.min(98, Math.round((procResult.next_byte_start / (procResult.next_byte_start + CHUNK_ESTIMATE)) * 100)))
+          }
+
+          addLog(
+            `Chunk ${chunkNum}: +${procResult.created ?? 0}c +${procResult.updated ?? 0}u ` +
+            `+${procResult.discarded ?? 0} desc, ${procResult.elapsed_seconds ?? "?"}s`
+          )
+
+          if (procResult.done) {
+            processDone = true
+          } else {
+            byteStart = procResult.next_byte_start
+          }
+        }
+
+        // Limpiar blob (best-effort, no bloquear UI)
+        fetch("/api/azeta/process", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ blob_url: blobUrl, cleanup: true }),
+        }).catch(() => {})
+
+        if (processDone) {
+          setTotalRows(pProcessed)
+          setProgress(100)
+          addLog(
+            `Completado en ${chunkNum} chunks: ${pCreated} creados, ${pUpdated} actualizados, ` +
+            `${pErrors} errores, ${pDiscarded} descartados`
+          )
+          setStatus("Importacion completada")
+        } else if (abortRef.current) {
+          addLog("Importacion cancelada por el usuario")
+          setStatus("Importacion cancelada")
+        } else {
+          setStatus("Error en procesamiento")
+        }
         setIsRunning(false)
         return
       } catch (err: any) {

@@ -760,6 +760,14 @@ export class FastMailClient {
       },
     }]
 
+    // Sin sucursal no hay cotización posible — mostrar error claro
+    if (!this.sucursal) {
+      return {
+        servicios: [],
+        error: "FastMail: configurá el código de Sucursal en Transportistas → FastMail (campo Sucursal)",
+      }
+    }
+
     // ── Intento 1: precio-servicio.json (v2) ─────────────────────────────────
     // Un solo llamado. Devuelve precios por servicio para el tramo.
     // Solo funciona si el cliente tiene este endpoint habilitado.
