@@ -384,6 +384,58 @@ export interface FastMailShipmentResponse {
   error?:           string
 }
 
+// ── Helpers internos ─────────────────────────────────────────────────────────
+
+/**
+ * Extrae el precio de la respuesta cruda del cotizador.
+ * FastMail puede devolver distintos formatos según la versión/configuración:
+ *   { precio: 1234 }
+ *   { message: 1234 }
+ *   { message: [{ precio: 1234, ... }] }
+ *   { message: { precio: 1234, ... } }
+ *   { importe: 1234 }
+ *   { costo: 1234 }
+ * Retorna null si no encuentra un precio válido o si hay error.
+ */
+function parsePrecioFromRaw(raw: any): number | null {
+  if (!raw || raw.error) return null
+
+  // Precio directo en el objeto raíz
+  const directo = raw.precio ?? raw.importe ?? raw.costo
+  if (directo != null && Number(directo) > 0) return Number(directo)
+
+  // message puede ser número, objeto o array
+  const msg = raw.message
+  if (msg != null) {
+    if (typeof msg === "number" && msg > 0) return msg
+
+    if (typeof msg === "object" && !Array.isArray(msg)) {
+      const p = msg.precio ?? msg.importe ?? msg.costo
+      if (p != null && Number(p) > 0) return Number(p)
+    }
+
+    if (Array.isArray(msg) && msg.length > 0) {
+      const first = msg[0]
+      const p     = first?.precio ?? first?.importe ?? first?.costo
+      if (p != null && Number(p) > 0) return Number(p)
+    }
+  }
+
+  // data puede ser array
+  if (Array.isArray(raw.data) && raw.data.length > 0) {
+    const p = raw.data[0]?.precio ?? raw.data[0]?.importe ?? raw.data[0]?.costo
+    if (p != null && Number(p) > 0) return Number(p)
+  }
+
+  // servicios como array
+  if (Array.isArray(raw.servicios) && raw.servicios.length > 0) {
+    const p = raw.servicios[0]?.precio ?? raw.servicios[0]?.importe
+    if (p != null && Number(p) > 0) return Number(p)
+  }
+
+  return null
+}
+
 // ── Cliente ───────────────────────────────────────────────────────────────────
 
 export class FastMailClient {
@@ -630,67 +682,76 @@ export class FastMailClient {
 
   /**
    * Cotización via cotizador().
+   * Obtiene todos los servicios con cotiza="SI" y cotiza cada uno en paralelo.
    * Mapea FastMailQuoteRequest → FastMailCotizadorRequest y normaliza la respuesta.
    */
   async quote(req: FastMailQuoteRequest): Promise<FastMailQuoteResponse> {
     const pesoKg = req.peso_g / 1000
     const dim    = req.dimensiones
 
-    // codigo_servicio es requerido por el cotizador — usar el default de config
-    // o auto-detectar el primero disponible via serviciosCliente()
-    let codigoServicio = this.servicioDefault
-    if (!codigoServicio) {
-      try {
-        const servicios = await this.serviciosCliente()
-        const primero   = Array.isArray(servicios) ? servicios.find(s => s.cotiza === "SI") ?? servicios[0] : null
-        codigoServicio  = primero?.codigo_servicio ?? ""
-      } catch { /* si falla, intentar sin servicio */ }
+    const productos: FastMailProducto[] = [{
+      bultos:      1,
+      peso:        pesoKg,
+      descripcion: "Paquete",
+      dimensiones: {
+        alto:        dim?.alto_cm      ?? 10,
+        largo:       dim?.largo_cm     ?? 20,
+        profundidad: dim?.ancho_cm     ?? 15,
+      },
+    }]
+
+    // Obtener todos los servicios disponibles para cotizar
+    let serviciosCandidatos: Array<{ codigo: string; nombre: string }> = []
+
+    if (this.servicioDefault) {
+      serviciosCandidatos = [{ codigo: this.servicioDefault, nombre: this.servicioDefault }]
     }
 
-    if (!codigoServicio) {
+    // Siempre intentar obtener la lista completa de servicios
+    try {
+      const lista = await this.serviciosCliente()
+      if (Array.isArray(lista) && lista.length > 0) {
+        const cotizables = lista.filter(s => s.cotiza === "SI" || s.cotiza === "Si" || s.cotiza === "si")
+        const fuente     = cotizables.length > 0 ? cotizables : lista
+        serviciosCandidatos = fuente.map(s => ({
+          codigo: s.codigo_servicio,
+          nombre: s.descripcion ?? s.detalle_servicio ?? s.codigo_servicio,
+        }))
+      }
+    } catch { /* usar servicioDefault si ya está seteado */ }
+
+    if (serviciosCandidatos.length === 0) {
       return { servicios: [], error: "Configurá un código de servicio por defecto en FastMail → Transportistas" }
     }
 
-    const cotReq: FastMailCotizadorRequest = {
-      cp_origen:       req.origen_cp,
-      cp_destino:      req.destino_cp,
-      sucursal:        this.sucursal || undefined,
-      codigo_servicio: codigoServicio,
-      productos: [{
-        bultos:      1,
-        peso:        pesoKg,
-        descripcion: "Paquete",
-        dimensiones: {
-          alto:        dim?.alto_cm      ?? 10,
-          largo:       dim?.largo_cm     ?? 20,
-          profundidad: dim?.ancho_cm     ?? 15,
-        },
-      }],
-    }
+    // Cotizar todos los servicios en paralelo
+    const resultados = await Promise.allSettled(
+      serviciosCandidatos.map(async ({ codigo, nombre }) => {
+        const cotReq: FastMailCotizadorRequest = {
+          cp_origen:       req.origen_cp,
+          cp_destino:      req.destino_cp,
+          sucursal:        this.sucursal || undefined,
+          codigo_servicio: codigo,
+          productos,
+        }
+        const raw = await this.cotizador(cotReq) as any
+        const precio = parsePrecioFromRaw(raw)
+        if (precio === null) return null
 
-    const raw = await this.cotizador(cotReq) as any
+        return {
+          codigo,
+          nombre:     raw.nombre_servicio ?? raw.nombre ?? nombre,
+          plazo_dias: Number(raw.plazo_dias ?? raw.plazo ?? 0),
+          precio,
+        }
+      })
+    )
 
-    // Normalizar respuesta — FastMail puede devolver array en raw.message o raw.servicios
-    const items: any[] = Array.isArray(raw?.message)
-      ? raw.message
-      : Array.isArray(raw?.servicios)
-      ? raw.servicios
-      : Array.isArray(raw?.data)
-      ? raw.data
-      : raw?.precio != null
-      ? [raw]
-      : []
-
-    if (!items.length && raw?.error) {
-      return { servicios: [], error: String(raw.error) }
-    }
-
-    const servicios = items.map((s: any) => ({
-      codigo:     String(s.codigo_servicio ?? s.servicio ?? s.codigo ?? "STD"),
-      nombre:     String(s.nombre_servicio ?? s.nombre   ?? s.servicio ?? "Estándar"),
-      plazo_dias: Number(s.plazo_dias ?? s.plazo ?? 0),
-      precio:     Number(s.precio     ?? s.importe ?? s.costo ?? 0),
-    }))
+    const servicios = resultados
+      .filter((r): r is PromiseFulfilledResult<NonNullable<any>> =>
+        r.status === "fulfilled" && r.value !== null
+      )
+      .map(r => r.value)
 
     return { servicios }
   }
