@@ -7,7 +7,7 @@ Centraliza productos, stock, pedidos, envíos y facturación de múltiples canal
 
 - **Stack:** Next.js 15, React 19, TypeScript, Supabase (PostgreSQL + RLS), Tailwind CSS v4
 - **UI:** Radix UI, React Hook Form + Zod, SWR para fetching
-- **Deploy:** Vercel
+- **Deploy:** Vercel **Pro** ✅ (confirmado — soporta `maxDuration=300` en serverless functions)
 
 ---
 
@@ -229,7 +229,10 @@ Envíos → carrier API → tracking updates en shipments
 - Módulo de atención al cliente: preguntas ML funcionando con selector de cuenta
 - Módulo de marketing: en desarrollo (15+ plataformas, OAuth fix aplicado)
 - Remitentes: ABM completo en `/envios/remitentes` (accesible desde sidebar)
-- Azeta import: fix OOM aplicado (fflate streaming) ✅
+- Azeta import: fix OOM aplicado (fflate streaming) ✅ — implementación completa y lista para producción en Vercel Pro
+  - `productMap` acumula todos los productos en memoria (~100MB para catálogo completo) — aceptable en Pro (1024MB RAM default)
+  - Tiempo estimado de ejecución: 2–4 min dentro del límite de 300s
+  - No se necesita el flujo chunked (download+process) ni mover a cron exclusivo — el endpoint directo funciona en Pro
 
 ---
 
