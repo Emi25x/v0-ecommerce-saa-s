@@ -771,17 +771,20 @@ export class FastMailClient {
     // Para clientes con facturación "por cordón".
     // servicios-cp.json filtra los servicios que cubren el CP destino,
     // luego se cotiza cada uno con cotizador.json en paralelo.
+    // Requiere sucursal configurada — sin ella la API devuelve HTTP 400.
     let serviciosCandidatos: Array<{ codigo: string; nombre: string }> = []
 
-    try {
-      const porCp = await this.serviciosByCp(req.destino_cp)
-      if (Array.isArray(porCp) && porCp.length > 0) {
-        serviciosCandidatos = porCp.map(s => ({
-          codigo: s.cod_serv,
-          nombre: s.descripcion,
-        }))
-      }
-    } catch { /* caer a serviciosCliente */ }
+    if (this.sucursal) {
+      try {
+        const porCp = await this.serviciosByCp(req.destino_cp)
+        if (Array.isArray(porCp) && porCp.length > 0) {
+          serviciosCandidatos = porCp.map(s => ({
+            codigo: s.cod_serv,
+            nombre: s.descripcion,
+          }))
+        }
+      } catch { /* caer a serviciosCliente */ }
+    }
 
     // ── Intento 3 (fallback final): servicios-cliente.json + cotizador.json ──
     if (serviciosCandidatos.length === 0) {

@@ -50,7 +50,9 @@ export async function GET(request: NextRequest) {
     cotizadorRaw,
   ] = await Promise.allSettled([
     client.serviciosCliente(),
-    client.serviciosByCp(destino_cp),
+    sucursal
+      ? client.serviciosByCp(destino_cp)
+      : Promise.resolve("SKIPPED (sucursal no configurada)"),
     sucursal
       ? (client as any).precioServicio({ cp_destino: destino_cp, sucursal, productos })
       : Promise.resolve("SKIPPED (sucursal no configurada)"),
