@@ -232,6 +232,8 @@ Envíos → carrier API → tracking updates en shipments
 ## Contexto de trabajo en curso
 
 - FastMail API v2 integrado y conexión verificada ✅
+- FastMail cotización funcionando ✅ — `parsePrecioServicioResponse` parsea correctamente el formato real `{ servicio: { cod_serv, alias }, precio: { importe_total_flete } }` de `precio-servicio.json`
+- FastMail "mandalo ya" (servicio CABA, más barato, only CP 1000-1499): posiblemente solo aparece en `serviciosByCp` para destinos CABA, pero el flujo sale en intento 1 si `precio-servicio.json` ya devuelve resultados → pendiente verificar con `/api/envios/carriers/fastmail-debug?destino_cp=1426`
 - Cabify Logistics integrado y conexión verificada ✅ (pendiente activación de servicios en panel Cabify)
 - Módulo de atención al cliente: preguntas ML funcionando con selector de cuenta
 - Módulo de marketing: en desarrollo (15+ plataformas, OAuth fix aplicado)
@@ -251,6 +253,7 @@ Envíos → carrier API → tracking updates en shipments
 | FastMail "cp origen incorrecto" | `cp_origen` no se enviaba al cotizador | Agregado `cp_origen` en `FastMailCotizadorRequest` y `quote()` |
 | FastMail "cp destino incorrecto" | `cp_entrega` incorrecto, cotizador usa `cp_destino` | Renombrado a `cp_destino` en `FastMailCotizadorRequest` y `quote()` |
 | FastMail "codigo_servicio requerido" | `servicio_default` vacío | Auto-detección via `servicios-cliente.json` |
+| FastMail cotizador formato incorrecto | `parsePrecioServicioResponse` no manejaba formato real `{ servicio, precio: { importe_total_flete } }` | Reescrito para detectar ambos formatos (anidado y plano) |
 | ML Preguntas no importaba | `refreshTokenIfNeeded(acc.id)` esperaba objeto, recibía string | Cambiado a `getValidAccessToken(acc.id)` que toma string y retorna string |
 | Facebook OAuth error | `request.headers.get("origin")` = null en browser | `process.env.NEXT_PUBLIC_APP_URL \|\| request.nextUrl.origin` |
 | Cabify base URL incorrecta | URL vieja `https://api.cabify.com` | Migración `20260313_fix_cabify_config.sql` a `https://logistics.api.cabify.com` |
