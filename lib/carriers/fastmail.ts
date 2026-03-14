@@ -215,6 +215,29 @@ export interface FastMailSolicitarRetiroRequest {
 
 // ── Sucursal ──────────────────────────────────────────────────────────────────
 
+/** Item de sucursal devuelto por sucursalesByCliente.json */
+export interface FastMailSucursalItem {
+  codigo_sucursal: string
+  descripcion:     string
+  localidad?:      string
+  provincia?:      string
+  cp?:             number | string
+  calle?:          string
+  altura?:         number | string
+  contacto?:       string
+  telefono?:       string
+  mail?:           string
+  [key: string]:   unknown
+}
+
+export interface FastMailSucursalesResponse {
+  sucursales?: FastMailSucursalItem[]
+  message?:    FastMailSucursalItem[] | unknown
+  data?:       FastMailSucursalItem[] | unknown
+  error?:      string
+  [key: string]: unknown
+}
+
 export interface FastMailSucursalData {
   razon_social?:     string
   codigo_sucursal?:  string
@@ -659,8 +682,22 @@ export class FastMailClient {
   // ── Sucursales / Localidades ───────────────────────────────────────────────
 
   /** Sucursales asociadas al cliente. POST /api/v2/sucursalesByCliente.json */
-  async sucursalesByCliente(): Promise<unknown> {
-    return this.post<unknown>("/api/v2/sucursalesByCliente.json")
+  async sucursalesByCliente(): Promise<FastMailSucursalesResponse | FastMailSucursalItem[]> {
+    return this.post<FastMailSucursalesResponse | FastMailSucursalItem[]>("/api/v2/sucursalesByCliente.json")
+  }
+
+  /**
+   * Normaliza la respuesta de sucursalesByCliente a un array plano de FastMailSucursalItem.
+   * La API puede devolver array directo, o envuelto en { sucursales, message, data }.
+   */
+  async getSucursales(): Promise<FastMailSucursalItem[]> {
+    const raw = await this.sucursalesByCliente() as any
+    if (!raw) return []
+    if (Array.isArray(raw)) return raw as FastMailSucursalItem[]
+    if (Array.isArray(raw.sucursales)) return raw.sucursales
+    if (Array.isArray(raw.message))    return raw.message
+    if (Array.isArray(raw.data))       return raw.data
+    return []
   }
 
   /** Localidades, CPs y provincias disponibles. POST /api/v2/localidades.json */

@@ -8,7 +8,15 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { Truck, Save, TestTube, ArrowLeft, CheckCircle, XCircle } from "lucide-react"
+import { Truck, Save, TestTube, ArrowLeft, CheckCircle, XCircle, RefreshCw, MapPin } from "lucide-react"
+
+interface FastMailSucursal {
+  codigo_sucursal: string
+  descripcion:     string
+  localidad?:      string
+  provincia?:      string
+  cp?:             number | string
+}
 
 interface Carrier {
   id: string
@@ -39,6 +47,12 @@ export default function CarrierConfigPage() {
   const [cabifyClientSecret, setCabifyClientSecret] = useState("")
   const [baseUrl, setBaseUrl]         = useState("")
 
+  // FastMail: sucursales
+  const [sucursales, setSucursales]             = useState<FastMailSucursal[]>([])
+  const [sucursalesLoading, setSucursalesLoading] = useState(false)
+  const [sucursalesError, setSucursalesError]   = useState<string | null>(null)
+  const [selectedSucursal, setSelectedSucursal] = useState("")
+
   const isCabify    = slug === "cabify"
   const isFastmail  = slug === "fastmail"
 
@@ -49,16 +63,36 @@ export default function CarrierConfigPage() {
       const { data } = await res.json()
       setCarrier(data)
       setBaseUrl(data?.config?.base_url ?? "")
+      if (slug === "fastmail") {
+        setSelectedSucursal(data?.config?.sucursal ?? "")
+      }
     }
     setLoading(false)
+  }
+
+  async function loadSucursales() {
+    setSucursalesLoading(true)
+    setSucursalesError(null)
+    const res = await fetch("/api/envios/carriers/fastmail/sucursales")
+    const data = await res.json()
+    if (!res.ok || data.error) {
+      setSucursalesError(data.error ?? "Error al cargar sucursales")
+    } else {
+      setSucursales(data.sucursales ?? [])
+    }
+    setSucursalesLoading(false)
   }
 
   async function save() {
     if (!carrier) return
     setSaving(true)
     setSaved(false)
+    const newConfig: any = { ...carrier.config, base_url: baseUrl }
+    if (isFastmail && selectedSucursal) {
+      newConfig.sucursal = selectedSucursal
+    }
     const body: any = {
-      config: { ...carrier.config, base_url: baseUrl },
+      config: newConfig,
     }
     if (isCabify) {
       if (cabifyClientId)     body.credentials_client_id     = cabifyClientId
@@ -100,6 +134,12 @@ export default function CarrierConfigPage() {
   }
 
   useEffect(() => { load() }, [slug])
+
+  useEffect(() => {
+    if (isFastmail && carrier?.active) {
+      loadSucursales()
+    }
+  }, [isFastmail, carrier?.active])
 
   if (loading) return <div className="p-6 text-sm text-muted-foreground">Cargando…</div>
   if (!carrier) return <div className="p-6 text-sm text-muted-foreground">Transportista no encontrado.</div>
@@ -264,6 +304,79 @@ export default function CarrierConfigPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Sucursales FastMail */}
+      {isFastmail && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <MapPin className="h-4 w-4" />
+                  Sucursales del cliente
+                </CardTitle>
+                <CardDescription>
+                  Seleccioná la sucursal activa. Se usa en cotizaciones y generación de guías.
+                </CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={loadSucursales}
+                disabled={sucursalesLoading}
+              >
+                <RefreshCw className={`h-4 w-4 mr-1.5 ${sucursalesLoading ? "animate-spin" : ""}`} />
+                {sucursalesLoading ? "Cargando…" : "Actualizar"}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {sucursalesError && (
+              <p className="text-sm text-red-600 mb-3">{sucursalesError}</p>
+            )}
+            {!sucursalesLoading && sucursales.length === 0 && !sucursalesError && (
+              <p className="text-sm text-muted-foreground">
+                No se encontraron sucursales. Verificá que el token API sea correcto y hacé clic en Actualizar.
+              </p>
+            )}
+            {sucursales.length > 0 && (
+              <div className="flex flex-col gap-2">
+                {sucursales.map(s => (
+                  <label
+                    key={s.codigo_sucursal}
+                    className={`flex items-start gap-3 rounded-md border p-3 cursor-pointer transition-colors ${
+                      selectedSucursal === s.codigo_sucursal
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-muted-foreground"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="sucursal"
+                      value={s.codigo_sucursal}
+                      checked={selectedSucursal === s.codigo_sucursal}
+                      onChange={() => setSelectedSucursal(s.codigo_sucursal)}
+                      className="mt-0.5"
+                    />
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                      <span className="font-medium text-sm">{s.descripcion}</span>
+                      <span className="text-xs text-muted-foreground font-mono">{s.codigo_sucursal}</span>
+                      {(s.localidad || s.provincia) && (
+                        <span className="text-xs text-muted-foreground">
+                          {[s.localidad, s.provincia, s.cp].filter(Boolean).join(", ")}
+                        </span>
+                      )}
+                    </div>
+                  </label>
+                ))}
+                <p className="text-xs text-muted-foreground mt-1">
+                  Hacé clic en <strong>Guardar</strong> (arriba) para aplicar la sucursal seleccionada.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Info técnica */}
       {carrier.config && Object.keys(carrier.config).length > 0 && (
