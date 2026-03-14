@@ -78,9 +78,10 @@ export default function NuevoEnvioPage() {
   const [servicio, setServicio]             = useState("express")
   const [referencia, setReferencia]         = useState(searchParams.get("ref")    ?? "")
 
-  const [quoting, setQuoting]       = useState(false)
-  const [quotes, setQuotes]         = useState<QuoteService[] | null>(null)
-  const [quoteError, setQuoteError] = useState<string | null>(null)
+  const [quoting, setQuoting]             = useState(false)
+  const [quotes, setQuotes]               = useState<QuoteService[] | null>(null)
+  const [quoteError, setQuoteError]       = useState<string | null>(null)
+  const [selectedQuote, setSelectedQuote] = useState<QuoteService | null>(null)
 
   const [creating, setCreating]         = useState(false)
   const [result, setResult]             = useState<any | null>(null)
@@ -138,6 +139,7 @@ export default function NuevoEnvioPage() {
         email:     r.email     ?? "",
       })
       setQuotes(null)
+      setSelectedQuote(null)
     }
   }
 
@@ -146,6 +148,7 @@ export default function NuevoEnvioPage() {
     setQuoting(true)
     setQuoteError(null)
     setQuotes(null)
+    setSelectedQuote(null)
     const res = await fetch("/api/envios/quote", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
@@ -200,12 +203,12 @@ export default function NuevoEnvioPage() {
         }
       : {
           // FastMail y otros: remitente / destinatario
-          remitente,
-          destinatario,
+          remitente:       { ...remitente, calle: remitente.direccion },
+          destinatario:    { ...destinatario, calle: destinatario.direccion },
           items:           [],
           peso_total_g:    parseInt(pesoG) || 0,
           valor_declarado: parseFloat(valorDeclarado) || 0,
-          servicio,
+          servicio:        selectedQuote?.codigo || servicio,
           referencia:      referencia || undefined,
         }
 
@@ -251,6 +254,10 @@ export default function NuevoEnvioPage() {
     remitente.nombre && remitente.direccion && remitente.cp &&
     destinatario.nombre && destinatario.direccion && destinatario.cp &&
     pesoG && valorDeclarado
+
+  // Para FastMail, si ya se cotizó, hay que seleccionar un servicio antes de crear el envío
+  const isFastMail   = carrierSlug !== "cabify"
+  const servicioOk   = !isFastMail || !quotes || quotes.length === 0 || selectedQuote !== null
 
   // ── Pantalla de éxito ──────────────────────────────────────────────────────
   if (result) {
@@ -381,7 +388,7 @@ export default function NuevoEnvioPage() {
           {carriers.length === 0 ? (
             <p className="text-sm text-muted-foreground">No hay transportistas activos. Activá uno en <Link href="/envios/transportistas" className="underline">Transportistas</Link>.</p>
           ) : (
-            <Select value={carrierSlug} onValueChange={v => { setCarrierSlug(v); setQuotes(null) }}>
+            <Select value={carrierSlug} onValueChange={v => { setCarrierSlug(v); setQuotes(null); setSelectedQuote(null) }}>
               <SelectTrigger className="w-full max-w-xs">
                 <SelectValue />
               </SelectTrigger>
@@ -474,28 +481,20 @@ export default function NuevoEnvioPage() {
             <Label className="text-xs">Valor declarado ($)</Label>
             <Input type="number" value={valorDeclarado} onChange={e => setValorDeclarado(e.target.value)} placeholder="5000" />
           </div>
-          <div className="flex flex-col gap-1">
-            <Label className="text-xs">Servicio</Label>
-            <Select value={servicio} onValueChange={setServicio}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {carrierSlug === "cabify" ? (
-                  <>
-                    <SelectItem value="express">Express (horas)</SelectItem>
-                    <SelectItem value="same_day">Mismo día</SelectItem>
-                    <SelectItem value="next_day">Día siguiente</SelectItem>
-                    <SelectItem value="scheduled">Programado</SelectItem>
-                  </>
-                ) : (
-                  <>
-                    <SelectItem value="standard">Estándar</SelectItem>
-                    <SelectItem value="express">Express</SelectItem>
-                    <SelectItem value="economico">Económico</SelectItem>
-                  </>
-                )}
-              </SelectContent>
-            </Select>
-          </div>
+          {carrierSlug === "cabify" && (
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs">Servicio</Label>
+              <Select value={servicio} onValueChange={setServicio}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="express">Express (horas)</SelectItem>
+                  <SelectItem value="same_day">Mismo día</SelectItem>
+                  <SelectItem value="next_day">Día siguiente</SelectItem>
+                  <SelectItem value="scheduled">Programado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="flex flex-col gap-1">
             <Label className="text-xs">Referencia</Label>
             <Input value={referencia} onChange={e => setReferencia(e.target.value)} placeholder="Nro. orden" />
@@ -525,18 +524,44 @@ export default function NuevoEnvioPage() {
             <p className="text-sm text-muted-foreground">No hay servicios disponibles para ese tramo.</p>
           )}
           {quotes && quotes.length > 0 && (
-            <div className="rounded border divide-y text-sm">
-              {quotes.map(q => (
-                <div key={q.codigo} className="flex items-center justify-between px-3 py-2">
-                  <div>
-                    <span className="font-medium">{q.nombre}</span>
-                    <span className="ml-2 text-muted-foreground text-xs">{q.plazo_dias} día{q.plazo_dias !== 1 ? "s" : ""}</span>
-                    {q.descripcion && <span className="ml-2 text-muted-foreground text-xs">{q.descripcion}</span>}
-                  </div>
-                  <span className="font-bold">${q.precio.toLocaleString("es-AR")}</span>
-                </div>
-              ))}
-            </div>
+            <>
+              <p className="text-xs text-muted-foreground">Seleccioná un servicio para continuar.</p>
+              <div className="rounded border divide-y text-sm">
+                {quotes.map(q => {
+                  const isSelected = selectedQuote?.codigo === q.codigo
+                  return (
+                    <button
+                      key={q.codigo}
+                      type="button"
+                      onClick={() => setSelectedQuote(isSelected ? null : q)}
+                      className={`w-full flex items-center justify-between px-3 py-2 text-left transition-colors ${
+                        isSelected
+                          ? "bg-primary/10 border-l-2 border-l-primary"
+                          : "hover:bg-muted/50"
+                      }`}
+                    >
+                      <div>
+                        <span className="font-medium">{q.nombre}</span>
+                        {q.plazo_dias > 0 && (
+                          <span className="ml-2 text-muted-foreground text-xs">{q.plazo_dias} día{q.plazo_dias !== 1 ? "s" : ""}</span>
+                        )}
+                        {q.descripcion && <span className="ml-2 text-muted-foreground text-xs">{q.descripcion}</span>}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {q.precio > 0 && <span className="font-bold">${q.precio.toLocaleString("es-AR")}</span>}
+                        {isSelected && <CheckCircle className="h-4 w-4 text-primary shrink-0" />}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+              {selectedQuote && (
+                <p className="text-xs text-muted-foreground">
+                  Servicio seleccionado: <span className="font-medium text-foreground">{selectedQuote.nombre}</span>
+                  {selectedQuote.precio > 0 && <> — <span className="font-bold text-foreground">${selectedQuote.precio.toLocaleString("es-AR")}</span></>}
+                </p>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
@@ -546,7 +571,7 @@ export default function NuevoEnvioPage() {
       <div className="flex gap-3">
         <Button
           onClick={crearEnvio}
-          disabled={creating || !camposOk || carriers.length === 0}
+          disabled={creating || !camposOk || !servicioOk || carriers.length === 0}
           size="lg"
           className="flex-1"
         >

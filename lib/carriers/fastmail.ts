@@ -378,6 +378,7 @@ export interface FastMailShipmentRequest {
   destinatario:    FastMailContacto
   peso_g:          number
   valor_declarado: number
+  servicio?:       string   // Código de servicio seleccionado; si no se envía, usa servicio_default de config
   referencia?:     string
 }
 
@@ -792,8 +793,14 @@ export class FastMailClient {
         serviciosCandidatos = [{ codigo: this.servicioDefault, nombre: this.servicioDefault }]
       }
       try {
-        const lista = await this.serviciosCliente()
-        if (Array.isArray(lista) && lista.length > 0) {
+        const rawLista = await this.serviciosCliente() as any
+        // La API puede devolver array directo o envuelto en { servicios, message, data }
+        const lista: FastMailServicio[] =
+          Array.isArray(rawLista)             ? rawLista             :
+          Array.isArray(rawLista?.servicios)  ? rawLista.servicios   :
+          Array.isArray(rawLista?.message)    ? rawLista.message     :
+          Array.isArray(rawLista?.data)       ? rawLista.data        : []
+        if (lista.length > 0) {
           const cotizables = lista.filter(s =>
             s.cotiza === "SI" || s.cotiza === "Si" || s.cotiza === "si"
           )
@@ -845,14 +852,16 @@ export class FastMailClient {
    * Usa defaults de config: sucursal, servicio_default, pago_en=DESTINO, tipo_operacion=ENT.
    */
   async createShipment(req: FastMailShipmentRequest): Promise<FastMailShipmentResponse> {
+    // La UI puede enviar 'direccion' (nombre del campo en el form) en lugar de 'calle'
+    const calleRaw = req.destinatario.calle ?? (req.destinatario as any).direccion ?? ""
     // Separar calle y altura del destinatario (ej: "Av Rivadavia 1234" → calle + 1234)
-    const matchAltura = req.destinatario.calle.match(/^(.*?)\s+(\d+)\s*$/)
-    const calle  = matchAltura ? matchAltura[1].trim() : req.destinatario.calle
+    const matchAltura = calleRaw.match(/^(.*?)\s+(\d+)\s*$/)
+    const calle  = matchAltura ? matchAltura[1].trim() : calleRaw
     const altura = matchAltura ? parseInt(matchAltura[2]) : 0
 
     const guiaReq: FastMailGuiaRequest = {
       codigo_sucursal: this.sucursal,
-      codigo_servicio: this.servicioDefault || "STD",
+      codigo_servicio: req.servicio || this.servicioDefault || "STD",
       internacional:   false,
       valorDeclarado:  req.valor_declarado,
       isInversa:       false,
