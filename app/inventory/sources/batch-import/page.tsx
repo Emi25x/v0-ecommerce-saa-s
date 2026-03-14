@@ -107,113 +107,41 @@ export default function BatchImportPage() {
           return
         }
 
-        // Azeta Parcial / Total: flujo chunked (download → process en lotes)
-        // Esto evita el timeout de Vercel (60s en Hobby) al dividir en dos pasos:
-        //   1) download: descarga ZIP/CSV de Azeta y lo sube a Vercel Blob (~2-5min, maxDuration=300)
-        //   2) process: procesa 4MB por llamada (cada llamada < 60s)
-        const isTotalCatalog = !nameLower.includes("parcial")
-        setStatus("Descargando catálogo AZETA...")
-        addLog(`Descargando ${isTotalCatalog ? "catálogo total (ZIP)" : "catálogo parcial (CSV)"} de AZETA...`)
-        addLog("Paso 1/2: descarga al servidor. Puede tardar 2-5 minutos. No cerrar la página.")
+        // Azeta Total/Parcial: llama directamente a import-catalog (maxDuration=300s en Vercel Pro).
+        // Descarga, descomprime y procesa el ZIP/CSV en streaming server-side sin pasar por Blob.
+        setStatus("Importando catálogo AZETA...")
+        addLog("Descargando y procesando catálogo AZETA (puede tardar 2-5 minutos)...")
+        addLog("El servidor descarga el ZIP, lo descomprime en streaming y hace upsert en la DB.")
 
-        const dlRes = await fetch("/api/azeta/download", {
+        const impRes = await fetch("/api/azeta/import-catalog", {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ source_id: urlSourceId }),
+          signal: AbortSignal.timeout(295_000),
         })
-        const dlResult = await dlRes.json().catch(() => ({ error: `HTTP ${dlRes.status} (respuesta inválida)` }))
-        if (!dlRes.ok || dlResult.error) {
-          addLog(`Error en descarga: ${dlResult.error || `HTTP ${dlRes.status}`}`)
-          setStatus("Error en descarga")
-          setIsRunning(false)
-          return
-        }
-        if (dlResult.empty) {
-          addLog(`Catálogo vacío: ${dlResult.message}`)
-          setStatus("Sin datos")
+        const impResult = await impRes.json().catch(() => ({ error: `HTTP ${impRes.status} (respuesta inválida)` }))
+
+        if (!impRes.ok || impResult.error) {
+          addLog(`Error: ${impResult.error || `HTTP ${impRes.status}`}`)
+          setStatus("Error en importacion")
           setIsRunning(false)
           return
         }
 
-        addLog(`Descarga completada en ${dlResult.elapsed_seconds}s. Iniciando procesamiento...`)
-        addLog("Paso 2/2: procesando en chunks...")
-        setStatus("Procesando catálogo AZETA...")
+        const created = impResult.created || 0
+        const updated = impResult.updated || 0
+        const errors  = impResult.errors  || 0
+        const total   = impResult.total_rows || (created + updated + errors)
+        const elapsed = impResult.elapsed_seconds ? `${impResult.elapsed_seconds}s` : ""
 
-        const blobUrl: string = dlResult.blob_url
-        let byteStart = 0
-        let headerLine: string | undefined
-        let accCreated = 0, accUpdated = 0, accErrors = 0, accDiscarded = 0
-        let chunkNum = 0
-
-        while (!abortRef.current) {
-          chunkNum++
-          setStatus(`Procesando chunk ${chunkNum}...`)
-
-          const procRes = await fetch("/api/azeta/process", {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              blob_url: blobUrl,
-              byte_start: byteStart,
-              header_line: headerLine,
-            }),
-          })
-          const procResult = await procRes.json().catch(() => ({ error: `HTTP ${procRes.status} (respuesta inválida)` }))
-
-          if (!procRes.ok || procResult.error) {
-            addLog(`Error en chunk ${chunkNum}: ${procResult.error || `HTTP ${procRes.status}`}`)
-            setStatus("Error en procesamiento")
-            // Limpiar blob
-            fetch("/api/azeta/process", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ blob_url: blobUrl, cleanup: true }),
-            }).catch(() => {})
-            setIsRunning(false)
-            return
-          }
-
-          accCreated   += procResult.created   || 0
-          accUpdated   += procResult.updated   || 0
-          accErrors    += procResult.errors    || 0
-          accDiscarded += procResult.discarded || 0
-          const totalSoFar = accCreated + accUpdated + accErrors + accDiscarded
-
-          setTotalCreated(accCreated)
-          setTotalUpdated(accUpdated)
-          setTotalProcessed(totalSoFar)
-          setProgress(prev => Math.min(95, prev + 3))
-
-          addLog(`Chunk ${chunkNum}: ${procResult.created || 0} creados, ${procResult.updated || 0} actualizados, ${procResult.discarded || 0} descartados`)
-
-          if (procResult.done) {
-            setProgress(100)
-            setTotalRows(totalSoFar)
-            addLog(`Completado: ${accCreated} creados, ${accUpdated} actualizados, ${accErrors} errores, ${accDiscarded} descartados`)
-            setStatus("Importacion completada")
-            // Limpiar blob
-            fetch("/api/azeta/process", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ blob_url: blobUrl, cleanup: true }),
-            }).catch(() => {})
-            setIsRunning(false)
-            return
-          }
-
-          byteStart  = procResult.next_byte_start
-          headerLine = procResult.header_line
-          await new Promise(r => setTimeout(r, 200))
-        }
-
-        // Cancelado por el usuario
-        fetch("/api/azeta/process", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ blob_url: blobUrl, cleanup: true }),
-        }).catch(() => {})
+        setTotalCreated(created)
+        setTotalUpdated(updated)
+        setTotalProcessed(total)
+        setTotalRows(total)
+        setProgress(100)
+        addLog(`Completado${elapsed ? ` en ${elapsed}` : ""}: ${created} creados, ${updated} actualizados, ${errors} errores`)
+        setStatus("Importacion completada")
         setIsRunning(false)
         return
       } catch (err: any) {
