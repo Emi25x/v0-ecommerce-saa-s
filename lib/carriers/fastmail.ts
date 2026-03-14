@@ -158,7 +158,8 @@ export interface FastMailGuiaResponse {
 
 export interface FastMailCotizadorRequest {
   sucursal?:        string
-  cp_entrega?:      string
+  cp_origen?:       string   // CP de origen (sucursal o remitente) — requerido por la API
+  cp_entrega?:      string   // CP de destino
   codigo_servicio?: string
   productos:        FastMailProducto[]
 }
@@ -651,6 +652,7 @@ export class FastMailClient {
     }
 
     const cotReq: FastMailCotizadorRequest = {
+      cp_origen:       req.origen_cp,
       cp_entrega:      req.destino_cp,
       sucursal:        this.sucursal || undefined,
       codigo_servicio: codigoServicio,

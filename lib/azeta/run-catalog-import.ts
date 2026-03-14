@@ -89,22 +89,29 @@ export async function runCatalogImport(opts?: {
       }
     }
 
-    // Descargar el archivo completo en un Buffer de Node.js
-    const arrayBuf = await res.arrayBuffer()
-    const fileBuf  = Buffer.from(arrayBuf)
-    console.log(`[AZETA] Descargado: ${(fileBuf.length / 1024 / 1024).toFixed(1)}MB en ${((Date.now() - startTime) / 1000).toFixed(1)}s`)
+    // Leer la respuesta de forma STREAMING para evitar cargar 230MB+ en RAM
+    if (!res.body) {
+      return { success: false, error: "Azeta: response body is null (empty response)" }
+    }
 
-    // Verificar que no sea una página HTML (credenciales inválidas, etc.)
-    const preview200 = fileBuf.slice(0, 200).toString("utf8")
-    if (preview200.toLowerCase().includes("<html") || preview200.toLowerCase().includes("<!doctype")) {
+    const reader = res.body.getReader()
+
+    // Peek primer chunk para detectar formato y verificar que no sea HTML
+    const { value: firstChunk } = await reader.read()
+    if (!firstChunk || firstChunk.length === 0) {
+      return { success: false, error: "Azeta: respuesta vacía del servidor" }
+    }
+
+    const previewText = new TextDecoder("utf8").decode(firstChunk.slice(0, 200))
+    if (previewText.toLowerCase().includes("<html") || previewText.toLowerCase().includes("<!doctype")) {
       return {
         success: false,
-        error: `Servidor AZETA devolvió HTML en lugar del catálogo. Posible error de credenciales o URL incorrecta. Preview: ${preview200.slice(0, 150)}`,
+        error: `Servidor AZETA devolvió HTML en lugar del catálogo. Posible error de credenciales o URL incorrecta. Preview: ${previewText.slice(0, 150)}`,
       }
     }
 
-    const isZip = fileBuf[0] === 0x50 && fileBuf[1] === 0x4b
-    console.log(`[AZETA] Formato: ${isZip ? "ZIP" : "CSV"}`)
+    const isZip = firstChunk[0] === 0x50 && firstChunk[1] === 0x4b
+    console.log(`[AZETA] Formato: ${isZip ? "ZIP" : "CSV"} (streaming fflate)`)
 
     // Leer discount rate desde import_sources
     const { data: azetaSource } = await supabase
@@ -192,42 +199,77 @@ export async function runCatalogImport(opts?: {
       })
     }
 
-    // ── Descompresión y parseo línea a línea ──────────────────────────────────
-    let csvText: string
-    if (isZip) {
-      // adm-zip: más robusto y ya instalado, soporta ZIPs sin sizes en header local
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const AdmZip = require("adm-zip")
-      const zip = new AdmZip(fileBuf)
-      const entries = zip.getEntries()
-      let csvEntry: any = null
-      for (const entry of entries) {
-        console.log(`[AZETA][ZIP] entry="${entry.entryName}" dir=${entry.isDirectory}`)
-        if (!entry.isDirectory && /\.(csv|txt)$/i.test(entry.entryName)) {
-          csvEntry = entry; break
-        }
-      }
-      if (!csvEntry) {
-        // Si no hay .csv/.txt, intentar la primera entrada no-directorio
-        for (const entry of entries) {
-          if (!entry.isDirectory) { csvEntry = entry; break }
-        }
-      }
-      if (!csvEntry) {
-        return { success: false, error: "No se encontró archivo CSV/TXT dentro del ZIP de Azeta" }
-      }
-      console.log(`[AZETA][ZIP] Extrayendo "${csvEntry.entryName}" (${(csvEntry.header.size / 1024 / 1024).toFixed(1)}MB descomprimido)`)
-      const decompressed = csvEntry.getData() as Buffer
-      csvText = new TextDecoder("latin1").decode(decompressed)
-    } else {
-      // CSV sin comprimir
-      csvText = new TextDecoder("latin1").decode(fileBuf)
+    // ── Descompresión y parseo STREAMING (sin cargar el archivo completo en RAM) ───
+    // Usa fflate Unzip streaming para ZIP o TextDecoder incremental para CSV plano.
+    // Esto evita el OOM que ocurría al cargar ~500MB descomprimidos en un solo buffer.
+
+    const decoder  = new TextDecoder("latin1")
+    let lineBuffer = ""
+
+    function processChunk(bytes: Uint8Array, final: boolean) {
+      const chunk = decoder.decode(bytes, { stream: !final })
+      const text  = lineBuffer + chunk
+      const parts = text.split(/\r?\n/)
+      lineBuffer  = final ? "" : (parts.pop() ?? "")
+      for (const line of parts) processLine(line)
     }
 
-    // Parsear línea a línea
-    const lines = csvText.split(/\r?\n/)
-    for (const line of lines) {
-      processLine(line)
+    if (isZip) {
+      // fflate streaming Unzip — nunca crea el CSV completo en memoria
+      const { Unzip, UnzipInflate } = await import("fflate")
+
+      await new Promise<void>((resolve, reject) => {
+        const unzipper = new Unzip()
+        unzipper.register(UnzipInflate)
+
+        let csvFound = false
+
+        unzipper.onfile = (file) => {
+          if (!csvFound && !file.name.endsWith("/")) {
+            csvFound = true
+            console.log(`[AZETA][ZIP] Streaming "${file.name}"`)
+
+            file.ondata = (err, data, final) => {
+              if (err) { reject(err); return }
+              processChunk(data, final)
+              if (final) resolve()
+            }
+            file.start()
+          } else {
+            file.terminate()
+          }
+        }
+
+        // Alimentar primer chunk ya leído + resto del stream
+        try {
+          unzipper.push(firstChunk!, false)
+        } catch (e) { reject(e); return }
+
+        function pump() {
+          reader.read().then(({ done, value }) => {
+            try {
+              if (done) {
+                // Último chunk — señalizar fin al unzipper
+                if (value && value.length > 0) unzipper.push(value, true)
+                if (!csvFound) reject(new Error("No se encontró archivo CSV/TXT dentro del ZIP de Azeta"))
+                // Si csvFound, file.ondata(_, _, true) ya llama a resolve()
+              } else {
+                if (value) unzipper.push(value, false)
+                pump()
+              }
+            } catch (e) { reject(e) }
+          }).catch(reject)
+        }
+        pump()
+      })
+    } else {
+      // CSV sin comprimir — streaming directo
+      processChunk(firstChunk!, false)
+      while (true) {
+        const { done, value } = await reader.read()
+        if (value) processChunk(value, done)
+        if (done) break
+      }
     }
 
     // Validación post-parseo

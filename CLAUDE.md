@@ -44,15 +44,18 @@ Centraliza productos, stock, pedidos, envíos y facturación de múltiples canal
   - `lib/carriers/cabify.ts`
   - Base URL: `https://logistics.api.cabify.com` (corregida, la anterior `https://api.cabify.com` era incorrecta)
   - Auth URL: `https://cabify.com/auth/api/authorization`
-  - `getShippingTypes()` usa params `lat=&lon=` (no `location=lat,lon`)
+  - `getShippingTypes()` usa `location=lat,lon` (NO `lat=&lon=` separados — eso da HTTP 400)
   - Conexión verificada ✅ (0 tipos disponibles = cuenta sin servicios activados del lado de Cabify)
 - **FastMail** — API v2, autenticación via `api_token` en body POST
   - `lib/carriers/fastmail.ts`
   - Base URL: `https://epresislv.fastmail.com.ar`
   - Todos los endpoints usan POST con `{ api_token, ...params }` en el body
-  - Endpoints implementados: `dummy-test.json` (health), `consultarStock`, `listarCps`, `generaRecepcion.json`, `editarSucursal.json`, `seguirEnvio.json` (tracking)
+  - Endpoints implementados: `dummy-test.json` (health), `cotizador.json`, `guias.json`, `seguimiento.json`, `servicios-cliente.json`, `sucursalesByCliente.json`, `solicitarRetiro.json`, `generaRecepcion.json`, `editarSucursal.json`, `localidades.json`, `print-etiquetas-custom`, `etiquetas-cliente`, `integracion.json`
   - Conexión verificada ✅
-  - ⚠️ El endpoint de tracking `seguirEnvio.json` es provisorio — confirmar con el manual oficial
+  - **Cotizador**: requiere `cp_origen` (CP de la sucursal/remitente), `cp_entrega` (CP destino), `codigo_servicio` y `productos`. El `codigo_servicio` se auto-detecta via `servicios-cliente.json` si no está configurado en `servicio_default`.
+  - **Guías**: usa `valorDeclarado` (camelCase, NO `valor_declarado`). Requiere `codigo_sucursal`.
+  - `sucursal` en config = string alfanumérico (código de sucursal del cliente en FastMail)
+  - ⚠️ `seguimiento.json` (tracking) — confirmar nombre correcto con manual oficial (podría ser `seguirEnvio.json`)
 
 ### Marketing (15+ plataformas)
 Google Ads/Analytics/Search Console/Merchant, Meta Ads, TikTok Ads, LinkedIn, Pinterest,
@@ -175,10 +178,69 @@ Envíos → carrier API → tracking updates en shipments
 
 ---
 
+## Importación Azeta
+
+### Arquitectura
+- `lib/azeta/run-catalog-import.ts` — lógica central, llamada por cron y por UI
+- `app/api/azeta/import-catalog/route.ts` — endpoint cron + UI (maxDuration=300)
+- `app/api/azeta/import-stock/route.ts` — actualización de stock (sin catálogo)
+- `app/api/azeta/download/route.ts` + `app/api/azeta/process/route.ts` — flujo chunked con Vercel Blob (alternativa para UI resumable)
+
+### Flujo de importación (Azeta Total)
+1. UI llama `POST /api/azeta/import-catalog` con `{ source_id }`
+2. `runCatalogImport()` resuelve URL desde `import_sources` (fallback: URL hardcodeada)
+3. Descarga ZIP (~230MB) via `fetch()` con streaming ReadableStream
+4. Detecta formato en primer chunk (magic bytes `PK` = ZIP, sino CSV)
+5. ZIP: descomprime con `fflate` streaming (`Unzip` + `UnzipInflate`) sin cargar el archivo completo en RAM
+6. CSV: procesa stream directamente con `TextDecoder("latin1")` incremental
+7. Parsea líneas con `processLine()`: auto-detecta delimitador y headers
+8. Upsert en `products` en batches de 500 con `onConflict: "ean"`
+
+### ⚠️ Problema resuelto: OOM en Lambda de Vercel
+- **Causa**: `adm-zip.getData()` cargaba ~500MB (CSV descomprimido) + ~230MB (ZIP original) en RAM → crash Lambda
+- **Fix**: reemplazado con `fflate` streaming (`Unzip.push()` incremental), nunca tiene el archivo completo en RAM
+- **Síntoma**: HTTP 500 sin mensaje de error (Lambda crasheaba antes de responder)
+
+### Columna `default_discount_rate`
+- Columna opcional en `import_sources` para calcular `cost_price = pvp * (1 - rate)`
+- Script para agregar: `scripts/add-discount-rate-to-import-sources.sql`
+- Si no existe, `cost_price = pvp` (sin descuento)
+
+### Credenciales Azeta
+- URL y credenciales se guardan en `import_sources.url_template`
+- URL fallback hardcodeada en `run-catalog-import.ts` (usar solo si no hay `import_sources`)
+- Si el servidor devuelve HTML → error de credenciales o sesión caducada
+
+---
+
+## OAuth Marketing
+
+### Fix OAuth: `origin` header null en browser redirects
+- `request.headers.get("origin")` retorna `null` en redirects GET del browser
+- Corrección: `const origin = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin`
+- Aplicado en: `app/api/marketing/oauth/[provider]/route.ts` y `app/api/marketing/oauth/callback/route.ts`
+
+---
+
 ## Contexto de trabajo en curso
 
 - FastMail API v2 integrado y conexión verificada ✅
 - Cabify Logistics integrado y conexión verificada ✅ (pendiente activación de servicios en panel Cabify)
 - Módulo de atención al cliente: preguntas ML funcionando con selector de cuenta
-- Módulo de marketing: en desarrollo (15+ plataformas, pendiente integración OAuth real)
+- Módulo de marketing: en desarrollo (15+ plataformas, OAuth fix aplicado)
 - Remitentes: ABM completo en `/envios/remitentes` (accesible desde sidebar)
+- Azeta import: fix OOM aplicado (fflate streaming) ✅
+
+---
+
+## Bugs conocidos y fixes aplicados
+
+| Bug | Causa | Fix |
+|-----|-------|-----|
+| Azeta HTTP 500 | OOM al cargar ~500MB CSV en RAM | fflate streaming en `run-catalog-import.ts` |
+| FastMail "cp origen incorrecto" | `cp_origen` no se enviaba al cotizador | Agregado `cp_origen` en `FastMailCotizadorRequest` y `quote()` |
+| FastMail "codigo_servicio requerido" | `servicio_default` vacío | Auto-detección via `servicios-cliente.json` |
+| ML Preguntas no importaba | `refreshTokenIfNeeded(acc.id)` esperaba objeto, recibía string | Cambiado a `getValidAccessToken(acc.id)` que toma string y retorna string |
+| Facebook OAuth error | `request.headers.get("origin")` = null en browser | `process.env.NEXT_PUBLIC_APP_URL \|\| request.nextUrl.origin` |
+| Cabify base URL incorrecta | URL vieja `https://api.cabify.com` | Migración `20260313_fix_cabify_config.sql` a `https://logistics.api.cabify.com` |
+| Cabify HTTP 400 en shipping types | Parámetros separados `lat=&lon=` | Revertido a `location=lat,lon` |
