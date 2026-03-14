@@ -52,7 +52,7 @@ Centraliza productos, stock, pedidos, envíos y facturación de múltiples canal
   - Todos los endpoints usan POST con `{ api_token, ...params }` en el body
   - Endpoints implementados: `dummy-test.json` (health), `cotizador.json`, `guias.json`, `seguimiento.json`, `servicios-cliente.json`, `sucursalesByCliente.json`, `solicitarRetiro.json`, `generaRecepcion.json`, `editarSucursal.json`, `localidades.json`, `print-etiquetas-custom`, `etiquetas-cliente`, `integracion.json`
   - Conexión verificada ✅
-  - **Cotizador**: requiere `cp_origen` (CP de la sucursal/remitente), `cp_entrega` (CP destino), `codigo_servicio` y `productos`. El `codigo_servicio` se auto-detecta via `servicios-cliente.json` si no está configurado en `servicio_default`.
+  - **Cotizador**: requiere `cp_origen` (CP de la sucursal/remitente), `cp_destino` (CP destino — NO `cp_entrega`), `codigo_servicio` y `productos`. El `codigo_servicio` se auto-detecta via `servicios-cliente.json` si no está configurado en `servicio_default`.
   - **Guías**: usa `valorDeclarado` (camelCase, NO `valor_declarado`). Requiere `codigo_sucursal`.
   - `sucursal` en config = string alfanumérico (código de sucursal del cliente en FastMail)
   - ⚠️ `seguimiento.json` (tracking) — confirmar nombre correcto con manual oficial (podría ser `seguirEnvio.json`)
@@ -239,6 +239,7 @@ Envíos → carrier API → tracking updates en shipments
 |-----|-------|-----|
 | Azeta HTTP 500 | OOM al cargar ~500MB CSV en RAM | fflate streaming en `run-catalog-import.ts` |
 | FastMail "cp origen incorrecto" | `cp_origen` no se enviaba al cotizador | Agregado `cp_origen` en `FastMailCotizadorRequest` y `quote()` |
+| FastMail "cp destino incorrecto" | `cp_entrega` incorrecto, cotizador usa `cp_destino` | Renombrado a `cp_destino` en `FastMailCotizadorRequest` y `quote()` |
 | FastMail "codigo_servicio requerido" | `servicio_default` vacío | Auto-detección via `servicios-cliente.json` |
 | ML Preguntas no importaba | `refreshTokenIfNeeded(acc.id)` esperaba objeto, recibía string | Cambiado a `getValidAccessToken(acc.id)` que toma string y retorna string |
 | Facebook OAuth error | `request.headers.get("origin")` = null en browser | `process.env.NEXT_PUBLIC_APP_URL \|\| request.nextUrl.origin` |
