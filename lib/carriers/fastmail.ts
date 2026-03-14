@@ -66,6 +66,13 @@ export interface FastMailServicio {
   cotiza:          "SI" | "NO" | string
 }
 
+/** Respuesta de servicios-cp.json (v1) — servicios disponibles por CP destino */
+export interface FastMailServicioCp {
+  id:          number
+  cod_serv:    string
+  descripcion: string
+}
+
 // ── Tipos de operación ────────────────────────────────────────────────────────
 
 export interface FastMailTipoOperacion {
@@ -612,6 +619,19 @@ export class FastMailClient {
     return this.post<FastMailServicio[]>("/api/v2/servicios-cliente.json")
   }
 
+  /**
+   * Servicios disponibles para un CP destino (v1).
+   * Usar solo si el tipo de facturación es "por cordón".
+   * Devuelve los servicios ecommerce que cubren ese CP.
+   * POST /api/v1/public/servicios-cp.json
+   */
+  async serviciosByCp(cp_entrega: string): Promise<FastMailServicioCp[]> {
+    return this.post<FastMailServicioCp[]>("/api/v1/public/servicios-cp.json", {
+      sucursal: this.sucursal,
+      cp_entrega,
+    })
+  }
+
   /** Servicios del cliente via integración Presis. POST /api/v2/serviciosByIntegracionPresis.json */
   async serviciosByIntegracionPresis(): Promise<FastMailServicio[]> {
     return this.post<FastMailServicio[]>("/api/v2/serviciosByIntegracionPresis.json")
@@ -731,9 +751,9 @@ export class FastMailClient {
       },
     }]
 
-    // ── Intento 1: precio-servicio.json ──────────────────────────────────────
-    // Un solo llamado que devuelve todos los servicios disponibles para el tramo.
-    // La sucursal actúa como punto de origen (no requiere cp_origen explícito).
+    // ── Intento 1: precio-servicio.json (v2) ─────────────────────────────────
+    // Un solo llamado. Devuelve precios por servicio para el tramo.
+    // Solo funciona si el cliente tiene este endpoint habilitado.
     if (this.sucursal) {
       try {
         const raw = await this.precioServicio({
@@ -744,30 +764,44 @@ export class FastMailClient {
 
         const servicios = parsePrecioServicioResponse(raw)
         if (servicios.length > 0) return { servicios }
-      } catch { /* caer al fallback */ }
+      } catch { /* caer al intento 2 */ }
     }
 
-    // ── Intento 2 (fallback): cotizador.json por servicio en paralelo ────────
-    // Necesario si precio-servicio no está disponible o no devuelve resultados.
+    // ── Intento 2: servicios-cp.json (v1) + cotizador.json ───────────────────
+    // Para clientes con facturación "por cordón".
+    // servicios-cp.json filtra los servicios que cubren el CP destino,
+    // luego se cotiza cada uno con cotizador.json en paralelo.
     let serviciosCandidatos: Array<{ codigo: string; nombre: string }> = []
 
-    if (this.servicioDefault) {
-      serviciosCandidatos = [{ codigo: this.servicioDefault, nombre: this.servicioDefault }]
-    }
-
     try {
-      const lista = await this.serviciosCliente()
-      if (Array.isArray(lista) && lista.length > 0) {
-        const cotizables = lista.filter(s =>
-          s.cotiza === "SI" || s.cotiza === "Si" || s.cotiza === "si"
-        )
-        const fuente = cotizables.length > 0 ? cotizables : lista
-        serviciosCandidatos = fuente.map(s => ({
-          codigo: s.codigo_servicio,
-          nombre: s.descripcion ?? s.detalle_servicio ?? s.codigo_servicio,
+      const porCp = await this.serviciosByCp(req.destino_cp)
+      if (Array.isArray(porCp) && porCp.length > 0) {
+        serviciosCandidatos = porCp.map(s => ({
+          codigo: s.cod_serv,
+          nombre: s.descripcion,
         }))
       }
-    } catch { /* usar servicioDefault si ya está seteado */ }
+    } catch { /* caer a serviciosCliente */ }
+
+    // ── Intento 3 (fallback final): servicios-cliente.json + cotizador.json ──
+    if (serviciosCandidatos.length === 0) {
+      if (this.servicioDefault) {
+        serviciosCandidatos = [{ codigo: this.servicioDefault, nombre: this.servicioDefault }]
+      }
+      try {
+        const lista = await this.serviciosCliente()
+        if (Array.isArray(lista) && lista.length > 0) {
+          const cotizables = lista.filter(s =>
+            s.cotiza === "SI" || s.cotiza === "Si" || s.cotiza === "si"
+          )
+          const fuente = cotizables.length > 0 ? cotizables : lista
+          serviciosCandidatos = fuente.map(s => ({
+            codigo: s.codigo_servicio,
+            nombre: s.descripcion ?? s.detalle_servicio ?? s.codigo_servicio,
+          }))
+        }
+      } catch { /* usar servicioDefault si ya está seteado */ }
+    }
 
     if (serviciosCandidatos.length === 0) {
       return { servicios: [], error: "Configurá un código de servicio en FastMail → Transportistas" }

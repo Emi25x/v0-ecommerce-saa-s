@@ -46,16 +46,23 @@ Centraliza productos, stock, pedidos, envíos y facturación de múltiples canal
   - Auth URL: `https://cabify.com/auth/api/authorization`
   - `getShippingTypes()` usa `location=lat,lon` (NO `lat=&lon=` separados — eso da HTTP 400)
   - Conexión verificada ✅ (0 tipos disponibles = cuenta sin servicios activados del lado de Cabify)
-- **FastMail** — API v2, autenticación via `api_token` en body POST
+- **FastMail** — API v1 y v2, autenticación via `api_token` en body POST
   - `lib/carriers/fastmail.ts`
   - Base URL: `https://epresislv.fastmail.com.ar`
   - Todos los endpoints usan POST con `{ api_token, ...params }` en el body
-  - Endpoints implementados: `dummy-test.json` (health), `cotizador.json`, `guias.json`, `seguimiento.json`, `servicios-cliente.json`, `sucursalesByCliente.json`, `solicitarRetiro.json`, `generaRecepcion.json`, `editarSucursal.json`, `localidades.json`, `print-etiquetas-custom`, `etiquetas-cliente`, `integracion.json`
+  - Endpoints v2 implementados: `dummy-test.json`, `cotizador.json`, `guias.json`, `seguimiento.json`, `servicios-cliente.json`, `serviciosByIntegracionPresis.json`, `precio-servicio.json`, `sucursalesByCliente.json`, `solicitarRetiro.json`, `generaRecepcion.json`, `editarSucursal.json`, `localidades.json`, `listarTipoOperacion`, `listarCps`, `consultarStock`, `print-etiquetas-custom`, `etiquetas-cliente`, `integracion.json`
+  - Endpoints v1 implementados: `servicios-cp.json` (servicios disponibles por CP destino)
   - Conexión verificada ✅
-  - **Cotizador**: requiere `cp_origen` (CP de la sucursal/remitente), `cp_destino` (CP destino — NO `cp_entrega`), `codigo_servicio` y `productos`. El `codigo_servicio` se auto-detecta via `servicios-cliente.json` si no está configurado en `servicio_default`.
-  - **Guías**: usa `valorDeclarado` (camelCase, NO `valor_declarado`). Requiere `codigo_sucursal`.
-  - `sucursal` en config = string alfanumérico (código de sucursal del cliente en FastMail)
-  - ⚠️ `seguimiento.json` (tracking) — confirmar nombre correcto con manual oficial (podría ser `seguirEnvio.json`)
+  - **Flujo de cotización** (`quote()`): 3 intentos en cascada:
+    1. `precio-servicio.json` (v2) — un solo llamado, devuelve precios por servicio para el tramo. Requiere `sucursal`.
+    2. `servicios-cp.json` (v1) — para facturación "por cordón": filtra servicios que cubren el CP destino, luego cotiza cada uno con `cotizador.json`
+    3. Fallback: `servicios-cliente.json` + `cotizador.json` por servicio en paralelo
+  - **`precio-servicio.json`**: toma `cp_destino`, `sucursal`, `productos` (con `dimensiones` requeridas)
+  - **`servicios-cp.json`** (v1): solo para facturación por cordón. Devuelve `[{ id, cod_serv, descripcion }]` de servicios ecommerce que cubren el CP
+  - **`cotizador.json`**: requiere `cp_origen`, `cp_destino`, `codigo_servicio`, `productos`
+  - **Guías**: el manual v2 dice `valor_declarado` (snake_case) pero en la práctica funciona `valorDeclarado` (camelCase). Mantener camelCase.
+  - **`seguimiento.json`** (v2): confirmado en manual oficial. Parámetros: `remito` (opcional) o `nro_guia` (opcional)
+  - `sucursal` en config = código alfanumérico de sucursal del cliente en FastMail
 
 ### Marketing (15+ plataformas)
 Google Ads/Analytics/Search Console/Merchant, Meta Ads, TikTok Ads, LinkedIn, Pinterest,
