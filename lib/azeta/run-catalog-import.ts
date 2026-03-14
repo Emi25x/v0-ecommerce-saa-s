@@ -286,21 +286,21 @@ export async function runCatalogImport(opts?: {
     //   1. preservar SKU existente (evita violación UNIQUE en products.sku)
     //   2. distinguir created vs updated
     const eanToSku = new Map<string, string>()
-    for (let i = 0; i < allEans.length; i += 5000) {
-      const { data } = await supabase.from("products").select("ean, sku").in("ean", allEans.slice(i, i + 5000))
+    for (let i = 0; i < allEans.length; i += 10000) {
+      const { data } = await supabase.from("products").select("ean, sku").in("ean", allEans.slice(i, i + 10000))
       ;(data || []).forEach((r: any) => { if (r.ean) eanToSku.set(r.ean, r.sku) })
     }
 
     let created = 0, updated = 0, errors = 0
-    for (let i = 0; i < products.length; i += 500) {
-      const batch = products.slice(i, i + 500).map(p => ({
+    for (let i = 0; i < products.length; i += 2000) {
+      const batch = products.slice(i, i + 2000).map(p => ({
         ...p,
         sku: eanToSku.get(p.ean) ?? p.ean,
       }))
       const { error } = await supabase.from("products").upsert(batch, { onConflict: "ean" })
       if (error) { console.error(`[AZETA][UPSERT] error: ${error.message}`); errors += batch.length }
       else { for (const p of batch) eanToSku.has(p.ean) ? updated++ : created++ }
-      if (i % 10000 === 0) console.log(`[AZETA][UPSERT] ${i + batch.length}/${products.length}`)
+      if (i % 20000 === 0) console.log(`[AZETA][UPSERT] ${i + batch.length}/${products.length}`)
     }
 
     const elapsed = ((Date.now() - startTime) / 1000)
