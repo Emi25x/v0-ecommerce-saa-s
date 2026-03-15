@@ -5,14 +5,10 @@
  *   1. Resuelve la URL desde import_sources (source_id | source_name | fallback "Azeta Total")
  *   2. Descarga el ZIP/CSV desde AZETA
  *   3. Extrae y parsea el CSV línea a línea con fflate (streaming, sin cargar el CSV completo)
- *   4. Upsert en tabla products (batches de 500)
+ *   4. Upsert en tabla products en batches de 1000 DURANTE el streaming
+ *      → evita acumular 600K+ productos en RAM (anterior productMap causaba OOM)
  *
  * Se llama directamente desde /api/azeta/import-catalog (cron).
- * /api/azeta/run queda como wrapper @deprecated que también llama esta función.
- *
- * Para importaciones desde la UI (resumables con progreso) usar:
- *   POST /api/azeta/download  → obtiene blob_url
- *   POST /api/azeta/process   → procesa en chunks
  */
 
 import { createAdminClient } from "@/lib/supabase/admin"
@@ -27,6 +23,9 @@ const FETCH_HEADERS = {
   "Accept": "*/*",
   "Connection": "keep-alive",
 }
+
+// Cantidad de productos por batch de upsert (balance entre memoria y round-trips a DB)
+const BATCH_SIZE = 1000
 
 export interface CatalogImportResult {
   success:          boolean
@@ -111,7 +110,7 @@ export async function runCatalogImport(opts?: {
     }
 
     const isZip = firstChunk[0] === 0x50 && firstChunk[1] === 0x4b
-    console.log(`[AZETA] Formato: ${isZip ? "ZIP" : "CSV"} (streaming fflate)`)
+    console.log(`[AZETA] Formato: ${isZip ? "ZIP" : "CSV"} (streaming fflate, batch-flush)`)
 
     // Leer discount rate desde import_sources
     const { data: azetaSource } = await supabase
@@ -127,17 +126,56 @@ export async function runCatalogImport(opts?: {
       console.log(`[AZETA][RUN] discount_rate=${discountRate} → cost_price = PVP * ${(1 - discountRate).toFixed(4)}`)
     }
 
-    // ── Procesamiento línea a línea (sin construir el CSV completo en memoria) ──
-    const productMap = new Map<string, any>()
+    // ── Estado del parser CSV ────────────────────────────────────────────────
     let discarded = 0
-
-    // Estado del parser CSV (se actualiza en el primer renglón)
     let headerProcessed = false
     let hasHeader       = false
     let delimiter       = "|"
     let colIdx = {
       ean: 0, titulo: -1, autor: -1, editorial: -1,
       pvp: -1, idioma: -1, sinopsis: -1, url: -1, ano: -1, codigo: -1,
+    }
+
+    // ── Batch streaming: buffer pequeño + flush a DB durante el streaming ────
+    // Esto evita el OOM que ocurría al acumular 600K+ productos en productMap.
+    // Peak de RAM: solo BATCH_SIZE productos (≈1MB) en lugar de 600K (≈600MB+).
+    let batchBuffer: any[] = []
+    let created = 0, updated = 0, errors = 0, totalProcessed = 0
+
+    async function flushBatch(): Promise<void> {
+      if (batchBuffer.length === 0) return
+      const batch = batchBuffer.splice(0) // tomar todos y limpiar el buffer
+
+      // Lookup SKUs existentes para preservarlos (evita romper UNIQUE constraint en sku)
+      const eans = batch.map((p: any) => p.ean)
+      const eanToSku = new Map<string, string>()
+      const { data: existing } = await supabase
+        .from("products")
+        .select("ean, sku")
+        .in("ean", eans)
+      ;(existing || []).forEach((r: any) => { if (r.ean) eanToSku.set(r.ean, r.sku) })
+
+      const batchWithSku = batch.map((p: any) => ({
+        ...p,
+        sku: eanToSku.get(p.ean) ?? p.ean,
+      }))
+      const { error: upsertErr } = await supabase
+        .from("products")
+        .upsert(batchWithSku, { onConflict: "ean" })
+
+      if (upsertErr) {
+        console.error(`[AZETA][UPSERT] error: ${upsertErr.message}`)
+        errors += batch.length
+      } else {
+        for (const p of batchWithSku) {
+          if (eanToSku.has(p.ean)) updated++
+          else created++
+        }
+      }
+      totalProcessed += batch.length
+      if (totalProcessed % 10000 < BATCH_SIZE) {
+        console.log(`[AZETA][PROGRESS] ${totalProcessed} procesados (creados=${created} actualizados=${updated} errores=${errors})`)
+      }
     }
 
     function processLine(rawLine: string): void {
@@ -184,8 +222,9 @@ export async function runCatalogImport(opts?: {
       const costPrice = pvpRaw != null
         ? (discountRate != null ? Math.round(pvpRaw * (1 - discountRate) * 10000) / 10000 : pvpRaw)
         : null
-      productMap.set(ean, {
-        sku: ean, ean,
+      batchBuffer.push({
+        sku: ean, // placeholder — reemplazado por SKU existente en flushBatch
+        ean,
         title:         col(colIdx.titulo),
         author:        col(colIdx.autor),
         brand:         col(colIdx.editorial),
@@ -199,9 +238,9 @@ export async function runCatalogImport(opts?: {
       })
     }
 
-    // ── Descompresión y parseo STREAMING (sin cargar el archivo completo en RAM) ───
-    // Usa fflate Unzip streaming para ZIP o TextDecoder incremental para CSV plano.
-    // Esto evita el OOM que ocurría al cargar ~500MB descomprimidos en un solo buffer.
+    // ── Descompresión y parseo STREAMING ────────────────────────────────────
+    // fflate Unzip streaming para ZIP, TextDecoder incremental para CSV plano.
+    // flushBatch() se llama tras cada chunk para mantener batchBuffer pequeño.
 
     const decoder  = new TextDecoder("latin1")
     let lineBuffer = ""
@@ -215,97 +254,78 @@ export async function runCatalogImport(opts?: {
     }
 
     if (isZip) {
-      // fflate streaming Unzip — nunca crea el CSV completo en memoria
+      // fflate streaming Unzip — ondata callbacks son síncronos durante push()
       const { Unzip, UnzipInflate } = await import("fflate")
 
-      await new Promise<void>((resolve, reject) => {
-        const unzipper = new Unzip()
-        unzipper.register(UnzipInflate)
+      let fflateError: Error | null = null
+      const unzipper = new Unzip()
+      unzipper.register(UnzipInflate)
+      let csvFound = false
 
-        let csvFound = false
-
-        unzipper.onfile = (file) => {
-          if (!csvFound && !file.name.endsWith("/")) {
-            csvFound = true
-            console.log(`[AZETA][ZIP] Streaming "${file.name}"`)
-
-            file.ondata = (err, data, final) => {
-              if (err) { reject(err); return }
-              processChunk(data, final)
-              if (final) resolve()
-            }
-            file.start()
-          } else {
-            file.terminate()
+      unzipper.onfile = (file) => {
+        if (!csvFound && !file.name.endsWith("/")) {
+          csvFound = true
+          console.log(`[AZETA][ZIP] Streaming "${file.name}"`)
+          file.ondata = (err, data, isFinal) => {
+            if (err) { fflateError = err; return }
+            processChunk(data, isFinal)
           }
+          file.start()
+        } else {
+          file.terminate()
+        }
+      }
+
+      // Push primer chunk (puede disparar onfile + primeros ondata síncronamente)
+      unzipper.push(firstChunk!, false)
+      if (fflateError) throw fflateError
+
+      // Pump asíncrono: lee chunks y flushea a DB entre lecturas
+      while (true) {
+        const { done, value } = await reader.read()
+
+        if (done) {
+          // Señalizar fin al unzipper (el CSV ya debería estar completo — fflate
+          // detecta el fin de cada entrada por su tamaño comprimido almacenado)
+          try { unzipper.push(new Uint8Array(0), true) } catch {}
+          break
         }
 
-        // Alimentar primer chunk ya leído + resto del stream
-        try {
-          unzipper.push(firstChunk!, false)
-        } catch (e) { reject(e); return }
+        if (value) unzipper.push(value, false)
+        if (fflateError) throw fflateError
 
-        function pump() {
-          reader.read().then(({ done, value }) => {
-            try {
-              if (done) {
-                // Último chunk — señalizar fin al unzipper
-                if (value && value.length > 0) unzipper.push(value, true)
-                if (!csvFound) reject(new Error("No se encontró archivo CSV/TXT dentro del ZIP de Azeta"))
-                // Si csvFound, file.ondata(_, _, true) ya llama a resolve()
-              } else {
-                if (value) unzipper.push(value, false)
-                pump()
-              }
-            } catch (e) { reject(e) }
-          }).catch(reject)
+        // Flush tras cada chunk decomprimido para no acumular demasiados productos
+        if (batchBuffer.length >= BATCH_SIZE) {
+          await flushBatch()
         }
-        pump()
-      })
+      }
+
+      if (!csvFound) throw new Error("No se encontró archivo CSV/TXT dentro del ZIP de Azeta")
+
     } else {
       // CSV sin comprimir — streaming directo
       processChunk(firstChunk!, false)
+      if (batchBuffer.length >= BATCH_SIZE) await flushBatch()
+
       while (true) {
         const { done, value } = await reader.read()
         if (value) processChunk(value, done)
+        if (batchBuffer.length >= BATCH_SIZE) await flushBatch()
         if (done) break
       }
     }
+
+    // Flush final — productos restantes en el buffer
+    await flushBatch()
 
     // Validación post-parseo
     if (hasHeader && colIdx.ean < 0) {
       return { success: false, error: "Columna EAN no encontrada en el CSV" }
     }
 
-    const products = Array.from(productMap.values())
-    console.log(`[AZETA][IMPORT] validos=${products.length} descartados=${discarded}`)
-
-    const allEans = products.map(p => p.ean)
-
-    // Fetch existing ean→sku mapping para:
-    //   1. preservar SKU existente (evita violación UNIQUE en products.sku)
-    //   2. distinguir created vs updated
-    const eanToSku = new Map<string, string>()
-    for (let i = 0; i < allEans.length; i += 10000) {
-      const { data } = await supabase.from("products").select("ean, sku").in("ean", allEans.slice(i, i + 10000))
-      ;(data || []).forEach((r: any) => { if (r.ean) eanToSku.set(r.ean, r.sku) })
-    }
-
-    let created = 0, updated = 0, errors = 0
-    for (let i = 0; i < products.length; i += 2000) {
-      const batch = products.slice(i, i + 2000).map(p => ({
-        ...p,
-        sku: eanToSku.get(p.ean) ?? p.ean,
-      }))
-      const { error } = await supabase.from("products").upsert(batch, { onConflict: "ean" })
-      if (error) { console.error(`[AZETA][UPSERT] error: ${error.message}`); errors += batch.length }
-      else { for (const p of batch) eanToSku.has(p.ean) ? updated++ : created++ }
-      if (i % 20000 === 0) console.log(`[AZETA][UPSERT] ${i + batch.length}/${products.length}`)
-    }
-
     const elapsed = ((Date.now() - startTime) / 1000)
-    console.log(`[AZETA] Completado: creados=${created} actualizados=${updated} errores=${errors} en ${elapsed.toFixed(1)}s`)
-    return { success: true, created, updated, errors, total_rows: products.length, elapsed_seconds: parseFloat(elapsed.toFixed(1)) }
+    console.log(`[AZETA] Completado: creados=${created} actualizados=${updated} errores=${errors} descartados=${discarded} en ${elapsed.toFixed(1)}s`)
+    return { success: true, created, updated, errors, total_rows: totalProcessed, elapsed_seconds: parseFloat(elapsed.toFixed(1)) }
 
   } catch (err: any) {
     console.error("[AZETA][RUN] Error fatal:", err.message)
