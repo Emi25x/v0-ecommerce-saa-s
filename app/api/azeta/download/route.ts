@@ -100,13 +100,18 @@ export async function POST(request: NextRequest) {
       unzipper.register(UnzipInflate)
       let fileFound = false
 
+      // Transcode latin1 → UTF-8 so the blob stores valid UTF-8 text
+      const latin1Dec = new TextDecoder("iso-8859-1")
+      const utf8Enc   = new TextEncoder()
+
       unzipper.onfile = (file) => {
         if (!fileFound && !file.name.endsWith("/")) {
           fileFound = true
           console.log(`[AZETA-DL] ZIP entry: "${file.name}"`)
           file.ondata = (err, data, final) => {
             if (err) { csvController.error(err); return }
-            csvController.enqueue(data)
+            const text = latin1Dec.decode(data, { stream: !final })
+            csvController.enqueue(utf8Enc.encode(text))
             if (final) csvController.close()
           }
           file.start()
@@ -145,16 +150,21 @@ export async function POST(request: NextRequest) {
       csvBlobResult = blobResult
 
     } else {
-      // ── CSV plano: stream directo a Vercel Blob ──
+      // ── CSV plano: stream directo a Vercel Blob (transcodificando latin1 → UTF-8) ──
+      const latin1DecCsv = new TextDecoder("iso-8859-1")
+      const utf8EncCsv   = new TextEncoder()
+      const transcode = (chunk: Uint8Array, final: boolean) =>
+        utf8EncCsv.encode(latin1DecCsv.decode(chunk, { stream: !final }))
+
       const csvStream = new ReadableStream<Uint8Array>({
         start(controller) {
-          controller.enqueue(firstChunk!)
+          controller.enqueue(transcode(firstChunk!, false))
           ;(async () => {
             try {
               while (true) {
                 const { done, value } = await reader.read()
-                if (done) { controller.close(); break }
-                if (value) controller.enqueue(value)
+                if (done) { controller.enqueue(transcode(new Uint8Array(0), true)); controller.close(); break }
+                if (value) controller.enqueue(transcode(value, false))
               }
             } catch (e) { controller.error(e) }
           })()

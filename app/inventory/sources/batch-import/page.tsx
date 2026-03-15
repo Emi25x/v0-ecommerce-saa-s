@@ -110,54 +110,102 @@ export default function BatchImportPage() {
           return
         }
 
-        // Azeta Total/Parcial: endpoint directo (fflate streaming server-side, maxDuration=300s)
-        // Descarga ZIP, descomprime y hace upsert en un solo request server-side.
-        setStatus("Descargando y procesando catálogo AZETA...")
+        // Azeta Total/Parcial: flujo chunked (download → process en lotes de 4MB)
+        // Paso 1: /api/azeta/download guarda el CSV en Vercel Blob (≤300s)
+        // Paso 2: /api/azeta/process procesa chunks de 4MB en loop (≤60s c/u)
+        setStatus("Descargando catálogo AZETA...")
         addLog("Descargando ZIP de AZETA (~230MB, puede tardar 3-5 min)...")
         addLog("El proceso corre en el servidor. Mantené esta página abierta.")
 
-        // Actualizar log cada 30s para mostrar que sigue corriendo
-        const progressInterval = setInterval(() => {
-          addLog("Procesando... (esto puede tardar varios minutos, no cierres la página)")
-        }, 30_000)
-
-        let importResult: any
+        let blobUrl: string
         try {
-          const importRes = await fetch("/api/azeta/import-catalog", {
+          const dlRes = await fetch("/api/azeta/download", {
             method: "POST",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ source_id: urlSourceId }),
             signal: AbortSignal.timeout(295_000),
           })
-          importResult = await importRes.json().catch(() => ({ error: `HTTP ${importRes.status} (respuesta inválida)` }))
-          if (!importRes.ok || !importResult.success) {
-            clearInterval(progressInterval)
-            addLog(`Error: ${importResult.error || `HTTP ${importRes.status}`}`)
-            setStatus("Error en importacion")
+          const dlResult = await dlRes.json().catch(() => ({ error: `HTTP ${dlRes.status}` }))
+          if (!dlRes.ok || dlResult.error) {
+            addLog(`Error al descargar: ${dlResult.error || `HTTP ${dlRes.status}`}`)
+            setStatus("Error en descarga")
             setIsRunning(false)
             return
           }
+          blobUrl = dlResult.blob_url
+          addLog(`Descarga completada en ${dlResult.elapsed_seconds}s. Procesando en lotes...`)
         } catch (fetchErr: any) {
-          clearInterval(progressInterval)
-          addLog(`Error de conexion: ${fetchErr.message}`)
+          addLog(`Error de conexion en descarga: ${fetchErr.message}`)
           setStatus("Error de conexion")
           setIsRunning(false)
           return
         }
 
-        clearInterval(progressInterval)
-        setTotalCreated(importResult.created ?? 0)
-        setTotalUpdated(importResult.updated ?? 0)
-        setTotalProcessed(importResult.total_rows ?? 0)
-        setTotalRows(importResult.total_rows ?? 0)
-        setProgress(100)
-        addLog(
-          `Completado en ${importResult.elapsed_seconds ?? "?"}s: ` +
-          `${importResult.created ?? 0} creados, ${importResult.updated ?? 0} actualizados, ` +
-          `${importResult.errors ?? 0} errores`
-        )
-        setStatus("Importacion completada")
+        // Paso 2: procesar CSV en chunks de 4MB
+        setStatus("Procesando catálogo AZETA en lotes...")
+        let byteStart = 0
+        let headerLine: string | undefined
+        let accCreated = 0, accUpdated = 0, accErrors = 0, accProcessed = 0
+        let procDone = false
+
+        while (!procDone && !abortRef.current) {
+          try {
+            const procRes = await fetch("/api/azeta/process", {
+              method: "POST",
+              credentials: "include",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ blob_url: blobUrl, byte_start: byteStart, header_line: headerLine, source_id: urlSourceId }),
+              signal: AbortSignal.timeout(65_000),
+            })
+            const procResult = await procRes.json().catch(() => ({ error: `HTTP ${procRes.status}` }))
+            if (!procRes.ok || procResult.error) {
+              addLog(`Error en chunk: ${procResult.error || `HTTP ${procRes.status}`}`)
+              setStatus("Error en procesamiento")
+              break
+            }
+
+            accCreated   += procResult.created   ?? 0
+            accUpdated   += procResult.updated   ?? 0
+            accErrors    += procResult.errors    ?? 0
+            accProcessed += procResult.rows_processed ?? 0
+            if (!headerLine && procResult.header_line) headerLine = procResult.header_line
+
+            setTotalCreated(accCreated)
+            setTotalUpdated(accUpdated)
+            setTotalProcessed(accProcessed)
+            const pct = procResult.next_byte_start
+              ? Math.min(99, Math.round((procResult.next_byte_start / CHUNK_ESTIMATE) * 100))
+              : 99
+            setProgress(pct)
+
+            addLog(`Chunk: ${procResult.rows_processed} filas (total: ${accProcessed}) | +${procResult.created} creados, +${procResult.updated} actualizados`)
+
+            if (procResult.done) {
+              procDone = true
+              setProgress(100)
+              setTotalRows(accProcessed)
+              setStatus("Importacion completada")
+              addLog(`Completado: ${accCreated} creados, ${accUpdated} actualizados, ${accErrors} errores`)
+            } else {
+              byteStart = procResult.next_byte_start ?? byteStart
+              if (procResult.header_line) headerLine = procResult.header_line
+            }
+          } catch (err: any) {
+            addLog(`Error de conexion en chunk: ${err.message}`)
+            setStatus("Error de conexion")
+            break
+          }
+        }
+
+        // Limpiar blob (best-effort)
+        fetch("/api/azeta/process", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ blob_url: blobUrl, cleanup: true }),
+        }).catch(() => {})
+
         setIsRunning(false)
         return
       } catch (err: any) {
