@@ -156,11 +156,13 @@ export default function BatchImportPage() {
                 } else if (evt.type === "progress") {
                   setTotalCreated(evt.created ?? 0)
                   setTotalUpdated(evt.updated ?? 0)
+                  setTotalFailed(evt.errors ?? 0)
                   setTotalProcessed(evt.processed ?? 0)
                   setProgress(Math.min(95, Math.round(((evt.processed ?? 0) / 600000) * 100)))
                 } else if (evt.type === "done") {
                   setTotalCreated(evt.created ?? 0)
                   setTotalUpdated(evt.updated ?? 0)
+                  setTotalFailed(evt.errors ?? 0)
                   setTotalProcessed(evt.total_rows ?? 0)
                   setProgress(100)
                   setStatus("Importacion completada")
