@@ -37,10 +37,18 @@ export interface CatalogImportResult {
   error?:           string
 }
 
-export async function runCatalogImport(opts?: {
-  source_id?:   string
-  source_name?: string
-}): Promise<CatalogImportResult> {
+export type CatalogImportProgress = {
+  created:   number
+  updated:   number
+  errors:    number
+  processed: number
+  message?:  string
+}
+
+export async function runCatalogImport(
+  opts?: { source_id?: string; source_name?: string },
+  onProgress?: (p: CatalogImportProgress) => void
+): Promise<CatalogImportResult> {
   const startTime = Date.now()
   console.log("[AZETA][RUN] === Inicio importacion catalogo ===")
 
@@ -155,10 +163,17 @@ export async function runCatalogImport(opts?: {
         .in("ean", eans)
       ;(existing || []).forEach((r: any) => { if (r.ean) eanToSku.set(r.ean, r.sku) })
 
-      const batchWithSku = batch.map((p: any) => ({
-        ...p,
-        sku: eanToSku.get(p.ean) ?? p.ean,
-      }))
+      const batchWithSku = batch.map((p: any) => {
+        const isNew = !eanToSku.has(p.ean)
+        return {
+          ...p,
+          sku: eanToSku.get(p.ean) ?? p.ean,
+          // Para productos NUEVOS: inicializar stock_by_source con azeta=0
+          // para que aparezcan en filtros de almacén y el Azeta Stock import pueda setear el stock real.
+          // Para productos EXISTENTES: no tocar stock_by_source (lo maneja import-stock).
+          ...(isNew ? { stock_by_source: { azeta: 0 }, stock: 0 } : {}),
+        }
+      })
       const { error: upsertErr } = await supabase
         .from("products")
         .upsert(batchWithSku, { onConflict: "ean" })
@@ -176,6 +191,8 @@ export async function runCatalogImport(opts?: {
       if (totalProcessed % 10000 < BATCH_SIZE) {
         console.log(`[AZETA][PROGRESS] ${totalProcessed} procesados (creados=${created} actualizados=${updated} errores=${errors})`)
       }
+      // Emitir progreso al caller (SSE)
+      onProgress?.({ created, updated, errors, processed: totalProcessed })
     }
 
     function processLine(rawLine: string): void {

@@ -108,35 +108,74 @@ export default function BatchImportPage() {
           return
         }
 
-        // Azeta Total/Parcial: llamada directa a import-catalog (server-side streaming, sin Blob intermedio)
-        // runCatalogImport() descarga, descomprime y hace upsert en batches — todo en un solo request.
+        // Azeta Total/Parcial: SSE streaming — el server emite progreso por cada batch.
+        // preferredRegion=fra1 (Frankfurt) en el endpoint → descarga ~4× más rápida desde España.
         setStatus("Importando catálogo AZETA...")
-        addLog("Descargando ZIP de AZETA (~230MB, puede tardar 3-5 min)...")
-        addLog("El proceso corre en el servidor. Mantené esta página abierta.")
+        addLog("Descargando ZIP de AZETA (~230MB, función en Frankfurt para mejor velocidad)...")
+        addLog("El proceso corre en el servidor y emite progreso en tiempo real.")
 
         try {
           const importRes = await fetch("/api/azeta/import-catalog", {
             method: "POST",
             credentials: "include",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              "Accept": "text/event-stream",
+            },
             body: JSON.stringify({ source_id: urlSourceId }),
-            signal: AbortSignal.timeout(295_000),
           })
-          const importResult = await importRes.json().catch(() => ({ error: `HTTP ${importRes.status}` }))
-          if (!importRes.ok || importResult.error) {
-            addLog(`Error: ${importResult.error || `HTTP ${importRes.status}`}`)
+
+          if (!importRes.ok || !importRes.body) {
+            const errText = await importRes.text().catch(() => "")
+            addLog(`Error HTTP ${importRes.status}: ${errText.slice(0, 200)}`)
             setStatus("Error")
             setIsRunning(false)
             return
           }
-          setTotalCreated(importResult.created ?? 0)
-          setTotalUpdated(importResult.updated ?? 0)
-          setTotalProcessed(importResult.total_rows ?? 0)
-          setProgress(100)
-          setStatus("Importacion completada")
-          addLog(`Completado en ${importResult.elapsed_seconds}s: ${importResult.created} creados, ${importResult.updated} actualizados, ${importResult.errors ?? 0} errores`)
+
+          // Leer SSE stream
+          const reader = importRes.body.getReader()
+          const decoder = new TextDecoder()
+          let buf = ""
+
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buf += decoder.decode(value, { stream: true })
+
+            // Parsear líneas SSE completas
+            const lines = buf.split("\n")
+            buf = lines.pop() ?? ""
+
+            for (const line of lines) {
+              if (!line.startsWith("data: ")) continue
+              try {
+                const evt = JSON.parse(line.slice(6))
+                if (evt.type === "start") {
+                  addLog(evt.message ?? "Importación iniciada")
+                } else if (evt.type === "progress") {
+                  setTotalCreated(evt.created ?? 0)
+                  setTotalUpdated(evt.updated ?? 0)
+                  setTotalProcessed(evt.processed ?? 0)
+                  setProgress(Math.min(95, Math.round(((evt.processed ?? 0) / 600000) * 100)))
+                } else if (evt.type === "done") {
+                  setTotalCreated(evt.created ?? 0)
+                  setTotalUpdated(evt.updated ?? 0)
+                  setTotalProcessed(evt.total_rows ?? 0)
+                  setProgress(100)
+                  setStatus("Importacion completada")
+                  addLog(`Completado en ${evt.elapsed_seconds}s: ${evt.created} creados, ${evt.updated} actualizados, ${evt.errors ?? 0} errores`)
+                } else if (evt.type === "error") {
+                  addLog(`Error del servidor: ${evt.error}`)
+                  setStatus("Error")
+                }
+              } catch {
+                // línea SSE malformada, ignorar
+              }
+            }
+          }
         } catch (fetchErr: any) {
-          addLog(`Error: ${fetchErr.message}`)
+          addLog(`Error de conexión: ${fetchErr.message}`)
           setStatus("Error")
           setIsRunning(false)
           return

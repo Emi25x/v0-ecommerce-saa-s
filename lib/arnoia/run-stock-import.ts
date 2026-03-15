@@ -127,10 +127,13 @@ export async function runArnoiaStockImport(): Promise<ArnoiaStockImportResult> {
       const batchStocks = stocks.slice(i, i + BATCH_SIZE)
       const batchPrices = prices.slice(i, i + BATCH_SIZE)
 
+      // RPC actualiza stock_by_source[source_key] + trigger recalcula products.stock
+      const stockKey = (source as any).source_key ?? "arnoia"
       const { data: rpcResult, error: rpcError } = await supabase.rpc("bulk_update_stock_price", {
-        p_eans:   batchEans,
-        p_stocks: batchStocks,
-        p_prices: batchPrices,
+        p_eans:       batchEans,
+        p_stocks:     batchStocks,
+        p_prices:     batchPrices,
+        p_source_key: stockKey,
       })
 
       if (rpcError) {
@@ -139,27 +142,7 @@ export async function runArnoiaStockImport(): Promise<ArnoiaStockImportResult> {
         const batchUpdated = typeof rpcResult === "number" ? rpcResult : 0
         totalUpdated  += batchUpdated
         totalNotFound += batchEans.length - batchUpdated
-        console.log(`[ARNOIA-STOCK] Batch ${i}-${i + batchEans.length}: ${batchUpdated} updated`)
-      }
-
-      // Actualizar stock_by_source para que el almacén vinculado pueda leerlo
-      const { data: existingProds } = await supabase
-        .from("products")
-        .select("id, ean, stock_by_source")
-        .in("ean", batchEans)
-
-      if (existingProds && existingProds.length > 0) {
-        const stockByEan = new Map(batchEans.map((e, idx) => [e, batchStocks[idx]]))
-        const stockKey   = (source as any).source_key ?? "arnoia_stock"
-        const updates    = existingProds.map((p: any) => {
-          const merged = { ...(p.stock_by_source || {}), [stockKey]: stockByEan.get(p.ean) ?? 0 }
-          return {
-            id: p.id,
-            stock_by_source: merged,
-            stock: Object.values(merged).reduce((s: number, v: any) => s + (Number(v) || 0), 0),
-          }
-        })
-        await supabase.from("products").upsert(updates, { onConflict: "id" })
+        console.log(`[ARNOIA-STOCK] Batch ${i}-${i + batchEans.length}: ${batchUpdated} updated (source_key=${stockKey})`)
       }
     }
 
