@@ -8,9 +8,10 @@
  *   - Handle, Title, Body HTML, Vendor, Product Category, Type, Tags
  *   - Variant: SKU=ISBN, Barcode=EAN, Price (configurable), Grams, Inventory
  *   - Metafields: autor, editorial, idioma, isbn, tematica, tematica_especifica,
- *                 numero_de_paginas, encuadernacion, fecha_de_publicacion, n_edicion,
- *                 pais_de_origen, alto_mm, ancho_mm, dimensiones, peso,
- *                 short_description, sucursal_stock, ean
+ *                 paginas, encuadernacion, fecha_de_publicacion, n_edicion,
+ *                 pais_de_origen, alto_mm, ancho_mm, espesor_mm, dimensiones, peso,
+ *                 short_description, condicion, codigo_ibic, sucursal_stock, ean,
+ *                 materia, curso, mm-google-shopping.google_product_category
  *
  * Body: { store_id, ean, dry_run?: boolean }
  */
@@ -51,15 +52,15 @@ function titleRangeTag(title: string): string {
 }
 
 /**
- * Construye los tags según el template:
- *   pages, editorial, "catalogo", autor, Titulo A-C, flags...
+ * Construye los tags según el template del Excel:
+ *   tematica (category), editorial, "catalogo", autor, Titulo A-C, flags...
  */
 function buildTags(p: any, flags: string[]): string {
   const parts: string[] = []
-  if (p.pages)  parts.push(String(p.pages))   // número de páginas como tag
-  if (p.brand)  parts.push(p.brand)             // editorial
+  if (p.category) parts.push(p.category)        // temática/categoría
+  if (p.brand)    parts.push(p.brand)            // editorial
   parts.push("catalogo")                         // siempre
-  if (p.author) parts.push(p.author)             // autor
+  if (p.author)   parts.push(p.author)           // autor
   parts.push(titleRangeTag(p.title ?? ""))       // rango por letra
   for (const f of flags) if (f) parts.push(f)  // flags custom (ej: "Más Vendidos")
   return [...new Set(parts.filter(Boolean))].join(", ")
@@ -199,10 +200,9 @@ export async function POST(req: NextRequest) {
     const tags = buildTags(product, flags)
 
     // ── 6. Metafields completos ────────────────────────────────────────────
-    // Dimensiones en cm: "alto x espesor x ancho"
-    const dimensiones = [product.height, product.thickness ?? 0, product.width]
-      .every(v => v != null)
-      ? `${product.height} x ${product.thickness ?? 0} x ${product.width}`
+    // Dimensiones en cm: "alto x ancho x espesor" (igual que export-generate)
+    const dimensiones = (product.height != null && product.width != null)
+      ? `${product.height} x ${product.width} x ${product.thickness ?? 0}`
       : (cf.dimensiones ?? "")
 
     // Peso en kg
@@ -232,15 +232,18 @@ export async function POST(req: NextRequest) {
       { namespace: "custom", key: "fecha_de_publicacion",value: fechaPublicacion,                      type: "single_line_text_field" },
       { namespace: "custom", key: "n_edicion",           value: cf.n_edicion      ?? "",               type: "single_line_text_field" },
       { namespace: "custom", key: "pais_de_origen",      value: cf.pais_de_origen ?? "",               type: "single_line_text_field" },
-      { namespace: "custom", key: "alto_mm",             value: product.height    != null ? String(Math.round(Number(product.height) * 10)) : "", type: "number_integer" },
-      { namespace: "custom", key: "ancho_mm",            value: product.width     != null ? String(Math.round(Number(product.width) * 10))  : "", type: "number_integer" },
-      { namespace: "custom", key: "dimensiones",         value: dimensiones,                           type: "single_line_text_field" },
-      { namespace: "custom", key: "peso",                value: pesoKg,                                type: "single_line_text_field" },
-      { namespace: "custom", key: "short_description",   value: shortDesc,                             type: "single_line_text_field" },
-      { namespace: "custom", key: "sucursal_stock",      value: store.sucursal_stock_code ?? "",       type: "single_line_text_field" },
-      { namespace: "custom", key: "ean",                 value: product.ean       ?? "",               type: "single_line_text_field" },
-      { namespace: "custom", key: "materia",             value: product.subject   ?? (cf.materia ?? ""), type: "single_line_text_field" },
-      { namespace: "custom", key: "curso",               value: product.course    ?? (cf.curso ?? ""),  type: "single_line_text_field" },
+      { namespace: "custom", key: "alto_mm",             value: product.height    != null ? String(Math.round(Number(product.height) * 10))    : "", type: "number_integer" },
+      { namespace: "custom", key: "ancho_mm",            value: product.width     != null ? String(Math.round(Number(product.width) * 10))     : "", type: "number_integer" },
+      { namespace: "custom", key: "espesor_mm",          value: product.thickness != null ? String(Math.round(Number(product.thickness) * 10)) : "", type: "number_integer" },
+      { namespace: "custom", key: "dimensiones",         value: dimensiones,                                type: "single_line_text_field" },
+      { namespace: "custom", key: "peso",                value: pesoKg,                                     type: "single_line_text_field" },
+      { namespace: "custom", key: "short_description",   value: shortDesc,                                  type: "single_line_text_field" },
+      { namespace: "custom", key: "condicion",           value: product.condition ?? (cf.condicion ?? "Nuevo"), type: "single_line_text_field" },
+      { namespace: "custom", key: "codigo_ibic",         value: product.ibic_subjects ?? (cf.codigo_ibic ?? ""), type: "single_line_text_field" },
+      { namespace: "custom", key: "sucursal_stock",      value: store.sucursal_stock_code ?? (cf.sucursal_stock ?? ""), type: "single_line_text_field" },
+      { namespace: "custom", key: "ean",                 value: product.ean       ?? "",                    type: "single_line_text_field" },
+      { namespace: "custom", key: "materia",             value: product.subject   ?? (cf.materia ?? ""),    type: "single_line_text_field" },
+      { namespace: "custom", key: "curso",               value: product.course    ?? (cf.curso ?? ""),      type: "single_line_text_field" },
       { namespace: "mm-google-shopping", key: "google_product_category", value: cf.google_product_category ? String(cf.google_product_category) : "", type: "single_line_text_field" },
     ].filter(m => m.value !== "")
 
