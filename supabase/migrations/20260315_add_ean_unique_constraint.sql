@@ -32,5 +32,14 @@ WHERE id IN (
 ALTER TABLE products ADD COLUMN IF NOT EXISTS ean TEXT;
 
 -- Paso 3: constraint UNIQUE (permite múltiples NULL — solo unicidad en no-nulos)
-ALTER TABLE products
-  ADD CONSTRAINT products_ean_unique UNIQUE (ean);
+-- IF NOT EXISTS evita error si la constraint ya fue aplicada previamente
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'products_ean_unique'
+      AND conrelid = 'products'::regclass
+  ) THEN
+    ALTER TABLE products ADD CONSTRAINT products_ean_unique UNIQUE (ean);
+  END IF;
+END $$;
