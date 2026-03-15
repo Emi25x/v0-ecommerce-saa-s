@@ -17,7 +17,7 @@ Centraliza productos, stock, pedidos, envíos y facturación de múltiples canal
 |--------|------|-------------|
 | Inventario | `/inventory` | Stock multi-fuente, imports CSV/API |
 | Pedidos | `/orders` | Órdenes de ML y Shopify |
-| Envíos | `/envios` | Transportistas, remitentes, tracking |
+| Envíos | `/envios` | Transportistas, remitentes, tracking, cotizador |
 | Shopify | `/shopify` | Sync productos/pedidos/inventario |
 | Integraciones ML | `/integrations` | Publicaciones, templates, matcher |
 | Facturación | `/billing` | Facturas ML, AFIP, comprobantes |
@@ -191,7 +191,7 @@ Envíos → carrier API → tracking updates en shipments
 - `lib/azeta/run-catalog-import.ts` — lógica central, llamada por cron y por UI
 - `app/api/azeta/import-catalog/route.ts` — endpoint cron + UI (maxDuration=300)
 - `app/api/azeta/import-stock/route.ts` — actualización de stock (sin catálogo)
-- `app/api/azeta/download/route.ts` + `app/api/azeta/process/route.ts` — flujo chunked con Vercel Blob (alternativa para UI resumable)
+- `app/api/azeta/download/route.ts` + `app/api/azeta/process/route.ts` — **deprecados**, no usar. El flujo chunked download→blob→process fue implementado y descartado por error "Response body object should not be disturbed or locked" al cabo de ~3 min.
 
 ### Flujo de importación (Azeta Total)
 1. UI llama `POST /api/azeta/import-catalog` con `{ source_id }`
@@ -201,12 +201,15 @@ Envíos → carrier API → tracking updates en shipments
 5. ZIP: descomprime con `fflate` streaming (`Unzip` + `UnzipInflate`) sin cargar el archivo completo en RAM
 6. CSV: procesa stream directamente con `TextDecoder("latin1")` incremental
 7. Parsea líneas con `processLine()`: auto-detecta delimitador y headers
-8. Upsert en `products` en batches de 500 con `onConflict: "ean"`
+8. **Upsert en `products` en batches de 1000 DURANTE el streaming** (batch flush) — no acumula en memoria
 
-### ⚠️ Problema resuelto: OOM en Lambda de Vercel
-- **Causa**: `adm-zip.getData()` cargaba ~500MB (CSV descomprimido) + ~230MB (ZIP original) en RAM → crash Lambda
-- **Fix**: reemplazado con `fflate` streaming (`Unzip.push()` incremental), nunca tiene el archivo completo en RAM
-- **Síntoma**: HTTP 500 sin mensaje de error (Lambda crasheaba antes de responder)
+### ⚠️ Problemas resueltos: OOM en Lambda de Vercel (dos fases)
+- **OOM v1** — `adm-zip.getData()` cargaba ~500MB CSV + ~230MB ZIP en RAM → crash Lambda
+  - Fix: `fflate` streaming (`Unzip.push()` incremental), nunca carga el ZIP completo
+- **OOM v2** — `productMap` acumulaba ~600K productos en RAM antes de upsert → crash Lambda (~600MB+)
+  - Fix: `batchBuffer` + `flushBatch()` cada 1000 productos DURANTE el streaming → peak RAM ~1MB
+  - Per-batch EAN→SKU lookup preserva SKUs personalizados
+  - Síntoma en ambos casos: HTTP 500 sin mensaje (Lambda crasheaba antes de responder)
 
 ### Columna `default_discount_rate`
 - Columna opcional en `import_sources` para calcular `cost_price = pvp * (1 - rate)`
@@ -238,10 +241,11 @@ Envíos → carrier API → tracking updates en shipments
 - Módulo de atención al cliente: preguntas ML funcionando con selector de cuenta
 - Módulo de marketing: en desarrollo (15+ plataformas, OAuth fix aplicado)
 - Remitentes: ABM completo en `/envios/remitentes` (accesible desde sidebar)
-- Azeta import: fix OOM aplicado (fflate streaming) ✅ — implementación completa y lista para producción en Vercel Pro
-  - `productMap` acumula todos los productos en memoria (~100MB para catálogo completo) — aceptable en Pro (1024MB RAM default)
-  - Tiempo estimado de ejecución: 2–4 min dentro del límite de 300s
-  - No se necesita el flujo chunked (download+process) ni mover a cron exclusivo — el endpoint directo funciona en Pro
+- Azeta import: fix OOM v1+v2 aplicados ✅ — implementación completa y lista para producción en Vercel Pro
+  - fflate streaming (OOM v1) + batch flush cada 1000 productos durante streaming (OOM v2)
+  - Peak RAM ~1MB (antes: 600MB+), tiempo estimado 2–4 min dentro del límite de 300s
+  - No se necesita el flujo chunked ni cron exclusivo — el endpoint directo `/api/azeta/import-catalog` funciona en Pro
+- Cotizador web ✅ — `/envios/cotizador` muestra FastMail A (precio-servicio.json), FastMail B (cotizador.json por servicio) y Cabify en paralelo con toggle JSON raw por fila
 
 ---
 
@@ -249,7 +253,9 @@ Envíos → carrier API → tracking updates en shipments
 
 | Bug | Causa | Fix |
 |-----|-------|-----|
-| Azeta HTTP 500 | OOM al cargar ~500MB CSV en RAM | fflate streaming en `run-catalog-import.ts` |
+| Azeta HTTP 500 (OOM v1) | `adm-zip.getData()` cargaba ~500MB CSV en RAM | fflate streaming en `run-catalog-import.ts` |
+| Azeta HTTP 500 (OOM v2) | `productMap` acumulaba ~600K productos (~600MB) antes de upsert | batch flush cada 1000 productos durante streaming |
+| Azeta "Response body object should not be disturbed or locked" | Pipeline `Promise.all(pumpZip + Blob.put)` roto a los ~3 min | Eliminado flujo download→blob→process, UI usa import-catalog directo |
 | FastMail "cp origen incorrecto" | `cp_origen` no se enviaba al cotizador | Agregado `cp_origen` en `FastMailCotizadorRequest` y `quote()` |
 | FastMail "cp destino incorrecto" | `cp_entrega` incorrecto, cotizador usa `cp_destino` | Renombrado a `cp_destino` en `FastMailCotizadorRequest` y `quote()` |
 | FastMail "codigo_servicio requerido" | `servicio_default` vacío | Auto-detección via `servicios-cliente.json` |
