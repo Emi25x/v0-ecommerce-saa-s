@@ -14,33 +14,51 @@ export async function GET(request: NextRequest) {
     if (providersError) throw providersError
 
     // 2. Calcular productos y stock por proveedor
+    // products no tiene columna "source"; usamos stock_by_source JSONB
+    // para detectar qué productos pertenecen a cada proveedor.
     const providersWithStats = await Promise.all(
       (providers || []).map(async (provider) => {
-        const sourceName = provider.name.toLowerCase()
-        
-        // Contar productos de este proveedor
+        // source_key del proveedor (e.g. "arnoia") — lo buscamos en import_sources
+        const { data: srcRow } = await supabase
+          .from("import_sources")
+          .select("source_key")
+          .eq("name", provider.name)
+          .single()
+        const sourceKey = srcRow?.source_key
+          || provider.name.toLowerCase().replace(/[^a-z0-9]/g, "_")
+
+        // Contar productos que tienen stock_by_source->sourceKey definido
+        // Usamos filter en stock_by_source JSONB
         const { count: productsCount } = await supabase
           .from("products")
           .select("*", { count: "exact", head: true })
-          .eq("source", sourceName)
-        
-        // Sumar stock total del proveedor usando stock_by_source
+          .not("stock_by_source", "is", null)
+          .neq(`stock_by_source->>${sourceKey}`, null as any)
+
+        // Sumar stock total del proveedor
         const { data: stockData } = await supabase
           .from("products")
           .select("stock_by_source")
-          .eq("source", sourceName)
           .not("stock_by_source", "is", null)
-        
+          .limit(50000)
+
         let stockTotal = 0
+        let productsWithStock = 0
         stockData?.forEach((product: any) => {
-          const stockBySource = product.stock_by_source || {}
-          stockTotal += stockBySource[sourceName] || 0
+          const sbs = product.stock_by_source || {}
+          const val = sbs[sourceKey]
+          if (val != null && val > 0) {
+            stockTotal += val
+            productsWithStock++
+          }
         })
 
         return {
           ...provider,
+          source_key: sourceKey,
+          products_with_stock: productsWithStock,
           products_count: productsCount || 0,
-          stock_total: stockTotal
+          stock_total: stockTotal,
         }
       })
     )

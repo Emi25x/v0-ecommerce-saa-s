@@ -42,8 +42,11 @@ Centraliza productos, stock, pedidos, envíos y facturación de múltiples canal
   - **Estado actual: catálogo importa metadata pero NO stock.** El stock vendría de un archivo separado que aún no se logró importar.
   - Campos importados: EAN, título, autor, editorial, PVP, idioma, sinopsis, imagen, año edición
   - Stock inicial al crear producto: `stock_by_source: {azeta: 0}, stock: 0`
-- **Arnoia** — Stock + precios via API ✅ FUNCIONANDO
-  - **Es la fuente ACTIVA de stock actualmente en la base de datos**
+- **Arnoia** — Fuente PRINCIPAL de productos y stock ✅ FUNCIONANDO
+  - **3 import sources configurados:**
+    - **Arnoia Catálogo**: crea todos los productos (upsert via batch import). Se corrió inicialmente para poblar la base.
+    - **Arnoia Act**: actualización semanal de productos nuevos (upsert via batch import)
+    - **Arnoia Stock**: actualización DIARIA de stock solamente (UPDATE via `bulk_update_stock_price` RPC)
   - Usa `bulk_update_stock_price` RPC con `p_source_key = "arnoia"` (o el `source_key` del import_source)
   - Actualiza `stock_by_source['arnoia']` → trigger recalcula `products.stock`
   - Importa: EAN, stock, precio (precio_sin_iva)
@@ -181,16 +184,17 @@ se guardan en columnas JSONB en la base de datos, no en variables de entorno.
 
 ### Flujo de stock
 ```
-Proveedores (Arnoia activo ✅ / Azeta pendiente ❌ / Libral)
+Arnoia (fuente principal ✅) / Libral (secundaria)
   → import_sources (URL + credentials + source_key)
-  → RPC bulk_update_stock_price(eans, stocks, prices, source_key)
+  → Catálogo/Act: upsert via batch import (crea productos)
+  → Stock diario: RPC bulk_update_stock_price(eans, stocks, prices, source_key)
   → UPDATE products SET stock_by_source = stock_by_source || {source_key: qty}
   → TRIGGER sync_stock_total() recalcula products.stock = SUM(stock_by_source.*)
 ```
 
 ### Flujo de datos general
 ```
-Proveedores (Azeta/Arnoia/Libral)
+Proveedores (Arnoia principal / Libral secundario)
   → import_sources → products (stock_by_source JSONB)
   → Sync/Push a ML / Shopify
 
@@ -274,12 +278,11 @@ Envíos → carrier API → tracking updates en shipments
 
 ## Importación Azeta
 
-### Estado actual: ⚠️ NO funciona completamente
-- El catálogo se importa (metadata: título, autor, editorial, PVP, etc.) pero **el stock queda en 0**
-- El catálogo Azeta NO incluye cantidades de stock — solo metadata de productos
-- Se necesita un archivo/endpoint SEPARADO de stock Azeta para popular `stock_by_source['azeta']`
-- La fuente "Azeta Stock" debe existir en `import_sources` con nombre que matchee `%azeta%stock%`
-- **Los productos en la base actualmente tienen stock de ARNOIA, no de Azeta**
+### Estado actual: ❌ NUNCA se usó para importar
+- Azeta nunca se logró hacer funcionar para importar productos
+- **Todos los productos en la base vienen de ARNOIA** (Catálogo + Act + Stock)
+- El código de import Azeta existe pero no se usó en producción
+- Si se quisiera activar en el futuro: el catálogo no incluye stock, necesitaría fuente separada
 
 ### Arquitectura
 - `lib/azeta/run-catalog-import.ts` — lógica central, llamada por cron y por UI
@@ -315,23 +318,39 @@ Envíos → carrier API → tracking updates en shipments
 
 ---
 
-## Importación Arnoia ✅ FUNCIONANDO
+## Importación Arnoia ✅ FUENTE PRINCIPAL
 
-### Estado actual: Es la fuente ACTIVA de stock
-- Todo el stock visible en la base proviene de Arnoia
-- Usa `source_key` del import_source (default: "arnoia") como clave en `stock_by_source`
+### Estado actual: Es la fuente de TODOS los productos y stock
+- **Arnoia pobló toda la base de datos** — tanto productos como stock
+- Azeta NUNCA funcionó para importar productos
+- 3 import sources configurados:
+
+| Source | Frecuencia | Qué hace | Endpoint |
+|--------|-----------|----------|----------|
+| **Arnoia Catálogo** | Inicial/manual | Crea todos los productos (upsert completo) | `POST /api/inventory/import/batch` |
+| **Arnoia Act** | Semanal | Agrega productos nuevos (upsert) | `POST /api/inventory/import/batch` |
+| **Arnoia Stock** | Diario | Solo actualiza stock + precio (UPDATE) | `POST /api/arnoia/import-stock` |
 
 ### Arquitectura
-- `lib/arnoia/run-stock-import.ts` — lógica central
-- `app/api/arnoia/import-stock/route.ts` — endpoint
+- `app/api/inventory/import/batch/route.ts` — import genérico por batches (usado por Catálogo y Act)
+- `lib/arnoia/run-stock-import.ts` — import de stock dedicado
+- `app/api/arnoia/import-stock/route.ts` — endpoint para stock diario
 
-### Flujo
+### Flujo de stock diario (Arnoia Stock)
 1. Busca import_source con nombre `%arnoia%stock%`
 2. Descarga CSV (latin1) desde `credentials.url` o `url_template`
 3. Auto-detecta delimitador (pipe, semicolon, comma) y header
 4. Parsea EAN, stock, precio por línea → mapa deduplicado
 5. `bulk_update_stock_price` RPC en batches de 1000 con `p_source_key`
 6. Actualiza `stock_by_source[source_key]` → trigger recalcula `stock`
+7. `zero_source_stock_not_in_list` pone stock=0 en productos que ya no están en el feed
+
+### Flujo de catálogo (Arnoia Catálogo / Act)
+1. UI dispara `POST /api/inventory/import/batch` con `{ sourceId, offset }`
+2. Descarga CSV completo, auto-detecta delimiter y headers
+3. Mapea campos (EAN, título, autor, precio, stock, etc.)
+4. Upsert en `products` por batches (crea si no existe, actualiza si ya existe)
+5. Popula `stock_by_source[source_key]` para filtros por almacén
 
 ---
 
@@ -346,8 +365,8 @@ Envíos → carrier API → tracking updates en shipments
 
 ## Contexto de trabajo en curso
 
-- **Arnoia stock import funcionando ✅** — fuente activa de stock en la base
-- **Azeta catálogo importa metadata ✅ pero stock queda en 0 ❌** — necesita archivo separado de stock
+- **Arnoia = fuente principal ✅** — catálogo + stock semanal + stock diario (3 import sources)
+- **Azeta ❌** — nunca se usó, código existe pero no se activó en producción
 - **Shopify multi-tienda ✅** — múltiples tiendas conectadas, aislamiento por store_id, nombre personalizable
 - **Shopify template builder ✅** — análisis inverso de productos existentes + UI de mapeo + defaults por tienda
 - FastMail API v2 integrado y conexión verificada ✅

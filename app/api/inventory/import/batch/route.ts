@@ -302,10 +302,12 @@ export async function POST(request: NextRequest) {
               })
               rpcError = res.error; rpcData = res.data
             } else {
+              const stockKey = (source as any).source_key || source.name?.toLowerCase().replace(/[^a-z0-9]/g, "_") || ""
               const res = await supabase.rpc("bulk_update_stock_price", {
                 p_eans: eans,
                 p_stocks: stocks,
                 p_prices: costPrices,
+                p_source_key: stockKey || undefined,
               })
               rpcError = res.error; rpcData = res.data
             }
