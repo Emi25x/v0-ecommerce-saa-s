@@ -18,6 +18,39 @@ export const INTERNAL_FIELDS = [
   { key: 'image_url', label: 'URL de Imagen', required: false },
 ] as const
 
+/**
+ * Prefix used to identify custom (user-defined) column mappings.
+ * Value format: "custom:key_name"  e.g. "custom:precio_eur"
+ */
+export const CUSTOM_FIELD_PREFIX = 'custom:'
+
+/** Returns true if a mapping value is a custom field */
+export function isCustomField(value: string): boolean {
+  return value.startsWith(CUSTOM_FIELD_PREFIX)
+}
+
+/** Extracts the key name from a custom field mapping value */
+export function customFieldKey(value: string): string {
+  return value.slice(CUSTOM_FIELD_PREFIX.length)
+}
+
+/** Builds a custom field mapping value from a key */
+export function makeCustomFieldValue(key: string): string {
+  return CUSTOM_FIELD_PREFIX + key
+}
+
+/**
+ * Given the full mapping (csvColumn → internalField | "custom:key"),
+ * returns an object with only the custom fields: { csvColumn: key }
+ */
+export function extractCustomMappings(mapping: Record<string, string>): Record<string, string> {
+  const result: Record<string, string> = {}
+  for (const [col, val] of Object.entries(mapping)) {
+    if (isCustomField(val)) result[col] = customFieldKey(val)
+  }
+  return result
+}
+
 // Diccionario de sinónimos para auto-mapeo
 const SYNONYMS: Record<string, string[]> = {
   sku: ['sku', 'codigo', 'código', 'code', 'item', 'producto', 'product'],

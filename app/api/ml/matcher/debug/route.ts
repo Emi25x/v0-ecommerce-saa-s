@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { NextResponse } from "next/server"
 
 /**
@@ -13,7 +13,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "account_id required" }, { status: 400 })
   }
 
-  const supabase = await createClient({ useServiceRole: true })
+  const supabase = createAdminClient()
 
   // Total publicaciones
   const { count: totalPubs } = await supabase

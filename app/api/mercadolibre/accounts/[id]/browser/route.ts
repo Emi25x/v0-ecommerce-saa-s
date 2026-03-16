@@ -29,27 +29,23 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       if (alterError) {
         console.error("[v0] Error adding column:", alterError)
         // Intentar con una query directa si rpc no funciona
-        const { error: directError } = await supabase
-          .from("ml_accounts")
-          .select("id")
-          .limit(1)
-          .then(async () => {
-            // Ejecutar ALTER TABLE directamente
-            return await fetch(`${process.env.SUPABASE_URL}/rest/v1/rpc/exec_sql`, {
-              method: "POST",
-              headers: {
-                apikey: process.env.SUPABASE_ANON_KEY || "",
-                Authorization: `Bearer ${process.env.SUPABASE_ANON_KEY}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                sql: "ALTER TABLE ml_accounts ADD COLUMN IF NOT EXISTS browser_preference TEXT;",
-              }),
-            })
+        try {
+          const directRes = await fetch(`${process.env.SUPABASE_URL}/rest/v1/rpc/exec_sql`, {
+            method: "POST",
+            headers: {
+              apikey: process.env.SUPABASE_ANON_KEY || "",
+              Authorization: `Bearer ${process.env.SUPABASE_ANON_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              sql: "ALTER TABLE ml_accounts ADD COLUMN IF NOT EXISTS browser_preference TEXT;",
+            }),
           })
-
-        if (directError) {
-          console.error("[v0] Error with direct SQL:", directError)
+          if (!directRes.ok) {
+            console.error("[v0] Error with direct SQL:", await directRes.text())
+          }
+        } catch (directErr) {
+          console.error("[v0] Error with direct SQL:", directErr)
         }
       }
 

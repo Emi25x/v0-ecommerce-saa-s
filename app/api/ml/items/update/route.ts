@@ -20,7 +20,8 @@ export async function PUT(request: NextRequest) {
 
     console.log("[v0] Listing query result:", { listing, listingError })
 
-    let accessToken = listing?.ml_accounts?.access_token
+    const mlAccountData = listing?.ml_accounts as unknown as { access_token: any } | null
+    let accessToken = mlAccountData?.access_token
 
     if (!accessToken) {
       console.log("[v0] No token in listing, searching for active account...")

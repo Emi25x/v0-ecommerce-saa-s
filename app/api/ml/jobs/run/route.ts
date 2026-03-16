@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { getValidAccessToken } from "@/lib/mercadolibre"
 import { NextRequest, NextResponse } from "next/server"
 import { protectCron } from "@/lib/auth/protect-api"
@@ -13,7 +14,7 @@ const MAX_ATTEMPTS    = 5
 // ML constants
 const ML_API          = "https://api.mercadolibre.com"
 const ML_SCAN_PAGE_SIZE   = 50
-const ML_MULTIGET_MAX_IDS = 50
+const ML_MULTIGET_MAX_IDS = 20  // ML hard limit: máximo 20 IDs por request
 const ML_ATTRIBUTES       = "id,title,price,available_quantity,sold_quantity,status,permalink,thumbnail,listing_type_id,attributes,seller_custom_field"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -297,10 +298,13 @@ async function executeCatalogOptIn(job: any, supabase: any): Promise<Record<stri
     throw new Error(`ML opt-in failed for ${ml_item_id}: ${errMsg}`)
   }
 
-  // Update local record
+  // Update local record — el item ahora ES catálogo (catalog_listing=true)
+  // y sigue siendo elegible (catalog_listing_eligible=true), pero el filtro
+  // "Elegibles catálogo" excluye items con catalog_listing=true.
   await supabase.from("ml_publications")
     .update({
       catalog_product_id,
+      catalog_listing:          true,
       catalog_listing_eligible: true,
       updated_at: new Date().toISOString(),
     })
@@ -426,7 +430,7 @@ async function executeImportSingle(job: any, supabase: any): Promise<Record<stri
   const fullAttributes = [
     "id", "title", "price", "available_quantity", "sold_quantity", "status",
     "permalink", "thumbnail", "listing_type_id", "attributes",
-    "seller_custom_field", "catalog_listing", "catalog_product_id", "health",
+    "seller_custom_field", "catalog_listing", "catalog_listing_eligible", "catalog_product_id", "health",
   ].join(",")
 
   const { ok, status, data, rateLimited, retryAfter } = await mlFetch(
@@ -461,8 +465,9 @@ async function executeImportSingle(job: any, supabase: any): Promise<Record<stri
     sku,
     isbn,
     ean,
-    catalog_listing_eligible: item.catalog_listing ?? false,
-    catalog_product_id:      item.catalog_product_id ?? null,
+    catalog_listing:          item.catalog_listing          ?? false,
+    catalog_listing_eligible: item.catalog_listing_eligible ?? false,
+    catalog_product_id:       item.catalog_product_id       ?? null,
     updated_at:              new Date().toISOString(),
   }
 
@@ -493,7 +498,7 @@ async function handleImportPublications(
 ): Promise<{ imported_count: number; has_more: boolean; rate_limited: boolean; error?: string }> {
   const { account_id, payload } = job
   const max_seconds = payload.max_seconds ?? 50
-  const detail_batch = Math.min(50, Math.max(1, payload.detail_batch ?? 50))
+  const detail_batch = Math.min(ML_MULTIGET_MAX_IDS, Math.max(1, payload.detail_batch ?? ML_MULTIGET_MAX_IDS))
   const concurrency  = payload.concurrency ?? 2
   const startTime    = Date.now()
 
@@ -680,7 +685,7 @@ export async function POST(request: NextRequest) {
   const limit      = Math.min(50, Math.max(1, body.limit ?? 5))
   const accountId  = body.account_id ?? null
 
-  const supabase = await createClient({ useServiceRole: true })
+  const supabase = createAdminClient()
 
   // ── 1. Claim jobs (lock atómico) ─────────────────────────────────────────
   const query = supabase

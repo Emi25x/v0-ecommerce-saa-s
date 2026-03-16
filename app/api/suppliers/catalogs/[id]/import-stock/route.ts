@@ -172,6 +172,55 @@ export async function POST(
     }
   }
 
+  // 4. Propagate stock to products.stock_by_source + products.stock
+  // Use supplier code as the source_key bucket (lowercase, alphanumeric only)
+  const sourceKey = ((catalog.supplier as any)?.code ?? supplierId)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "_")
+
+  let productsUpdated = 0
+
+  // Update products with new stock values from this snapshot
+  const allEans = [...stockMap.keys()]
+  for (let i = 0; i < allEans.length; i += CHUNK) {
+    const chunk = allEans.slice(i, i + CHUNK)
+    const { data: prods } = await supabase
+      .from("products")
+      .select("id, ean, stock_by_source")
+      .in("ean", chunk)
+
+    if (!prods || prods.length === 0) continue
+
+    const updates = prods.map((p: any) => {
+      const newQty = stockMap.get(p.ean!) ?? 0
+      const merged = { ...(p.stock_by_source ?? {}), [sourceKey]: newQty }
+      const totalStock = Object.values(merged).reduce((s: number, v) => s + (Number(v) || 0), 0)
+      return { id: p.id, stock_by_source: merged, stock: totalStock }
+    })
+
+    await supabase.from("products").upsert(updates, { onConflict: "id" })
+    productsUpdated += updates.length
+  }
+
+  // Zero out products whose EANs were removed from this supplier's snapshot
+  for (let i = 0; i < eansToZero.length; i += CHUNK) {
+    const chunk = eansToZero.slice(i, i + CHUNK)
+    const { data: prods } = await supabase
+      .from("products")
+      .select("id, ean, stock_by_source")
+      .in("ean", chunk)
+
+    if (!prods || prods.length === 0) continue
+
+    const updates = prods.map((p: any) => {
+      const merged = { ...(p.stock_by_source ?? {}), [sourceKey]: 0 }
+      const totalStock = Object.values(merged).reduce((s: number, v) => s + (Number(v) || 0), 0)
+      return { id: p.id, stock_by_source: merged, stock: totalStock }
+    })
+
+    await supabase.from("products").upsert(updates, { onConflict: "id" })
+  }
+
   // Finalize run log
   if (runId) {
     await supabase.from("supplier_import_runs").update({
@@ -179,16 +228,19 @@ export async function POST(
       finished_at:         new Date().toISOString(),
       valid_ean:           validEan,
       set_zero_stock_count: setZeroCount,
+      updated_count:       productsUpdated,
     }).eq("id", runId)
   }
 
   return NextResponse.json({
-    ok:              true,
-    total_rows:      totalRows,
-    valid_ean:       validEan,
-    unique_eans:     stockMap.size,
-    set_zero_count:  setZeroCount,
-    skipped_invalid: invalid,
-    run_id:          runId,
+    ok:               true,
+    total_rows:       totalRows,
+    valid_ean:        validEan,
+    unique_eans:      stockMap.size,
+    set_zero_count:   setZeroCount,
+    skipped_invalid:  invalid,
+    products_updated: productsUpdated,
+    source_key:       sourceKey,
+    run_id:           runId,
   })
 }

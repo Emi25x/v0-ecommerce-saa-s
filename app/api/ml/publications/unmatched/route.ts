@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { NextResponse } from "next/server"
 
 /**
@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     const accountId = searchParams.get("account_id")
     const q = searchParams.get("q")
 
-    const supabase = await createClient({ useServiceRole: true })
+    const supabase = createAdminClient()
     const offset = (page - 1) * pageSize
 
     // Query base: publicaciones sin product_id (sin vincular)

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getLibralToken, queryLibralProducts, delayBetweenBatches } from "@/lib/libral"
+import { mergeStockBySource } from "@/lib/stock-helpers"
 
 // Sincroniza stock y precios solo cuando hay cambios
 // Detecta productos nuevos automáticamente
@@ -33,6 +34,9 @@ export async function GET(request: Request) {
       console.log("[v0] Libral no está configurado o no está activo")
       return NextResponse.json({ message: "Libral no configurado", skipped: true })
     }
+
+    // Usar source_key (string corto) como clave en stock_by_source para compatibilidad con filtros del almacén
+    const libralSourceKey: string = libralSource.source_key ?? libralSource.name?.toLowerCase().replace(/[^a-z0-9]/g, "_") ?? libralSource.id
 
     // Obtener token de Libral
     const token = await getLibralToken()
@@ -71,7 +75,7 @@ export async function GET(request: Request) {
       )
 
       // Procesar cada producto
-      for (const apiProduct of result.data) {
+      for (const apiProduct of result.data as Record<string, any>[]) {
         try {
           const sku = apiProduct[fieldMapping.sku]
           const newStock = apiProduct[fieldMapping.stock] || 0
@@ -79,16 +83,19 @@ export async function GET(request: Request) {
 
           if (!sku) continue
 
-          // Verificar si el producto existe
+          // Verificar si el producto existe (incluir stock_by_source para merge)
           const { data: existingProduct } = await supabase
             .from("products")
-            .select("id, stock, price")
+            .select("id, stock, price, stock_by_source")
             .eq("sku", sku)
             .single()
 
           if (existingProduct) {
             // Producto existe - verificar si hay cambios
-            const stockChanged = existingProduct.stock !== newStock
+            const { stock_by_source, stock: totalStock } = mergeStockBySource(
+              existingProduct.stock_by_source, libralSourceKey, newStock
+            )
+            const stockChanged = existingProduct.stock !== totalStock
             const priceChanged = Math.abs(existingProduct.price - newPrice) > 0.01
 
             if (stockChanged || priceChanged) {
@@ -96,7 +103,8 @@ export async function GET(request: Request) {
               const { error: updateError } = await supabase
                 .from("products")
                 .update({
-                  stock: newStock,
+                  stock: totalStock,
+                  stock_by_source,
                   price: newPrice,
                   updated_at: new Date().toISOString(),
                 })
@@ -113,17 +121,19 @@ export async function GET(request: Request) {
             }
           } else {
             // Producto nuevo - importar
+            const { stock_by_source: newSbs, stock: totalStock } = mergeStockBySource(null, libralSourceKey, newStock)
             const productData: any = {
               sku,
               title: apiProduct[fieldMapping.title],
               description: apiProduct[fieldMapping.description] || null,
               price: newPrice,
-              stock: newStock,
+              stock: totalStock,
+              stock_by_source: newSbs,
               brand: apiProduct[fieldMapping.brand] || null,
               category: apiProduct[fieldMapping.category] || null,
               image_url: apiProduct[fieldMapping.image_url] || null,
               condition: apiProduct[fieldMapping.condition] ? "new" : "used",
-              source: [libralSource.id],
+              source: [libralSourceKey],
               internal_code: `INT-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
               custom_fields: {
                 libral_id: apiProduct.id,

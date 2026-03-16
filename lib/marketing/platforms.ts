@@ -1,0 +1,213 @@
+import type { PlatformDefinition } from "@/types/marketing"
+
+export const PLATFORMS: PlatformDefinition[] = [
+  {
+    id: "google_ads",
+    name: "Google Ads",
+    description: "Search, Display, Shopping y YouTube Ads",
+    category: "search",
+    auth_type: "oauth",
+    color: "#4285F4",
+    capabilities: ["campaigns", "spend", "conversions", "roas", "shopping_ads"],
+    fields: [
+      { key: "client_id", label: "Client ID", type: "text", required: true, help: "Desde Google Cloud Console" },
+      { key: "client_secret", label: "Client Secret", type: "password", required: true },
+      { key: "developer_token", label: "Developer Token", type: "password", required: true, help: "Desde Google Ads API Center" },
+      { key: "customer_id", label: "Customer ID (MCC)", type: "text", required: false, placeholder: "123-456-7890" },
+    ],
+  },
+  {
+    id: "google_analytics",
+    name: "Google Analytics 4",
+    description: "Métricas de tráfico, sesiones, conversiones y e-commerce",
+    category: "search",
+    auth_type: "oauth",
+    color: "#F9AB00",
+    capabilities: ["traffic", "sessions", "conversions", "ecommerce", "realtime"],
+    fields: [
+      { key: "client_id", label: "Client ID", type: "text", required: true },
+      { key: "client_secret", label: "Client Secret", type: "password", required: true },
+      { key: "property_id", label: "GA4 Property ID", type: "text", required: true, placeholder: "123456789" },
+    ],
+  },
+  {
+    id: "google_search_console",
+    name: "Google Search Console",
+    description: "Performance SEO: impresiones, clics, posición promedio",
+    category: "search",
+    auth_type: "oauth",
+    color: "#34A853",
+    capabilities: ["seo", "impressions", "clicks", "position", "queries"],
+    fields: [
+      { key: "client_id", label: "Client ID", type: "text", required: true },
+      { key: "client_secret", label: "Client Secret", type: "password", required: true },
+      { key: "site_url", label: "URL del sitio", type: "url", required: true, placeholder: "https://tu-tienda.com" },
+    ],
+  },
+  {
+    id: "google_merchant",
+    name: "Google Merchant Center",
+    description: "Gestión de catálogo de productos para Shopping",
+    category: "ecommerce",
+    auth_type: "oauth",
+    color: "#EA4335",
+    capabilities: ["product_feed", "shopping", "free_listings"],
+    fields: [
+      { key: "client_id", label: "Client ID", type: "text", required: true },
+      { key: "client_secret", label: "Client Secret", type: "password", required: true },
+      { key: "merchant_id", label: "Merchant ID", type: "text", required: true },
+    ],
+  },
+  {
+    id: "meta_ads",
+    name: "Meta Ads",
+    description: "Facebook Ads e Instagram Ads con pixel de conversión",
+    category: "social",
+    auth_type: "oauth",
+    color: "#1877F2",
+    capabilities: ["campaigns", "spend", "conversions", "retargeting", "catalog"],
+    fields: [
+      { key: "app_id", label: "App ID", type: "text", required: true },
+      { key: "app_secret", label: "App Secret", type: "password", required: true },
+      { key: "ad_account_id", label: "Ad Account ID", type: "text", required: true, placeholder: "act_123456789" },
+      { key: "pixel_id", label: "Pixel ID", type: "text", required: false },
+    ],
+  },
+  {
+    id: "tiktok_ads",
+    name: "TikTok Ads",
+    description: "Campañas de video y performance en TikTok",
+    category: "social",
+    auth_type: "oauth",
+    color: "#000000",
+    capabilities: ["campaigns", "spend", "conversions", "video_ads"],
+    fields: [
+      { key: "app_id", label: "App ID", type: "text", required: true },
+      { key: "app_secret", label: "App Secret", type: "password", required: true },
+      { key: "advertiser_id", label: "Advertiser ID", type: "text", required: true },
+    ],
+  },
+  {
+    id: "linkedin_ads",
+    name: "LinkedIn Ads",
+    description: "Campañas B2B en LinkedIn",
+    category: "social",
+    auth_type: "oauth",
+    color: "#0A66C2",
+    capabilities: ["campaigns", "spend", "lead_gen"],
+    fields: [
+      { key: "client_id", label: "Client ID", type: "text", required: true },
+      { key: "client_secret", label: "Client Secret", type: "password", required: true },
+      { key: "account_id", label: "Account ID", type: "text", required: true },
+    ],
+  },
+  {
+    id: "pinterest_ads",
+    name: "Pinterest Ads",
+    description: "Campañas de productos y catálogo en Pinterest",
+    category: "social",
+    auth_type: "oauth",
+    color: "#E60023",
+    capabilities: ["campaigns", "spend", "catalog"],
+    fields: [
+      { key: "app_id", label: "App ID", type: "text", required: true },
+      { key: "app_secret", label: "App Secret", type: "password", required: true },
+      { key: "ad_account_id", label: "Ad Account ID", type: "text", required: true },
+    ],
+  },
+  {
+    id: "klaviyo",
+    name: "Klaviyo",
+    description: "Email marketing y SMS con segmentación avanzada para e-commerce",
+    category: "email",
+    auth_type: "api_key",
+    color: "#1C1C1C",
+    capabilities: ["email_campaigns", "sms", "flows", "segments", "revenue"],
+    fields: [
+      { key: "api_key", label: "API Key (Private)", type: "password", required: true, help: "Settings → API Keys → Create Private API Key" },
+      { key: "public_key", label: "Public API Key (Site ID)", type: "text", required: false },
+    ],
+  },
+  {
+    id: "mailchimp",
+    name: "Mailchimp",
+    description: "Email marketing con automatizaciones y landing pages",
+    category: "email",
+    auth_type: "api_key",
+    color: "#FFE01B",
+    capabilities: ["email_campaigns", "automations", "landing_pages", "lists"],
+    fields: [
+      { key: "api_key", label: "API Key", type: "password", required: true, placeholder: "xxxxxxxx-us1", help: "Account → Extras → API Keys" },
+      { key: "server_prefix", label: "Server Prefix", type: "text", required: true, placeholder: "us1", help: "La parte final de tu API key (ej: us1)" },
+      { key: "list_id", label: "Audience ID", type: "text", required: false },
+    ],
+  },
+  {
+    id: "brevo",
+    name: "Brevo (Sendinblue)",
+    description: "Email transaccional, marketing y WhatsApp en una plataforma",
+    category: "email",
+    auth_type: "api_key",
+    color: "#0B996E",
+    capabilities: ["email_campaigns", "transactional", "sms", "whatsapp"],
+    fields: [
+      { key: "api_key", label: "API Key", type: "password", required: true, help: "SMTP & API → API Keys → Generate" },
+    ],
+  },
+  {
+    id: "hubspot",
+    name: "HubSpot",
+    description: "CRM, email marketing y automatización de marketing",
+    category: "crm",
+    auth_type: "api_key",
+    color: "#FF7A59",
+    capabilities: ["crm", "email_campaigns", "forms", "workflows", "contacts"],
+    fields: [
+      { key: "api_key", label: "Private App Token", type: "password", required: true, help: "Settings → Integrations → Private Apps" },
+      { key: "portal_id", label: "Portal ID (Hub ID)", type: "text", required: true },
+    ],
+  },
+  {
+    id: "activecampaign",
+    name: "ActiveCampaign",
+    description: "Marketing automation, CRM y email marketing",
+    category: "email",
+    auth_type: "api_key_secret",
+    color: "#356AE6",
+    capabilities: ["email_campaigns", "automations", "crm", "tags"],
+    fields: [
+      { key: "api_url", label: "API URL", type: "url", required: true, placeholder: "https://tu-cuenta.api-us1.com" },
+      { key: "api_key", label: "API Key", type: "password", required: true, help: "Settings → Developer → API Access" },
+    ],
+  },
+  {
+    id: "whatsapp",
+    name: "WhatsApp Business",
+    description: "Mensajería directa a clientes via WhatsApp Business API",
+    category: "crm",
+    auth_type: "api_key",
+    color: "#25D366",
+    capabilities: ["messaging", "templates", "broadcasts"],
+    fields: [
+      { key: "access_token", label: "Access Token", type: "password", required: true, help: "Meta for Developers → WhatsApp → API Setup" },
+      { key: "phone_number_id", label: "Phone Number ID", type: "text", required: true },
+      { key: "waba_id", label: "WhatsApp Business Account ID", type: "text", required: true },
+    ],
+  },
+]
+
+export function getPlatform(id: string): PlatformDefinition | undefined {
+  return PLATFORMS.find(p => p.id === id)
+}
+
+export function getPlatformsByCategory(category: string): PlatformDefinition[] {
+  return PLATFORMS.filter(p => p.category === category)
+}
+
+export const CATEGORY_LABELS: Record<string, string> = {
+  search: "Google Marketing",
+  social: "Redes Sociales",
+  email: "Email Marketing",
+  crm: "CRM & Mensajería",
+  ecommerce: "E-commerce",
+}

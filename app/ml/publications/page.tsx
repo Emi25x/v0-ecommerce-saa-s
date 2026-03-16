@@ -42,6 +42,11 @@ import {
   Tag,
   ScanLine,
   AlertCircle,
+  Layers,
+  History,
+  TrendingDown,
+  ShoppingBag,
+  X,
 } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
@@ -105,6 +110,7 @@ interface Publication {
   gtin: string | null
   catalog_listing_eligible: boolean | null
   catalog_listing: boolean | null
+  catalog_linked_item_id: string | null
   product_id: string | null
   permalink: string | null
   meli_weight_g: number | null
@@ -125,6 +131,12 @@ interface Counts {
   sin_producto:     number
   sin_stock:        number
   eligible_catalog: number
+}
+
+interface DuplicateGroup {
+  sku:          string
+  traditional:  Publication[]
+  catalog:      Publication[]
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -176,10 +188,64 @@ export default function MLPublicationsPage() {
   const [verifying, setVerifying]         = useState<string | null>(null) // ml_item_id being verified
   const [selected, setSelected]           = useState<Set<string>>(new Set()) // ml_item_ids seleccionados
   const [batchEnqueueing, setBatchEnqueueing] = useState(false)
+  const [showDuplicates, setShowDuplicates]   = useState(false)
+  const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroup[]>([])
+  const [loadingDuplicates, setLoadingDuplicates] = useState(false)
+  const [closingItem, setClosingItem]         = useState<string | null>(null)
+  const [mlStats, setMlStats]                 = useState<Record<string, { sold_quantity: number; listing_type_id: string | null }>>( {})
 
+  // ── Historial de stock ──────────────────────────────────────────────────
+  const [historialItem,    setHistorialItem]    = useState<Publication | null>(null)
+  const [historialLoading, setHistorialLoading] = useState(false)
+  const [historialData,    setHistorialData]    = useState<{
+    stock_history: {
+      id: string
+      old_quantity: number | null
+      new_quantity: number
+      changed_by_user_id: string | null
+      source: string
+      notes: string | null
+      created_at: string
+    }[]
+    ml_snapshot: {
+      available_quantity: number | null
+      price: number | null
+      status: string | null
+    } | null
+    sales: {
+      order_id: number
+      status: string
+      date: string
+      qty_sold: number
+      unit_price: number
+    }[]
+  } | null>(null)
 
   const searchRef = useRef(search)
   searchRef.current = search
+
+  // ── Historial: fetch al abrir el modal ────────────────────────────────
+
+  const openHistorial = useCallback(async (pub: Publication) => {
+    setHistorialItem(pub)
+    setHistorialData(null)
+    setHistorialLoading(true)
+    try {
+      const params = new URLSearchParams()
+      if (pub.account_id) params.set("account_id", pub.account_id)
+      const res = await fetch(
+        `/api/mercadolibre/publications/${pub.ml_item_id}/history?${params}`
+      )
+      if (res.ok) {
+        const data = await res.json()
+        setHistorialData(data)
+      }
+    } catch {
+      // silencioso - el modal muestra estado vacío
+    } finally {
+      setHistorialLoading(false)
+    }
+  }, [])
 
   // ── Load accounts ──────────────────────────────────────────────────────
 
@@ -305,7 +371,7 @@ export default function MLPublicationsPage() {
   const handleSearch = () => {
     setPage(0); load(0)
     // Actualizar counts con el q activo para que los tabs reflejen la búsqueda
-    loadCounts(accountId, searchQuery)
+    loadCounts(accountId, search)
   }
   const prevPage = () => { const p = page - 1; setPage(p); load(p) }
   const nextPage = () => { const p = page + 1; setPage(p); load(p) }
@@ -326,7 +392,54 @@ export default function MLPublicationsPage() {
 
   const handleRefresh = () => {
     load(page)
-    loadCounts(accountId, searchQuery)
+    loadCounts(accountId, search)
+  }
+
+  const loadDuplicates = async () => {
+    if (accountId === "all") {
+      toast({ title: "Seleccioná una cuenta", description: "Elegí una cuenta para buscar duplicados.", variant: "destructive" })
+      return
+    }
+    setLoadingDuplicates(true)
+    setShowDuplicates(true)
+    try {
+      const res  = await fetch(`/api/ml/publications/duplicates?account_id=${accountId}`)
+      const data = await res.json()
+      if (data.ok) {
+        setDuplicateGroups(data.groups)
+        setMlStats(data.ml_stats ?? {})
+      } else {
+        toast({ title: "Error al buscar duplicados", description: data.error, variant: "destructive" })
+      }
+    } catch (err: any) {
+      toast({ title: "Error de red", description: err.message, variant: "destructive" })
+    } finally {
+      setLoadingDuplicates(false)
+    }
+  }
+
+  const closePub = async (pub: Publication) => {
+    if (!confirm(`¿Eliminar ${pub.ml_item_id} en MercadoLibre?\n\nEsto cierra la publicación en ML. Para que desaparezca del panel, después podés reimportar o sincronizar.`)) return
+    setClosingItem(pub.ml_item_id)
+    try {
+      const res  = await fetch("/api/ml/publications/close", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ ml_item_id: pub.ml_item_id, account_id: pub.account_id }),
+      })
+      const data = await res.json()
+      if (data.ok) {
+        toast({ title: "Publicación eliminada en ML", description: `${pub.ml_item_id} cerrada en MercadoLibre. Recargando duplicados...` })
+        loadDuplicates()
+        loadCounts(accountId)
+      } else {
+        toast({ title: "Error al cerrar", description: data.error ?? "Error desconocido", variant: "destructive" })
+      }
+    } catch (err: any) {
+      toast({ title: "Error de red", description: err.message, variant: "destructive" })
+    } finally {
+      setClosingItem(null)
+    }
   }
 
   const enqueueJob = async (
@@ -473,7 +586,7 @@ export default function MLPublicationsPage() {
         toast({ title: "Sincronización ejecutada", description: desc })
         refreshProgress()
         load(0)
-        loadCounts(accountId, searchQuery)
+        loadCounts(accountId, search)
         loadMlTotal(accountId)
       } else if (data.rate_limited) {
         toast({ title: "Rate limit ML", description: `Esperá ${data.wait_seconds ?? 60}s y reintentá.`, variant: "destructive" })
@@ -557,6 +670,20 @@ export default function MLPublicationsPage() {
                       active={soloElegibles}
                       onClick={() => { setSoloElegibles(s => !s); setSinStock(false); setSinProducto(false); setStatusFilter("all"); setPage(0); }}
                     />
+                  )}
+                  {accountId !== "all" && (
+                    <button
+                      onClick={() => showDuplicates ? setShowDuplicates(false) : loadDuplicates()}
+                      className={`
+                        inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium
+                        transition-colors cursor-pointer
+                        bg-orange-500/15 text-orange-400 border-orange-500/30 hover:bg-orange-500/25
+                        ${showDuplicates ? "ring-2 ring-offset-1 ring-offset-background ring-current" : ""}
+                      `}
+                    >
+                      <Layers className="h-3 w-3" />
+                      {loadingDuplicates ? "Buscando..." : showDuplicates ? `Duplicados ${duplicateGroups.length}` : "Duplicados"}
+                    </button>
                   )}
                 </>
               ) : null}
@@ -923,6 +1050,198 @@ export default function MLPublicationsPage() {
           </div>
         )}
 
+        {/* ── Panel duplicados ────────────────────────────────────────────── */}
+        {showDuplicates && (
+          <div className="border border-orange-500/30 rounded-xl overflow-hidden">
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-orange-500/20 bg-orange-500/5">
+              <div className="flex items-center gap-2">
+                <Layers className="h-4 w-4 text-orange-400" />
+                <span className="font-medium text-sm">Publicaciones duplicadas por SKU</span>
+                {!loadingDuplicates && (
+                  <span className="text-xs text-muted-foreground">
+                    — {duplicateGroups.length === 0
+                      ? "sin duplicados"
+                      : `${duplicateGroups.length} SKU${duplicateGroups.length !== 1 ? "s" : ""} con duplicados`}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={loadDuplicates}
+                  disabled={loadingDuplicates}
+                  className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-40"
+                >
+                  {loadingDuplicates ? "Buscando..." : "Recargar"}
+                </button>
+                <button
+                  onClick={() => setShowDuplicates(false)}
+                  className="text-muted-foreground hover:text-foreground p-1"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            {loadingDuplicates ? (
+              <div className="p-8 text-center text-sm text-muted-foreground">Buscando duplicados...</div>
+            ) : duplicateGroups.length === 0 ? (
+              <div className="p-8 text-center text-sm text-muted-foreground">
+                Sin duplicados encontrados para esta cuenta.
+              </div>
+            ) : (
+              <div className="divide-y divide-orange-500/10 max-h-[600px] overflow-y-auto">
+                {duplicateGroups.map(group => (
+                  <div key={group.sku} className="p-4 space-y-3">
+
+                    {/* Grupo header */}
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm font-semibold text-orange-300">{group.sku}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {group.traditional.length} tradicional{group.traditional.length !== 1 ? "es" : ""}
+                        {group.catalog.length > 0 && ` · ${group.catalog.length} catálogo`}
+                      </span>
+                    </div>
+
+                    {/* Tradicionales */}
+                    {group.traditional.length > 0 && (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Tradicionales</p>
+                        {group.traditional.map((pub, i) => (
+                          <div
+                            key={pub.ml_item_id}
+                            className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-sm ${
+                              i === 0
+                                ? "bg-muted/10 border-border"
+                                : "bg-orange-500/5 border-orange-500/20"
+                            }`}
+                          >
+                            <span className="font-mono text-xs text-muted-foreground w-28 shrink-0">{pub.ml_item_id}</span>
+                            {i === 0 && <span className="text-[10px] text-green-400 font-medium shrink-0">conservar</span>}
+                            {i > 0  && <span className="text-[10px] text-orange-400 font-medium shrink-0">duplicado</span>}
+                            <Badge variant="outline" className={`text-xs shrink-0 ${STATUS_COLOR[pub.status] ?? ""}`}>
+                              {STATUS_LABEL[pub.status] ?? pub.status}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground shrink-0">{fmt(pub.price)}</span>
+                            <span className={`text-xs shrink-0 ${pub.current_stock === 0 ? "text-red-400" : "text-muted-foreground"}`}>
+                              Stock: {pub.current_stock ?? "—"}
+                            </span>
+                            {mlStats[pub.ml_item_id] != null && (
+                              <span className="text-xs text-blue-400 shrink-0">
+                                {mlStats[pub.ml_item_id].sold_quantity} ventas
+                              </span>
+                            )}
+                            {mlStats[pub.ml_item_id]?.listing_type_id && (
+                              <span className="text-[10px] text-muted-foreground shrink-0 border border-muted-foreground/20 rounded px-1 py-0.5">
+                                {mlStats[pub.ml_item_id].listing_type_id === "gold_premium" ? "Gold Premium · cuotas"
+                                 : mlStats[pub.ml_item_id].listing_type_id === "gold_special" ? "Gold Especial"
+                                 : mlStats[pub.ml_item_id].listing_type_id === "gold_pro"     ? "Catálogo"
+                                 : mlStats[pub.ml_item_id].listing_type_id}
+                              </span>
+                            )}
+                            <span className="flex-1 text-xs text-muted-foreground truncate">{pub.title}</span>
+                            {pub.permalink && (
+                              <a
+                                href={pub.permalink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-muted-foreground hover:text-foreground shrink-0"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </a>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 text-xs px-2 shrink-0 border-red-500/40 text-red-400 hover:bg-red-500/10 disabled:opacity-40"
+                              disabled={closingItem === pub.ml_item_id || pub.status === "closed"}
+                              onClick={() => closePub(pub)}
+                            >
+                              {closingItem === pub.ml_item_id
+                                ? "Eliminando..."
+                                : pub.status === "closed"
+                                ? "Eliminada"
+                                : "Eliminar en ML"}
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Catálogo */}
+                    {group.catalog.length > 0 && (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Catálogo</p>
+                        {group.catalog.map((pub, i) => (
+                          <div
+                            key={pub.ml_item_id}
+                            className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-sm ${
+                              i === 0
+                                ? "bg-muted/10 border-border"
+                                : "bg-orange-500/5 border-orange-500/20"
+                            }`}
+                          >
+                            <span className="font-mono text-xs text-muted-foreground w-28 shrink-0">{pub.ml_item_id}</span>
+                            {i === 0 && <span className="text-[10px] text-green-400 font-medium shrink-0">conservar</span>}
+                            {i > 0  && <span className="text-[10px] text-orange-400 font-medium shrink-0">duplicado</span>}
+                            <Badge variant="outline" className={`text-xs shrink-0 ${STATUS_COLOR[pub.status] ?? ""}`}>
+                              {STATUS_LABEL[pub.status] ?? pub.status}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground shrink-0">{fmt(pub.price)}</span>
+                            <span className={`text-xs shrink-0 ${pub.current_stock === 0 ? "text-red-400" : "text-muted-foreground"}`}>
+                              Stock: {pub.current_stock ?? "—"}
+                            </span>
+                            {mlStats[pub.ml_item_id] != null && (
+                              <span className="text-xs text-blue-400 shrink-0">
+                                {mlStats[pub.ml_item_id].sold_quantity} ventas
+                              </span>
+                            )}
+                            {mlStats[pub.ml_item_id]?.listing_type_id && (
+                              <span className="text-[10px] text-muted-foreground shrink-0 border border-muted-foreground/20 rounded px-1 py-0.5">
+                                {mlStats[pub.ml_item_id].listing_type_id === "gold_premium" ? "Gold Premium · cuotas"
+                                 : mlStats[pub.ml_item_id].listing_type_id === "gold_special" ? "Gold Especial"
+                                 : mlStats[pub.ml_item_id].listing_type_id === "gold_pro"     ? "Catálogo"
+                                 : mlStats[pub.ml_item_id].listing_type_id}
+                              </span>
+                            )}
+                            <span className="flex-1 text-xs text-muted-foreground truncate">{pub.title}</span>
+                            {pub.permalink && (
+                              <a
+                                href={pub.permalink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-muted-foreground hover:text-foreground shrink-0"
+                              >
+                                <ExternalLink className="h-3.5 w-3.5" />
+                              </a>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-6 text-xs px-2 shrink-0 border-red-500/40 text-red-400 hover:bg-red-500/10 disabled:opacity-40"
+                              disabled={closingItem === pub.ml_item_id || pub.status === "closed"}
+                              onClick={() => closePub(pub)}
+                            >
+                              {closingItem === pub.ml_item_id
+                                ? "Eliminando..."
+                                : pub.status === "closed"
+                                ? "Eliminada"
+                                : "Eliminar en ML"}
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── Tabla / Empty ───────────────────────────────────────────────── */}
         {rows.length === 0 && !loading ? (
           <div className="flex flex-col items-center justify-center py-24 gap-4 text-center border border-dashed rounded-xl">
@@ -1183,6 +1502,20 @@ export default function MLPublicationsPage() {
                                       </TooltipTrigger>
                                       <TooltipContent side="left">Ya está en catálogo</TooltipContent>
                                     </Tooltip>
+                                  ) : row.catalog_linked_item_id ? (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div>
+                                          <DropdownMenuItem disabled className="gap-2 opacity-50">
+                                            <ShoppingCart className="h-4 w-4" />
+                                            Opt-in catálogo
+                                          </DropdownMenuItem>
+                                        </div>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="left">
+                                        Ya tiene catálogo asociado ({row.catalog_linked_item_id})
+                                      </TooltipContent>
+                                    </Tooltip>
                                   ) : row.catalog_listing_eligible ? (
                                     <DropdownMenuItem
                                       className="gap-2"
@@ -1234,6 +1567,15 @@ export default function MLPublicationsPage() {
                                   >
                                     <ScanLine className="h-4 w-4" />
                                     {verifying === row.ml_item_id ? "Verificando..." : "Verificar con ML"}
+                                  </DropdownMenuItem>
+
+                                  {/* Historial */}
+                                  <DropdownMenuItem
+                                    className="gap-2"
+                                    onClick={() => openHistorial(row)}
+                                  >
+                                    <History className="h-4 w-4" />
+                                    Historial
                                   </DropdownMenuItem>
 
                                 </DropdownMenuContent>
@@ -1364,8 +1706,210 @@ export default function MLPublicationsPage() {
         )}
 
       </div>
+
+      {/* ── Modal Historial ───────────────────────────────────────────────── */}
+      {historialItem && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setHistorialItem(null)}
+        >
+          <div
+            className="bg-background border rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between gap-4 p-5 border-b shrink-0">
+              <div className="space-y-0.5 min-w-0">
+                <div className="flex items-center gap-2">
+                  <History className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <h2 className="font-semibold truncate">{historialItem.title}</h2>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {historialItem.ml_item_id} · últimos 7 días
+                </p>
+              </div>
+              <button
+                onClick={() => setHistorialItem(null)}
+                className="text-muted-foreground hover:text-foreground shrink-0 p-1"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="overflow-y-auto flex-1 p-5 space-y-6">
+              {historialLoading ? (
+                <div className="text-center text-sm text-muted-foreground py-10">
+                  Cargando historial...
+                </div>
+              ) : (
+                <>
+                  {/* ── Snapshot actual desde ML ────────────────────────── */}
+                  {historialData?.ml_snapshot && (
+                    <section className="bg-muted/40 rounded-lg px-4 py-3 flex items-center justify-between gap-4">
+                      <div className="text-xs text-muted-foreground">Stock actual en ML</div>
+                      <div className="flex items-center gap-4 text-sm">
+                        <span className={`font-semibold ${
+                          (historialData.ml_snapshot.available_quantity ?? 0) === 0
+                            ? "text-red-400"
+                            : "text-foreground"
+                        }`}>
+                          {historialData.ml_snapshot.available_quantity ?? "–"} u.
+                        </span>
+                        {historialData.ml_snapshot.price != null && (
+                          <span className="text-muted-foreground">{fmt(historialData.ml_snapshot.price)}</span>
+                        )}
+                        {historialData.ml_snapshot.status && (
+                          <span className="text-xs text-muted-foreground capitalize">
+                            {historialData.ml_snapshot.status}
+                          </span>
+                        )}
+                      </div>
+                    </section>
+                  )}
+
+                  {/* ── Cambios de stock ────────────────────────────────── */}
+                  <section>
+                    <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                      <TrendingDown className="h-4 w-4 text-blue-400" />
+                      Cambios de stock
+                      <span className="text-xs text-muted-foreground font-normal">(últimos 7 días — capturados vía webhook ML)</span>
+                    </h3>
+                    {!historialData?.stock_history?.length ? (
+                      <p className="text-xs text-muted-foreground">
+                        Sin cambios registrados en los últimos 7 días.
+                        Los cambios futuros se capturarán automáticamente vía webhooks de ML.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {historialData.stock_history.map((entry) => (
+                          <div
+                            key={entry.id}
+                            className="flex items-start justify-between gap-3 text-sm bg-muted/30 rounded-lg px-3 py-2.5"
+                          >
+                            <div className="space-y-0.5 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">
+                                  {SOURCE_LABEL[entry.source] ?? entry.source}
+                                </span>
+                                {entry.notes && (
+                                  <span className="text-xs text-muted-foreground truncate">
+                                    {entry.notes}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <span>
+                                  {entry.old_quantity != null
+                                    ? `${entry.old_quantity} → `
+                                    : ""}
+                                  <span
+                                    className={
+                                      entry.new_quantity === 0
+                                        ? "text-red-400 font-medium"
+                                        : "text-foreground font-medium"
+                                    }
+                                  >
+                                    {entry.new_quantity}
+                                  </span>
+                                </span>
+                              </div>
+                            </div>
+                            <time className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+                              {new Date(entry.created_at).toLocaleString("es-AR", {
+                                day:    "2-digit",
+                                month:  "2-digit",
+                                hour:   "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </time>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+
+                  {/* ── Ventas de la semana ──────────────────────────────── */}
+                  <section>
+                    <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                      <ShoppingBag className="h-4 w-4 text-green-400" />
+                      Ventas
+                      {historialData?.sales?.length ? (
+                        <span className="text-xs text-muted-foreground font-normal">
+                          ({historialData.sales.reduce((s, o) => s + o.qty_sold, 0)} unidades
+                          {" "}· {historialData.sales.length} orden{historialData.sales.length !== 1 ? "es" : ""})
+                        </span>
+                      ) : null}
+                    </h3>
+                    {!historialData?.sales?.length ? (
+                      <p className="text-xs text-muted-foreground">
+                        Sin ventas registradas en los últimos 7 días.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {historialData.sales.map((sale) => (
+                          <div
+                            key={sale.order_id}
+                            className="flex items-center justify-between gap-3 text-sm bg-muted/30 rounded-lg px-3 py-2.5"
+                          >
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">{sale.qty_sold} u.</span>
+                                <span className="text-muted-foreground">×</span>
+                                <span>{fmt(sale.unit_price)}</span>
+                                <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                  sale.status === "paid"
+                                    ? "bg-green-500/15 text-green-400"
+                                    : "bg-yellow-500/15 text-yellow-400"
+                                }`}>
+                                  {ORDER_STATUS_LABEL[sale.status] ?? sale.status}
+                                </span>
+                              </div>
+                              <p className="text-xs text-muted-foreground">
+                                Orden #{sale.order_id}
+                              </p>
+                            </div>
+                            <time className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+                              {new Date(sale.date).toLocaleString("es-AR", {
+                                day:    "2-digit",
+                                month:  "2-digit",
+                                hour:   "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </time>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
     </TooltipProvider>
   )
+}
+
+// ── Label maps ────────────────────────────────────────────────────────────────
+
+const SOURCE_LABEL: Record<string, string> = {
+  webhook_item_update: "Actualización ML",
+  order_sold:          "Venta",
+  cron_reprice:        "Repricing",
+  import:              "Importación",
+  manual:              "Sync manual",
+  bulk_update:         "Bulk update",
+  sync_related:        "Sync relacionada",
+}
+
+const ORDER_STATUS_LABEL: Record<string, string> = {
+  paid:        "Pagado",
+  confirmed:   "Confirmado",
+  cancelled:   "Cancelado",
+  invalid:     "Inválido",
 }
 
 // ── BadgeCount sub-component ──────────────────────────────────────────────

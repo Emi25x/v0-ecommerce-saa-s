@@ -317,8 +317,6 @@ export async function POST() {
       "DEPTH": "thickness",
       "GENRE": "subject",
       "ITEM_CONDITION": "condition",
-      "PAGES": "pages",
-      "BOOK_COVER_TYPE": "binding"
     }
     
     // 6. Crear la plantilla en la base de datos

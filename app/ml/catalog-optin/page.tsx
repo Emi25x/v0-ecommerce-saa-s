@@ -20,7 +20,7 @@ type Pub = {
   catalog_product_id?: string | null
   product_title?: string | null
   ambiguous_options?: { id: string; name: string }[]
-  optin_status?: "pending" | "running" | "ok" | "failed" | "dry"
+  optin_status?: "pending" | "running" | "ok" | "failed" | "dry" | "skipped"
   optin_error?: string
 }
 

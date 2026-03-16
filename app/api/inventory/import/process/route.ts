@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     let bestDelimiter = ","
     for (const delimiter of delimiters) {
       const parsed = Papa.parse(csvText, { delimiter, preview: 1 })
-      const columnCount = parsed.data[0]?.length || 0
+      const columnCount = (parsed.data[0] as string[])?.length || 0
       if (columnCount > maxColumns) {
         maxColumns = columnCount
         bestDelimiter = delimiter
@@ -59,7 +59,18 @@ export async function POST(request: NextRequest) {
     })
 
     const products = parsed.data as any[]
-    const mapping = source.column_mapping || {}
+    // Support both legacy flat mapping and new { delimiter, mappings } format
+    const rawMapping = source.column_mapping || {}
+    const mapping: Record<string, string> = rawMapping.mappings ?? rawMapping
+
+    // Extract custom field mappings: { csvColumn: customKey }
+    const CUSTOM_PREFIX = "custom:"
+    const customMappings: Record<string, string> = {}
+    for (const [col, val] of Object.entries(mapping)) {
+      if (typeof val === "string" && val.startsWith(CUSTOM_PREFIX)) {
+        customMappings[col] = val.slice(CUSTOM_PREFIX.length)
+      }
+    }
 
     const sampleProduct = products[0] || {}
     const hasName = sampleProduct[mapping.name || "name"]
@@ -151,15 +162,22 @@ export async function POST(request: NextRequest) {
         .filter(Boolean)
         .map(normalizeValue)
 
-      // Buscar productos existentes por el campo de match
+      // Buscar productos existentes por el campo de match (incluir stock_by_source para merge)
       const { data: existingProducts } = await supabase
         .from("products")
-        .select("sku, ean")
+        .select("sku, ean, stock_by_source")
         .in(matchField, batchMatchValues)
 
       // Crear set de valores existentes según el campo de match
       const existingMatchSet = new Set(
         existingProducts?.map((p) => matchField === "ean" ? p.ean : p.sku) || []
+      )
+      // Mapa matchValue → { sku, stock_by_source }
+      const existingProductMap = new Map(
+        existingProducts?.map((p) => [
+          matchField === "ean" ? p.ean : p.sku,
+          { sku: p.sku, stock_by_source: p.stock_by_source || {} }
+        ]) || []
       )
       // También crear un mapa para obtener el SKU desde el EAN cuando hacemos match por EAN
       const eanToSkuMap = new Map(
@@ -196,11 +214,28 @@ export async function POST(request: NextRequest) {
             return { success: true, skipped: true, sku: matchValue }
           }
 
+          // Construir campos personalizados desde customMappings
+          const customFields: Record<string, string> = {}
+          for (const [csvCol, key] of Object.entries(customMappings)) {
+            const val = getColumnValue(row, csvCol)
+            if (val != null && val !== "") customFields[key] = String(val).trim()
+          }
+
+          // Merge stock_by_source: preservar el stock de otras fuentes/almacenes
+          const stockQty = Number.parseInt(stock) || 0
+          const existingEntry = existingProductMap.get(matchValue)
+          const prevStockBySource: Record<string, number> = existingEntry?.stock_by_source || {}
+          const newStockBySource = { ...prevStockBySource, [source.id]: stockQty }
+          // El total es la suma de todos los almacenes/fuentes
+          const totalStock = Object.values(newStockBySource).reduce((s: number, v) => s + (Number(v) || 0), 0)
+
           // Construir datos del producto
           let productData: any = {
             price: Number.parseFloat(price) || 0,
-            stock: Number.parseInt(stock) || 0,
+            stock: totalStock,
+            stock_by_source: newStockBySource,
             source: [source.id],
+            ...(Object.keys(customFields).length > 0 ? { custom_fields: customFields } : {}),
           }
           
           // Agregar EAN si está disponible

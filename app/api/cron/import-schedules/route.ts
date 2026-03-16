@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server"
 import { executeFullImport } from "@/lib/import/batch-import"
 import { runCatalogImport } from "@/lib/azeta/run-catalog-import"
 import { runAzetaStockUpdate } from "@/lib/azeta/update-stock-import"
+import { runLibralStockImport } from "@/lib/libral/run-stock-import"
+import { runArnoiaStockImport } from "@/lib/arnoia/run-stock-import"
 // TODO: Implementar sync ML como función directa en lugar de fetch
 // import { syncStockWithML } from "@/lib/ml/sync-stock"
 
@@ -65,8 +67,13 @@ export async function GET(request: Request) {
         const source = schedule.import_sources
         console.log(`[v0] Ejecutando importación para fuente: ${source.name} (feed_type: ${source.feed_type})`)
 
-        // Rutear según proveedor: Azeta necesita manejo especial (ZIP + RPC propio de stock)
-        const isAzeta = source.name.toLowerCase().includes("azeta")
+        // Rutear según proveedor: cada proveedor tiene su propio manejador
+        const nameLower = source.name.toLowerCase()
+        const isAzeta        = nameLower.includes("azeta")
+        const isArnoiaStock  = nameLower.includes("arnoia") && source.feed_type === "stock_price"
+        // Only feed_type="api" sources use the Libral API importer.
+        // "Libral Argentina" (feed_type="stock_price") goes through executeFullImport.
+        const isLibral = source.feed_type === "api"
         let importResult: { success: boolean; created?: number; updated?: number; message?: string }
 
         if (isAzeta && source.feed_type === "stock_price") {
@@ -79,8 +86,19 @@ export async function GET(request: Request) {
           console.log(`[v0] Ejecutando importación catálogo AZETA para ${source.name}`)
           const r = await runCatalogImport({ source_id: schedule.source_id })
           importResult = { success: r.success, created: r.created, updated: r.updated, message: r.error ?? `${r.created} creados, ${r.updated} actualizados` }
+        } else if (isArnoiaStock) {
+          // Arnoia Stock: CSV latin1, actualiza via bulk_update_stock_price RPC
+          console.log(`[v0] Ejecutando actualización de stock ARNOIA para ${source.name}`)
+          const r = await runArnoiaStockImport()
+          importResult = { success: r.success, updated: r.updated, message: r.error ?? `${r.updated} actualizados, ${r.not_found} no encontrados` }
+        } else if (isLibral) {
+          // Libral: API JSON con paginación, usa admin client para bypassear RLS
+          const sourceKey = source.source_key ?? "libral"
+          console.log(`[v0] Ejecutando importación stock LIBRAL para ${source.name} (source_key: ${sourceKey})`)
+          const r = await runLibralStockImport(sourceKey)
+          importResult = { success: r.success, updated: r.updated, message: r.error ?? `${r.updated} actualizados, ${r.zeroed} en cero` }
         } else {
-          // Resto de proveedores: importador genérico
+          // Resto de proveedores: importador genérico CSV (incluye Arnoia catalog, Libral Argentina)
           console.log(`[v0] Ejecutando importación directa para ${source.name}`)
           importResult = await executeFullImport(schedule.source_id, source.feed_type)
         }
@@ -105,7 +123,7 @@ export async function GET(request: Request) {
         
         // TODO: Si es una importación de stock/precio, sincronizar con ML
         // Esto se implementará como función directa cuando el cron funcione en producción
-        if (source.feed_type === "stock_price" && (importResult.success || importResult.updated > 0)) {
+        if (source.feed_type === "stock_price" && (importResult.success || (importResult.updated ?? 0) > 0)) {
           console.log(`[v0] Importación de stock completada. Sync con ML pendiente de implementar como función directa.`)
           // La sincronización con ML se puede hacer manualmente desde la UI por ahora
         }

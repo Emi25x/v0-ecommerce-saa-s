@@ -210,7 +210,7 @@ export async function POST(request: NextRequest) {
       }
 
       try {
-        const base64Excel = buffer.toString('base64')
+        const base64Excel = Buffer.from(buffer).toString('base64')
         
         const emailResponse = await fetch('https://api.resend.com/emails', {
           method: 'POST',

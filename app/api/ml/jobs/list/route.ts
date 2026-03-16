@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { protectAPI } from "@/lib/auth/protect-api"
 
 export async function GET(request: NextRequest) {
-  const authError = await protectAPI(request)
+  const authError = await protectAPI()
   if (authError) return authError
 
   const { searchParams } = request.nextUrl

@@ -172,16 +172,18 @@ export async function POST(req: NextRequest) {
 
   // Guardar nueva listing de catálogo en DB
   if (optinBody.id) {
-    await supabase.from("ml_listings").upsert({
-      account_id,
-      ml_id: optinBody.id,
-      catalog_listing: true,
-      catalog_product_id,
-      status: optinBody.status ?? "active",
-      price: optinBody.price ?? null,
-      permalink: optinBody.permalink ?? null,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "ml_id" }).catch(console.error)
+    try {
+      await supabase.from("ml_listings").upsert({
+        account_id,
+        ml_id: optinBody.id,
+        catalog_listing: true,
+        catalog_product_id,
+        status: optinBody.status ?? "active",
+        price: optinBody.price ?? null,
+        permalink: optinBody.permalink ?? null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "ml_id" })
+    } catch (err) { console.error(err) }
   }
 
   return NextResponse.json({ ok: true, item_id, catalog_product_id, product_title, catalog_listing: optinBody })

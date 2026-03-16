@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
     const fileBuffer = Buffer.from(await fileResponse.arrayBuffer())
     const isZip = fileBuffer.length >= 4 && fileBuffer[0] === 0x50 && fileBuffer[1] === 0x4B
 
-    let csvText: string
+    let csvText: string = ""
 
     if (isZip) {
       let offset_zip = 0
@@ -159,37 +159,88 @@ export async function POST(request: NextRequest) {
     let invalid_ean = 0
 
     const isStockImport = source.name.toLowerCase().includes("stock")
+      || source.feed_type === "stock_price"
+
+    // column_mapping values may be original-case column names; normalize them for lookup
+    const cm: Record<string, string> = {}
+    if (source.column_mapping && typeof source.column_mapping === "object") {
+      for (const [field, colName] of Object.entries(source.column_mapping as Record<string, unknown>)) {
+        if (typeof colName === "string" && colName.trim()) {
+          cm[field] = normalizeHeader(colName)
+        }
+      }
+    }
+
+    // Helper: use column_mapping first, then heuristic fallbacks
+    const col = (field: string, ...fallbacks: string[]): string | null => {
+      const mappedKey = cm[field]
+      if (mappedKey) return mappedKey
+      for (const f of fallbacks) if (f) return f
+      return null
+    }
+
+    // Detect if this source provides two separate price columns (EUR + ARS)
+    // Triggered when column_mapping has "price_ars" key,
+    // or when the CSV contains the known Libral Argentina column.
+    const hasTwoPrices = !!cm["price_ars"]
+      || headersNormalized.includes("pesos_argentinos")
 
     for (const row of batchRows) {
-      const eanRaw = row["ean"] || row["ean13"] || row["gtin"] || row["codigo_de_barras"]
-      const isbnRaw = row["isbn"] || row["isbn13"]
+      const eanRaw = row[col("ean", "ean") ?? "ean"]
+        || row["ean13"] || row["gtin"] || row["codigo_de_barras"]
+      const isbnRaw = row[col("isbn", "isbn") ?? "isbn"] || row["isbn13"]
       const ean = normalizeEan(eanRaw || isbnRaw)
 
       if (!ean) { missing_ean++; continue }
       if (ean.length !== 13) { invalid_ean++; continue }
 
-      const priceRaw = row["pvp"] || row["precio_sin_iva"] || row["precio"] || row["price"] || null
-      const cost_price = priceRaw ? parseFloat(String(priceRaw).replace(",", ".").replace(/[^\d.]/g, "")) || null : null
-      const stockRaw = row["stock"] || row["cantidad"] || null
+      const stockKey = col("stock", "stock", "cantidad")
+      const stockRaw = (stockKey ? row[stockKey] : null) || row["stock"] || row["cantidad"] || null
       const stock = stockRaw !== null ? parseInt(String(stockRaw).replace(/\D/g, ""), 10) || 0 : null
 
-      const descKey = Object.keys(row).find(k => k.includes("sinopsis"))
-      const yearKey = Object.keys(row).find(k => k.includes("ano_edicion") || k.includes("ano_edici"))
+      // precio_euros     → price     (PVP EUR, precio base del sistema)
+      // pesos_argentinos → price_ars (PVP ARS, se guarda en custom_fields.precio_ars del almacén)
+      let cost_price: number | null = null
+      let price: number | null = null
+      let price_ars: number | null = null
+      if (hasTwoPrices) {
+        const eurKey = cm["price"]     || "precio_euros"
+        const arsKey = cm["price_ars"] || "pesos_argentinos"
+        const eurRaw = row[eurKey] ?? null
+        const arsRaw = row[arsKey] ?? null
+        price     = eurRaw ? parseFloat(String(eurRaw).replace(",", ".").replace(/[^\d.]/g, "")) || null : null
+        price_ars = arsRaw ? parseFloat(String(arsRaw).replace(",", ".").replace(/[^\d.]/g, "")) || null : null
+      } else {
+        const priceKey = col("price", "pvp", "precio_sin_iva", "precio", "price")
+        const priceRaw = (priceKey ? row[priceKey] : null)
+          || row["pvp"] || row["precio_sin_iva"] || row["precio"] || row["price"] || null
+        cost_price = priceRaw ? parseFloat(String(priceRaw).replace(",", ".").replace(/[^\d.]/g, "")) || null : null
+      }
+
+      const descKey = cm["description"] || Object.keys(row).find(k => k.includes("sinopsis"))
+      const yearKey = cm["year_edition"] || Object.keys(row).find(k => k.includes("ano_edicion") || k.includes("ano_edici"))
+
+      const titleKey = col("title", "titulo", "title", "articulo")
+      const authorKey = col("author", "autor", "author", "autores")
+      const imageKey = col("image_url", "url", "portada", "imagen", "image", "url_fotografia")
+      const categoryKey = col("category", "categoria", "category", "tematica")
 
       productsToInsert.push({
         ean,
         isbn: isbnRaw || null,
-        title: row["titulo"] || row["title"] || null,
-        author: row["autor"] || row["author"] || null,
+        title: (titleKey ? row[titleKey] : null) || row["titulo"] || row["title"] || row["articulo"] || null,
+        author: (authorKey ? row[authorKey] : null) || row["autor"] || row["author"] || row["autores"] || null,
         cost_price,
-        image_url: row["url"] || row["portada"] || row["imagen"] || row["image"] || null,
+        price,
+        price_ars,
+        image_url: (imageKey ? row[imageKey] : null) || row["url"] || row["portada"] || row["imagen"] || row["image"] || row["url_fotografia"] || null,
         stock,
-        brand: row["editorial"] || row["marca"] || row["brand"] || null,
-        category: row["categoria"] || row["category"] || null,
+        brand: row[cm["brand"] ?? ""] || row["editorial"] || row["marca"] || row["brand"] || null,
+        category: (categoryKey ? row[categoryKey] : null) || row["categoria"] || row["category"] || row["tematica"] || null,
         description: (descKey ? row[descKey] : null) || row["descripcion"] || row["description"] || null,
-        language: row["idioma"] || row["language"] || null,
+        language: row[cm["language"] ?? ""] || row["idioma"] || row["language"] || null,
         year_edition: (yearKey ? row[yearKey] : null) || row["year_edition"] || null,
-        internal_code: row["codigo_interno"] || row["internal_code"] || null,
+        internal_code: row[cm["internal_code"] ?? ""] || row["codigo_interno"] || row["internal_code"] || null,
       })
     }
 
@@ -209,8 +260,8 @@ export async function POST(request: NextRequest) {
       for (const p of productsToInsert) dedupMap.set(p.ean, p)
       const deduped = Array.from(dedupMap.values())
 
-      if (isStockImport) {
-        // Stock: usar RPC bulk con retry
+      if (isStockImport || hasTwoPrices) {
+        // Stock / dos-precios: usar RPC bulk con retry
         const STOCK_CHUNK = 200
         for (let i = 0; i < deduped.length; i += STOCK_CHUNK) {
           const chunk = deduped.slice(i, i + STOCK_CHUNK)
@@ -219,7 +270,7 @@ export async function POST(request: NextRequest) {
             const n = parseInt(String(p.stock ?? 0), 10)
             return isNaN(n) ? 0 : n
           })
-          const prices = chunk.map(p => {
+          const costPrices = chunk.map(p => {
             if (p.cost_price === null || p.cost_price === undefined) return null
             const n = parseFloat(String(p.cost_price).replace(",", "."))
             return isNaN(n) ? null : n
@@ -228,11 +279,36 @@ export async function POST(request: NextRequest) {
           let retryCount = 0
           let chunkDone = false
           while (!chunkDone && retryCount <= 2) {
-            const { error: rpcError, data: rpcData } = await supabase.rpc("bulk_update_stock_price", {
-              p_eans: eans,
-              p_stocks: stocks,
-              p_prices: prices,
-            })
+            let rpcError: any = null
+            let rpcData: any = null
+
+            if (hasTwoPrices) {
+              // PVP EUR → price, PVP ARS → custom_fields.precio_ars
+              const eurPrices = chunk.map(p => {
+                if (p.price === null || p.price === undefined) return null
+                const n = parseFloat(String(p.price).replace(",", "."))
+                return isNaN(n) ? null : n
+              })
+              const arsPrices = chunk.map(p => {
+                if (p.price_ars === null || p.price_ars === undefined) return null
+                const n = parseFloat(String(p.price_ars).replace(",", "."))
+                return isNaN(n) ? null : n
+              })
+              const res = await supabase.rpc("bulk_update_stock_two_prices", {
+                p_eans: eans,
+                p_stocks: stocks,
+                p_prices: eurPrices,
+                p_prices_ars: arsPrices,
+              })
+              rpcError = res.error; rpcData = res.data
+            } else {
+              const res = await supabase.rpc("bulk_update_stock_price", {
+                p_eans: eans,
+                p_stocks: stocks,
+                p_prices: costPrices,
+              })
+              rpcError = res.error; rpcData = res.data
+            }
 
             if (rpcError) {
               if (isTimeoutError(rpcError.message) && retryCount < 2) {
@@ -262,10 +338,20 @@ export async function POST(request: NextRequest) {
         const eanToSku = new Map<string, string>()
         existingRows?.forEach((r: any) => eanToSku.set(r.ean, r.sku))
 
-        const toUpsert = deduped.map(p => ({
-          ...p,
-          sku: eanToSku.get(p.ean) || p.ean,
-        }))
+        const toUpsert = deduped.map(p => {
+          // Strip price_ars — not a products column (goes to custom_fields via two-prices RPC path)
+          const { price_ars, ...rest } = p
+          const custom_fields = price_ars != null
+            ? { ...(rest.custom_fields ?? {}), precio_ars: price_ars }
+            : (rest.custom_fields ?? undefined)
+          return {
+            ...rest,
+            ...(custom_fields ? { custom_fields } : {}),
+            sku: eanToSku.get(p.ean) || p.ean,
+            // title is NOT NULL in products; fall back to ean if mapping produced nothing
+            title: p.title || p.ean,
+          }
+        })
 
         // Upsert en chunks de UPSERT_CHUNK
         for (let i = 0; i < toUpsert.length; i += UPSERT_CHUNK) {
@@ -307,6 +393,38 @@ export async function POST(request: NextRequest) {
         const total_ok = rows_processed - failed_rows
         updated = isStockImport ? total_ok : Math.min(updated, total_ok)
         created = isStockImport ? 0 : Math.min(created, total_ok - updated)
+      }
+
+      // Populate stock_by_source so warehouse source-filtering works
+      const sourceKey = (source.source_key || source.name?.toLowerCase().replace(/[^a-z0-9]/g, "_") || "").slice(0, 30)
+      if (sourceKey && deduped.some((p: any) => p.stock !== null && p.stock !== undefined)) {
+        const eanStockMap = new Map<string, number>()
+        for (const p of deduped) {
+          if (p.stock !== null && p.stock !== undefined) {
+            eanStockMap.set(p.ean, parseInt(String(p.stock), 10) || 0)
+          }
+        }
+        const stockEans = Array.from(eanStockMap.keys())
+        const SBS_CHUNK = 200
+        for (let i = 0; i < stockEans.length; i += SBS_CHUNK) {
+          const eanChunk = stockEans.slice(i, i + SBS_CHUNK)
+          try {
+            const { data: prods } = await supabase
+              .from("products")
+              .select("id, ean, stock_by_source")
+              .in("ean", eanChunk)
+            if (!prods?.length) continue
+            await supabase.from("products").upsert(
+              prods.map((p: any) => ({
+                id: p.id,
+                stock_by_source: { ...(p.stock_by_source ?? {}), [sourceKey]: eanStockMap.get(p.ean) ?? 0 },
+              })),
+              { onConflict: "id" }
+            )
+          } catch (e) {
+            console.warn("[BATCH] stock_by_source update failed for chunk:", e)
+          }
+        }
       }
 
       if (!last_error) last_reason = "success"

@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
     .single()
   if (accErr || !account) return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
 
-  const validAccount = await refreshTokenIfNeeded(account)
+  const validAccount = await refreshTokenIfNeeded(account) as any
   const accessToken = validAccount.access_token
   const mlUserId = validAccount.ml_user_id
 

@@ -517,7 +517,7 @@ const App = () => {
         }
 
         historyId = historyRecord.id // Asignar a la variable declarada
-        setCurrentImportHistoryId(historyId) // Guardar el ID del historial para poder cancelarlo
+        setCurrentImportHistoryId(historyId ?? null) // Guardar el ID del historial para poder cancelarlo
         console.log("[v0] Registro de historial creado con ID:", historyId)
 
         let backupSources: SourceWithSchedule[] = []
@@ -635,7 +635,7 @@ const App = () => {
           // Consultar productos existentes para este batch
           const { data: existingProducts } = await supabase
             .from("products")
-            .select("sku, id, source")
+            .select("sku, id, source, title")
             .in("sku", skusInBatch)
           const existingProductsMap = new Map(existingProducts?.map((p) => [p.sku, p]) || [])
 
@@ -762,15 +762,15 @@ const App = () => {
           // Contar resultados del batch
           for (const result of results) {
             if (result.status === "fulfilled") {
-              const value = result.value
-              if (value.type === "imported" || value.type === "imported_from_backup") {
+              const value = result.value as any
+              if (value?.type === "imported" || value?.type === "imported_from_backup") {
                 totalImported++
                 if (value.type === "imported_from_backup") totalFromBackup++
-              } else if (value.type === "updated") {
+              } else if (value?.type === "updated") {
                 totalUpdated++
-              } else if (value.type === "skipped") {
+              } else if (value?.type === "skipped") {
                 totalSkipped++
-              } else if (value.type === "error") {
+              } else if (value?.type === "error") {
                 totalFailed++
                 allErrors.push({ sku: value.sku || "desconocido", error: value.error || "Error desconocido" })
               }

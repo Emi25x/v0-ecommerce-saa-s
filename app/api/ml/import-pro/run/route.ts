@@ -515,6 +515,7 @@ export async function POST(request: NextRequest) {
             title:                    b.title,
             price:                    b.price,
             current_stock:            b.available_quantity ?? 0,
+            sold_quantity:            b.sold_quantity      ?? 0,
             status:                   b.status,
             permalink:                b.permalink,
             sku,

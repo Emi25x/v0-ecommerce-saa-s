@@ -14,7 +14,7 @@ const VALID_TYPES = [
 ]
 
 export async function POST(request: NextRequest) {
-  const authError = await protectAPI(request)
+  const authError = await protectAPI()
   if (authError) return authError
 
   try {

@@ -35,7 +35,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         description: body.description,
         url_template: body.url_template,
         auth_type: body.auth_type,
-        credentials: body.credentials,
+        credentials: body.credentials ?? {},
         feed_type: body.feed_type,
         column_mapping: body.column_mapping,
       })

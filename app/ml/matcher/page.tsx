@@ -454,7 +454,7 @@ export default function MLMatcherPage() {
         <Card className="p-5 mb-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold">Progreso</h3>
-            <Badge className={statusColors[progress.status] || statusColors.idle}>
+            <Badge className={statusColors[progress.status as keyof typeof statusColors] || statusColors.idle}>
               {progress.status === "running" ? "Ejecutando" :
                progress.status === "done" ? "Completado" :
                progress.status === "paused" ? "Pausado" :

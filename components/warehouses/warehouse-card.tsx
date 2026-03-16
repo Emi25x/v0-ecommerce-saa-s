@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -67,11 +68,13 @@ export function WarehouseCard({ warehouse, onEdit, onDelete }: WarehouseCardProp
   }
 
   return (
-    <Card>
+    <Card className="hover:shadow-md transition-shadow">
       <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-3">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <CardTitle className="text-xl">{warehouse.name}</CardTitle>
+            <Link href={`/warehouses/${warehouse.id}`} className="hover:underline">
+              <CardTitle className="text-xl">{warehouse.name}</CardTitle>
+            </Link>
             {warehouse.is_default && (
               <Badge variant="default" className="gap-1">
                 <CheckCircle2 className="h-3 w-3" />

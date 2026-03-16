@@ -1,5 +1,6 @@
 "use client"
 
+import React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -217,7 +218,7 @@ export function SidebarNav() {
   return (
     <nav className="flex flex-col gap-2 p-4">
       {navItems.map((item) => {
-        const Icon = item.icon
+        const Icon = item.icon as React.ComponentType<{ className?: string }>
         const isActive = pathname === item.href
 
         return (

@@ -34,7 +34,7 @@ export async function signTRA(traXml: string, certPem: string, keyPem: string): 
     authenticatedAttributes: [
       { type: forge.pki.oids.contentType,   value: forge.pki.oids.data },
       { type: forge.pki.oids.messageDigest },
-      { type: forge.pki.oids.signingTime,   value: new Date() },
+      { type: forge.pki.oids.signingTime,   value: new Date().toISOString() as any },
     ],
   })
   p7.sign()

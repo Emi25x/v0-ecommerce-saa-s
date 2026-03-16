@@ -133,9 +133,9 @@ export default function ShopifyStoresPage() {
           {stores.map((store) => (
             <ShopifyStoreCard
               key={store.id}
-              store={store}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
+              store={store as any}
+              onEdit={handleEdit as any}
+              onDelete={handleDelete as any}
               onRefresh={loadStores}
             />
           ))}

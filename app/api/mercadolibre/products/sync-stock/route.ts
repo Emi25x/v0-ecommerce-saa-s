@@ -22,7 +22,9 @@ export async function POST(request: NextRequest) {
 
     console.log("[v0] Syncing stock for product:", product_id, "New quantity:", new_quantity)
 
-    // Actualizar el producto principal
+    const supabase = await createClient()
+
+    // Actualizar el producto principal en ML
     const updateResponse = await fetch(`${ML_API_BASE}/items/${product_id}`, {
       method: "PUT",
       headers: {
@@ -40,12 +42,12 @@ export async function POST(request: NextRequest) {
       throw new Error("Failed to update product stock")
     }
 
-    const updateData = await updateResponse.json()
+    await updateResponse.json()
     console.log("[v0] Product stock updated successfully")
+    // El historial se registra vía webhook de ML (items topic),
+    // capturando el cambio independientemente del origen.
 
     // Buscar publicaciones relacionadas en la base de datos
-    const supabase = await createClient()
-
     const { data: relationships, error: relationshipError } = await supabase
       .from("listing_relationships")
       .select("*")
@@ -80,12 +82,12 @@ export async function POST(request: NextRequest) {
           if (syncResponse.ok) {
             console.log("[v0] Successfully synced stock with:", relatedId)
 
-            // Guardar log de sincronización
             await supabase.from("stock_sync_log").insert({
-              listing_id: relatedId,
+              listing_id:   relatedId,
               new_quantity: new_quantity,
-              source: "manual_sync",
+              source:       "manual_sync",
             })
+            // Historial de la publicación relacionada se captura vía webhook de ML
           } else {
             console.error("[v0] Failed to sync stock with:", relatedId)
           }
