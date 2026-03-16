@@ -146,6 +146,49 @@ export async function runArnoiaStockImport(): Promise<ArnoiaStockImportResult> {
       }
     }
 
+    // ── Zero-out: poner stock_by_source[source_key] = 0 en productos que
+    // NO están en el archivo (ya no disponibles en Arnoia este día).
+    // Preserva stock de otros proveedores (Azeta, Libral, etc.)
+    let zeroed = 0
+    const { data: zeroResult, error: zeroError } = await supabase.rpc(
+      "zero_source_stock_not_in_list",
+      { p_eans: eans, p_source_key: stockKey }
+    )
+    if (zeroError) {
+      // Si la función no existe aún, intentar con la genérica
+      console.warn(`[ARNOIA-STOCK] zero_source_stock_not_in_list error: ${zeroError.message}`)
+      // Fallback: query manual
+      const { data: toZero } = await supabase
+        .from("products")
+        .select("id, ean, stock_by_source")
+        .not("stock_by_source", "is", null)
+        .not("ean", "is", null)
+
+      if (toZero) {
+        const toUpdate = toZero.filter((p: any) => {
+          const sbs = p.stock_by_source || {}
+          const currentStock = sbs[stockKey]
+          return currentStock != null && currentStock > 0 && !eans.includes(p.ean)
+        })
+
+        if (toUpdate.length > 0) {
+          // Update in batches
+          for (let i = 0; i < toUpdate.length; i += 500) {
+            const batch = toUpdate.slice(i, i + 500)
+            for (const p of batch) {
+              const newSbs = { ...p.stock_by_source, [stockKey]: 0 }
+              await supabase.from("products").update({ stock_by_source: newSbs }).eq("id", p.id)
+            }
+          }
+          zeroed = toUpdate.length
+          console.log(`[ARNOIA-STOCK] Zeroed ${zeroed} products not in file (fallback method)`)
+        }
+      }
+    } else {
+      zeroed = zeroResult?.zeroed ?? 0
+      console.log(`[ARNOIA-STOCK] Zeroed ${zeroed} products not in file`)
+    }
+
     const duration = ((Date.now() - startTime) / 1000)
 
     // Actualizar last_run del source
@@ -154,12 +197,13 @@ export async function runArnoiaStockImport(): Promise<ArnoiaStockImportResult> {
       last_status: "success",
     }).eq("id", source.id)
 
-    console.log(`[ARNOIA-STOCK] Done: ${totalUpdated} updated, ${totalNotFound} not found, ${duration.toFixed(2)}s`)
+    console.log(`[ARNOIA-STOCK] Done: ${totalUpdated} updated, ${totalNotFound} not found, ${zeroed} zeroed, ${duration.toFixed(2)}s`)
 
     return {
       success:          true,
       updated:          totalUpdated,
       not_found:        totalNotFound,
+      zeroed,
       total_rows:       lines.length,
       unique_eans:      eans.length,
       duration_seconds: parseFloat(duration.toFixed(2)),

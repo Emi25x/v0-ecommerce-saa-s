@@ -44,10 +44,7 @@ const PRODUCTS_WITH_METAFIELDS_QUERY = `
                 sku
                 barcode
                 inventoryQuantity
-                weight
-                weightUnit
                 taxable
-                requiresShipping
               }
             }
           }
@@ -208,7 +205,6 @@ export async function GET(
         if (v.barcode) coreFieldsUsed.add("variant.barcode")
         if (v.price) coreFieldsUsed.add("variant.price")
         if (v.compareAtPrice) coreFieldsUsed.add("variant.compareAtPrice")
-        if (v.weight) coreFieldsUsed.add("variant.weight")
       }
 
       // Images
