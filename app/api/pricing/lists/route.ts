@@ -9,20 +9,41 @@ export async function GET(req: NextRequest) {
     const { searchParams } = req.nextUrl
     const activeOnly  = searchParams.get("active_only") === "1"
 
-    let q = supabase
-      .from("price_lists")
-      .select(`
+    const FULL_SELECT = `
         *,
         rules:price_list_rules(*),
         fee_rules:price_list_fee_rules(*),
         assignments:price_list_assignments(count),
         warehouse:warehouses(id,name,base_currency,code)
-      `)
+      `
+    const SAFE_SELECT = `
+        *,
+        rules:price_list_rules(*),
+        fee_rules:price_list_fee_rules(*),
+        warehouse:warehouses(id,name,base_currency,code)
+      `
+
+    let q = supabase
+      .from("price_lists")
+      .select(FULL_SELECT)
       .order("created_at", { ascending: false })
 
     if (activeOnly) q = q.eq("is_active", true)
 
-    const { data, error } = await q
+    let { data, error } = await q
+
+    // Si falla por tabla assignments inexistente, reintentar sin ella
+    if (error && error.message?.includes("assignments")) {
+      let q2 = supabase
+        .from("price_lists")
+        .select(SAFE_SELECT)
+        .order("created_at", { ascending: false })
+      if (activeOnly) q2 = q2.eq("is_active", true)
+      const retry = await q2
+      data = retry.data
+      error = retry.error
+    }
+
     if (error) throw error
     return NextResponse.json({ ok: true, lists: data ?? [] })
   } catch (err: any) {
