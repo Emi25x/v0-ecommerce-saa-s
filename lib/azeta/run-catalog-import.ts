@@ -221,17 +221,34 @@ export async function runCatalogImport(opts?: {
     }
 
     let created = 0, updated = 0, errors = 0
+    let lastUpsertError: string | null = null
     for (let i = 0; i < products.length; i += 500) {
       const batch = products.slice(i, i + 500)
       const { error } = await supabase.from("products").upsert(batch, { onConflict: "ean" })
-      if (error) { console.error(`[AZETA][UPSERT] error: ${error.message}`); errors += batch.length }
-      else { for (const p of batch) existingSet.has(p.ean) ? updated++ : created++ }
+      if (error) {
+        console.error(`[AZETA][UPSERT] error: ${error.message} (code=${error.code}, details=${error.details})`)
+        if (!lastUpsertError) lastUpsertError = error.message
+        errors += batch.length
+      } else {
+        for (const p of batch) existingSet.has(p.ean) ? updated++ : created++
+      }
       if (i % 10000 === 0) console.log(`[AZETA][UPSERT] ${i + batch.length}/${products.length}`)
+    }
+
+    if (lastUpsertError) {
+      console.error(`[AZETA] UPSERT ERROR (afectó ${errors} filas): ${lastUpsertError}`)
+      console.error("[AZETA] PROBABLE CAUSA: Falta UNIQUE constraint en products.ean. Ejecutar: CREATE UNIQUE INDEX IF NOT EXISTS products_ean_unique ON products (ean) WHERE ean IS NOT NULL AND ean != '';")
     }
 
     const elapsed = ((Date.now() - startTime) / 1000)
     console.log(`[AZETA] Completado: creados=${created} actualizados=${updated} errores=${errors} en ${elapsed.toFixed(1)}s`)
-    return { success: true, created, updated, errors, total_rows: products.length, elapsed_seconds: parseFloat(elapsed.toFixed(1)) }
+    return {
+      success: errors === 0,
+      created, updated, errors,
+      total_rows: products.length,
+      elapsed_seconds: parseFloat(elapsed.toFixed(1)),
+      ...(lastUpsertError ? { error: `Upsert falló: ${lastUpsertError}. Probable causa: falta UNIQUE constraint en products.ean` } : {}),
+    }
 
   } catch (err: any) {
     console.error("[AZETA][RUN] Error fatal:", err.message)

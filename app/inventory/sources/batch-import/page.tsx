@@ -175,6 +175,7 @@ export default function BatchImportPage() {
           accCreated += procData.created || 0
           accUpdated += procData.updated || 0
           accProcessed += procData.rows_processed || 0
+          const loteErrors = procData.errors || 0
           loopDone = procData.done === true
           byteStart = procData.next_byte_start ?? byteStart
           if (procData.header_line && !headerLine) headerLine = procData.header_line
@@ -182,10 +183,16 @@ export default function BatchImportPage() {
           setTotalCreated(accCreated)
           setTotalUpdated(accUpdated)
           setTotalProcessed(accProcessed)
+          if (loteErrors > 0) {
+            setTotalFailed(prev => prev + loteErrors)
+          }
           if (dlData.total_lines > 0) {
             setProgress(Math.min(99, Math.round((accProcessed / dlData.total_lines) * 100)))
           }
-          addLog(`Lote ${loteNum}: +${procData.created} creados, +${procData.updated} actualizados, +${procData.discarded} descartados (${procData.elapsed_seconds}s)`)
+          addLog(`Lote ${loteNum}: +${procData.created} creados, +${procData.updated} actualizados, +${procData.discarded} descartados, ${loteErrors} errores (${procData.elapsed_seconds}s)`)
+          if (procData.last_upsert_error) {
+            addLog(`[ERROR DB] ${procData.last_upsert_error}`)
+          }
         }
 
         // Limpiar blob temporal
