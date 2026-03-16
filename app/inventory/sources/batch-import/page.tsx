@@ -159,6 +159,7 @@ export default function BatchImportPage() {
                   setTotalFailed(evt.errors ?? 0)
                   setTotalProcessed(evt.processed ?? 0)
                   setProgress(Math.min(95, Math.round(((evt.processed ?? 0) / 600000) * 100)))
+                  if (evt.last_error) addLog(`[WARN] ${evt.last_error}`)
                 } else if (evt.type === "done") {
                   setTotalCreated(evt.created ?? 0)
                   setTotalUpdated(evt.updated ?? 0)

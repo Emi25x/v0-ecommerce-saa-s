@@ -107,35 +107,71 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "store_id y ean son requeridos" }, { status: 400 })
 
     // ── 1. Tienda + configuración de exportación ───────────────────────────
-    const { data: store, error: storeErr } = await supabase
-      .from("shopify_stores")
-      .select(`
-        id, shop_domain, access_token, api_key, api_secret, token_expires_at,
-        currency, vendor, product_category, price_source, price_list_id,
-        default_warehouse_id, sucursal_stock_code
-      `)
-      .eq("id", store_id)
-      .eq("owner_user_id", user.id)
-      .single()
+    // Intentar con todas las columnas; si falla (columnas no existentes), usar select mínimo
+    let store: any = null
+    {
+      const { data, error } = await supabase
+        .from("shopify_stores")
+        .select(`
+          id, shop_domain, access_token, api_key, api_secret, token_expires_at,
+          currency, vendor, product_category, price_source, price_list_id,
+          default_warehouse_id, sucursal_stock_code
+        `)
+        .eq("id", store_id)
+        .eq("owner_user_id", user.id)
+        .single()
 
-    if (storeErr || !store)
+      if (data) {
+        store = data
+      } else if (error) {
+        // Posible error por columnas que no existen — reintentar con select mínimo
+        console.warn(`[push-product] select completo falló: ${error.message}, reintentando con columnas base`)
+        const { data: fallback } = await supabase
+          .from("shopify_stores")
+          .select("id, shop_domain, access_token, api_key, api_secret, token_expires_at")
+          .eq("id", store_id)
+          .eq("owner_user_id", user.id)
+          .single()
+        if (fallback) store = fallback
+      }
+    }
+
+    if (!store)
       return NextResponse.json({ ok: false, error: "Tienda no encontrada" }, { status: 404 })
 
     const token = await getValidToken(supabase, store)
 
     // ── 2. Producto en nuestra BD ──────────────────────────────────────────
     const cleanEan = String(ean).trim()
-    const { data: product } = await supabase
-      .from("products")
-      .select(`
-        id, title, description, brand, category, author, sku, ean, isbn,
-        price, cost_price, canonical_weight_g, image_url, language, binding,
-        pages, year_edition, edition_date, ibic_subjects, subject, course,
-        height, width, thickness, condition, custom_fields
-      `)
-      .or(`ean.eq.${cleanEan},isbn.eq.${cleanEan}`)
-      .limit(1)
-      .single()
+    // Intentar con todas las columnas; si falla (columnas no existentes), usar select mínimo
+    let product: any = null
+    {
+      const { data, error } = await supabase
+        .from("products")
+        .select(`
+          id, title, description, brand, category, author, sku, ean, isbn,
+          price, cost_price, canonical_weight_g, image_url, language, binding,
+          pages, year_edition, edition_date, ibic_subjects, subject, course,
+          height, width, thickness, condition, custom_fields
+        `)
+        .or(`ean.eq.${cleanEan},isbn.eq.${cleanEan}`)
+        .limit(1)
+        .single()
+
+      if (data) {
+        product = data
+      } else if (error && error.message?.includes("column")) {
+        // Columnas faltantes — reintentar con solo las seguras
+        console.warn(`[push-product] product select falló: ${error.message}, reintentando con columnas base`)
+        const { data: fallback } = await supabase
+          .from("products")
+          .select("id, title, description, brand, category, sku, ean, price, stock, image_url, condition, custom_fields, canonical_weight_g")
+          .or(`ean.eq.${cleanEan},isbn.eq.${cleanEan}`)
+          .limit(1)
+          .single()
+        if (fallback) product = fallback
+      }
+    }
 
     if (!product)
       return NextResponse.json(

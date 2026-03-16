@@ -43,6 +43,7 @@ export type CatalogImportProgress = {
   errors:    number
   processed: number
   message?:  string
+  last_error?: string
 }
 
 export async function runCatalogImport(
@@ -149,6 +150,34 @@ export async function runCatalogImport(
     // Peak de RAM: solo BATCH_SIZE productos (≈1MB) en lugar de 600K (≈600MB+).
     let batchBuffer: any[] = []
     let created = 0, updated = 0, errors = 0, totalProcessed = 0
+    let lastErrorMsg = ""
+
+    // Columnas que SEGURO existen en la tabla products (del schema base + migraciones conocidas).
+    // Si la primera inserción falla por columnas inexistentes, usamos solo estas.
+    const SAFE_COLUMNS = new Set([
+      "sku", "ean", "title", "description", "price", "stock", "image_url",
+      "condition", "brand", "category", "source", "custom_fields",
+      "stock_by_source", "stock_total", "internal_code",
+    ])
+    let useOnlySafeColumns = false
+
+    function toSafeProduct(p: any): any {
+      // Mover campos extra a custom_fields para no perder datos
+      const safe: any = {}
+      const extra: Record<string, any> = {}
+      for (const [k, v] of Object.entries(p)) {
+        if (SAFE_COLUMNS.has(k)) {
+          safe[k] = v
+        } else {
+          if (v != null) extra[k] = v
+        }
+      }
+      // Merge extra fields into custom_fields
+      if (Object.keys(extra).length > 0) {
+        safe.custom_fields = { ...(p.custom_fields || {}), ...extra }
+      }
+      return safe
+    }
 
     async function flushBatch(): Promise<void> {
       if (batchBuffer.length === 0) return
@@ -165,21 +194,35 @@ export async function runCatalogImport(
 
       const batchWithSku = batch.map((p: any) => {
         const isNew = !eanToSku.has(p.ean)
+        const base = useOnlySafeColumns ? toSafeProduct(p) : p
         return {
-          ...p,
+          ...base,
           sku: eanToSku.get(p.ean) ?? p.ean,
-          // Para productos NUEVOS: inicializar stock_by_source con azeta=0
-          // para que aparezcan en filtros de almacén y el Azeta Stock import pueda setear el stock real.
-          // Para productos EXISTENTES: no tocar stock_by_source (lo maneja import-stock).
           ...(isNew ? { stock_by_source: { azeta: 0 }, stock: 0 } : {}),
         }
       })
-      const { error: upsertErr } = await supabase
+
+      let { error: upsertErr } = await supabase
         .from("products")
         .upsert(batchWithSku, { onConflict: "ean" })
 
+      // Si falla y no estamos en modo safe, reintentar con solo columnas seguras
+      if (upsertErr && !useOnlySafeColumns) {
+        console.warn(`[AZETA][UPSERT] Fallo con todas las columnas: ${upsertErr.message}`)
+        console.warn(`[AZETA][UPSERT] Reintentando con solo columnas seguras (extras irán a custom_fields)...`)
+        useOnlySafeColumns = true
+        lastErrorMsg = `Columnas extra no existen en DB, usando custom_fields: ${upsertErr.message}`
+
+        const safeBatch = batchWithSku.map(toSafeProduct)
+        const retry = await supabase
+          .from("products")
+          .upsert(safeBatch, { onConflict: "ean" })
+        upsertErr = retry.error
+      }
+
       if (upsertErr) {
         console.error(`[AZETA][UPSERT] error: ${upsertErr.message}`)
+        lastErrorMsg = upsertErr.message
         errors += batch.length
       } else {
         for (const p of batchWithSku) {
@@ -191,8 +234,8 @@ export async function runCatalogImport(
       if (totalProcessed % 10000 < BATCH_SIZE) {
         console.log(`[AZETA][PROGRESS] ${totalProcessed} procesados (creados=${created} actualizados=${updated} errores=${errors})`)
       }
-      // Emitir progreso al caller (SSE)
-      onProgress?.({ created, updated, errors, processed: totalProcessed })
+      // Emitir progreso al caller (SSE) — incluir último error para que la UI lo muestre
+      onProgress?.({ created, updated, errors, processed: totalProcessed, last_error: lastErrorMsg || undefined })
     }
 
     function processLine(rawLine: string): void {
