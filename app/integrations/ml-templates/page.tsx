@@ -55,6 +55,7 @@ interface Template {
   is_active: boolean
   created_at: string
   updated_at: string
+  price_profile_id?: string | null
 }
 
 interface AnalysisResult {
@@ -192,7 +193,7 @@ export default function MLTemplatesPage() {
 
   useEffect(() => {
     fetchAccounts()
-    fetchPriceProfiles(setPriceProfiles) // Use fetchPriceProfiles
+    fetchPriceProfiles() // Use fetchPriceProfiles
   }, [])
 
   useEffect(() => {
@@ -612,7 +613,8 @@ export default function MLTemplatesPage() {
       is_default: false,
       handling_days: 3,
       price_profile_id: defaultProfile?.id || "",
-      attribute_mapping: {},
+      attribute_mapping: {} as Record<string, string>,
+      description_template: "",
     })
     setShowEditor(true)
   }

@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Obtener token fresco (refresca si está por vencer)
-    const accessToken = await getValidAccessToken(account_id)
+    const accessToken = await getValidAccessToken(account_id!)
 
     const res = await fetch(
       `https://api.mercadolibre.com/items/${item_id}/price_to_win?siteId=MLA&version=v2`,

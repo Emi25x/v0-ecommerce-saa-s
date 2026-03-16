@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     console.log(`[DEBUG-ML-ACCOUNT] Looking up account: ${accountId}`)
 
     // Usar service role para bypassear RLS
-    const supabase = await createClient({ useServiceRole: true })
+    const supabase = createAdminClient()
 
     const { data: account, error } = await supabase
       .from("ml_accounts")

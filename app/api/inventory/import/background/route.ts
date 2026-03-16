@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import Papa from "papaparse"
+import { mergeStockBySource } from "@/lib/stock-helpers"
 
 const BATCH_SIZE = 100
 
@@ -146,12 +147,12 @@ async function processImportInBackground(
             continue
           }
 
-          // Buscar producto existente
+          // Buscar producto existente (incluir stock_by_source para merge)
           let existingProduct = null
           if (normalizedSku) {
             const { data } = await supabase
               .from("products")
-              .select("id, sku, ean")
+              .select("id, sku, ean, stock_by_source")
               .eq("sku", normalizedSku)
               .single()
             existingProduct = data
@@ -159,15 +160,21 @@ async function processImportInBackground(
           if (!existingProduct && normalizedEan) {
             const { data } = await supabase
               .from("products")
-              .select("id, sku, ean")
+              .select("id, sku, ean, stock_by_source")
               .eq("ean", normalizedEan)
               .single()
             existingProduct = data
           }
 
+          const stockQty = stock ? parseInt(String(stock)) : 0
+          const { stock_by_source, stock: totalStock } = mergeStockBySource(
+            existingProduct?.stock_by_source, source.id, stockQty
+          )
+
           const productData: any = {
             price: price ? parseFloat(String(price).replace(",", ".")) : null,
-            stock: stock ? parseInt(String(stock)) : 0,
+            stock: totalStock,
+            stock_by_source,
             updated_at: new Date().toISOString(),
           }
 

@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
+import { getValidToken } from "@/lib/shopify-auth"
 
 export async function GET(request: Request) {
   try {
@@ -17,10 +18,10 @@ export async function GET(request: Request) {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-    // Buscar la tienda y su token
+    // Buscar la tienda con credenciales para poder renovar el token si venció
     const { data: store, error: storeError } = await supabase
       .from("shopify_stores")
-      .select("shop_domain, access_token, id")
+      .select("shop_domain, access_token, api_key, api_secret, token_expires_at, id")
       .eq("id", store_id)
       .eq("owner_user_id", user.id)
       .single()
@@ -28,6 +29,9 @@ export async function GET(request: Request) {
     if (storeError || !store) {
       return NextResponse.json({ error: "Tienda no encontrada" }, { status: 404 })
     }
+
+    // Obtener token válido (renueva automáticamente si venció)
+    const accessToken = await getValidToken(supabase, store)
 
     // Shopify cursor-based pagination: cuando page_info está presente,
     // NO se pueden enviar otros filtros (status, etc.) — solo limit y page_info
@@ -39,7 +43,7 @@ export async function GET(request: Request) {
 
     const res = await fetch(shopifyUrl, {
       headers: {
-        "X-Shopify-Access-Token": store.access_token,
+        "X-Shopify-Access-Token": accessToken,
         "Content-Type": "application/json",
       },
     })

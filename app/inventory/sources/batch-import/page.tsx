@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 
+
 export default function BatchImportPage() {
   const searchParams = useSearchParams()
   const [isRunning, setIsRunning] = useState(false)
@@ -73,139 +74,115 @@ export default function BatchImportPage() {
     addLog(`Iniciando importacion por lotes de ${sourceName}...`)
 
     const nameLower = sourceName.toLowerCase()
+    // Ambas fuentes Azeta (Total y Parcial) usan el flujo azeta/download → azeta/process.
+    // El batch genérico no puede manejar el ZIP de Total (~230MB) ni los errores del servidor de Azeta.
     const isAzeta = nameLower.includes("azeta")
-    const isArnoiaStock = nameLower.includes("arnoia") && nameLower.includes("stock")
 
-    // Arnoia Stock: endpoint dedicado simple
-    if (isArnoiaStock) {
-      try {
-        setStatus("Procesando Arnoia Stock...")
-        addLog("Usando importador dedicado para Arnoia Stock...")
-        const response = await fetch("/api/arnoia/import-stock", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-        })
-        const result = await response.json().catch(() => ({}))
-        if (!response.ok) {
-          const msg = result.error || `Error ${response.status}`
-          addLog(`Error: ${msg}`)
-          setStatus(`Error: ${msg}`)
-          setIsRunning(false)
-          return
-        }
-        const c = result.created || 0
-        const u = result.updated || result.updated_count || 0
-        setTotalCreated(c); setTotalUpdated(u); setTotalProcessed(c + u); setTotalRows(c + u); setProgress(100)
-        addLog(`Completado: ${c} creados, ${u} actualizados`)
-        setStatus("Importacion completada")
-        setIsRunning(false)
-        return
-      } catch (err: any) {
-        addLog(`Error: ${err.message}`)
-        setStatus(`Error: ${err.message}`)
-        setIsRunning(false)
-        return
-      }
-    }
-
-    // AZETA: servidor hace stream ZIP→Blob directo (sin buffering), luego procesa en lotes
+    // AZETA: llama directamente a import-catalog (descarga ZIP/CSV server-side, sin Blob intermedio)
     if (isAzeta) {
       try {
-        // Paso 1: Servidor descarga ZIP/CSV y lo guarda en Blob via stream directo
-        // Pasamos source_id para que el servidor use la URL correcta según la fuente seleccionada
-        const isTotalCatalog = !nameLower.includes("parcial")
-        setStatus("Descargando catálogo AZETA al servidor...")
-        addLog(`Paso 1/2: Descargando ${isTotalCatalog ? "catálogo total (~230MB ZIP)" : "catálogo parcial (CSV)"} de AZETA...`)
-        const dlRes = await fetch("/api/azeta/download", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ source_id: urlSourceId }),
-        })
-        const dlData = await dlRes.json().catch(() => ({}))
-        if (!dlRes.ok) {
-          addLog(`Error en descarga: ${dlData.error || `HTTP ${dlRes.status}`}`)
-          setStatus("Error en descarga")
-          setIsRunning(false)
-          return
-        }
-        const blobUrl = dlData.blob_url
-        addLog(`ZIP procesado: CSV ${dlData.csv_size_mb}MB, ${dlData.total_lines?.toLocaleString()} lineas (${dlData.elapsed_seconds}s)`)
-
-        // Catálogo vacío — no hay nada que procesar
-        if (!blobUrl || (dlData.total_lines ?? 0) <= 0) {
-          addLog(`⚠️ ${dlData.message || "El catálogo no tiene datos disponibles. El parcial puede no estar publicado hoy."}`)
-          setStatus("Sin datos disponibles")
-          setIsRunning(false)
-          return
-        }
-
-        // Paso 2: Procesar en lotes de 4MB desde el CSV en Blob
-        addLog(`ZIP descomprimido a CSV (${dlData.csv_size_mb}MB, ${dlData.total_lines?.toLocaleString()} lineas). Procesando...`)
-        setTotalRows(dlData.total_lines || 0)
-        let byteStart = 0
-        let headerLine: string | null = null
-        let accCreated = 0
-        let accUpdated = 0
-        let accProcessed = 0
-        let loopDone = false
-        let loteNum = 0
-
-        while (!loopDone && !abortRef.current) {
-          loteNum++
-          setStatus(`Lote ${loteNum} (${(byteStart / 1024 / 1024).toFixed(1)}MB procesados)...`)
-          const procBody: any = { blob_url: blobUrl, byte_start: byteStart, total_lines: dlData.total_lines }
-          if (headerLine) procBody.header_line = headerLine
-          const procRes = await fetch("/api/azeta/process", {
+        const isStock = nameLower.includes("stock")
+        if (isStock) {
+          // Azeta Stock: endpoint dedicado (CSV sin headers, col0=EAN col1=stock)
+          setStatus("Actualizando stock AZETA...")
+          addLog("Descargando y procesando Azeta Stock (CSV sin headers)...")
+          const res = await fetch("/api/azeta/import-stock", {
             method: "POST",
             credentials: "include",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(procBody),
           })
-          const procData = await procRes.json().catch(() => ({}))
-          if (!procRes.ok) {
-            addLog(`Error lote ${loteNum}: ${procData.error || `HTTP ${procRes.status}`}`)
-            setStatus("Error en procesamiento")
+          const result = await res.json().catch(() => ({}))
+          if (!res.ok) {
+            addLog(`Error: ${result.error || `HTTP ${res.status}`}`)
+            setStatus("Error")
             setIsRunning(false)
-            await fetch("/api/azeta/process", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ blob_url: blobUrl, cleanup: true }) }).catch(() => {})
+            return
+          }
+          const s = result.stats ?? {}
+          setTotalProcessed(s.processed ?? 0)
+          setTotalUpdated(s.updated ?? 0)
+          setProgress(100)
+          addLog(`Completado: ${s.updated ?? 0} actualizados, ${s.not_found ?? 0} no encontrados, ${s.zeroed ?? 0} puestos a 0`)
+          setStatus("Importacion completada")
+          setIsRunning(false)
+          return
+        }
+
+        // Azeta Total/Parcial: SSE streaming — el server emite progreso por cada batch.
+        // preferredRegion=fra1 (Frankfurt) en el endpoint → descarga ~4× más rápida desde España.
+        setStatus("Importando catálogo AZETA...")
+        addLog("Descargando ZIP de AZETA (~230MB, función en Frankfurt para mejor velocidad)...")
+        addLog("El proceso corre en el servidor y emite progreso en tiempo real.")
+
+        try {
+          const importRes = await fetch("/api/azeta/import-catalog", {
+            method: "POST",
+            credentials: "include",
+            headers: {
+              "Content-Type": "application/json",
+              "Accept": "text/event-stream",
+            },
+            body: JSON.stringify({ source_id: urlSourceId }),
+          })
+
+          if (!importRes.ok || !importRes.body) {
+            const errText = await importRes.text().catch(() => "")
+            addLog(`Error HTTP ${importRes.status}: ${errText.slice(0, 200)}`)
+            setStatus("Error")
+            setIsRunning(false)
             return
           }
 
-          accCreated += procData.created || 0
-          accUpdated += procData.updated || 0
-          accProcessed += procData.rows_processed || 0
-          const loteErrors = procData.errors || 0
-          loopDone = procData.done === true
-          byteStart = procData.next_byte_start ?? byteStart
-          if (procData.header_line && !headerLine) headerLine = procData.header_line
+          // Leer SSE stream
+          const reader = importRes.body.getReader()
+          const decoder = new TextDecoder()
+          let buf = ""
 
-          setTotalCreated(accCreated)
-          setTotalUpdated(accUpdated)
-          setTotalProcessed(accProcessed)
-          if (loteErrors > 0) {
-            setTotalFailed(prev => prev + loteErrors)
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buf += decoder.decode(value, { stream: true })
+
+            // Parsear líneas SSE completas
+            const lines = buf.split("\n")
+            buf = lines.pop() ?? ""
+
+            for (const line of lines) {
+              if (!line.startsWith("data: ")) continue
+              try {
+                const evt = JSON.parse(line.slice(6))
+                if (evt.type === "start") {
+                  addLog(evt.message ?? "Importación iniciada")
+                } else if (evt.type === "progress") {
+                  setTotalCreated(evt.created ?? 0)
+                  setTotalUpdated(evt.updated ?? 0)
+                  setTotalFailed(evt.errors ?? 0)
+                  setTotalProcessed(evt.processed ?? 0)
+                  setProgress(Math.min(95, Math.round(((evt.processed ?? 0) / 600000) * 100)))
+                } else if (evt.type === "done") {
+                  setTotalCreated(evt.created ?? 0)
+                  setTotalUpdated(evt.updated ?? 0)
+                  setTotalFailed(evt.errors ?? 0)
+                  setTotalProcessed(evt.total_rows ?? 0)
+                  setProgress(100)
+                  setStatus("Importacion completada")
+                  addLog(`Completado en ${evt.elapsed_seconds}s: ${evt.created} creados, ${evt.updated} actualizados, ${evt.errors ?? 0} errores`)
+                } else if (evt.type === "error") {
+                  addLog(`Error del servidor: ${evt.error}`)
+                  setStatus("Error")
+                }
+              } catch {
+                // línea SSE malformada, ignorar
+              }
+            }
           }
-          if (dlData.total_lines > 0) {
-            setProgress(Math.min(99, Math.round((accProcessed / dlData.total_lines) * 100)))
-          }
-          addLog(`Lote ${loteNum}: +${procData.created} creados, +${procData.updated} actualizados, +${procData.discarded} descartados, ${loteErrors} errores (${procData.elapsed_seconds}s)`)
-          if (procData.last_upsert_error) {
-            addLog(`[ERROR DB] ${procData.last_upsert_error}`)
-          }
+        } catch (fetchErr: any) {
+          addLog(`Error de conexión: ${fetchErr.message}`)
+          setStatus("Error")
+          setIsRunning(false)
+          return
         }
 
-        // Limpiar blob temporal
-        await fetch("/api/azeta/process", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ blob_url: blobUrl, offset: 0, cleanup: true }),
-        }).catch(() => {})
-
-        setProgress(100)
-        addLog(`Completado: ${accCreated} creados, ${accUpdated} actualizados`)
-        setStatus("Importacion completada")
         setIsRunning(false)
         return
       } catch (err: any) {

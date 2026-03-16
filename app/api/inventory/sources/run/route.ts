@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { runLibralStockImport } from "@/lib/libral/run-stock-import"
 
 /**
  * POST /api/inventory/sources/run
@@ -70,7 +71,38 @@ export async function POST(request: Request) {
 
     console.log(`[SOURCES-RUN] History record creado: ${historyRecord.id}`)
 
-    // Disparar el proceso de importación en background usando el endpoint de batch
+    // Only route feed_type="api" sources to the Libral API importer.
+    // "Libral Argentina" is feed_type="stock_price" (TAB text file) and must
+    // go through the generic batch-import path instead.
+    const isLibral = source.feed_type === "api"
+
+    if (isLibral) {
+      // Libral API: JSON paginada, ejecutar directamente con admin client
+      console.log(`[SOURCES-RUN] Fuente API Libral detectada, ejecutando runLibralStockImport`)
+      const sourceKey = source.source_key ?? "libral"
+      const r = await runLibralStockImport(sourceKey)
+
+      await supabase
+        .from("import_history")
+        .update({
+          status: r.success ? "success" : "error",
+          completed_at: new Date().toISOString(),
+          products_updated: r.updated,
+          error_message: r.error ?? null,
+        })
+        .eq("id", historyRecord.id)
+
+      return NextResponse.json({
+        success: r.success,
+        message: r.error ?? `${r.updated} productos actualizados, ${r.zeroed} en cero`,
+        source_id: source.id,
+        source_name: source.name,
+        history_id: historyRecord.id,
+        result: r,
+      })
+    }
+
+    // Resto de fuentes: disparar el batch import en background
     // Esto permite que el proceso continúe aunque el usuario cierre la ventana
     const batchImportUrl = `${process.env.NEXT_PUBLIC_VERCEL_URL ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` : "http://localhost:3000"}/api/inventory/import/batch`
 

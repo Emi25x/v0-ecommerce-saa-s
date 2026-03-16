@@ -134,7 +134,7 @@ export function buildFacturaHTML(data: FacturaPDFData): string {
 
   // ── Logo ──────────────────────────────────────────────────────────────────
   const logoHtml = (showLogo && data.logo_url)
-    ? `<img src="${data.logo_url}" alt="Logo" style="max-height:64px;max-width:160px;object-fit:contain;display:block">`
+    ? `<img src="${data.logo_url}" alt="Logo" style="max-height:110px;max-width:240px;width:auto;height:auto;object-fit:contain;display:block;margin-bottom:6px">`
     : ""
 
   // ── Contacto ──────────────────────────────────────────────────────────────
@@ -195,12 +195,12 @@ export function buildFacturaHTML(data: FacturaPDFData): string {
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #1a1a1a; background: #fff; }
     .page { width: 210mm; min-height: 297mm; padding: 12mm; margin: 0 auto; display: flex; flex-direction: column; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #1a1a1a; padding-bottom: 12px; margin-bottom: 12px; gap: 12px; }
+    .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #1a1a1a; padding-bottom: 12px; margin-bottom: 12px; gap: 12px; }
     .emisor { flex: 1; }
     .emisor h1 { font-size: 16px; font-weight: 700; }
     .emisor p  { font-size: 11px; color: #444; margin-top: 2px; }
-    .letra-box { width: 64px; height: 64px; border: 3px solid #1a1a1a; display: flex; align-items: center; justify-content: center; font-size: 36px; font-weight: 900; flex-shrink: 0; }
-    .comp-info { text-align: right; min-width: 160px; }
+    .letra-box { width: 72px; height: 72px; border: 3px solid #1a1a1a; display: flex; align-items: center; justify-content: center; font-size: 42px; font-weight: 900; flex-shrink: 0; align-self: center; }
+    .comp-info { text-align: right; min-width: 160px; align-self: center; }
     .comp-info h2 { font-size: 14px; font-weight: 700; }
     .comp-info p  { font-size: 11px; color: #444; margin-top: 2px; }
     .section { border: 1px solid #ccc; border-radius: 4px; padding: 10px 12px; margin-bottom: 10px; }

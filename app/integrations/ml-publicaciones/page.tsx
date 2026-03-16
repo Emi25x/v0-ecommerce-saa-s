@@ -206,7 +206,7 @@ export default function MLPublicacionesPage() {
         <div>
           <span className={`font-medium ${currentMode.color}`}>{currentMode.label}</span>
           <span className="text-muted-foreground ml-2">{currentMode.description}</span>
-          <span className="ml-2 text-muted-foreground/50 text-xs font-mono">[{currentMode.endpoint}]</span>
+          <span className="ml-2 text-muted-foreground/50 text-xs font-mono">[{(currentMode as any).endpoint}]</span>
         </div>
       </div>
 

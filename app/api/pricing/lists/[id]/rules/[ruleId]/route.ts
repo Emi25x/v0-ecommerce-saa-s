@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { NextRequest, NextResponse } from "next/server"
 
 export const dynamic = "force-dynamic"
@@ -7,7 +7,7 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string; ruleId: string } }
 ) {
-  const supabase = await createClient({ useServiceRole: true })
+  const supabase = createAdminClient()
   const body     = await req.json()
   const { data, error } = await supabase
     .from("price_list_fee_rules")
@@ -24,7 +24,7 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: { id: string; ruleId: string } }
 ) {
-  const supabase = await createClient({ useServiceRole: true })
+  const supabase = createAdminClient()
   const { error } = await supabase
     .from("price_list_fee_rules")
     .delete()

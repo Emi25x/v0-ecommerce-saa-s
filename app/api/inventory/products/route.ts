@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const selectColumns = "id, sku, title, ean, isbn, price, stock, source, created_at, updated_at, image_url"
+    const selectColumns = "id, sku, title, ean, isbn, price, stock, source, created_at, updated_at, image_url, author, brand, language, pages, binding, category, description, year_edition, height, width, thickness, canonical_weight_g"
     const countType = search ? "exact" : "estimated"
     let query = supabase.from("products").select(selectColumns, { count: countType })
 

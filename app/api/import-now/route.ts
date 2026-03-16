@@ -1,5 +1,9 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
+import { mergeStockBySource } from "@/lib/stock-helpers"
+import { runLibralStockImport } from "@/lib/libral/run-stock-import"
+import { runAzetaStockUpdate } from "@/lib/azeta/update-stock-import"
+import { runArnoiaStockImport } from "@/lib/arnoia/run-stock-import"
 
 console.log("[v0] ========================================")
 console.log("[v0] IMPORT-NOW ENDPOINT MODULE LOADED")
@@ -52,6 +56,115 @@ export async function GET(request: Request) {
       console.log(`[v0] Processing source: ${source.name}`)
       console.log(`[v0] ========================================`)
 
+      const sourceLower = (source.name ?? "").toLowerCase()
+
+      // ── Azeta: CSV propio, delegar a runAzetaStockUpdate ──────────────────
+      if (sourceLower.includes("azeta")) {
+        console.log(`[v0] Azeta source detected, using runAzetaStockUpdate`)
+
+        const { data: histRecord } = await supabase
+          .from("import_history")
+          .insert({ source_id: source.id, status: "running", started_at: new Date().toISOString() })
+          .select().single()
+
+        const r = await runAzetaStockUpdate(source as any)
+
+        if (histRecord) {
+          await supabase.from("import_history").update({
+            status: r.success ? "success" : "error",
+            completed_at: new Date().toISOString(),
+            products_updated: r.updated ?? 0,
+            products_failed: r.not_found ?? 0,
+            error_message: r.error ?? null,
+          }).eq("id", histRecord.id)
+        }
+
+        results.push({
+          source: source.name,
+          imported: 0,
+          updated: r.updated ?? 0,
+          failed: r.not_found ?? 0,
+          total: r.updated ?? 0,
+        })
+        continue
+      }
+
+      // ── Arnoia Stock: CSV latin1 + bulk_update_stock_price RPC ───────────
+      // Only stock_price feeds. Arnoia catalog sources (Arnoia, Arnoia Act)
+      // fall through to the generic CSV batch path below.
+      if (sourceLower.includes("arnoia") && source.feed_type === "stock_price") {
+        console.log(`[v0] Arnoia Stock source detected, running runArnoiaStockImport`)
+
+        const { data: histRecord } = await supabase
+          .from("import_history")
+          .insert({ source_id: source.id, status: "running", started_at: new Date().toISOString() })
+          .select().single()
+
+        const r = await runArnoiaStockImport()
+
+        if (histRecord) {
+          await supabase.from("import_history").update({
+            status: r.success ? "success" : "error",
+            completed_at: new Date().toISOString(),
+            products_updated: r.updated,
+            error_message: r.error ?? null,
+          }).eq("id", histRecord.id)
+        }
+
+        results.push({
+          source: source.name,
+          imported: 0,
+          updated: r.updated,
+          failed: r.not_found,
+          total: r.updated,
+        })
+        continue
+      }
+
+      // ── Libral: API JSON paginada (feed_type==="api" only) ───────────────
+      // NOTE: "Libral Argentina" is feed_type="stock_price" and is handled by
+      // the generic CSV path below (TAB-delimited text file).
+      const isLibral = source.feed_type === "api"
+      if (isLibral) {
+        console.log(`[v0] Libral source detected, using runLibralStockImport`)
+
+        // Create import_history record so the history tab shows the run
+        const { data: histRecord } = await supabase
+          .from("import_history")
+          .insert({
+            source_id: source.id,
+            status: "running",
+            started_at: new Date().toISOString(),
+          })
+          .select()
+          .single()
+
+        const r = await runLibralStockImport(source.source_key ?? "libral")
+
+        // Update history with result
+        if (histRecord) {
+          await supabase
+            .from("import_history")
+            .update({
+              status: r.success ? "success" : "error",
+              completed_at: new Date().toISOString(),
+              products_updated: r.updated,
+              products_failed: r.errors,
+              error_message: r.error ?? null,
+            })
+            .eq("id", histRecord.id)
+        }
+
+        results.push({
+          source: source.name,
+          imported: 0,
+          updated: r.updated,
+          failed: r.errors,
+          total: r.updated,
+        })
+        continue
+      }
+
       try {
         // Download CSV
         console.log(`[v0] Downloading CSV from: ${source.url_template}`)
@@ -72,7 +185,15 @@ export async function GET(request: Request) {
           throw new Error("CSV file is empty or has no data rows")
         }
 
-        const headers = lines[0].split(";").map((h) => h.trim())
+        // Auto-detect separator (|, ;, \t, ,)
+        const firstLine = lines[0]
+        const separatorCounts = ["|", ";", "\t", ","].map(s => ({
+          s, n: (firstLine.match(new RegExp(`\\${s === "\t" ? "t" : s}`, "g")) || []).length
+        }))
+        const separator = separatorCounts.reduce((best, cur) => cur.n > best.n ? cur : best).s
+        console.log(`[v0] Separator detected: "${separator}"`)
+
+        const headers = firstLine.split(separator).map((h) => h.trim().replace(/^["']|["']$/g, ""))
         console.log(`[v0] CSV headers:`, headers)
 
         const columnMapping = source.column_mapping as Record<string, string>
@@ -109,7 +230,7 @@ export async function GET(request: Request) {
           if (!line.trim()) continue
 
           try {
-            const values = line.split(";").map((v) => v.trim())
+            const values = line.split(separator).map((v) => v.trim().replace(/^["']|["']$/g, ""))
             const row: Record<string, string> = {}
 
             headers.forEach((header, index) => {
@@ -134,8 +255,18 @@ export async function GET(request: Request) {
               updated_at: new Date().toISOString(),
             }
 
-            // Check if product exists
-            const { data: existing } = await supabase.from("products").select("id, source").eq("sku", sku).single()
+            // Check if product exists (include stock_by_source for merge)
+            const { data: existing } = await supabase.from("products").select("id, source, stock_by_source").eq("sku", sku).single()
+
+            // Use source_key (short string) as bucket key — not UUID — so warehouse stock filters work correctly
+            const stockKey = source.source_key ?? source.id
+
+            // Merge stock into the source's bucket
+            const { stock_by_source, stock: totalStock } = mergeStockBySource(
+              existing?.stock_by_source, stockKey, productData.stock
+            )
+            productData.stock = totalStock
+            productData.stock_by_source = stock_by_source
 
             if (existing) {
               // Update existing product

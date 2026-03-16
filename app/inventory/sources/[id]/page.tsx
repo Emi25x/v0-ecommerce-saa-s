@@ -7,22 +7,24 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { 
-  ArrowLeft, 
-  Calendar, 
-  Clock, 
-  FileText, 
-  Database, 
-  Settings, 
-  History, 
-  Play, 
-  CheckCircle2, 
+  ArrowLeft,
+  Calendar,
+  Clock,
+  FileText,
+  Database,
+  Settings,
+  History,
+  Play,
+  CheckCircle2,
   XCircle,
   Link as LinkIcon,
   Shield,
-  Loader2
+  Loader2,
+  Warehouse
 } from "lucide-react"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
+import { isCustomField, customFieldKey } from "@/lib/column-mapping-helpers"
 
 export default function SourceDetailPage() {
   const params = useParams()
@@ -30,6 +32,7 @@ export default function SourceDetailPage() {
   const sourceId = params.id as string
   
   const [source, setSource] = useState<any>(null)
+  const [warehouse, setWarehouse] = useState<{ name: string; code: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<any>(null)
 
@@ -60,6 +63,16 @@ export default function SourceDetailPage() {
       if (sourceError) throw sourceError
 
       setSource(sourceData)
+
+      // Fetch warehouse if linked
+      if (sourceData.warehouse_id) {
+        const { data: wh } = await supabase
+          .from("warehouses")
+          .select("name, code")
+          .eq("id", sourceData.warehouse_id)
+          .single()
+        if (wh) setWarehouse(wh)
+      }
 
       // Fetch import statistics
       const { data: historyData, error: historyError } = await supabase
@@ -172,6 +185,18 @@ export default function SourceDetailPage() {
             </div>
             <Separator />
             <div className="flex items-start gap-3">
+              <Warehouse className="h-5 w-5 mt-0.5 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Almacén asociado</p>
+                <p className="text-sm text-muted-foreground">
+                  {warehouse
+                    ? `${warehouse.name} (${warehouse.code})`
+                    : <span className="italic">Sin almacén específico</span>}
+                </p>
+              </div>
+            </div>
+            <Separator />
+            <div className="flex items-start gap-3">
               <Calendar className="h-5 w-5 mt-0.5 text-muted-foreground" />
               <div>
                 <p className="text-sm font-medium">Creada</p>
@@ -247,26 +272,43 @@ export default function SourceDetailPage() {
       </div>
 
       {/* Column Mapping */}
-      {source.column_mapping && Object.keys(source.column_mapping).length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Mapeo de Columnas</CardTitle>
-            <CardDescription>Configuración del mapeo de columnas CSV a campos del producto</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {Object.entries(source.column_mapping).map(([field, column]) => (
-                <div key={field} className="flex items-center gap-2 p-3 border rounded-lg">
-                  <div className="flex-1">
-                    <p className="text-sm font-medium capitalize">{field}</p>
-                    <p className="text-xs text-muted-foreground">{column as string}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {source.column_mapping && (() => {
+        // Support both legacy flat format and new { delimiter, mappings } format
+        const cm = source.column_mapping
+        const mappings: Record<string, string> = cm.mappings ?? cm
+        const delimiter: string | null = cm.delimiter ?? null
+        const entries = Object.entries(mappings).filter(([, v]) => typeof v === "string")
+        if (entries.length === 0) return null
+        return (
+          <Card>
+            <CardHeader>
+              <CardTitle>Mapeo de Columnas</CardTitle>
+              <CardDescription>
+                {delimiter && <span className="font-mono text-xs">Delimitador: "{delimiter}" · </span>}
+                {entries.length} columnas mapeadas
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+                {entries.map(([csvCol, internalField]) => {
+                  const isCustom = isCustomField(internalField)
+                  return (
+                    <div key={csvCol} className="flex items-center gap-2 p-2.5 border rounded-lg text-sm">
+                      <span className="font-mono text-xs text-muted-foreground flex-1 truncate" title={csvCol}>{csvCol}</span>
+                      <span className="text-muted-foreground text-xs">→</span>
+                      {isCustom ? (
+                        <span className="text-amber-400 font-mono text-xs">{customFieldKey(internalField)}</span>
+                      ) : (
+                        <span className="font-medium text-xs">{internalField}</span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )
+      })()}
 
       {/* Actions */}
       <Card>

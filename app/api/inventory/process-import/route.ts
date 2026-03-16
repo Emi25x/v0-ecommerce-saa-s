@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import { type NextRequest, NextResponse } from "next/server"
+import { mergeStockBySource } from "@/lib/stock-helpers"
 
 export const maxDuration = 300 // 5 minutos para imports grandes
 
@@ -194,7 +195,22 @@ export async function POST(request: NextRequest) {
       console.log(`[v0] Procesando lote ${batchIndex + 1}/${totalBatches} (${batch.length} productos)`)
 
       try {
-        const { data, error } = await supabase.from("products").upsert(batch, {
+        // Read existing stock_by_source for this batch to do proper merge
+        const batchSkus = batch.map((p: any) => p.sku).filter(Boolean)
+        const { data: existingRows } = await supabase
+          .from("products")
+          .select("sku, stock_by_source")
+          .in("sku", batchSkus)
+        const sbsMap = new Map((existingRows ?? []).map((p: any) => [p.sku, p.stock_by_source]))
+
+        // Enrich each product with merged stock_by_source
+        const enrichedBatch = batch.map((p: any) => {
+          if (p.stock == null) return p
+          const { stock_by_source, stock } = mergeStockBySource(sbsMap.get(p.sku), source.id, p.stock)
+          return { ...p, stock, stock_by_source }
+        })
+
+        const { data, error } = await supabase.from("products").upsert(enrichedBatch, {
           onConflict: "sku",
           ignoreDuplicates: false,
         })

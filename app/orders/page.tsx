@@ -980,7 +980,7 @@ export default function OrdersPage() {
       const response = await fetch(`/api/mercadolibre/orders/${orderId}/mark-received`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.JSON.stringify({ item_id: itemId }),
+        body: JSON.stringify({ item_id: itemId }),
       })
 
       if (response.ok) {
@@ -1044,7 +1044,7 @@ export default function OrdersPage() {
             const response = await fetch(`/api/mercadolibre/orders/${orderId}/mark-received`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.JSON.stringify({ item_id: order.order_items[0].item.id }),
+              body: JSON.stringify({ item_id: order.order_items[0].item.id }),
             })
 
             if (!response.ok) {
@@ -1821,10 +1821,10 @@ export default function OrdersPage() {
   }, [ordersWithHandlingTime])
 
   const sortOptions = [
-    { key: "date", label: "Fecha" },
-    { key: "total", label: "Total" },
-    { key: "order", label: "Orden" },
-    { key: "customer", label: "Cliente" },
+    { value: "date", label: "Fecha" },
+    { value: "total", label: "Total" },
+    { value: "order", label: "Orden" },
+    { value: "customer", label: "Cliente" },
   ]
 
   const toggleSelectAll = () => {
@@ -1849,7 +1849,7 @@ export default function OrdersPage() {
     })
   }
 
-  const showAvailabilityFilters = mlAccounts.length > 0 // Ensure filters are shown if accounts are loaded
+  const showAvailabilityFilters = Object.keys(mlAccounts).length > 0 // Ensure filters are shown if accounts are loaded
 
   useEffect(() => {
     setCurrentPage(1)
@@ -3095,7 +3095,7 @@ export default function OrdersPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={mlBrowserModal && mlBrowserModal.open} onOpenChange={(open) => !open && setMlBrowserModal(null)}>
+      <Dialog open={!!(mlBrowserModal && mlBrowserModal.open)} onOpenChange={(open) => !open && setMlBrowserModal(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -3122,7 +3122,7 @@ export default function OrdersPage() {
                 <div className="flex flex-col gap-2">
                   <Button
                     onClick={() => {
-                      copyToClipboard(mlBrowserModal.url)
+                      copyToClipboard(mlBrowserModal?.url)
                     }}
                     variant="outline"
                     className="w-full"
@@ -3131,7 +3131,7 @@ export default function OrdersPage() {
                   </Button>
                   <Button
                     onClick={() => {
-                      window.open(mlBrowserModal.url, "_blank")
+                      window.open(mlBrowserModal?.url, "_blank")
                       setMlBrowserModal(null)
                     }}
                     className="w-full"
@@ -3148,7 +3148,7 @@ export default function OrdersPage() {
                 </p>
                 <Button
                   onClick={() => {
-                    window.open(mlBrowserModal.url, "_blank")
+                    window.open(mlBrowserModal?.url, "_blank")
                     setMlBrowserModal(null)
                   }}
                   className="w-full"

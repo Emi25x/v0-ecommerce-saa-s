@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { NextRequest, NextResponse } from "next/server"
 
 /**
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ok: false, error: "missing_account_id" }, { status: 400 })
     }
 
-    const supabase = await createClient({ useServiceRole: true })
+    const supabase = createAdminClient()
 
     const { data: progress, error } = await supabase
       .from("ml_matcher_progress")

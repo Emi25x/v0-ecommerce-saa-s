@@ -2,7 +2,10 @@
 
 import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
-import { RefreshCw, TrendingUp, BookOpen, AlertCircle, Zap, ChevronRight, BarChart3, Newspaper, ExternalLink } from "lucide-react"
+import {
+  RefreshCw, TrendingUp, BookOpen, AlertCircle, Zap,
+  ChevronRight, BarChart3, Newspaper, ExternalLink, PackageX,
+} from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -20,6 +23,11 @@ interface Stats {
   by_status: Record<string, number>
   top_opportunities: { opportunity_type: string; score: number; confidence: string }[]
   top_gaps: { category: string; gap_score: number }[]
+}
+
+interface ReorderSummary {
+  total: number
+  top: { title: string; sold_quantity: number; editorial: string | null }[]
 }
 
 const TYPE_LABEL: Record<string, string> = {
@@ -47,13 +55,36 @@ const STATUS_COLOR: Record<string, string> = {
 }
 
 export default function RadarDashboardPage() {
-  const [stats, setStats]       = useState<Stats | null>(null)
-  const [loading, setLoading]   = useState(true)
+  const [stats, setStats]         = useState<Stats | null>(null)
+  const [loading, setLoading]     = useState(true)
   const [newsItems, setNewsItems] = useState<{
     id: string; title: string; source: string; url: string | null;
     detected_book: string | null; detected_author: string | null;
     project_type: string; confidence_score: number; published_at: string | null
   }[]>([])
+
+  const [reorder, setReorder]         = useState<ReorderSummary | null>(null)
+  const [reorderLoading, setReorderLoading] = useState(true)
+
+  const loadReorderSummary = useCallback(async () => {
+    setReorderLoading(true)
+    try {
+      const res  = await fetch("/api/radar/reorder?limit=5&sort=sold")
+      const data = await res.json()
+      if (data.ok) {
+        setReorder({
+          total: data.total,
+          top:   (data.rows ?? []).map((r: any) => ({
+            title:        r.title,
+            sold_quantity: r.sold_quantity,
+            editorial:    r.editorial,
+          })),
+        })
+      }
+    } finally {
+      setReorderLoading(false)
+    }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -71,49 +102,49 @@ export default function RadarDashboardPage() {
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load(); loadReorderSummary() }, [load, loadReorderSummary])
 
   const statCards = [
     {
       label: "Oportunidades",
       value: stats?.totals.opportunities ?? 0,
-      icon: <Zap className="h-5 w-5 text-blue-400" />,
-      href: "/radar/oportunidades",
+      icon:  <Zap className="h-5 w-5 text-blue-400" />,
+      href:  "/radar/oportunidades",
       color: "border-blue-500/20",
     },
     {
       label: "Señales (7d)",
       value: stats?.totals.signals_7d ?? 0,
-      icon: <TrendingUp className="h-5 w-5 text-emerald-400" />,
-      href: "/radar/tendencias",
+      icon:  <TrendingUp className="h-5 w-5 text-emerald-400" />,
+      href:  "/radar/tendencias",
       color: "border-emerald-500/20",
     },
     {
       label: "Huecos abiertos",
       value: stats?.totals.open_gaps ?? 0,
-      icon: <AlertCircle className="h-5 w-5 text-amber-400" />,
-      href: "/radar/huecos",
+      icon:  <AlertCircle className="h-5 w-5 text-amber-400" />,
+      href:  "/radar/huecos",
       color: "border-amber-500/20",
     },
     {
       label: "Adaptaciones",
       value: stats?.totals.adaptations ?? 0,
-      icon: <BookOpen className="h-5 w-5 text-purple-400" />,
-      href: "/radar/adaptaciones",
+      icon:  <BookOpen className="h-5 w-5 text-purple-400" />,
+      href:  "/radar/adaptaciones",
       color: "border-purple-500/20",
     },
     {
       label: "En revisión",
       value: stats?.totals.pending_review ?? 0,
-      icon: <BarChart3 className="h-5 w-5 text-sky-400" />,
-      href: "/radar/oportunidades?status=reviewing",
+      icon:  <BarChart3 className="h-5 w-5 text-sky-400" />,
+      href:  "/radar/oportunidades?status=reviewing",
       color: "border-sky-500/20",
     },
     {
       label: "Aprobadas",
       value: stats?.totals.approved ?? 0,
-      icon: <BarChart3 className="h-5 w-5 text-green-400" />,
-      href: "/radar/oportunidades?status=approved",
+      icon:  <BarChart3 className="h-5 w-5 text-green-400" />,
+      href:  "/radar/oportunidades?status=approved",
       color: "border-green-500/20",
     },
   ]
@@ -128,7 +159,7 @@ export default function RadarDashboardPage() {
             Oportunidades detectadas a partir de tendencias, huecos y señales externas
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+        <Button variant="outline" size="sm" onClick={() => { load(); loadReorderSummary() }} disabled={loading}>
           <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
           Actualizar
         </Button>
@@ -293,9 +324,7 @@ export default function RadarDashboardPage() {
             {newsItems.map(item => (
               <div key={item.id} className="flex items-start gap-3 rounded-md border border-border bg-muted/10 px-3 py-2.5">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">
-                    {item.detected_book ?? item.title}
-                  </p>
+                  <p className="text-sm font-medium truncate">{item.detected_book ?? item.title}</p>
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     <span className="text-[10px] text-muted-foreground">{item.source}</span>
                     {item.detected_author && (
@@ -330,6 +359,57 @@ export default function RadarDashboardPage() {
           </div>
         )}
       </Card>
+
+      {/* Volver a pedir — resumen compacto */}
+      <Link href="/radar/volver-a-pedir">
+        <Card className="p-5 hover:bg-muted/10 transition-colors cursor-pointer border-orange-500/20">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <PackageX className="h-4 w-4 text-orange-400" />
+              <h2 className="text-sm font-semibold">Volver a pedir</h2>
+              {reorder && reorder.total > 0 && (
+                <Badge variant="outline" className="text-[10px] text-orange-400 border-orange-500/30">
+                  {reorder.total} sin stock
+                </Badge>
+              )}
+            </div>
+            <span className="text-xs text-muted-foreground hover:text-foreground">Ver todos →</span>
+          </div>
+
+          {reorderLoading ? (
+            <div className="space-y-1.5">
+              {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-7 bg-muted/30 rounded animate-pulse" />)}
+            </div>
+          ) : !reorder || reorder.total === 0 ? (
+            <p className="text-sm text-muted-foreground">Sin publicaciones sin stock. ¡Todo en orden!</p>
+          ) : (
+            <div className="space-y-1.5">
+              {reorder.top.map((book, i) => (
+                <div key={i} className="flex items-center gap-3 rounded-md bg-muted/10 px-3 py-1.5">
+                  <span className="text-xs font-mono text-muted-foreground w-5 shrink-0">{i + 1}.</span>
+                  <span className="text-sm flex-1 truncate">{book.title}</span>
+                  {book.editorial && (
+                    <span className="text-[10px] text-muted-foreground hidden sm:block truncate max-w-[120px]">
+                      {book.editorial}
+                    </span>
+                  )}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <TrendingUp className="h-3 w-3 text-emerald-400" />
+                    <span className="text-xs font-mono font-semibold text-emerald-400 tabular-nums">
+                      {book.sold_quantity.toLocaleString("es-AR")}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              {reorder.total > 5 && (
+                <p className="text-xs text-muted-foreground text-center pt-1">
+                  + {reorder.total - 5} más sin stock →
+                </p>
+              )}
+            </div>
+          )}
+        </Card>
+      </Link>
 
       {/* Quick links */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">

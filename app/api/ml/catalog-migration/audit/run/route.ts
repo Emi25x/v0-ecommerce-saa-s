@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     .eq("id", jobId)
 
   const account = job.ml_accounts
-  const validAccount = await refreshTokenIfNeeded(account)
+  const validAccount = await refreshTokenIfNeeded(account) as any
   const accessToken = validAccount.access_token
   const mlUserId = validAccount.ml_user_id
 

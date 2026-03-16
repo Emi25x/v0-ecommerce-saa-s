@@ -56,7 +56,8 @@ export async function POST(request: NextRequest) {
       try {
         const searchData = await mlFetchJson(
           `https://api.mercadolibre.com/sites/${SITE_ID}/search?q=${ean}&limit=20`,
-          account.access_token,
+          { accessToken: account.access_token },
+          { account_id: account.id, op_name: "daily_scan_search" },
         )
 
         const items: any[] = searchData?.results || []

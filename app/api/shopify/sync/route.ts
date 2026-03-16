@@ -53,11 +53,11 @@ export async function POST(request: Request) {
         const CACHE_BATCH = 500
 
         do {
-          const params = nextPageInfo
+          const params: URLSearchParams = nextPageInfo
             ? new URLSearchParams({ page_info: nextPageInfo, limit: "250" })
             : new URLSearchParams({ status: "active", limit: "250" })
 
-          let res = await fetch(
+          let res: Response = await fetch(
             `https://${store.shop_domain}/admin/api/2024-01/products.json?${params}`,
             { headers: { "X-Shopify-Access-Token": store.access_token } }
           )
@@ -101,8 +101,8 @@ export async function POST(request: Request) {
 
           totalVariants += rows.length
 
-          const link = res.headers.get("link") ?? ""
-          const m = link.match(/<[^>]*page_info=([^&>]+)[^>]*>;\s*rel="next"/)
+          const link: string = res.headers.get("link") ?? ""
+          const m: RegExpMatchArray | null = link.match(/<[^>]*page_info=([^&>]+)[^>]*>;\s*rel="next"/)
           nextPageInfo = m?.[1] ?? null
           shopifyPage++
 

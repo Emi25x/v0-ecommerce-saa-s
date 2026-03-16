@@ -18,7 +18,8 @@ export async function POST(request: NextRequest) {
       .eq("ml_id", item_id)
       .maybeSingle()
 
-    let accessToken = listing?.mercadolibre_accounts?.access_token
+    const mlAccounts = listing?.mercadolibre_accounts as unknown as { access_token: any } | null
+    let accessToken = mlAccounts?.access_token
 
     if (!accessToken) {
       const { data: accounts } = await supabase

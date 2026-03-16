@@ -87,8 +87,8 @@ function parseRssItems(xml: string): { title: string; url: string; published_at:
     const title       = (/<title[^>]*><!\[CDATA\[(.+?)\]\]>/i.exec(block)   ?? /<title[^>]*>(.+?)<\/title>/i.exec(block))?.[1]   ?? ""
     const link        = (/<link>([^<]+)<\/link>/i.exec(block))?.[1] ?? (/<guid[^>]*>([^<]+)<\/guid>/i.exec(block))?.[1] ?? ""
     const pubDate     = (/<pubDate>([^<]+)<\/pubDate>/i.exec(block))?.[1] ?? null
-    const description = (/<description><!\[CDATA\[(.+?)\]\]><\/description>/is.exec(block) ?? /<description>(.+?)<\/description>/is.exec(block))?.[1] ?? ""
-    const encoded     = (/<content:encoded><!\[CDATA\[(.+?)\]\]><\/content:encoded>/is.exec(block))?.[1] ?? ""
+    const description = (/<description><!\[CDATA\[([\s\S]+?)\]\]><\/description>/i.exec(block) ?? /<description>([\s\S]+?)<\/description>/i.exec(block))?.[1] ?? ""
+    const encoded     = (/<content:encoded><!\[CDATA\[([\s\S]+?)\]\]><\/content:encoded>/i.exec(block))?.[1] ?? ""
     const rawContent  = (encoded || description).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 2000)
     if (title && link) items.push({ title: title.trim(), url: link.trim(), published_at: pubDate ? new Date(pubDate).toISOString() : null, content: rawContent.trim() })
   }

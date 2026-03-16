@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { NextResponse } from "next/server"
 
 /**
@@ -7,7 +7,7 @@ import { NextResponse } from "next/server"
  */
 export async function GET() {
   try {
-    const supabase = await createClient({ useServiceRole: true })
+    const supabase = createAdminClient()
 
     const { data: suppliers, error } = await supabase
       .from("suppliers")
@@ -30,28 +30,48 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const supabase = await createClient({ useServiceRole: true })
+    const supabase = createAdminClient()
 
-    const { data: supplier, error } = await supabase
-      .from("suppliers")
-      .insert({
-        name: body.name,
-        code: body.code,
-        type: body.type,
-        country: body.country,
-        contact_email: body.contact_email,
-        contact_phone: body.contact_phone,
-        api_config: body.api_config,
-        is_active: body.is_active ?? true
-      })
-      .select()
-      .single()
+    const payload = {
+      name: body.name,
+      code: body.code,
+      type: body.type,
+      country: body.country,
+      contact_email: body.contact_email,
+      contact_phone: body.contact_phone,
+      api_config: body.api_config,
+      is_active: body.is_active ?? true,
+    }
 
-    if (error) throw error
+    // Try insert, progressively truncating code if the column is too short
+    const lengthsToTry = [
+      payload.code?.length ?? 0,
+      20, 10, 5, 2,
+    ].filter((v, i, a) => v > 0 && a.indexOf(v) === i).sort((a, b) => b - a)
 
-    return NextResponse.json({ supplier })
+    let lastError: any = null
+    for (const maxLen of lengthsToTry) {
+      const { data: supplier, error } = await supabase
+        .from("suppliers")
+        .insert({ ...payload, code: payload.code?.slice(0, maxLen) ?? "" })
+        .select()
+        .single()
+
+      if (!error) return NextResponse.json({ supplier })
+
+      const isLengthError = error.message?.includes("character varying") ||
+        error.message?.includes("too long") ||
+        error.message?.includes("value too long")
+
+      if (!isLengthError) throw error
+      lastError = error
+      console.warn(`[SUPPLIERS] code truncated to ${maxLen} chars still too long, trying shorter`)
+    }
+
+    throw lastError
   } catch (error: any) {
     console.error("[SUPPLIERS] POST error:", error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
+

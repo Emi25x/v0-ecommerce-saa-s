@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { NextRequest, NextResponse } from "next/server"
 
 /**
@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     const accountId = request.nextUrl.searchParams.get("account_id")
     if (!accountId) return NextResponse.json({ ok: false, error: "missing_account_id" }, { status: 400 })
 
-    const supabase = await createClient({ useServiceRole: true })
+    const supabase = createAdminClient()
 
     // ── Progreso actual del matcher ─────────────────────────────────────────
     const { data: progress } = await supabase

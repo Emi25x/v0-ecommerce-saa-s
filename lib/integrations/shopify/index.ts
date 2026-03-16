@@ -17,7 +17,7 @@ export class ShopifyIntegration implements BaseIntegration {
     auth: {
       type: "api_token",
       required: ["SHOPIFY_STORE_DOMAIN", "SHOPIFY_ACCESS_TOKEN"],
-      tokenStorage: "none",
+      tokenStorage: undefined,
     },
     capabilities: {
       source: {
@@ -73,7 +73,7 @@ export class ShopifyIntegration implements BaseIntegration {
     pageSize?: number
   }): Promise<{ products: UnifiedProduct[]; total: number }> {
     const shopifyProducts = await shopifyClient.getShopifyProducts()
-    const unified = shopifyProducts.map((p) => this.toUnified(p))
+    const unified = shopifyProducts.map((p: any) => this.toUnified(p))
     return { products: unified, total: unified.length }
   }
 
@@ -92,7 +92,7 @@ export class ShopifyIntegration implements BaseIntegration {
     // Find variant by SKU and update
     const products = await shopifyClient.getShopifyProducts()
     for (const product of products) {
-      const variant = product.variants.find((v) => v.sku === sku)
+      const variant = product.variants.find((v: any) => v.sku === sku)
       if (variant) {
         await shopifyClient.updateShopifyVariantInventory(variant.id, quantity)
         return
@@ -110,7 +110,7 @@ export class ShopifyIntegration implements BaseIntegration {
       description: shopifyProduct.body_html,
       price: Number.parseFloat(variant?.price || "0"),
       inventory: variant?.inventory_quantity || 0,
-      images: shopifyProduct.images.map((img) => img.src),
+      images: shopifyProduct.images.map((img: any) => img.src),
       brand: shopifyProduct.vendor,
       category: shopifyProduct.product_type,
       active: shopifyProduct.status === "active",
