@@ -28,7 +28,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/api/azeta/') ||
     pathname.startsWith('/api/arnoia/') ||
     pathname.startsWith('/api/inventory/import/') ||
-    pathname.startsWith('/api/inventory/sources/')
+    pathname.startsWith('/api/inventory/sources/') ||
+    pathname.startsWith('/api/shopify/oauth/')
   ) {
     return NextResponse.next()
   }
