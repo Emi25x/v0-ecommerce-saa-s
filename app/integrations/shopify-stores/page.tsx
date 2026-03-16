@@ -7,6 +7,7 @@ import { ShopifyStoreDialog } from "@/components/integrations/shopify-store-dial
 import { useToast } from "@/hooks/use-toast"
 import { Plus, ArrowLeft, Loader2 } from "lucide-react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 
 interface ShopifyStore {
   id: string
@@ -46,8 +47,21 @@ export default function ShopifyStoresPage() {
     }
   }
 
+  const searchParams = useSearchParams()
+
   useEffect(() => {
     loadStores()
+    // Handle OAuth callback results
+    const success = searchParams.get("success")
+    const error = searchParams.get("error")
+    if (success) {
+      toast({ title: "Tienda conectada", description: success })
+      // Clean URL
+      window.history.replaceState({}, "", window.location.pathname)
+    } else if (error) {
+      toast({ title: "Error de conexión", description: error, variant: "destructive" })
+      window.history.replaceState({}, "", window.location.pathname)
+    }
   }, [])
 
   const handleEdit = (store: ShopifyStore) => {

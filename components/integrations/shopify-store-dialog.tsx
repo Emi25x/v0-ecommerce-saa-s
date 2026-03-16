@@ -114,24 +114,12 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
 
     setTestingConnection(true)
     try {
-      if (authMode === "apikey") {
-        // API key + secret requiere OAuth redirect — no se puede probar directamente
-        // Redirigir al flujo OAuth de Shopify
-        const params = new URLSearchParams({
-          shop_domain: shopDomain,
-          api_key: apiKey,
-          api_secret: apiSecret,
-        })
-        window.location.href = `/api/shopify/oauth/authorize?${params.toString()}`
-        return
-      }
-
       const response = await fetch("/api/shopify/test-connection", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           shop_domain: shopDomain,
-          access_token: accessToken,
+          ...(authMode === "token" ? { access_token: accessToken } : { api_key: apiKey, api_secret: apiSecret }),
         }),
       })
 
@@ -180,17 +168,6 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
       return
     }
 
-    // API key mode → OAuth redirect (no se puede guardar directamente sin token)
-    if (!store && authMode === "apikey" && apiKey && apiSecret) {
-      const params = new URLSearchParams({
-        shop_domain: shopDomain,
-        api_key: apiKey,
-        api_secret: apiSecret,
-      })
-      window.location.href = `/api/shopify/oauth/authorize?${params.toString()}`
-      return
-    }
-
     setLoading(true)
     try {
       const url = store ? `/api/shopify/stores/${store.id}` : "/api/shopify/stores"
@@ -199,7 +176,12 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
 
       if (!store) {
         body.shop_domain = shopDomain
-        body.access_token = accessToken
+        if (authMode === "token") {
+          body.access_token = accessToken
+        } else {
+          body.api_key = apiKey
+          body.api_secret = apiSecret
+        }
       } else {
         if (accessToken) body.access_token = accessToken
       }
@@ -336,15 +318,11 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
               </div>
               <div className="rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-2.5 space-y-1">
                 <p className="text-xs font-medium text-blue-800 dark:text-blue-300">
-                  Nota: Para Custom Apps, es más fácil usar Access Token
+                  Requisito: La app debe estar INSTALADA
                 </p>
                 <p className="text-xs text-blue-700 dark:text-blue-400">
-                  En Shopify → Configuración → Apps → tu app → &quot;Credenciales de API&quot; →
-                  buscá el <strong>Token de acceso a la Admin API</strong> (empieza con <code>shpat_</code>).
-                  Si lo tenés, cambiá a &quot;Access Token&quot; y pegalo directamente.
-                </p>
-                <p className="text-xs text-blue-700 dark:text-blue-400">
-                  Si no ves el token, primero hacé click en &quot;Instalar&quot; en la app.
+                  En Shopify → Configuración → Aplicaciones → Desarrollar apps → tu app →
+                  hacé click en <strong>&quot;Instalar&quot;</strong>. Después volvé acá y probá la conexión.
                 </p>
               </div>
             </div>
@@ -388,12 +366,17 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
           )}
 
           <DialogFooter className="gap-2">
-            {!store && authMode === "token" && (
+            {!store && (
               <Button
                 type="button"
                 variant="outline"
                 onClick={testConnection}
-                disabled={testingConnection || !shopDomain || !accessToken}
+                disabled={
+                  testingConnection ||
+                  !shopDomain ||
+                  (authMode === "token" && !accessToken) ||
+                  (authMode === "apikey" && (!apiKey || !apiSecret))
+                }
               >
                 {testingConnection ? (
                   <>
@@ -406,17 +389,14 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
               </Button>
             )}
 
-            <Button
-              type="submit"
-              disabled={loading || (!store && authMode === "apikey" && (!apiKey || !apiSecret || !shopDomain))}
-            >
+            <Button type="submit" disabled={loading}>
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Guardando...
                 </>
               ) : (
-                !store && authMode === "apikey" ? "Conectar via OAuth" : "Guardar"
+                "Guardar"
               )}
             </Button>
           </DialogFooter>

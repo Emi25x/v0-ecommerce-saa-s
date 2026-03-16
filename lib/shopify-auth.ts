@@ -9,13 +9,9 @@ export function normalizeDomain(shop_domain: string): string {
 /**
  * Intercambia client_id + client_secret por un access_token (shpat_...).
  *
- * Intenta múltiples formatos que Shopify acepta según el tipo de app:
- * 1. JSON sin grant_type (custom apps creadas en admin panel)
- * 2. JSON con grant_type=client_credentials (custom apps vía Partners)
- * 3. form-urlencoded (legacy)
- *
- * Si todos fallan con 400, es probable que la app necesite instalarse
- * primero vía OAuth redirect (authorization code flow).
+ * Usa el flujo client_credentials (form-urlencoded) — exactamente como
+ * se conectó la primera tienda. Si falla con 400, la causa más probable
+ * es que la app necesita ser INSTALADA primero en Shopify Admin → Apps → tu app → Instalar.
  */
 export async function exchangeCredentialsForToken(
   domain: string,
@@ -24,65 +20,45 @@ export async function exchangeCredentialsForToken(
 ): Promise<string> {
   const url = `https://${domain}/admin/oauth/access_token`
 
-  // Intento 1: JSON sin grant_type (formato más común para custom apps)
-  const attempts = [
-    {
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_id: api_key, client_secret: api_secret }),
-    },
-    {
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_id: api_key, client_secret: api_secret, grant_type: "client_credentials" }),
-    },
-    {
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ client_id: api_key, client_secret: api_secret }).toString(),
-    },
-  ]
+  // Mismo formato que funcionó para la primera tienda
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: api_key,
+      client_secret: api_secret,
+    }).toString(),
+  })
 
-  let lastError = ""
+  const text = await res.text()
 
-  for (const attempt of attempts) {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: attempt.headers,
-      body: attempt.body,
-    })
-
-    const text = await res.text()
-
-    if (res.ok) {
-      try {
-        const json = JSON.parse(text)
-        if (json.access_token) return json.access_token as string
-      } catch {}
-    }
-
-    // 401 means wrong credentials — don't retry
-    if (res.status === 401) {
-      try {
-        const j = JSON.parse(text)
-        lastError = `Credenciales inválidas: ${j.error_description ?? j.errors ?? text}`
-      } catch {
-        lastError = `Credenciales inválidas (HTTP 401)`
-      }
-      break
-    }
-
-    // 400 could mean wrong format or app not installed — try next
+  if (res.ok) {
     try {
-      const j = JSON.parse(text)
-      lastError = `HTTP ${res.status}: ${j.error_description ?? j.errors ?? j.error ?? text.slice(0, 200)}`
-    } catch {
-      lastError = `HTTP ${res.status}: ${text.slice(0, 200)}`
-    }
+      const json = JSON.parse(text)
+      if (json.access_token) return json.access_token as string
+    } catch {}
+    throw new Error("Shopify respondió OK pero no devolvió access_token")
   }
 
-  throw new Error(
-    `${lastError}. ` +
-    `Si la app no está instalada en esta tienda, usá el flujo OAuth (Conectar via OAuth) ` +
-    `o copiá el Access Token desde Shopify → Configuración → Aplicaciones → tu app → Credenciales de API.`
-  )
+  let errDetail = `HTTP ${res.status}`
+  try {
+    const j = JSON.parse(text)
+    errDetail = `HTTP ${res.status}: ${j.error_description ?? j.errors ?? j.error ?? text.slice(0, 200)}`
+  } catch {
+    errDetail = `HTTP ${res.status}: ${text.slice(0, 200)}`
+  }
+
+  // Mensaje claro según el tipo de error
+  if (res.status === 400) {
+    throw new Error(
+      `${errDetail}. La app probablemente no está INSTALADA en esta tienda. ` +
+      `Andá a Shopify → Configuración → Aplicaciones → Desarrollar apps → tu app → clickeá "Instalar". ` +
+      `Después volvé acá e intentá de nuevo.`
+    )
+  }
+
+  throw new Error(errDetail)
 }
 
 // Verifica el token llamando a shop.json

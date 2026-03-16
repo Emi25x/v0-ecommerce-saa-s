@@ -29,7 +29,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/api/arnoia/') ||
     pathname.startsWith('/api/inventory/import/') ||
     pathname.startsWith('/api/inventory/sources/') ||
-    pathname.startsWith('/api/shopify/oauth/')
+    pathname.startsWith('/api/shopify/oauth/callback')
   ) {
     return NextResponse.next()
   }

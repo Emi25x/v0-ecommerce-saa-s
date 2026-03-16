@@ -35,10 +35,16 @@ export async function GET(request: NextRequest) {
   }
 
   // Verify user is authenticated
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  let userId: string
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized — iniciá sesión primero" }, { status: 401 })
+    }
+    userId = user.id
+  } catch {
+    return NextResponse.json({ error: "Error de autenticación" }, { status: 401 })
   }
 
   const domain = normalizeDomain(shopDomain)
@@ -61,13 +67,14 @@ export async function GET(request: NextRequest) {
     api_secret: apiSecret,
     domain,
     state,
-    user_id: user.id,
+    user_id: userId,
   })
 
+  const isSecure = appUrl.startsWith("https")
   const response = NextResponse.redirect(authorizeUrl.toString())
   response.cookies.set("shopify_oauth", oauthData, {
     httpOnly: true,
-    secure: true,
+    secure: isSecure,
     sameSite: "lax",
     path: "/",
     maxAge: 600, // 10 minutes
