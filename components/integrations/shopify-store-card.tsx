@@ -104,7 +104,7 @@ export function ShopifyStoreCard({ store, onEdit, onDelete, onRefresh }: Shopify
       <div className="flex items-start justify-between">
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-2">
-            <h3 className="font-semibold">{store.shop_domain}</h3>
+            <h3 className="font-semibold">{(store as any).name || store.shop_domain}</h3>
             <Badge variant={store.is_active ? "default" : "secondary"}>
               {store.is_active ? "Activa" : "Inactiva"}
             </Badge>
@@ -115,6 +115,12 @@ export function ShopifyStoreCard({ store, onEdit, onDelete, onRefresh }: Shopify
               <XCircle className="h-4 w-4 text-red-500" />
             )}
           </div>
+
+          {(store as any).name && (
+            <p className="text-sm text-muted-foreground">
+              {store.shop_domain}
+            </p>
+          )}
 
           {store.default_location_id && (
             <p className="text-sm text-muted-foreground">

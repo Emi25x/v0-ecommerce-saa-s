@@ -17,7 +17,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     }
 
     const body = await request.json()
-    const { access_token, default_location_id, is_active } = body
+    const { name, access_token, default_location_id, is_active } = body
 
     // Build update object
     const updates: any = {
@@ -48,6 +48,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
           )
         }
       }
+    }
+
+    if (name !== undefined) {
+      updates.name = name
     }
 
     if (default_location_id !== undefined) {

@@ -40,6 +40,7 @@ interface ShopifyStoreDialogProps {
 }
 
 export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: ShopifyStoreDialogProps) {
+  const [storeName, setStoreName] = useState("")
   const [shopDomain, setShopDomain] = useState("")
   const [authMode, setAuthMode] = useState<AuthMode>("token")
   const [accessToken, setAccessToken] = useState("")
@@ -54,12 +55,14 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
 
   useEffect(() => {
     if (store) {
+      setStoreName((store as any).name || "")
       setShopDomain(store.shop_domain)
       setDefaultLocationId(store.default_location_id || "")
       setAccessToken("")
       setApiKey("")
       setApiSecret("")
     } else {
+      setStoreName("")
       setShopDomain("")
       setAccessToken("")
       setApiKey("")
@@ -174,6 +177,8 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
       const method = store ? "PUT" : "POST"
       const body: any = {}
 
+      if (storeName) body.name = storeName
+
       if (!store) {
         body.shop_domain = shopDomain
         if (authMode === "token") {
@@ -247,6 +252,21 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
             />
             <p className="text-xs text-muted-foreground">
               Ejemplo: mitienda.myshopify.com
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="store_name">
+              Nombre de la Conexión
+            </Label>
+            <Input
+              id="store_name"
+              value={storeName}
+              onChange={(e) => setStoreName(e.target.value)}
+              placeholder="Ej: Tienda Principal, Mayorista, etc."
+            />
+            <p className="text-xs text-muted-foreground">
+              Nombre para identificar esta conexión (opcional)
             </p>
           </div>
 
