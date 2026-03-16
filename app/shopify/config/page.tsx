@@ -15,7 +15,7 @@ import {
 import {
   Upload, Plus, Trash2, Download, Save, Store, PackageSearch,
   Loader2, X, CheckCircle2, CloudUpload, AlertCircle, RefreshCw,
-  Settings2, Warehouse, DollarSign, MapPin,
+  Settings2, Warehouse, DollarSign, MapPin, Search,
 } from "lucide-react"
 import Link from "next/link"
 
@@ -62,6 +62,27 @@ interface ProductRow {
   error?: string
 }
 
+interface AnalyzeResult {
+  store_name: string
+  products_analyzed: number
+  fields_detected: {
+    core: string[]
+    metafields: Array<{
+      key: string
+      type: string
+      usage_count: number
+      usage_pct: number
+      sample_values: string[]
+      suggested_db_column: string | null
+    }>
+  }
+  suggested_mapping: Record<string, { shopify_field: string; db_column: string; confidence: string }>
+  unique_vendors: string[]
+  unique_types: string[]
+  unique_tags: string[]
+  sample_products: any[]
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 
 export default function ShopifyConfigPage() {
@@ -94,6 +115,12 @@ export default function ShopifyConfigPage() {
 
   // Push state
   const [pushing, setPushing]         = useState(false)
+
+  // Template builder
+  const [analyzing, setAnalyzing]         = useState(false)
+  const [analyzeResult, setAnalyzeResult] = useState<AnalyzeResult | null>(null)
+  const [templateDefaults, setTemplateDefaults] = useState<Record<string, string>>({})
+  const [templateSaving, setTemplateSaving]     = useState(false)
 
   // ── Load stores ────────────────────────────────────────────────────────
 
@@ -278,6 +305,72 @@ export default function ShopifyConfigPage() {
       toast({ title: "Error al exportar", description: err.message, variant: "destructive" })
     }
   }
+
+  // ── Analyze store (reverse-engineer) ───────────────────────────────────
+
+  const analyzeStore = async () => {
+    if (!storeId) return
+    setAnalyzing(true)
+    setAnalyzeResult(null)
+    try {
+      const res = await fetch(`/api/shopify/stores/${storeId}/analyze?sample=25`)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Error al analizar")
+      setAnalyzeResult(data)
+
+      // Pre-fill defaults from analysis
+      const defaults: Record<string, string> = {}
+      if (data.unique_vendors?.length === 1) defaults["Vendor"] = data.unique_vendors[0]
+      if (data.unique_types?.length === 1) defaults["Type"] = data.unique_types[0]
+      setTemplateDefaults(prev => ({ ...defaults, ...prev }))
+
+      toast({ title: "Análisis completado", description: `${data.products_analyzed} productos analizados` })
+    } catch (err: any) {
+      toast({ title: "Error al analizar", description: err.message, variant: "destructive" })
+    } finally {
+      setAnalyzing(false)
+    }
+  }
+
+  // ── Save template ─────────────────────────────────────────────────────
+
+  const saveTemplate = async () => {
+    if (!storeId) return
+    setTemplateSaving(true)
+    try {
+      const res = await fetch("/api/shopify/export-templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          store_id: storeId,
+          template_columns_json: [], // empty = use all canonical columns
+          defaults_json: templateDefaults,
+        }),
+      })
+      const data = await res.json()
+      if (!data.ok) throw new Error(data.error)
+      toast({ title: "Template guardado" })
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" })
+    } finally {
+      setTemplateSaving(false)
+    }
+  }
+
+  // Load existing template when store changes
+  useEffect(() => {
+    if (!storeId) return
+    fetch(`/api/shopify/export-templates?store_id=${storeId}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.template?.defaults_json) {
+          setTemplateDefaults(d.template.defaults_json)
+        } else {
+          setTemplateDefaults({})
+        }
+      })
+      .catch(() => {})
+  }, [storeId])
 
   // ── Derived state ──────────────────────────────────────────────────────
 
@@ -473,6 +566,232 @@ export default function ShopifyConfigPage() {
                 <p className="text-[10px] text-muted-foreground">Códigos de location Shopify separados por ";"</p>
               </div>
             </div>
+          </section>
+        )}
+
+        {/* ── Template Builder ── */}
+        {storeId && (
+          <section className="rounded-xl border border-border bg-card p-6 space-y-5">
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-2">
+                <Search className="h-4 w-4 text-muted-foreground" />
+                <h2 className="font-medium">Template de Exportación</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={analyzeStore}
+                  disabled={analyzing}
+                >
+                  {analyzing
+                    ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    : <Search className="h-3.5 w-3.5 mr-1.5" />}
+                  {analyzing ? "Analizando..." : "Analizar Tienda"}
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={saveTemplate}
+                  disabled={templateSaving || Object.keys(templateDefaults).length === 0}
+                >
+                  {templateSaving
+                    ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                    : <Save className="h-3.5 w-3.5 mr-1.5" />}
+                  Guardar Template
+                </Button>
+              </div>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Analizá los productos existentes en Shopify para detectar metafields y configurar el mapeo automático.
+            </p>
+
+            {/* Defaults editor */}
+            {Object.keys(templateDefaults).length > 0 && (
+              <div className="space-y-3">
+                <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Valores por defecto</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {Object.entries(templateDefaults).map(([key, value]) => (
+                    <div key={key} className="space-y-1">
+                      <Label className="text-[10px] text-muted-foreground">{key}</Label>
+                      <div className="flex items-center gap-1">
+                        <Input
+                          value={value}
+                          onChange={e => setTemplateDefaults(prev => ({ ...prev, [key]: e.target.value }))}
+                          className="h-7 text-xs"
+                        />
+                        <button
+                          onClick={() => setTemplateDefaults(prev => {
+                            const next = { ...prev }
+                            delete next[key]
+                            return next
+                          })}
+                          className="text-muted-foreground hover:text-destructive p-1"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {/* Add new default */}
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="Nombre del campo..."
+                    className="h-7 text-xs max-w-[200px]"
+                    id="new-default-key"
+                    onKeyDown={e => {
+                      if (e.key === "Enter") {
+                        const key = (e.target as HTMLInputElement).value.trim()
+                        if (key && !templateDefaults[key]) {
+                          setTemplateDefaults(prev => ({ ...prev, [key]: "" }));
+                          (e.target as HTMLInputElement).value = ""
+                        }
+                      }
+                    }}
+                  />
+                  <span className="text-[10px] text-muted-foreground">Enter para agregar</span>
+                </div>
+              </div>
+            )}
+
+            {/* Analysis results */}
+            {analyzeResult && (
+              <div className="space-y-4 border-t border-border pt-4">
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  <span>{analyzeResult.products_analyzed} productos analizados</span>
+                  <span>{analyzeResult.fields_detected.metafields.length} metafields detectados</span>
+                  <span>{analyzeResult.unique_vendors.length} vendors</span>
+                  <span>{analyzeResult.unique_types.length} tipos</span>
+                </div>
+
+                {/* Metafields detected */}
+                {analyzeResult.fields_detected.metafields.length > 0 && (
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Metafields detectados
+                    </h3>
+                    <div className="rounded-lg border border-border overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-muted/30 hover:bg-muted/30">
+                            <TableHead className="py-1.5 text-[10px]">Metafield</TableHead>
+                            <TableHead className="py-1.5 text-[10px]">Tipo</TableHead>
+                            <TableHead className="py-1.5 text-[10px] text-center">Uso</TableHead>
+                            <TableHead className="py-1.5 text-[10px]">Columna DB</TableHead>
+                            <TableHead className="py-1.5 text-[10px]">Valores ejemplo</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {analyzeResult.fields_detected.metafields.map(mf => (
+                            <TableRow key={mf.key} className="text-xs">
+                              <TableCell className="py-1.5 font-mono text-[10px]">{mf.key}</TableCell>
+                              <TableCell className="py-1.5 text-[10px] text-muted-foreground">{mf.type}</TableCell>
+                              <TableCell className="py-1.5 text-center">
+                                <Badge variant="outline" className="text-[9px]">{mf.usage_pct}%</Badge>
+                              </TableCell>
+                              <TableCell className="py-1.5">
+                                {mf.suggested_db_column ? (
+                                  <Badge variant="default" className="text-[9px]">{mf.suggested_db_column}</Badge>
+                                ) : (
+                                  <span className="text-[10px] text-muted-foreground/50">sin mapeo</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="py-1.5 text-[10px] text-muted-foreground max-w-[200px] truncate">
+                                {mf.sample_values.join(", ")}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Vendors & Types */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {analyzeResult.unique_vendors.length > 0 && (
+                    <div className="space-y-1.5">
+                      <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Vendors</h3>
+                      <div className="flex flex-wrap gap-1">
+                        {analyzeResult.unique_vendors.map(v => (
+                          <Badge
+                            key={v}
+                            variant="outline"
+                            className="text-[10px] cursor-pointer hover:bg-primary/10"
+                            onClick={() => setTemplateDefaults(prev => ({ ...prev, Vendor: v }))}
+                          >
+                            {v}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {analyzeResult.unique_types.length > 0 && (
+                    <div className="space-y-1.5">
+                      <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Tipos</h3>
+                      <div className="flex flex-wrap gap-1">
+                        {analyzeResult.unique_types.map(t => (
+                          <Badge
+                            key={t}
+                            variant="outline"
+                            className="text-[10px] cursor-pointer hover:bg-primary/10"
+                            onClick={() => setTemplateDefaults(prev => ({ ...prev, Type: t }))}
+                          >
+                            {t}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Tags */}
+                {analyzeResult.unique_tags.length > 0 && (
+                  <div className="space-y-1.5">
+                    <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Tags encontrados ({analyzeResult.unique_tags.length})</h3>
+                    <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
+                      {analyzeResult.unique_tags.map(tag => (
+                        <Badge key={tag} variant="secondary" className="text-[9px]">{tag}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Sample products */}
+                {analyzeResult.sample_products.length > 0 && (
+                  <details className="group">
+                    <summary className="text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:text-foreground">
+                      Productos ejemplo ({analyzeResult.sample_products.length})
+                    </summary>
+                    <div className="mt-2 rounded-lg border border-border overflow-hidden max-h-60 overflow-y-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-muted/30 hover:bg-muted/30">
+                            <TableHead className="py-1.5 text-[10px]">Título</TableHead>
+                            <TableHead className="py-1.5 text-[10px]">Vendor</TableHead>
+                            <TableHead className="py-1.5 text-[10px]">SKU</TableHead>
+                            <TableHead className="py-1.5 text-[10px] text-center">Metafields</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {analyzeResult.sample_products.map((p: any) => (
+                            <TableRow key={p.id} className="text-xs">
+                              <TableCell className="py-1.5 max-w-[200px] truncate">{p.title}</TableCell>
+                              <TableCell className="py-1.5 text-muted-foreground">{p.vendor}</TableCell>
+                              <TableCell className="py-1.5 font-mono text-[10px]">{p.first_variant?.sku || "—"}</TableCell>
+                              <TableCell className="py-1.5 text-center">
+                                <Badge variant="outline" className="text-[9px]">{p.metafield_count}</Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </details>
+                )}
+              </div>
+            )}
           </section>
         )}
 
