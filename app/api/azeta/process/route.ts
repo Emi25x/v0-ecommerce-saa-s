@@ -147,11 +147,17 @@ export async function POST(request: NextRequest) {
       ;(data||[]).forEach((r: any) => existingSet.add(r.ean))
     }
 
+    let lastUpsertError: string | null = null
     for (let i = 0; i < products.length; i += 500) {
       const batch = products.slice(i, i+500)
       const { error } = await supabase.from("products").upsert(batch, { onConflict: "ean" })
-      if (error) { console.error(`[AZETA-PROC] upsert error: ${error.message}`); errors += batch.length }
-      else { for (const p of batch) existingSet.has(p.ean) ? updated++ : created++ }
+      if (error) {
+        console.error(`[AZETA-PROC] upsert error: ${error.message} (code=${error.code}, details=${error.details})`)
+        lastUpsertError = error.message
+        errors += batch.length
+      } else {
+        for (const p of batch) existingSet.has(p.ean) ? updated++ : created++
+      }
     }
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
@@ -166,6 +172,7 @@ export async function POST(request: NextRequest) {
       created, updated, errors, discarded,
       total_lines: total_lines || null,
       elapsed_seconds: parseFloat(elapsed),
+      last_upsert_error: lastUpsertError,
     })
   } catch (err: any) {
     console.error("[AZETA-PROC] Error fatal:", err.message)
