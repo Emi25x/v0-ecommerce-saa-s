@@ -1,81 +1,45 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
+import { createAdminClient } from "@/lib/supabase/admin"
+import { executeAutoSyncAccount } from "@/lib/ml/auto-sync-logic"
 
-export const dynamic    = "force-dynamic"
+export const dynamic = "force-dynamic"
 export const maxDuration = 300
 
-function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
-}
-
+/**
+ * GET/POST /api/cron/auto-sync-all-accounts
+ * Syncs all ML accounts. No longer self-fetches — calls lib directly.
+ */
 async function syncAllAccounts() {
-  const supabase = getSupabase()
-  console.log("[v0] Iniciando sincronización automática de todas las cuentas...")
+  const supabase = createAdminClient()
+  console.log("[CRON] Starting auto-sync for all accounts...")
 
-  try {
-    // Obtener todas las cuentas activas
-    const { data: accounts, error } = await supabase
-      .from("ml_accounts")
-      .select("id, nickname")
+  const { data: accounts, error } = await supabase
+    .from("ml_accounts").select("id, nickname")
 
-    if (error || !accounts) {
-      console.error("[v0] Error obteniendo cuentas:", error)
-      throw new Error("Error obteniendo cuentas de ML")
+  if (error || !accounts) {
+    throw new Error("Error fetching ML accounts")
+  }
+
+  console.log(`[CRON] ${accounts.length} account(s) found`)
+
+  const results = []
+  for (const account of accounts) {
+    console.log(`[CRON] Syncing: ${account.nickname}`)
+    try {
+      const result = await executeAutoSyncAccount(supabase, { accountId: account.id })
+      results.push({ account: account.nickname, status: result.success ? "completed" : "error", ...result })
+    } catch (err) {
+      console.error(`[CRON] Error syncing ${account.nickname}:`, err)
+      results.push({ account: account.nickname, status: "error", error: err instanceof Error ? err.message : "Unknown" })
     }
+  }
 
-    console.log(`[v0] ${accounts.length} cuenta(s) encontrada(s)`)
-
-    // Determinar la URL base
-    const baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL 
-      ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-      : 'http://localhost:3000'
-
-    // Iniciar sincronización para cada cuenta
-    const results = []
-    for (const account of accounts) {
-      console.log(`[v0] Iniciando sync para cuenta: ${account.nickname}`)
-      
-      try {
-        const response = await fetch(`${baseUrl}/api/ml/auto-sync-all`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ offset: 0, accountId: account.id })
-        })
-
-        const result = await response.json()
-        results.push({
-          account: account.nickname,
-          status: response.ok ? "iniciado" : "error",
-          ...result
-        })
-        
-        console.log(`[v0] Sync ${response.ok ? 'iniciado' : 'falló'} para ${account.nickname}`)
-      } catch (error) {
-        console.error(`[v0] Error iniciando sync para ${account.nickname}:`, error)
-        results.push({
-          account: account.nickname,
-          status: "error",
-          error: error instanceof Error ? error.message : "Error desconocido"
-        })
-      }
-    }
-
-    console.log("[v0] Sincronización automática completada para todas las cuentas")
-
-    return {
-      success: true,
-      message: "Sincronización automática iniciada",
-      summary: `${accounts.length} cuenta(s) procesada(s)`,
-      accounts: accounts.length,
-      results
-    }
-
-  } catch (error) {
-    console.error("[v0] Error en auto-sync:", error)
-    throw error
+  return {
+    success: true,
+    message: "Auto-sync completed",
+    summary: `${accounts.length} account(s) processed`,
+    accounts: accounts.length,
+    results,
   }
 }
 
@@ -89,10 +53,7 @@ export async function GET(request: Request) {
     const result = await syncAllAccounts()
     return NextResponse.json(result)
   } catch (error) {
-    console.error("[v0] Error en GET:", error)
-    return NextResponse.json({ 
-      error: error instanceof Error ? error.message : "Error desconocido" 
-    }, { status: 500 })
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Error" }, { status: 500 })
   }
 }
 
@@ -101,9 +62,6 @@ export async function POST() {
     const result = await syncAllAccounts()
     return NextResponse.json(result)
   } catch (error) {
-    console.error("[v0] Error en POST:", error)
-    return NextResponse.json({ 
-      error: error instanceof Error ? error.message : "Error desconocido" 
-    }, { status: 500 })
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Error" }, { status: 500 })
   }
 }
