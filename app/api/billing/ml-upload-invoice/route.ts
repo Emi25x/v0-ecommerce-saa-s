@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { buildFacturaHTML } from "@/lib/arca/pdf"
 import { htmlToPdfBuffer } from "@/lib/billing/generate-pdf"
+import { buildFacturaHtmlParams } from "@/lib/billing/build-factura-html-params"
 
 // Puppeteer necesita más tiempo que el default de 10s
 export const maxDuration = 60
@@ -87,47 +88,7 @@ export async function POST(req: NextRequest) {
       ? `${String(factura.punto_venta).padStart(4, "0")}-${String(factura.numero).padStart(8, "0")}`
       : factura_id.slice(0, 8)
 
-    const html = buildFacturaHTML({
-      razon_social:           config.razon_social,
-      cuit:                   config.cuit,
-      domicilio_fiscal:       config.domicilio_fiscal      || "",
-      condicion_iva:          config.condicion_iva         || config.tipo_emisor,
-      punto_venta:            factura.punto_venta,
-      logo_url:               config.logo_url              || undefined,
-      telefono:               config.telefono              || undefined,
-      email:                  config.email                 || undefined,
-      web:                    config.web                   || undefined,
-      instagram:              config.instagram             || undefined,
-      facebook:               config.facebook              || undefined,
-      whatsapp:               config.whatsapp              || undefined,
-      nota_factura:           config.nota_factura          || undefined,
-      datos_pago:             config.datos_pago            || undefined,
-      factura_opciones:       config.factura_opciones      || undefined,
-      tipo_comprobante:       factura.tipo_comprobante,
-      numero:                 factura.numero,
-      fecha_emision:          factura.fecha,
-      cae:                    factura.cae,
-      cae_vto:                (factura.cae_vencimiento || "").replace(/-/g, ""),
-      receptor_nombre:        factura.razon_social_receptor,
-      receptor_tipo_doc:      factura.tipo_doc_receptor,
-      receptor_nro_doc:       factura.nro_doc_receptor,
-      receptor_condicion_iva: factura.receptor_condicion_iva || "consumidor_final",
-      receptor_domicilio:     factura.receptor_domicilio,
-      items: (factura.items || []).map((it: any) => {
-        const qty      = Number(it.cantidad        || 1)
-        const price    = Number(it.precio_unitario || it.precio || 0)
-        const alicuota = Number(it.alicuota_iva    || 0)
-        const subtotal = it.subtotal != null ? Number(it.subtotal) : qty * price
-        const iva      = it.iva      != null ? Number(it.iva)      : Math.round(subtotal * (alicuota / 100) * 100) / 100
-        return { descripcion: it.descripcion || it.titulo || "", cantidad: qty, precio_unitario: price, alicuota_iva: alicuota, subtotal, iva }
-      }),
-      subtotal: Number(factura.importe_neto),
-      iva_105:  Number(factura.importe_iva_105),
-      iva_21:   Number(factura.importe_iva_21),
-      iva_27:   Number(factura.importe_iva_27),
-      total:    Number(factura.importe_total),
-      moneda:   factura.moneda || "PES",
-    })
+    const html = buildFacturaHTML(buildFacturaHtmlParams(factura, config))
 
     // ML requiere PDF real — no se acepta HTML como fallback.
     // Si falla la generación de PDF, configurar CHROMIUM_REMOTE_URL en Vercel env vars.

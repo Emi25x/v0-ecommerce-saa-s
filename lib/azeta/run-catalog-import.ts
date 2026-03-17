@@ -12,6 +12,7 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin"
+import { normalizeEan } from "@/lib/ean-utils"
 
 // URL de fallback — solo si no está configurado en import_sources
 const AZETA_TOTAL_URL =
@@ -52,16 +53,6 @@ export async function runCatalogImport(
 ): Promise<CatalogImportResult> {
   const startTime = Date.now()
   console.log("[AZETA][RUN] === Inicio importacion catalogo ===")
-
-  function normalizeEan(raw: string): string {
-    if (!raw) return ""
-    let s = String(raw).trim()
-    if (/^[0-9]+\.?[0-9]*[eE][+\-][0-9]+$/.test(s)) s = Number(s).toFixed(0)
-    s = s.replace(/[^0-9]/g, "")
-    if (!s) return ""
-    if (s.length === 10) s = "978" + s
-    return s.padStart(13, "0")
-  }
 
   const supabase = createAdminClient()
   let url = AZETA_TOTAL_URL

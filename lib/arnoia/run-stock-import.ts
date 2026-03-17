@@ -16,6 +16,7 @@
 
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeEan } from "@/lib/ean-utils"
+import { detectDelimiter } from "@/lib/import/csv-helpers"
 
 export interface ArnoiaStockImportResult {
   success: boolean
@@ -64,11 +65,7 @@ export async function runArnoiaStockImport(): Promise<ArnoiaStockImportResult> {
 
     // Detectar delimiter
     const firstLine = lines[0]
-    const semiCount  = (firstLine.match(/;/g)  || []).length
-    const pipeCount  = (firstLine.match(/\|/g) || []).length
-    const commaCount = (firstLine.match(/,/g)  || []).length
-    const delimiter  = pipeCount >= semiCount && pipeCount >= commaCount ? "|"
-      : semiCount >= commaCount ? ";" : ","
+    const delimiter = detectDelimiter(firstLine)
 
     // Detectar si tiene encabezado: primera columna numérica → sin header
     const firstCol = firstLine.split(delimiter)[0].replace(/['"]/g, "").trim()

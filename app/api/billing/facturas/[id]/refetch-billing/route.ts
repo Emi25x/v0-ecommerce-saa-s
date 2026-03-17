@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { NextResponse } from "next/server"
 import { getMLOrderBilling } from "@/lib/billing/get-ml-order-billing"
+import { normalizeDocType } from "@/lib/billing/normalize-doc-type"
 
 /**
  * POST /api/billing/facturas/{id}/refetch-billing
@@ -79,12 +80,7 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
     }
 
     if (bi.doc_numero) {
-      const docTipoRaw = (bi.doc_tipo || "").toUpperCase().trim()
-      patch.tipo_doc_receptor = docTipoRaw === "CUIT" ? 80
-        : docTipoRaw === "CUIL"                       ? 86
-        : docTipoRaw === "DNI"                        ? 96
-        : docTipoRaw === "CI"                         ? 96
-        : 96
+      patch.tipo_doc_receptor = normalizeDocType(bi.doc_tipo)
       patch.nro_doc_receptor = String(bi.doc_numero).replace(/\D/g, "")
     }
 

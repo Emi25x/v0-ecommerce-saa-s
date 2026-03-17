@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { del } from "@vercel/blob"
+import { normalizeEan } from "@/lib/ean-utils"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -17,16 +18,6 @@ const COL_MAP: Record<string, string[]> = {
   image_url:     ["url", "imagen", "portada"],
   year_edition:  ["ano_edicion", "year"],
   internal_code: ["codigo_interno"],
-}
-
-function normalizeEan(raw: string): string {
-  if (!raw) return ""
-  let s = String(raw).trim().replace(/['"]/g, "")
-  if (/^[0-9]+\.?[0-9]*[eE][+\-]?[0-9]+$/.test(s)) s = Math.round(Number(s)).toString()
-  s = s.replace(/[^0-9]/g, "")
-  if (!s) return ""
-  if (s.length === 10) s = "978" + s
-  return s.length <= 13 ? s.padStart(13, "0") : s
 }
 
 export async function GET() {

@@ -4,6 +4,7 @@ import { getWSAATicket } from "@/lib/arca/wsaa"
 import { requestCAE } from "@/lib/arca/wsfe"
 import type { FacturaItem } from "@/lib/arca/wsfe"
 import { getMLOrderBilling } from "@/lib/billing/get-ml-order-billing"
+import { normalizeDocType } from "@/lib/billing/normalize-doc-type"
 
 // GET — listar facturas con paginación y filtros
 export async function GET(request: Request) {
@@ -91,12 +92,7 @@ export async function POST(request: Request) {
 
             // doc_tipo → tipo_doc_receptor numérico (ARCA: 80=CUIT, 86=CUIL, 96=DNI, 99=sin identificar)
             if (bi.doc_numero) {
-              const docTipoRaw = (bi.doc_tipo || "").toUpperCase().trim()
-              tipo_doc_receptor = docTipoRaw === "CUIT" ? "80"
-                : docTipoRaw === "CUIL"                 ? "86"
-                : docTipoRaw === "DNI"                  ? "96"
-                : docTipoRaw === "CI"                   ? "96"
-                : "96"   // default: DNI si hay número pero tipo desconocido
+              tipo_doc_receptor = String(normalizeDocType(bi.doc_tipo))
               nro_doc_receptor  = String(bi.doc_numero).replace(/\D/g, "")
             }
           } else {
