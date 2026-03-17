@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { runLibralStockImport } from "@/lib/libral/run-stock-import"
+import { executeBatchImport } from "@/lib/import/batch-import"
 
 /**
  * POST /api/inventory/sources/run
@@ -102,22 +103,39 @@ export async function POST(request: Request) {
       })
     }
 
-    // Resto de fuentes: disparar el batch import en background
-    // Esto permite que el proceso continúe aunque el usuario cierre la ventana
-    const batchImportUrl = `${process.env.NEXT_PUBLIC_VERCEL_URL ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` : "http://localhost:3000"}/api/inventory/import/batch`
-
-    // No esperamos la respuesta - fire and forget
-    fetch(batchImportUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sourceId: source.id,
-        historyId: historyRecord.id,
-        mode: mode,
-      }),
-    }).catch((err) => {
-      console.error(`[SOURCES-RUN] Error disparando batch import:`, err)
-    })
+    // Resto de fuentes: ejecutar batch import directamente (sin self-fetch)
+    // Se ejecuta en background sin esperar el resultado
+    executeBatchImport(source.id, 0, mode as "update" | "upsert" | "create", true)
+      .then((r) => {
+        console.log(`[SOURCES-RUN] Batch import completado: created=${r.created}, updated=${r.updated}, failed=${r.failed}`)
+        // Actualizar history record con resultado
+        createClient().then(sb => {
+          sb.from("import_history")
+            .update({
+              status: r.success ? "success" : "error",
+              completed_at: new Date().toISOString(),
+              products_imported: r.created,
+              products_updated: r.updated,
+              products_failed: r.failed,
+              error_message: r.error ?? null,
+            })
+            .eq("id", historyRecord.id)
+            .then(() => {})
+        })
+      })
+      .catch((err) => {
+        console.error(`[SOURCES-RUN] Error en batch import:`, err)
+        createClient().then(sb => {
+          sb.from("import_history")
+            .update({
+              status: "error",
+              completed_at: new Date().toISOString(),
+              error_message: err.message ?? "Unknown error",
+            })
+            .eq("id", historyRecord.id)
+            .then(() => {})
+        })
+      })
 
     return NextResponse.json({
       success: true,

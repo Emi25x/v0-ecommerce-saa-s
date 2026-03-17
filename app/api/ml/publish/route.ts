@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { refreshTokenIfNeeded } from "@/lib/mercadolibre"
 import { calculateMlPrice } from "@/lib/ml/price-calculator"
+import { getBaseUrl } from "@/lib/config"
 
 // POST: Publicar un producto del catalogo a ML
 export async function POST(request: NextRequest) {
@@ -269,11 +270,8 @@ export async function POST(request: NextRequest) {
     // Funcion para subir imagen fallback de Libroide
     const uploadFallbackImage = async (): Promise<string | null> => {
       try {
-        // Generar la imagen fallback desde nuestro endpoint
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL
-          || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
-
-        const fallbackUrl = `${baseUrl}/api/ml/fallback-image`
+        // Generar la imagen fallback desde nuestro endpoint (edge runtime, no importable directamente)
+        const fallbackUrl = `${getBaseUrl()}/api/ml/fallback-image`
         const response = await fetch(fallbackUrl)
         
         if (!response.ok) {

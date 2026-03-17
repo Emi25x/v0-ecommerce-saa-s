@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server"
-
-// Cron job: update_industry_news — runs every 12 hours via Vercel Cron
-// Add to vercel.json: { "crons": [{ "path": "/api/cron/update-industry-news", "schedule": "0 */12 * * *" }] }
+import { fetchRadarNews } from "@/lib/radar/fetch-news"
 
 export async function GET(req: Request) {
   const authHeader = req.headers.get("authorization")
@@ -10,18 +8,10 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const base = process.env.APP_URL ?? process.env.NEXT_PUBLIC_VERCEL_URL ?? "http://localhost:3000"
-  const url  = base.startsWith("http") ? base : `https://${base}`
-
-  const res = await fetch(`${url}/api/radar/news/fetch`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-cron-secret": process.env.CRON_SECRET ?? "",
-    },
-    body: JSON.stringify({}),
-  })
-
-  const data = await res.json().catch(() => ({ error: "parse error" }))
-  return NextResponse.json({ ok: res.ok, ...data })
+  try {
+    const data = await fetchRadarNews()
+    return NextResponse.json(data)
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e.message }, { status: 500 })
+  }
 }

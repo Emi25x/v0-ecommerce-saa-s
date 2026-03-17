@@ -5,6 +5,8 @@
  *   2. update_industry_news            — fetches RSS feeds & detects adaptations
  */
 import { NextResponse } from "next/server"
+import { calculateMlPriorities } from "@/lib/ml/calculate-priorities"
+import { fetchRadarNews } from "@/lib/radar/fetch-news"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 120
@@ -15,35 +17,18 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const base = process.env.APP_URL ?? process.env.NEXT_PUBLIC_VERCEL_URL
-    ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-    : "http://localhost:3000"
-
   const results: Record<string, unknown> = {}
 
   // 1. Calculate ML publish priorities
   try {
-    const res  = await fetch(`${base}/api/ml/priorities/calculate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    })
-    results.ml_priorities = await res.json()
+    results.ml_priorities = await calculateMlPriorities()
   } catch (e: any) {
     results.ml_priorities = { error: e.message }
   }
 
   // 2. Fetch & process industry news RSS feeds
   try {
-    const res  = await fetch(`${base}/api/radar/news/fetch`, {
-      method: "POST",
-      headers: {
-        "Content-Type":  "application/json",
-        "x-cron-secret": process.env.CRON_SECRET ?? "",
-      },
-      body: JSON.stringify({ manual: false }),
-    })
-    results.industry_news = await res.json()
+    results.industry_news = await fetchRadarNews({ manual: false })
   } catch (e: any) {
     results.industry_news = { error: e.message }
   }
