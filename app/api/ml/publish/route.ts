@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { refreshTokenIfNeeded } from "@/lib/mercadolibre"
 import { calculateMlPrice } from "@/lib/ml/price-calculator"
-import { getBaseUrl } from "@/lib/config"
+import { generateFallbackImage } from "@/lib/ml/fallback-image"
 
 // POST: Publicar un producto del catalogo a ML
 export async function POST(request: NextRequest) {
@@ -270,31 +270,24 @@ export async function POST(request: NextRequest) {
     // Funcion para subir imagen fallback de Libroide
     const uploadFallbackImage = async (): Promise<string | null> => {
       try {
-        // Generar la imagen fallback desde nuestro endpoint (edge runtime, no importable directamente)
-        const fallbackUrl = `${getBaseUrl()}/api/ml/fallback-image`
-        const response = await fetch(fallbackUrl)
-        
-        if (!response.ok) {
-          console.log("[v0] Failed to generate fallback image")
-          return null
-        }
-        
-        const imageBuffer = await response.arrayBuffer()
+        // Generar la imagen fallback directamente (sin self-fetch)
+        const imageBuffer = await generateFallbackImage()
+
         const formData = new FormData()
         const blob = new Blob([imageBuffer], { type: "image/png" })
         formData.append("file", blob, "libroide-fallback.png")
-        
+
         const uploadResponse = await fetch("https://api.mercadolibre.com/pictures/items/upload", {
           method: "POST",
           headers: { "Authorization": `Bearer ${accessToken}` },
           body: formData,
         })
-        
+
         if (!uploadResponse.ok) {
           console.log("[v0] Failed to upload fallback image to ML")
           return null
         }
-        
+
         const uploadData = await uploadResponse.json()
         console.log("[v0] Fallback image uploaded to ML:", uploadData.id)
         return uploadData.id

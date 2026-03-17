@@ -3,7 +3,7 @@ import { getMercadoLibreAuthUrl, generateCodeVerifier, generateCodeChallenge } f
 
 export async function GET(request: NextRequest) {
   try {
-    const origin      = request.nextUrl.origin
+    const origin      = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
     const from        = request.nextUrl.searchParams.get("from") || ""
     const redirectUri = `${origin}/api/mercadolibre/callback`
 

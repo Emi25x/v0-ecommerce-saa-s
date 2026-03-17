@@ -1,19 +1,22 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { exchangeCodeForToken, getMercadoLibreUser } from "@/lib/mercadolibre"
+import { exchangeCodeForToken, getMercadoLibreUser, refreshTokenIfNeeded } from "@/lib/mercadolibre"
 import { createClient } from "@/lib/supabase/server"
+import { executeMlSync } from "@/lib/mercadolibre/sync-logic"
 
 export async function GET(request: NextRequest) {
+  const origin = process.env.NEXT_PUBLIC_APP_URL || origin
+
   try {
     const searchParams = request.nextUrl.searchParams
     const code = searchParams.get("code")
     const error = searchParams.get("error")
 
     if (error) {
-      return NextResponse.redirect(`${request.nextUrl.origin}/integrations?error=ml_error&message=${encodeURIComponent(error)}`)
+      return NextResponse.redirect(`${origin}/integrations?error=ml_error&message=${encodeURIComponent(error)}`)
     }
 
     if (!code) {
-      return NextResponse.redirect(`${request.nextUrl.origin}/integrations?error=no_code`)
+      return NextResponse.redirect(`${origin}/integrations?error=no_code`)
     }
 
     // El state puede contener token=<uuid> (verifier en BD) o from=billing (origen)
@@ -34,7 +37,7 @@ export async function GET(request: NextRequest) {
         .single()
 
       if (!tokenRow || tokenRow.used || new Date(tokenRow.expires_at) < new Date()) {
-      return NextResponse.redirect(`${request.nextUrl.origin}/integrations?error=token_expired`)
+      return NextResponse.redirect(`${origin}/integrations?error=token_expired`)
     }
 
       // Marcar como usado (un solo uso)
@@ -46,10 +49,10 @@ export async function GET(request: NextRequest) {
     }
 
     if (!codeVerifier) {
-      return NextResponse.redirect(`${request.nextUrl.origin}/integrations?error=no_verifier`)
+      return NextResponse.redirect(`${origin}/integrations?error=no_verifier`)
     }
 
-    const redirectUri = `${request.nextUrl.origin}/api/mercadolibre/callback`
+    const redirectUri = `${origin}/api/mercadolibre/callback`
 
     const tokens = await exchangeCodeForToken(code, redirectUri, codeVerifier)
 
@@ -97,28 +100,22 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Disparar sincronización inicial en background
-    try {
-      const syncUrl = `${request.nextUrl.origin}/api/mercadolibre/sync`
-      fetch(syncUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ml_user_id: user.id.toString() }),
-      }).then(() => {
-        console.log("[v0] Sync inicial disparada para:", user.nickname)
-      }).catch((err) => {
-        console.error("[v0] Error disparando sync inicial:", err)
-      })
-    } catch (syncError) {
-      console.error("[v0] Error en sync inicial:", syncError)
-      // No bloqueamos el redirect si falla el sync
+    // Disparar sincronización inicial en background (llamada directa, sin self-fetch)
+    const account = existingAccount
+      ? { ...existingAccount, access_token: tokens.access_token, refresh_token: tokens.refresh_token }
+      : (await supabase.from("ml_accounts").select("id").eq("ml_user_id", user.id.toString()).single()).data
+
+    if (account?.id) {
+      executeMlSync(supabase, account.id, tokens.access_token, user.id.toString())
+        .then(() => console.log("[v0] Sync inicial completada para:", user.nickname))
+        .catch((err) => console.error("[v0] Error en sync inicial:", err))
     }
 
     // stateParam ya fue parseado arriba — determinar redirección de retorno
     const fromBilling = stateParam.includes("from=billing")
     const redirectTarget = fromBilling
-      ? `${request.nextUrl.origin}/billing/mercadolibre?ml_connected=true`
-      : `${request.nextUrl.origin}/integrations?ml_connected=true&ml_user=${encodeURIComponent(user.nickname)}`
+      ? `${origin}/billing/mercadolibre?ml_connected=true`
+      : `${origin}/integrations?ml_connected=true&ml_user=${encodeURIComponent(user.nickname)}`
 
     const response = NextResponse.redirect(redirectTarget)
 
@@ -137,7 +134,7 @@ export async function GET(request: NextRequest) {
     console.error("[v0] Mercado Libre callback error:", error)
     const errorMessage = error instanceof Error ? error.message : "Unknown error"
     return NextResponse.redirect(
-      `${request.nextUrl.origin}/integrations?error=auth_failed&message=${encodeURIComponent(errorMessage)}`,
+      `${origin}/integrations?error=auth_failed&message=${encodeURIComponent(errorMessage)}`,
     )
   }
 }
