@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 import { renewAndPersistToken } from "@/lib/shopify-auth"
+import { startRun } from "@/lib/process-runs"
 
 // POST /api/shopify/sync
 // Usa streaming NDJSON para evitar timeouts con catálogos grandes.
@@ -16,11 +17,14 @@ export async function POST(request: Request) {
 
   const stream = new ReadableStream({
     async start(controller) {
+      let run: Awaited<ReturnType<typeof startRun>> | null = null
       try {
 
         const supabase = await createClient()
         const { data: { user } } = await supabase.auth.getUser()
         if (!user) { send(controller, { error: "Unauthorized" }); controller.close(); return }
+
+        run = await startRun(supabase, "shopify_sync", "Shopify Sync")
 
         const { data: storeRaw } = await supabase
           .from("shopify_stores")
@@ -124,6 +128,19 @@ export async function POST(request: Request) {
         const r = matchResult as any
 
         // Resultado final
+        await run.complete({
+          rows_processed: totalVariants,
+          rows_updated: r.total_linked ?? 0,
+          log_json: {
+            store_id: store.id,
+            shop_domain: store.shop_domain,
+            shopify_variants_total: totalVariants,
+            db_products_scanned: r.db_count,
+            matched_ean: r.matched_ean,
+            matched_isbn: r.matched_isbn,
+          },
+        })
+
         send(controller, {
           ok: true, phase: "done",
           store_id:              store.id,
@@ -136,6 +153,7 @@ export async function POST(request: Request) {
           skipped:               (r.db_count ?? 0) - (r.total_linked ?? 0),
         })
       } catch (e: any) {
+        await run?.fail(e)
         send(controller, { error: e.message })
       } finally {
         controller.close()

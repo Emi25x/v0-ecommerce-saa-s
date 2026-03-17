@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { executeSyncOrdersBatch } from "@/lib/ml/sync-orders-logic"
 import { NextResponse } from "next/server"
+import { startRun } from "@/lib/process-runs"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300 // 5 minutos
@@ -33,7 +34,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: "No ML accounts found" })
     }
 
+    const run = await startRun(supabase, "ml_sync_orders", "ML Sync Orders (cron)")
     const results = []
+    let grandTotalSynced = 0, grandTotalErrors = 0
 
     for (const account of accounts) {
       let totalSynced = 0
@@ -72,8 +75,10 @@ export async function GET(request: Request) {
           if (hasMore) await new Promise(r => setTimeout(r, 300))
         }
 
+        grandTotalSynced += totalSynced
         results.push({ account: account.nickname, synced: totalSynced, pages })
       } catch (error) {
+        grandTotalErrors++
         console.error(`[sync-ml-orders] Error processing account ${account.nickname}:`, error)
         results.push({
           account: account.nickname,
@@ -84,6 +89,13 @@ export async function GET(request: Request) {
 
       await new Promise(r => setTimeout(r, 500))
     }
+
+    await run.complete({
+      rows_processed: grandTotalSynced,
+      rows_updated: grandTotalSynced,
+      rows_failed: grandTotalErrors,
+      log_json: { accounts_count: accounts.length, results },
+    })
 
     return NextResponse.json({
       ok: true,

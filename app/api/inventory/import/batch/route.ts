@@ -5,6 +5,7 @@ import { fetchWithAuth } from "@/lib/import/fetch-with-auth"
 import { normalizeEan } from "@/lib/ean-utils"
 import { normalizeHeader, detectDelimiter } from "@/lib/import/csv-helpers"
 import { inflateRawSync } from "node:zlib"
+import { startRun } from "@/lib/process-runs"
 
 export const maxDuration = 300
 
@@ -39,6 +40,9 @@ export async function POST(request: NextRequest) {
     const effectiveBatchSize = Math.min(BATCH_SIZE_MAX, Math.max(BATCH_SIZE_MIN, Number(batch_size) || BATCH_SIZE_INITIAL))
 
     const supabase = await createClient()
+
+    // Only open a process_runs record on the first batch (offset 0)
+    const run = offset === 0 ? await startRun(supabase, "batch_import", `Batch Import`) : null
 
     // 1. Obtener source
     const { data: source, error: sourceError } = await supabase
@@ -419,6 +423,22 @@ export async function POST(request: NextRequest) {
     const next_offset = done ? null : offset + rows_seen
 
     console.log(`[BATCH] done=${done} offset=${offset} seen=${rows_seen} processed=${rows_processed} created=${created} updated=${updated} failed=${failed_rows} timeouts=${timeout_count} duration=${duration_ms}ms reason=${last_reason}`)
+
+    // Record run on first batch (captures the initial batch metrics)
+    if (run) {
+      if (done) {
+        await run.complete({
+          rows_processed,
+          rows_created: created,
+          rows_updated: updated,
+          rows_failed: failed_rows,
+          log_json: { missing_ean, invalid_ean, timeout_count, total_rows: totalRows, source_name: source.name },
+        })
+      } else if (last_error) {
+        await run.fail(last_error)
+      }
+      // If not done and no error, the run stays 'running' — next batches won't touch it
+    }
 
     // Actualizar import_history si existe
     if (historyId) {

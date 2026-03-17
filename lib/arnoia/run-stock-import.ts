@@ -17,11 +17,13 @@
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeEan } from "@/lib/ean-utils"
 import { detectDelimiter } from "@/lib/import/csv-helpers"
+import { startRun } from "@/lib/process-runs"
 
 export interface ArnoiaStockImportResult {
   success: boolean
   updated: number
   not_found: number
+  zeroed?: number
   total_rows: number
   unique_eans: number
   duration_seconds: number
@@ -31,6 +33,7 @@ export interface ArnoiaStockImportResult {
 export async function runArnoiaStockImport(): Promise<ArnoiaStockImportResult> {
   const supabase = createAdminClient()
   const startTime = Date.now()
+  const run = await startRun(supabase, "arnoia_stock", "Arnoia Stock Diario")
   console.log("[ARNOIA-STOCK] Starting bulk stock update")
 
   try {
@@ -118,6 +121,7 @@ export async function runArnoiaStockImport(): Promise<ArnoiaStockImportResult> {
     const BATCH_SIZE = 1000
     let totalUpdated = 0
     let totalNotFound = 0
+    const stockKey = (source as any).source_key ?? "arnoia"
 
     for (let i = 0; i < eans.length; i += BATCH_SIZE) {
       const batchEans   = eans.slice(i, i + BATCH_SIZE)
@@ -125,7 +129,6 @@ export async function runArnoiaStockImport(): Promise<ArnoiaStockImportResult> {
       const batchPrices = prices.slice(i, i + BATCH_SIZE)
 
       // RPC actualiza stock_by_source[source_key] + trigger recalcula products.stock
-      const stockKey = (source as any).source_key ?? "arnoia"
       const { data: rpcResult, error: rpcError } = await supabase.rpc("bulk_update_stock_price", {
         p_eans:       batchEans,
         p_stocks:     batchStocks,
@@ -196,6 +199,13 @@ export async function runArnoiaStockImport(): Promise<ArnoiaStockImportResult> {
 
     console.log(`[ARNOIA-STOCK] Done: ${totalUpdated} updated, ${totalNotFound} not found, ${zeroed} zeroed, ${duration.toFixed(2)}s`)
 
+    await run.complete({
+      rows_processed: eans.length,
+      rows_updated: totalUpdated,
+      rows_failed: totalNotFound,
+      log_json: { zeroed, total_rows: lines.length, unique_eans: eans.length },
+    })
+
     return {
       success:          true,
       updated:          totalUpdated,
@@ -207,6 +217,7 @@ export async function runArnoiaStockImport(): Promise<ArnoiaStockImportResult> {
     }
   } catch (err: any) {
     console.error("[ARNOIA-STOCK] Fatal error:", err.message)
+    await run.fail(err)
     return { success: false, updated: 0, not_found: 0, total_rows: 0, unique_eans: 0, duration_seconds: 0, error: err.message }
   }
 }

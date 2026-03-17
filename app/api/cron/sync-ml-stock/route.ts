@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server"
 import { executeSyncStockBatch } from "@/lib/ml/sync-stock-logic"
 import { getBestIdentifier } from "@/lib/ml/product-identifier-extractor"
 import { NextResponse } from "next/server"
+import { startRun } from "@/lib/process-runs"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300 // 5 minutos
@@ -35,7 +36,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: "No accounts with auto_sync_stock enabled" })
     }
 
+    const run = await startRun(supabase, "ml_sync_stock", "ML Sync Stock (cron)")
     const results = []
+    let totalLinked = 0, totalProcessed = 0, totalErrors = 0
 
     for (const account of accounts) {
       try {
@@ -48,12 +51,17 @@ export async function GET(request: Request) {
           limit: 200,
         })
         
+        totalLinked += syncResult.linked ?? 0
+        totalProcessed += syncResult.processed ?? 0
+        totalErrors += syncResult.errors ?? 0
+
         results.push({
           account: account.nickname,
           linked: linkResult,
           sync: syncResult
         })
       } catch (error) {
+        totalErrors++
         console.error(`Error processing account ${account.nickname}:`, error)
         results.push({
           account: account.nickname,
@@ -61,6 +69,13 @@ export async function GET(request: Request) {
         })
       }
     }
+
+    await run.complete({
+      rows_processed: totalProcessed,
+      rows_updated: totalLinked,
+      rows_failed: totalErrors,
+      log_json: { accounts_count: accounts.length, results },
+    })
 
     return NextResponse.json({
       success: true,
