@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-const BATCH = 20         // publicaciones por llamada — mantiene la peticion < 15s
+import { normalizeEanForCatalog, resolveCatalogProductId, optinItemToCatalog } from "@/lib/ml/catalog-optin"
+const BATCH = 20
 const RESOLVE_DELAY = 200
 const OPTIN_DELAY   = 300
 
@@ -50,50 +51,16 @@ export async function POST(req: NextRequest) {
     const rawEan = pub.gtin || pub.ean || pub.isbn
     if (!rawEan) { no_ean_count++; continue }
 
-    // Normalizar notacion cientifica (ej: 9.78845E+12 → "9788450...")
-    let ean = String(rawEan).trim()
-    if (/^[0-9]+\.?[0-9]*[eE][+\-][0-9]+$/.test(ean)) {
-      ean = Number(ean).toFixed(0)
-    }
+    const ean = normalizeEanForCatalog(String(rawEan))
 
-    // Resolver EAN contra ML Products API — igual que publish/route.ts usa product_identifier
-    const searchUrl = `https://api.mercadolibre.com/products/search?status=active&site_id=${siteId}&product_identifier=${encodeURIComponent(ean)}`
-    let catalog_product_id: string | null = null
+    // Resolver EAN contra ML Products API
+    const catalog_product_id = await resolveCatalogProductId({
+      ean,
+      accessToken: account.access_token,
+      siteId,
+    })
 
-    try {
-      const controller = new AbortController()
-      const tid = setTimeout(() => controller.abort(), 8000)
-      const searchRes = await fetch(searchUrl, {
-        headers: {
-          "Accept": "application/json",
-          "Authorization": `Bearer ${account.access_token}`,
-        },
-        signal: controller.signal,
-      }).finally(() => clearTimeout(tid))
-
-      if (searchRes.ok) {
-        const searchData = await searchRes.json()
-        const results: any[] = searchData.results ?? []
-        if (results.length > 0) {
-          // product_identifier es búsqueda exacta — tomar el primero igual que publish
-          catalog_product_id = results[0].id
-        } else {
-          no_match_count++
-          await delay(RESOLVE_DELAY)
-          continue
-        }
-      } else {
-        if (!firstErrorLogged) {
-          const body = await searchRes.text()
-          console.error(`[CATALOG-OPTIN-BULK-RUN] FIRST RESOLVE ERROR status=${searchRes.status} ean=${ean} body=${body.slice(0, 200)}`)
-          firstErrorLogged = true
-        }
-        no_match_count++
-        await delay(RESOLVE_DELAY)
-        continue
-      }
-    } catch (e: any) {
-      console.error(`[CATALOG-OPTIN-BULK-RUN] RESOLVE EXCEPTION ean=${ean}`, e.message)
+    if (!catalog_product_id) {
       no_match_count++
       await delay(RESOLVE_DELAY)
       continue
@@ -101,44 +68,34 @@ export async function POST(req: NextRequest) {
 
     await delay(RESOLVE_DELAY)
 
-    if (!catalog_product_id) { no_match_count++; continue }
     if (dry_run) { ok_count++; continue }
 
-    // Optin: mismo mecanismo que publish
-    try {
-      const optinRes = await fetch("https://api.mercadolibre.com/items/catalog_listings", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${account.access_token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ item_id: pub.ml_item_id, catalog_product_id }),
-      })
-      const optinBody = await optinRes.json().catch(() => ({}))
+    // Optin al catálogo
+    const optinResult = await optinItemToCatalog({
+      itemId: pub.ml_item_id,
+      catalogProductId: catalog_product_id,
+      accessToken: account.access_token,
+    })
 
-      if (optinRes.ok) {
-        ok_count++
-        if (optinBody.id) {
-          await supabase.from("ml_listings").upsert({
-            account_id,
-            ml_id: optinBody.id,
-            catalog_listing: true,
-            catalog_product_id,
-            status: optinBody.status ?? "active",
-            price: optinBody.price ?? null,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: "ml_id" })
-        }
-      } else {
-        failed_count++
-        if (!firstErrorLogged) {
-          console.error(`[CATALOG-OPTIN-BULK-RUN] FIRST OPTIN FAIL item=${pub.ml_item_id} status=${optinRes.status}`, optinBody)
-          firstErrorLogged = true
-        }
+    if (optinResult.ok) {
+      ok_count++
+      if (optinResult.data?.id) {
+        await supabase.from("ml_listings").upsert({
+          account_id,
+          ml_id: optinResult.data.id,
+          catalog_listing: true,
+          catalog_product_id,
+          status: optinResult.data.status ?? "active",
+          price: optinResult.data.price ?? null,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "ml_id" })
       }
-    } catch (e: any) {
+    } else {
       failed_count++
-      console.error(`[CATALOG-OPTIN-BULK-RUN] OPTIN EXCEPTION item=${pub.ml_item_id}`, e.message)
+      if (!firstErrorLogged) {
+        console.error(`[CATALOG-OPTIN-BULK-RUN] FIRST OPTIN FAIL item=${pub.ml_item_id}`, optinResult.error)
+        firstErrorLogged = true
+      }
     }
 
     await delay(OPTIN_DELAY)

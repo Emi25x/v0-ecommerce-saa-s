@@ -1,4 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
+import { executeSyncStockBatch } from "@/lib/ml/sync-stock-logic"
+import { getBestIdentifier } from "@/lib/ml/product-identifier-extractor"
 import { NextResponse } from "next/server"
 
 export const dynamic = "force-dynamic"
@@ -40,18 +42,11 @@ export async function GET(request: Request) {
         // 1. Primero vincular publicaciones sin product_id
         const linkResult = await linkPublicationsToProducts(supabase, account)
         
-        // 2. Luego sincronizar stock
-        const baseUrl = process.env.VERCEL_URL 
-          ? `https://${process.env.VERCEL_URL}` 
-          : process.env.NEXT_PUBLIC_VERCEL_URL || "http://localhost:3000"
-        
-        const syncResponse = await fetch(`${baseUrl}/api/ml/sync-stock`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ account_id: account.id })
+        // 2. Luego sincronizar stock (llamada directa, sin self-fetch)
+        const syncResult = await executeSyncStockBatch(supabase, {
+          account_id: account.id,
+          limit: 200,
         })
-        
-        const syncResult = await syncResponse.json()
         
         results.push({
           account: account.nickname,
@@ -125,18 +120,8 @@ async function linkPublicationsToProducts(
         const pub = batch.find((p: any) => p.ml_item_id === item.id)
         if (!pub) continue
 
-        // Extraer EAN: primero seller_sku, luego seller_custom_field, luego GTIN
-        let ean = item.seller_sku || item.seller_custom_field || null
-
-        if (!ean && item.attributes) {
-          for (const attr of item.attributes) {
-            if (["GTIN", "EAN", "ISBN"].includes(attr.id) && attr.value_name) {
-              ean = attr.value_name
-              break
-            }
-          }
-        }
-
+        // Extraer EAN usando extractor compartido
+        const ean = getBestIdentifier(item)
         if (!ean) continue
 
         // Buscar producto por EAN

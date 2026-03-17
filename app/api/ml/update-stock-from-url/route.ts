@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
+import { getValidAccessToken } from "@/lib/mercadolibre"
 import { NextResponse } from "next/server"
 
 export const maxDuration = 300
@@ -48,23 +49,12 @@ export async function POST(request: Request) {
 
     console.log(`[update-stock-from-url] Cuenta: ${account.nickname} (${account.id})`)
 
-    // Refrescar token si es necesario
-    let accessToken = account.access_token
-    if (new Date(account.token_expires_at) <= new Date()) {
-      const baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL
-        ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-        : "http://localhost:3000"
-      const refreshRes = await fetch(`${baseUrl}/api/mercadolibre/refresh-token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account_id: account.id }),
-      })
-      if (refreshRes.ok) {
-        const refreshData = await refreshRes.json()
-        accessToken = refreshData.access_token
-      } else {
-        return NextResponse.json({ error: "Error al refrescar token de ML" }, { status: 401 })
-      }
+    // Obtener token válido (refresca automáticamente si expiró)
+    let accessToken: string
+    try {
+      accessToken = await getValidAccessToken(account.id)
+    } catch {
+      return NextResponse.json({ error: "Error al obtener token de ML" }, { status: 401 })
     }
 
     // Descargar archivo

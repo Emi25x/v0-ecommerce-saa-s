@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { mlFetchJson, isMlFetchError } from "@/lib/ml/http"
 import { refreshTokenIfNeeded } from "@/lib/mercadolibre"
+import { optinItemToCatalog } from "@/lib/ml/catalog-optin"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 55
@@ -129,25 +130,17 @@ export async function POST(req: NextRequest) {
         await new Promise((r) => setTimeout(r, 2000))
       }
 
-      // OPTIN: usar el mismo endpoint que el mecanismo existente en /api/ml/publish
-      const optinRes = await fetch("https://api.mercadolibre.com/items/catalog_listings", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          item_id: item.item_id,
-          catalog_product_id: item.catalog_product_id,
-        }),
+      // OPTIN usando función compartida
+      const optinResult = await optinItemToCatalog({
+        itemId: item.item_id,
+        catalogProductId: item.catalog_product_id,
+        accessToken,
       })
 
-      if (optinRes.ok) {
-        const optinData = await optinRes.json().catch(() => ({}))
-
+      if (optinResult.ok) {
         // Verificar si ML pausó la tradicional automáticamente — registrar sin reactivar
         const postOptinCheck = await fetch(`https://api.mercadolibre.com/items/${item.item_id}`, {
-          headers: { "Authorization": `Bearer ${accessToken}` },
+          headers: { Authorization: `Bearer ${accessToken}` },
         })
         const postOptinItem = postOptinCheck.ok ? await postOptinCheck.json().catch(() => ({})) : {}
         const traditionalPaused = postOptinItem.status === "paused"
@@ -157,16 +150,14 @@ export async function POST(req: NextRequest) {
           error: traditionalPaused
             ? `optin_ok — tradicional pausada automáticamente por ML (id=${item.item_id})`
             : null,
-          catalog_product_id: optinData.catalog_product_id || item.catalog_product_id,
+          catalog_product_id: optinResult.data?.catalog_product_id || item.catalog_product_id,
         }).eq("id", item.id)
         optin_ok++
       } else {
-        const optinErr = await optinRes.json().catch(() => ({}))
-        const errMsg = JSON.stringify(optinErr).slice(0, 400)
-        console.error(`[CATALOG-MIGRATE] OPTIN error item=${item.item_id}:`, errMsg)
+        console.error(`[CATALOG-MIGRATE] OPTIN error item=${item.item_id}:`, optinResult.error)
         await supabase.from("ml_catalog_migration_items").update({
           migrate_status: "optin_failed",
-          error: errMsg,
+          error: optinResult.error,
         }).eq("id", item.id)
         errors++
       }

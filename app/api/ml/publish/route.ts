@@ -1,85 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { refreshTokenIfNeeded } from "@/lib/mercadolibre"
-
-// Cache de tipo de cambio EUR (TTL: 30 minutos)
-let eurRateCache: { rate: number; cachedAt: number } | null = null
-const EUR_RATE_CACHE_TTL = 30 * 60 * 1000
-
-// Calcular precio usando la formula de margen
-async function calculatePriceForProduct(costPriceEur: number, marginPercent: number) {
-  // Obtener tipo de cambio EUR billetes BNA (con cache de 30 min)
-  let exchangeRate = 1765
-  const now = Date.now()
-  if (eurRateCache && now - eurRateCache.cachedAt < EUR_RATE_CACHE_TTL) {
-    exchangeRate = eurRateCache.rate
-  } else {
-    try {
-      const rateResponse = await fetch("https://dolarapi.com/v1/cotizaciones/eur")
-      if (rateResponse.ok) {
-        const rateData = await rateResponse.json()
-        exchangeRate = Math.round((rateData.venta || 1718) * 1.027) // EUR billetes
-        eurRateCache = { rate: exchangeRate, cachedAt: now }
-      }
-    } catch {
-      // Usar fallback
-    }
-  }
-
-  const mlFeePercent = 0.13 // 13% comision ML
-  const costInArs = costPriceEur * exchangeRate
-  const costWithMargin = costInArs * (1 + marginPercent / 100)
-
-  // Calcular precio iterativamente para manejar el umbral de $33k
-  const shippingCost = 5500
-  let finalPrice = 0
-  let iterations = 0
-  const maxIterations = 5
-
-  const getCosts = (price: number) => {
-    let fixedFee = 0
-    let shipping = 0
-
-    if (price < 15000) {
-      fixedFee = 1115
-    } else if (price < 25000) {
-      fixedFee = 2300
-    } else if (price < 33000) {
-      fixedFee = 2810
-    } else {
-      fixedFee = 0
-      shipping = shippingCost
-    }
-
-    return { fixedFee, shipping }
-  }
-
-  let prevPrice = 0
-  let currentPrice = costWithMargin / (1 - mlFeePercent)
-  let mlFixedFee = 0
-
-  while (Math.abs(currentPrice - prevPrice) > 100 && iterations < maxIterations) {
-    iterations++
-    prevPrice = currentPrice
-
-    const costs = getCosts(currentPrice)
-    mlFixedFee = costs.fixedFee
-    const currentShipping = costs.shipping
-
-    currentPrice = (costWithMargin + mlFixedFee + currentShipping) / (1 - mlFeePercent)
-  }
-
-  const finalCosts = getCosts(currentPrice)
-  finalPrice = Math.ceil(currentPrice / 10) * 10
-
-  return {
-    price: finalPrice,
-    exchangeRate,
-    costInArs: Math.round(costInArs),
-    fixedFee: finalCosts.fixedFee,
-    shippingCost: finalCosts.shipping
-  }
-}
+import { calculateMlPrice } from "@/lib/ml/price-calculator"
 
 // POST: Publicar un producto del catalogo a ML
 export async function POST(request: NextRequest) {
@@ -273,7 +195,7 @@ export async function POST(request: NextRequest) {
 
     if (!finalPrice && product.cost_price) {
       // Usar marginPercent de perfil de precio (ya cargado arriba) en lugar del template
-      priceCalculation = await calculatePriceForProduct(product.cost_price, marginPercent)
+      priceCalculation = await calculateMlPrice({ costPriceEur: product.cost_price, marginPercent })
       finalPrice = priceCalculation.price
     }
 
@@ -348,12 +270,9 @@ export async function POST(request: NextRequest) {
     const uploadFallbackImage = async (): Promise<string | null> => {
       try {
         // Generar la imagen fallback desde nuestro endpoint
-        const baseUrl = process.env.VERCEL_URL 
-          ? `https://${process.env.VERCEL_URL}` 
-          : process.env.NEXT_PUBLIC_VERCEL_URL 
-            ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-            : "http://localhost:3000"
-        
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+          || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000")
+
         const fallbackUrl = `${baseUrl}/api/ml/fallback-image`
         const response = await fetch(fallbackUrl)
         

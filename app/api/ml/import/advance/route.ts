@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { executeIndexBatch } from "@/lib/ml/import-index-logic"
+import { executeWorkerBatch } from "@/lib/ml/import-worker-logic"
 
 export const maxDuration = 30
 
@@ -39,24 +41,17 @@ async function handleAdvance(request: Request) {
     }
 
     const offsetBefore = activeJob.current_offset || 0
-    const baseUrl = request.url.split("/api/")[0]
 
-    // Si está indexing, llamar a /index
+    // Si está indexing, ejecutar index batch directamente
     if (activeJob.status === "indexing") {
-      console.log("[v0] ADVANCE - Calling index with offset:", offsetBefore)
-      
-      const indexResponse = await fetch(`${baseUrl}/api/ml/import/index`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          job_id: activeJob.id, 
-          account_id: activeJob.account_id,
-          offset: offsetBefore
-        })
+      console.log("[v0] ADVANCE - Running index with offset:", offsetBefore)
+
+      const indexData = await executeIndexBatch(supabase, {
+        job_id: activeJob.id,
+        account_id: activeJob.account_id,
+        offset: offsetBefore
       })
 
-      const indexData = await indexResponse.json()
-      
       // Re-leer offset actualizado
       const { data: updatedJob } = await supabase
         .from("ml_import_jobs")
@@ -79,20 +74,14 @@ async function handleAdvance(request: Request) {
       })
     }
 
-    // Si está processing, llamar a /worker
+    // Si está processing, ejecutar worker batch directamente
     if (activeJob.status === "processing") {
-      console.log("[v0] ADVANCE - Calling worker...")
-      
-      const workerResponse = await fetch(`${baseUrl}/api/ml/import/worker`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          job_id: activeJob.id,
-          batch_size: 20
-        })
-      })
+      console.log("[v0] ADVANCE - Running worker...")
 
-      const workerData = await workerResponse.json()
+      const workerData = await executeWorkerBatch(supabase, {
+        job_id: activeJob.id,
+        batch_size: 20
+      })
 
       console.log("[v0] ADVANCE - Worker complete. Processed:", workerData.processed || 0)
 
