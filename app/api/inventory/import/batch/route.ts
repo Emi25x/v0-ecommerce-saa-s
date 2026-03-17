@@ -41,8 +41,11 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient()
 
-    // Only open a process_runs record on the first batch (offset 0)
-    const run = offset === 0 ? await startRun(supabase, "batch_import", `Batch Import`) : null
+    // Open a process_runs record on the first batch; resume existing run on subsequent batches
+    let run: Awaited<ReturnType<typeof startRun>> | null = null
+    if (offset === 0) {
+      run = await startRun(supabase, "batch_import", `Batch Import`)
+    }
 
     // 1. Obtener source
     const { data: source, error: sourceError } = await supabase
@@ -440,7 +443,7 @@ export async function POST(request: NextRequest) {
       // If not done and no error, the run stays 'running' — next batches won't touch it
     }
 
-    // Actualizar import_history si existe
+    // Actualizar import_history si existe (heartbeat: updated_at always refreshed)
     if (historyId) {
       const { data: history } = await supabase.from("import_history").select("*").eq("id", historyId).single()
       if (history) {
@@ -453,7 +456,8 @@ export async function POST(request: NextRequest) {
           error_count: last_error ? (history.error_count || 0) + 1 : history.error_count,
           current_offset: next_offset,
           last_message: done ? `Completado: ${(history.processed_rows || 0) + rows_processed} procesadas` : `Procesando offset ${offset}`,
-          completed_at: done ? new Date().toISOString() : null
+          completed_at: done ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString(),
         }).eq("id", historyId)
       }
     }
