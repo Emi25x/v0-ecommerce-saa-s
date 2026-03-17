@@ -106,6 +106,7 @@ Klaviyo, Mailchimp, Brevo, HubSpot, ActiveCampaign, WhatsApp Business
 - `cs_conversations` — conversaciones de atención al cliente (ML, Shopify, WhatsApp)
 - `cs_messages` — mensajes individuales por conversación
 - `cs_response_templates` — plantillas de respuesta rápida
+- `process_runs` — audit trail unificado de todos los procesos batch/sync/import. Columnas: process_type, process_name, status (running|completed|failed), started_at, finished_at, duration_ms, rows_processed, rows_created, rows_updated, rows_failed, error_message, log_json (JSONB)
 
 ### Funciones PL/pgSQL
 - `bulk_update_azeta_stock(p_eans text[], p_stocks int[])` — actualiza `stock_by_source['azeta']` via JSONB merge. Trigger recalcula stock total.
@@ -130,6 +131,7 @@ En `supabase/migrations/` y `scripts/`. Los archivos SQL se aplican manualmente 
 - `20260315_fix_bulk_update_azeta_stock.sql` — RPC functions para JSONB stock merge
 - `20260316_add_missing_product_columns.sql` — agrega columnas faltantes a products y shopify_stores
 - `034_add_stock_by_source_jsonb.sql` — trigger de stock + función calculate_stock_total
+- `052_create_process_runs.sql` — tabla `process_runs` para audit trail unificado de procesos
 
 ---
 
@@ -363,12 +365,48 @@ Envíos → carrier API → tracking updates en shipments
 
 ---
 
+## Auditoría de procesos (process_runs) ✅
+
+### Tabla `process_runs`
+Audit trail unificado para todos los procesos batch/sync/import. Cada ejecución deja un registro con status, duración, contadores y detalles en `log_json`.
+
+### Helper `lib/process-runs.ts`
+```typescript
+const run = await startRun(supabase, "process_type", "Nombre Legible")
+try {
+  // ... trabajo ...
+  await run.complete({ rows_processed, rows_updated, rows_failed, log_json: { ... } })
+} catch (err) {
+  await run.fail(err)
+}
+```
+Degradación graceful: si la tabla no existe, retorna no-op handle (el proceso funciona igual).
+
+### Procesos instrumentados
+
+| Proceso | process_type | Archivo | Qué registra |
+|---------|-------------|---------|-------------|
+| Arnoia Stock diario | `arnoia_stock` | `lib/arnoia/run-stock-import.ts` | updated, not_found, zeroed, unique_eans |
+| Batch Import (Catálogo/Act) | `batch_import` | `app/api/inventory/import/batch/route.ts` | created, updated, failed, missing_ean, invalid_ean |
+| ML Sync Stock (cron) | `ml_sync_stock` | `app/api/cron/sync-ml-stock/route.ts` | processed, linked, errors por cuenta |
+| ML Sync Orders (cron) | `ml_sync_orders` | `app/api/cron/sync-ml-orders/route.ts` | synced, errors por cuenta |
+| Shopify Sync + Matching | `shopify_sync` | `app/api/shopify/sync/route.ts` | variants_total, matched, matched_ean, matched_isbn |
+
+### Consulta rápida
+```sql
+SELECT process_type, status, started_at, duration_ms, rows_processed, rows_updated, rows_failed, error_message
+FROM process_runs ORDER BY started_at DESC LIMIT 20;
+```
+
+---
+
 ## Contexto de trabajo en curso
 
 - **Arnoia = fuente principal ✅** — catálogo + stock semanal + stock diario (3 import sources)
 - **Azeta ❌** — nunca se usó, código existe pero no se activó en producción
 - **Shopify multi-tienda ✅** — múltiples tiendas conectadas, aislamiento por store_id, nombre personalizable
 - **Shopify template builder ✅** — análisis inverso de productos existentes + UI de mapeo + defaults por tienda
+- **Auditoría de procesos ✅** — `process_runs` tabla + `lib/process-runs.ts` helper, 5 procesos instrumentados
 - FastMail API v2 integrado y conexión verificada ✅
 - FastMail cotización funcionando ✅
 - Cabify Logistics integrado y conexión verificada ✅ (pendiente activación de servicios en panel Cabify)
@@ -408,3 +446,4 @@ Envíos → carrier API → tracking updates en shipments
 | Facebook OAuth error | `request.headers.get("origin")` = null en browser | `process.env.NEXT_PUBLIC_APP_URL \|\| request.nextUrl.origin` |
 | Cabify base URL incorrecta | URL vieja `https://api.cabify.com` | Migración a `https://logistics.api.cabify.com` |
 | Cabify HTTP 400 en shipping types | Parámetros separados `lat=&lon=` | Revertido a `location=lat,lon` |
+| Arnoia Stock `stockKey` fuera de scope | `const stockKey` definido dentro del `for` loop pero usado fuera | Movido fuera del loop en `run-stock-import.ts` |
