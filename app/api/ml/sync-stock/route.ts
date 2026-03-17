@@ -1,275 +1,39 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
+import { executeSyncStockBatch } from "@/lib/ml/sync-stock-logic"
 
 export const maxDuration = 300
 
-// Sincroniza stock: extrae publicaciones de ML con su SKU, busca match en DB, actualiza stock
+/**
+ * POST /api/ml/sync-stock
+ * Syncs stock: extracts ML publications with SKU, matches to DB, updates.
+ * Auto-continue uses direct function calls instead of self-fetch.
+ */
 export async function POST(request: Request) {
   console.log("[v0] ========== SYNC-STOCK POST ==========")
   try {
     const supabase = await createClient()
     const body = await request.json()
-    console.log("[v0] Request body:", JSON.stringify(body))
     const { account_id, limit = 200, offset = 0, auto_continue = false } = body
 
     if (!account_id) {
       return NextResponse.json({ error: "account_id requerido" }, { status: 400 })
     }
 
-    // Obtener cuenta ML
-    const { data: account, error: accountError } = await supabase
-      .from("ml_accounts")
-      .select("*")
-      .eq("id", account_id)
-      .single()
-
-    if (accountError || !account) {
-      return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
-    }
-
-    // Refrescar token si es necesario
-    let accessToken = account.access_token
-    if (new Date(account.token_expires_at) <= new Date()) {
-      const refreshResponse = await fetch(`${process.env.NEXT_PUBLIC_VERCEL_URL || ""}/api/mercadolibre/refresh-token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account_id })
-      })
-      if (refreshResponse.ok) {
-        const refreshData = await refreshResponse.json()
-        accessToken = refreshData.access_token
-      } else {
-        return NextResponse.json({ error: "Error al refrescar token" }, { status: 401 })
-      }
-    }
-
-    // PASO 1: Obtener lista de IDs de items activos de ML (1 llamada)
-    const searchResponse = await fetch(
-      `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?status=active&limit=${limit}&offset=${offset}`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    )
-
-    const searchText = await searchResponse.text()
-    if (searchText.includes("Too Many") || searchResponse.status === 429) {
-      return NextResponse.json({
-        success: false,
-        rate_limited: true,
-        message: "Límite de API de ML alcanzado. Espera 1 hora."
-      })
-    }
-
-    if (!searchResponse.ok) {
-      return NextResponse.json({ error: "Error al obtener items de ML" }, { status: 500 })
-    }
-
-    const searchData = JSON.parse(searchText)
-    const itemIds: string[] = searchData.results || []
-    const totalInML = searchData.paging?.total || 0
-    console.log("[v0] ML items encontrados:", itemIds.length, "Total en ML:", totalInML)
-
-    if (itemIds.length === 0) {
-      return NextResponse.json({ 
-        success: true, 
-        message: "No hay items para procesar",
-        total_in_ml: totalInML 
-      })
-    }
-
-    // Actualizar total de publicaciones en la cuenta
-    await supabase.from("ml_accounts").update({ 
-      total_ml_publications: totalInML 
-    }).eq("id", account_id)
-
-    let linked = 0
-    let noEan = 0
-    let noProductMatch = 0
-    let errors = 0
-    let updated = 0 // Declare the updated variable
-
-    // PASO 2: Obtener detalles en batches de 20 (límite de ML)
-    for (let i = 0; i < itemIds.length; i += 20) {
-      const batchIds = itemIds.slice(i, i + 20)
-      const idsParam = batchIds.join(",")
-
-      const detailsResponse = await fetch(
-        `https://api.mercadolibre.com/items?ids=${idsParam}&attributes=id,title,seller_sku,seller_custom_field,available_quantity,status,price,permalink,attributes`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      )
-
-      const detailsText = await detailsResponse.text()
-      if (detailsText.includes("Too Many") || detailsResponse.status === 429) {
-        return NextResponse.json({
-          success: true,
-          rate_limited: true,
-          message: "Rate limit alcanzado. Progreso guardado.",
-          processed: i,
-          updated,
-          linked,
-          no_ean: noEan,
-          no_product_match: noProductMatch,
-          errors,
-          total_in_ml: totalInML
-        })
-      }
-
-      if (!detailsResponse.ok) {
-        errors += batchIds.length
-        continue
-      }
-
-      const items = JSON.parse(detailsText)
-
-      // PASO 3: Para cada item, extraer SKU/EAN y buscar match en nuestra DB
-      for (const itemWrapper of items) {
-        if (itemWrapper.code !== 200 || !itemWrapper.body) {
-          errors++
-          continue
-        }
-
-        const item = itemWrapper.body
-
-        // Extraer SKU: seller_custom_field → variations[].seller_custom_field → attributes[SELLER_SKU]
-        let sku: string | null = item.seller_custom_field || null
-
-        if (!sku && Array.isArray(item.variations)) {
-          for (const v of item.variations) {
-            if (v.seller_custom_field) { sku = v.seller_custom_field; break }
-          }
-        }
-
-        if (!sku && Array.isArray(item.attributes)) {
-          const skuAttr = item.attributes.find((a: any) => a.id === "SELLER_SKU")
-          if (skuAttr?.value_name) sku = skuAttr.value_name
-        }
-
-        // Extraer EAN/GTIN para el match con products
-        let ean: string | null = sku
-
-        if (!ean && Array.isArray(item.attributes)) {
-          for (const attr of item.attributes) {
-            if (["GTIN", "EAN", "ISBN", "UPC"].includes(attr.id) && attr.value_name) {
-              ean = attr.value_name
-              break
-            }
-          }
-        }
-
-        if (!ean) {
-          noEan++
-          // Guardar publicación igualmente para actualizar stock (sin vínculo)
-          try {
-            await supabase.from("ml_publications").upsert({
-              account_id:    account.id,
-              ml_item_id:    item.id,
-              sku:           sku ?? null,
-              price:         item.price,
-              current_stock: item.available_quantity,
-              updated_at:    new Date().toISOString(),
-            }, { onConflict: "account_id,ml_item_id" })
-          } catch { /* best-effort */ }
-          continue
-        }
-
-        // Buscar producto en nuestra DB por EAN
-        const { data: product } = await supabase
-          .from("products")
-          .select("id, stock, title")
-          .eq("ean", ean)
-          .maybeSingle()
-
-        if (!product) {
-          noProductMatch++
-          // Guardar publicación sin vincular usando upsert (preservar sku)
-          try {
-            await supabase.from("ml_publications").upsert({
-              account_id:    account.id,
-              ml_item_id:    item.id,
-              sku:           sku ?? null,
-              price:         item.price,
-              current_stock: item.available_quantity,
-              updated_at:    new Date().toISOString(),
-            }, { onConflict: "account_id,ml_item_id" })
-          } catch (e) {
-            console.error("[v0] Error guardando publicación sin vincular:", e)
-            errors++
-          }
-          continue
-        }
-
-        // PASO 4: Guardar/actualizar en ml_publications con vinculación y sku
-        try {
-          const { data: existingPub } = await supabase
-            .from("ml_publications")
-            .select("id, product_id")
-            .eq("ml_item_id", item.id)
-            .maybeSingle()
-
-          // Si ya existe y no tenía product_id, contarlo como vinculado
-          if (existingPub && !existingPub.product_id) {
-            linked++
-          } else if (!existingPub) {
-            linked++
-          }
-
-          await supabase.from("ml_publications").upsert({
-            account_id:    account.id,
-            ml_item_id:    item.id,
-            product_id:    product.id,
-            sku:           sku ?? null,
-            price:         item.price,
-            current_stock: item.available_quantity,
-            updated_at:    new Date().toISOString(),
-          }, { onConflict: "account_id,ml_item_id" })
-
-          updated++
-        } catch (e) {
-          console.error("[v0] Error guardando publicación vinculada:", item.id, e)
-          errors++
-        }
-      }
-
-      // Delay entre batches
-      await new Promise(resolve => setTimeout(resolve, 300))
-    }
-
-    // Actualizar estadísticas de la cuenta
-    await supabase.from("ml_accounts").update({
-      last_stock_sync_at: new Date().toISOString()
-    }).eq("id", account_id)
-
-    const result = {
-      success: true,
-      processed: itemIds.length,
-      linked,
-      no_ean: noEan,
-      no_product_match: noProductMatch,
-      errors,
-      total_in_ml: totalInML,
-      has_more: offset + limit < totalInML,
-      next_offset: offset + limit
-    }
+    const result = await executeSyncStockBatch(supabase, { account_id, limit, offset })
     console.log("[v0] Sync-stock RESULTADO:", JSON.stringify(result))
-    
-    // Auto-continuar si hay más items y está habilitado
-    if (auto_continue && result.has_more) {
+
+    // Auto-continue: direct function call instead of self-fetch
+    if (auto_continue && result.has_more && result.success && !result.rate_limited) {
       console.log("[v0] Auto-continuando desde offset:", result.next_offset)
-      const baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL 
-        ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` 
-        : "http://localhost:3000"
-      
-      // No await - dispara y olvida para no bloquear respuesta
-      fetch(`${baseUrl}/api/ml/sync-stock`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          account_id, 
-          limit, 
-          offset: result.next_offset,
-          auto_continue: true 
-        })
+      // Fire-and-forget via setTimeout to not block response
+      executeSyncStockBatch(supabase, {
+        account_id,
+        limit,
+        offset: result.next_offset,
       }).catch(e => console.error("[v0] Error en auto-continue:", e))
     }
-    
+
     return NextResponse.json(result)
   } catch (error) {
     console.error("Error en sync-stock:", error)
@@ -277,7 +41,11 @@ export async function POST(request: Request) {
   }
 }
 
-// GET para cron automático
+/**
+ * GET /api/ml/sync-stock
+ * Cron: auto-sync all accounts that have it enabled.
+ * No longer self-fetches — calls the sync function directly.
+ */
 export async function GET() {
   try {
     const supabase = await createClient()
@@ -294,12 +62,7 @@ export async function GET() {
     const results = []
     for (const account of accounts) {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_VERCEL_URL || ""}/api/ml/sync-stock`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ account_id: account.id, limit: 200 })
-        })
-        const data = await response.json()
+        const data = await executeSyncStockBatch(supabase, { account_id: account.id, limit: 200 })
         results.push({ account: account.nickname, ...data })
       } catch (err) {
         results.push({ account: account.nickname, error: "Error" })
