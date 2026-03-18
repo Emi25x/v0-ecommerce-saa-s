@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { normalizeDomain } from "@/lib/shopify-auth"
+import { getAppOrigin } from "@/lib/config"
 
 /**
  * GET /api/shopify/oauth/authorize
@@ -48,7 +49,7 @@ export async function GET(request: NextRequest) {
   }
 
   const domain = normalizeDomain(shopDomain)
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
+  const appUrl = getAppOrigin(request)
 
   // Generate a random state to prevent CSRF
   const state = crypto.randomUUID()

@@ -1,9 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getMercadoLibreAuthUrl, generateCodeVerifier, generateCodeChallenge } from "@/lib/mercadolibre"
+import { getAppOrigin } from "@/lib/config"
 
 export async function GET(request: NextRequest) {
   try {
-    const origin      = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
+    const origin      = getAppOrigin(request)
     const from        = request.nextUrl.searchParams.get("from") || ""
     const redirectUri = `${origin}/api/mercadolibre/callback`
 

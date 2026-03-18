@@ -2,9 +2,10 @@ import { type NextRequest, NextResponse } from "next/server"
 import { exchangeCodeForToken, getMercadoLibreUser, refreshTokenIfNeeded } from "@/lib/mercadolibre"
 import { createClient } from "@/lib/supabase/server"
 import { executeMlSync } from "@/lib/mercadolibre/sync-logic"
+import { getAppOrigin } from "@/lib/config"
 
 export async function GET(request: NextRequest) {
-  const origin = process.env.NEXT_PUBLIC_APP_URL || origin
+  const origin = getAppOrigin(request)
 
   try {
     const searchParams = request.nextUrl.searchParams

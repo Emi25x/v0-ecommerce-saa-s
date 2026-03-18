@@ -3,13 +3,14 @@ import { exchangeGoogleCode } from "@/lib/marketing/google"
 import { exchangeMetaCode } from "@/lib/marketing/meta"
 import { exchangeTikTokCode } from "@/lib/marketing/tiktok"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { getAppOrigin } from "@/lib/config"
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get("code")
   const state = searchParams.get("state") // platform identifier
   const error = searchParams.get("error")
-  const origin = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
+  const origin = getAppOrigin(request)
   const redirectUri = `${origin}/api/marketing/oauth/callback`
 
   if (error) {

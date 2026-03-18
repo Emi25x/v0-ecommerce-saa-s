@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextRequest, NextResponse } from "next/server"
+import { pushProductToShopify } from "@/lib/shopify/push-product"
 
 export const maxDuration = 300
 
@@ -147,33 +148,17 @@ async function processJobBatch(supabase: any, jobId: string, userId: string) {
   const batchCompleted: string[] = []
   const batchFailed: { ean: string; error: string }[] = []
 
-  // Process each EAN by calling the existing push-product logic internally
-  // We call the API endpoint to reuse all existing logic (metafields, inventory, etc.)
-  const origin = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : "http://localhost:3000"
-
+  // Process each EAN by calling the shared push-product logic directly (no self-fetch)
   for (const ean of batch) {
     try {
-      const res = await fetch(`${origin}/api/shopify/push-product`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // Internal call — auth handled via supabase session cookie forwarding isn't possible
-        // Instead we use the admin approach: call push-product directly
-        body: JSON.stringify({ store_id: job.store_id, ean }),
-      })
-
-      // If internal fetch fails (common in serverless), fall back to marking as failed with retry hint
-      if (!res.ok) {
-        const errBody = await res.text().catch(() => "")
-        let msg = `HTTP ${res.status}`
-        try { msg = JSON.parse(errBody).error || msg } catch {}
-        batchFailed.push({ ean, error: msg })
-      } else {
+      const result = await pushProductToShopify(supabase, job.store_id, ean, userId)
+      if (result.ok) {
         batchCompleted.push(ean)
+      } else {
+        batchFailed.push({ ean, error: result.error ?? "unknown" })
       }
     } catch (err: any) {
-      batchFailed.push({ ean, error: err.message ?? "fetch_failed" })
+      batchFailed.push({ ean, error: err.message ?? "push_failed" })
     }
   }
 

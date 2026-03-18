@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { fetchShopInfo } from "@/lib/shopify-auth"
+import { getAppOrigin } from "@/lib/config"
 
 /**
  * GET /api/shopify/oauth/callback
@@ -14,7 +15,7 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get("code")
   const shop = searchParams.get("shop")
   const state = searchParams.get("state")
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
+  const appUrl = getAppOrigin(request)
 
   // Redirect helper
   const redirectError = (msg: string) =>
