@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
-import { fetchWithAuth } from "@/lib/import/fetch-with-auth"
+import { createClient } from "@/lib/db/server"
+import { fetchWithAuth } from "@/lib/http/fetch-with-auth"
 import { inflateRawSync } from "node:zlib"
 import crypto from "crypto"
 

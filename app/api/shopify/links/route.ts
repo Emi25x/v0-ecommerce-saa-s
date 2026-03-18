@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextResponse } from "next/server"
 
 // GET /api/shopify/links?store_id=xxx&page=0&limit=50&q=titulo

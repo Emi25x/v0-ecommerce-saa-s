@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 const BATCH = 50
 const RESOLVE_DELAY = 150  // ms entre resoluciones
 const OPTIN_DELAY   = 300  // ms entre optins

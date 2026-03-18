@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextResponse } from "next/server"
 import { executeSyncStockBatch } from "@/domains/mercadolibre/sync/stock"
 

@@ -12,7 +12,7 @@
  * actividades, impuestos (IVA, Ganancias, Monotributo, etc.), categorías.
  */
 
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { buildTRA, signTRA, callWSAA } from "./wsaa"
 
 const PADRON_HOMO = "https://awshomo.afip.gov.ar/sr-padron/webservices/personaServiceA4"

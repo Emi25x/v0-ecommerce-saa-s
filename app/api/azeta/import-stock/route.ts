@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 import { runAzetaStockUpdate } from "@/domains/suppliers/azeta/stock-import"
 
 export const dynamic = "force-dynamic"

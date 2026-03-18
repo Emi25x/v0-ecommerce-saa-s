@@ -11,7 +11,7 @@
  *   - vendors/types/tags: unique values found (useful for defaults)
  */
 
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextRequest, NextResponse } from "next/server"
 import { getValidToken } from "@/domains/shopify/auth"
 

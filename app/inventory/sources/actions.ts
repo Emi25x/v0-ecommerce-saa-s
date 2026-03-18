@@ -1,6 +1,6 @@
 "use server"
 
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
 console.log("[v0] ========================================")
 console.log("[v0] SERVER ACTION MODULE LOADED")

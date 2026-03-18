@@ -23,7 +23,7 @@ import {
   Warehouse
 } from "lucide-react"
 import Link from "next/link"
-import { createClient } from "@/lib/supabase/client"
+import { createClient } from "@/lib/db/client"
 import { isCustomField, customFieldKey } from "@/lib/column-mapping-helpers"
 
 export default function SourceDetailPage() {

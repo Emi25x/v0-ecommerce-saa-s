@@ -1,8 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { exchangeCodeForToken, getMercadoLibreUser, refreshTokenIfNeeded } from "@/lib/mercadolibre"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { executeMlSync } from "@/domains/mercadolibre/sync-logic"
-import { getAppOrigin } from "@/lib/config"
+import { getAppOrigin } from "@/lib/env/config"
 
 export async function GET(request: NextRequest) {
   const origin = getAppOrigin(request)

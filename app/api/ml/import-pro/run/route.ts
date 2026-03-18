@@ -1,4 +1,4 @@
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 import { getValidAccessToken } from "@/lib/mercadolibre"
 import { NextRequest, NextResponse } from "next/server"
 import { protectAPI } from "@/lib/auth/protect-api"

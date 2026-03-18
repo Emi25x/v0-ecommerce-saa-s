@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { executeIndexBatch } from "@/domains/mercadolibre/import/index-logic"
 import { executeWorkerBatch } from "@/domains/mercadolibre/import/worker-logic"
 

@@ -11,7 +11,7 @@
  * Se llama directamente desde /api/azeta/import-catalog (cron).
  */
 
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 import { normalizeEan } from "@/domains/inventory/ean-utils"
 
 // URL de fallback — solo si no está configurado en import_sources

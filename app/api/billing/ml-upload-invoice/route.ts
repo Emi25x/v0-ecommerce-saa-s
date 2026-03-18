@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { buildFacturaHTML } from "@/domains/billing/arca/pdf"
 import { htmlToPdfBuffer } from "@/domains/billing/pdf-generator"
 import { buildFacturaHtmlParams } from "@/domains/billing/factura-builder"

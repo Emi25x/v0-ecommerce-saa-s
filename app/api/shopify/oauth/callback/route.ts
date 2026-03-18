@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 import { fetchShopInfo } from "@/domains/shopify/auth"
-import { getAppOrigin } from "@/lib/config"
+import { getAppOrigin } from "@/lib/env/config"
 
 /**
  * GET /api/shopify/oauth/callback

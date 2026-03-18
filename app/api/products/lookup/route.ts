@@ -2,7 +2,7 @@
  * GET /api/products/lookup?ean=<value>
  * Busca un producto por EAN o ISBN y devuelve sus campos principales.
  */
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextRequest, NextResponse } from "next/server"
 
 export async function GET(req: NextRequest) {

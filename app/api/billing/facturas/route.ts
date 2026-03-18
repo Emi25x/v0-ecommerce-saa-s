@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextResponse } from "next/server"
 import { getWSAATicket } from "@/domains/billing/arca/wsaa"
 import { requestCAE } from "@/domains/billing/arca/wsfe"

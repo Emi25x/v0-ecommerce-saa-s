@@ -15,7 +15,7 @@
  *   - flags        → from custom_fields.flags[] if present
  */
 
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextRequest, NextResponse } from "next/server"
 
 // ── The canonical 78-column Shopify products export header ────────────────

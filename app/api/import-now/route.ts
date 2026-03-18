@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextResponse } from "next/server"
 import { mergeStockBySource } from "@/domains/inventory/stock-helpers"
 import { runLibralStockImport } from "@/domains/suppliers/libral/stock-import"

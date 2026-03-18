@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { buildGoogleOAuthUrl } from "@/domains/marketing/google"
 import { buildMetaOAuthUrl } from "@/domains/marketing/meta"
 import { buildTikTokOAuthUrl } from "@/domains/marketing/tiktok"
-import { createAdminClient } from "@/lib/supabase/admin"
-import { getAppOrigin } from "@/lib/config"
+import { createAdminClient } from "@/lib/db/admin"
+import { getAppOrigin } from "@/lib/env/config"
 
 export async function GET(
   request: NextRequest,

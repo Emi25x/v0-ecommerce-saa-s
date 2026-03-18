@@ -12,7 +12,7 @@
  *  - Products not in the Libral response get their libral key zeroed out
  */
 
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 import { authenticateLibral, isLibralTokenValid, queryLibralProducts } from "@/domains/suppliers/libral/client"
 import { mergeStockBySource } from "@/domains/inventory/stock-helpers"
 

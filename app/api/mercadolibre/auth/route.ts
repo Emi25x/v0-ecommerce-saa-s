@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getMercadoLibreAuthUrl, generateCodeVerifier, generateCodeChallenge } from "@/lib/mercadolibre"
-import { getAppOrigin } from "@/lib/config"
+import { getAppOrigin } from "@/lib/env/config"
 
 export async function GET(request: NextRequest) {
   try {

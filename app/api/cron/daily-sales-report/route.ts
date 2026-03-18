@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { sendDailySalesEmail } from "@/domains/radar/daily-sales"
 
 export const dynamic = "force-dynamic"

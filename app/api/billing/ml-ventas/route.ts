@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
 // GET: listar órdenes ML desde DB local (ml_orders) con filtros y paginación exacta.
 // No llama a ML API para listar — evita el bug de filtros client-side post-paginación

@@ -373,7 +373,7 @@ export function isLibralTokenValid(expiresAt: string): boolean {
  */
 export async function getLibralCredentials(): Promise<{ username: string; password: string } | null> {
   try {
-    const { createClient } = await import("@/lib/supabase/server")
+    const { createClient } = await import("@/lib/db/server")
     const supabase = await createClient()
 
     const { data, error } = await supabase
@@ -428,7 +428,7 @@ export async function isLibralConfigured(): Promise<boolean> {
  * Get valid token for Libral (reuses existing token or authenticates if expired)
  */
 export async function getLibralToken(): Promise<string> {
-  const { createClient } = await import("@/lib/supabase/server")
+  const { createClient } = await import("@/lib/db/server")
   const supabase = await createClient()
 
   const { data: config, error } = await supabase

@@ -1,5 +1,5 @@
-import { createClient } from "@/lib/supabase/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createClient } from "@/lib/db/server"
+import { createAdminClient } from "@/lib/db/admin"
 import { NextResponse } from "next/server"
 import { getMLOrderBilling } from "@/domains/billing/ml-order-billing"
 import { normalizeDocType } from "@/domains/billing/doc-type"

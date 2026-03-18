@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import Papa from "papaparse"
 
 const BATCH_SIZE = 200 // Reducido para evitar timeout en Supabase

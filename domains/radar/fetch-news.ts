@@ -1,4 +1,4 @@
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 
 // ── Adaptation signal patterns ───────────────────────────────────────────────
 const ADAPTATION_PATTERNS = [

@@ -1,5 +1,5 @@
-import { createClient } from "@/lib/supabase/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createClient } from "@/lib/db/server"
+import { createAdminClient } from "@/lib/db/admin"
 import { getValidAccessToken } from "@/lib/mercadolibre"
 import { NextRequest, NextResponse } from "next/server"
 import { protectCron } from "@/lib/auth/protect-api"

@@ -5,7 +5,7 @@
  * a funciones sincrónicas.
  */
 
-import { createClient }               from "@/lib/supabase/server"
+import { createClient }               from "@/lib/db/server"
 import { buildTRA, signTRA, callWSAA } from "@/domains/billing/arca/wsaa-utils"
 
 // Re-exportar para que los importadores existentes no rompan

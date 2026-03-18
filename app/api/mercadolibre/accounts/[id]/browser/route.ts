@@ -10,7 +10,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     console.log("[v0] Account ID:", accountId)
     console.log("[v0] Browser preference:", browser_preference)
 
-    const { createClient } = await import("@/lib/supabase/server")
+    const { createClient } = await import("@/lib/db/server")
     const supabase = await createClient()
 
     console.log("[v0] Supabase client created successfully")

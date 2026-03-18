@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { type NextRequest, NextResponse } from "next/server"
 
 console.log("[v0] ==================== CSV MODULE LOADED ====================")

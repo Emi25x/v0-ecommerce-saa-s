@@ -10,7 +10,7 @@
  * También se puede llamar con source=undefined y se resolverá por nombre.
  */
 
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 
 export interface StockUpdateResult {
   success:      boolean

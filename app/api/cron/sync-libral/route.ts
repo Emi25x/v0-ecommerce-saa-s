@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { getLibralToken, queryLibralProducts, delayBetweenBatches } from "@/domains/suppliers/libral/client"
 import { mergeStockBySource } from "@/domains/inventory/stock-helpers"
 

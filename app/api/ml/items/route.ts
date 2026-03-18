@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
 // Cache en memoria simple (dura mientras el servidor esté activo)
 let itemsCache: {

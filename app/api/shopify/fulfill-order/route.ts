@@ -13,7 +13,7 @@
  *   notify_customer — true por defecto (envía email al cliente)
  */
 
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { getValidToken } from "@/domains/shopify/auth"
 import { NextRequest, NextResponse } from "next/server"
 

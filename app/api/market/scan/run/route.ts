@@ -4,7 +4,7 @@
  * Devuelve { done, cursor, scanned, skipped_cached, skipped_invalid, errors, job }
  */
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 // mlFetchJson no se usa — búsqueda pública de ML no requiere Authorization
 
 export const dynamic = "force-dynamic"

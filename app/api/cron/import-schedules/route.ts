@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { executeFullImport } from "@/lib/import/batch-import"
 import { runCatalogImport } from "@/domains/suppliers/azeta/catalog-import"
 import { runAzetaStockUpdate } from "@/domains/suppliers/azeta/stock-import"

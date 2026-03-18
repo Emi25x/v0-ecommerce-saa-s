@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 import { createFastMailClient, FastMailConfig, FastMailCredentials } from "@/domains/shipping/carriers/fastmail"
 import { createCabifyClient, CabifyConfig, CabifyCredentials } from "@/domains/shipping/carriers/cabify"
 

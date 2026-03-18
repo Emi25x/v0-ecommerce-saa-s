@@ -13,7 +13,7 @@
  *   B. cotizador.json          → un llamado por servicio en paralelo
  */
 import { type NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 import { createFastMailClient, type FastMailConfig, type FastMailCredentials, type FastMailProducto } from "@/domains/shipping/carriers/fastmail"
 
 export const dynamic = "force-dynamic"

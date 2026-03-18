@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
 // Modos de búsqueda:
 // "forewarning"  → GET /users/{id}/items/catalog-forewarning

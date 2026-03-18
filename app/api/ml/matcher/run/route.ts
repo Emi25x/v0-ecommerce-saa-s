@@ -1,4 +1,4 @@
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 import { NextResponse } from "next/server"
 import { protectAPI } from "@/lib/auth/protect-api"
 import { runMatcherBatch } from "@/domains/mercadolibre/matcher"

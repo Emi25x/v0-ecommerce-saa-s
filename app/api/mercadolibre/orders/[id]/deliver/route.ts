@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getValidAccessToken } from "@/lib/mercadolibre"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {

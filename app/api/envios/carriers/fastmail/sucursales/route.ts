@@ -5,7 +5,7 @@
  * Llama a POST /api/v2/sucursalesByCliente.json y normaliza la respuesta.
  */
 import { NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 import { createFastMailClient, type FastMailConfig, type FastMailCredentials } from "@/domains/shipping/carriers/fastmail"
 
 export const dynamic = "force-dynamic"

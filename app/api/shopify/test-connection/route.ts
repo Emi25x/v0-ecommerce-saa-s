@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { normalizeDomain, exchangeCredentialsForToken, fetchShopInfo } from "@/domains/shopify/auth"
 
 // POST: probar credenciales — soporta access_token directo O api_key + api_secret (OAuth exchange)

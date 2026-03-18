@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { refreshTokenIfNeeded } from "@/lib/mercadolibre"
 
 export async function handleQuestionNotification(notification: {

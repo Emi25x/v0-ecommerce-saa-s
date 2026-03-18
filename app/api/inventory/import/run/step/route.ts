@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import Papa from "papaparse"
 
 export const maxDuration = 60 // Anti-timeout: máximo 60s por chunk

@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 import { createFastMailClient } from "@/domains/shipping/carriers/fastmail"
 import { createCabifyClient, mapCabifyStatus } from "@/domains/shipping/carriers/cabify"
 

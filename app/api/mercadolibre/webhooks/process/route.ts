@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { getValidAccessToken } from "@/lib/mercadolibre"
 
 // Endpoint para procesar las notificaciones en cola

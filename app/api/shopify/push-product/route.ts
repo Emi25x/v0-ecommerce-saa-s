@@ -7,7 +7,7 @@
  * Body: { store_id, ean, dry_run?: boolean }
  */
 
-import { createClient }  from "@/lib/supabase/server"
+import { createClient }  from "@/lib/db/server"
 import { NextRequest, NextResponse } from "next/server"
 import { pushProductToShopify } from "@/domains/shopify/push-product"
 

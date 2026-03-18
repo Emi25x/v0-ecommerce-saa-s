@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextResponse, NextRequest } from "next/server"
 
 const SELECT_COLS = "id, user_id, cuit, razon_social, nombre_empresa, domicilio_fiscal, punto_venta, condicion_iva, ambiente, cert_pem, certificado_pem, clave_pem, private_key_pem, wsaa_token, wsaa_sign, wsaa_expires_at, logo_url, telefono, email, web, instagram, facebook, whatsapp, nota_factura, datos_pago, factura_opciones, iva_default, created_at"

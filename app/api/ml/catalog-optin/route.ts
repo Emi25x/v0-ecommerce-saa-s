@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 // GET — devuelve publicaciones activas/pausadas con EAN de la DB (rápido, sin llamar a ML)
 export async function GET(req: NextRequest) {
   const supabase = createAdminClient()

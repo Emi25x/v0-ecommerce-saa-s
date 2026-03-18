@@ -166,7 +166,7 @@ export async function refreshTokenIfNeeded(account: {
   refresh_token: string
   token_expires_at: string
 }): Promise<{ id: string; access_token: string; refresh_token: string; token_expires_at: string }> {
-  const { createClient } = await import("@/lib/supabase/server")
+  const { createClient } = await import("@/lib/db/server")
   const supabase = await createClient()
 
   // Check if token is expired or will expire in the next 5 minutes
@@ -209,7 +209,7 @@ export async function refreshTokenIfNeeded(account: {
  * This function checks the database for the token and refreshes it if expired
  */
 export async function getValidAccessToken(accountId: string): Promise<string> {
-  const { createClient } = await import("@/lib/supabase/server")
+  const { createClient } = await import("@/lib/db/server")
   const supabase = await createClient()
   
   const { data: account, error } = await supabase.from("ml_accounts").select("*").eq("id", accountId).single()

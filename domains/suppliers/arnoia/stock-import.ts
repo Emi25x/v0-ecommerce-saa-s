@@ -14,7 +14,7 @@
  *  - Also write stock_by_source[source_key] so warehouse filters work
  */
 
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 import { normalizeEan } from "@/domains/inventory/ean-utils"
 import { detectDelimiter } from "@/lib/import/csv-helpers"
 import { startRun } from "@/lib/process-runs"

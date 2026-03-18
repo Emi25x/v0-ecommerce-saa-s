@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextResponse } from "next/server"
 import { normalizeDomain, exchangeCredentialsForToken, fetchShopInfo } from "@/domains/shopify/auth"
 

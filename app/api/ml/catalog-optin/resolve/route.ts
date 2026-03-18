@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 export async function POST(req: NextRequest) {
   const supabase = createAdminClient()
   const { account_id, ean } = await req.json()

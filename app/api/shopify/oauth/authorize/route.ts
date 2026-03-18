@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { normalizeDomain } from "@/domains/shopify/auth"
-import { getAppOrigin } from "@/lib/config"
+import { getAppOrigin } from "@/lib/env/config"
 
 /**
  * GET /api/shopify/oauth/authorize

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 import { executeAutoSyncAccount } from "@/domains/mercadolibre/sync/auto-sync"
 
 export const dynamic = "force-dynamic"

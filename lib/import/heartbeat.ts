@@ -3,7 +3,7 @@
  * Actualiza periódicamente el import_history para que el cliente sepa que el proceso sigue vivo
  */
 
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
 export class ImportHeartbeat {
   private historyId: string | null

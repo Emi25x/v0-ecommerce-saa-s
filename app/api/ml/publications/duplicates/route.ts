@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 
 // GET /api/ml/publications/duplicates?account_id=xxx
 // Devuelve grupos de SKUs con 2+ publicaciones activas/pausadas.

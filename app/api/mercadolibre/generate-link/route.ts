@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { generateCodeVerifier, generateCodeChallenge, getMercadoLibreAuthUrl } from "@/lib/mercadolibre"
-import { getAppOrigin } from "@/lib/config"
+import { getAppOrigin } from "@/lib/env/config"
 
 // Genera una URL OAuth de ML con PKCE guardado en BD (no en cookie)
 // Así el link puede abrirse en cualquier browser/sesión sin depender de cookies

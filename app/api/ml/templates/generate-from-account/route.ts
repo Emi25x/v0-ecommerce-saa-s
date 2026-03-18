@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextResponse } from "next/server"
 
 // Este endpoint analiza publicaciones reales de ML y crea una plantilla basada en ellas

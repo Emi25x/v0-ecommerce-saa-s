@@ -3,7 +3,7 @@
  * Previene 429s coordinando requests entre múltiples procesos
  */
 
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/db/server'
 
 const WINDOW_DURATION_MS = 60000 // 1 minuto
 const DEFAULT_LIMIT = 300 // requests por minuto

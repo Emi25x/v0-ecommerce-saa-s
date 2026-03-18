@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createClient } from "@/lib/db/server"
+import { createAdminClient } from "@/lib/db/admin"
 
 // Endpoint temporal de diagnóstico — muestra la estructura real de ML para una orden
 // GET /api/mercadolibre/debug-order?account_id=xxx&order_id=yyy

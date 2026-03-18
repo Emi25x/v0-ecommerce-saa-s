@@ -1,6 +1,6 @@
 "use server"
 
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
 export async function executeImportAction(sourceId: string, importMode: string) {
   console.log("[v0] SERVER ACTION - Starting import", { sourceId, importMode })

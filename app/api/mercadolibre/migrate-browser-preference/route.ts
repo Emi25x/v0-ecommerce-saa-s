@@ -4,7 +4,7 @@ export async function POST() {
   try {
     console.log("[v0] Starting browser_preference migration...")
 
-    const { createClient } = await import("@/lib/supabase/server")
+    const { createClient } = await import("@/lib/db/server")
     const supabase = await createClient()
 
     console.log("[v0] Supabase client created")

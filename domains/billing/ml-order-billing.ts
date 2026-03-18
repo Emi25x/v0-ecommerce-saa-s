@@ -17,7 +17,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 
 export interface MLOrderBillingResult {
   ok:                   boolean
