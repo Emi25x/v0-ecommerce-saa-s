@@ -1,9 +1,7 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { Suspense } from "react"
 import { MigrationProvider } from "@/components/migration-provider"
 import { Toaster } from "@/components/ui/toaster"
-import { ConditionalSidebar } from "@/components/layout/conditional-sidebar"
 import "./globals.css"
 
 export const metadata: Metadata = {
@@ -22,10 +20,7 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <MigrationProvider>
           <div className="flex min-h-screen">
-            <ConditionalSidebar />
-            <main className="flex-1">
-              <Suspense fallback={null}>{children}</Suspense>
-            </main>
+            {children}
           </div>
         </MigrationProvider>
         <Toaster />
