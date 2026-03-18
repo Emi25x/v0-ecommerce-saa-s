@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { executeSyncStockBatch } from "@/lib/ml/sync-stock-logic"
+import { executeSyncStockBatch } from "@/domains/mercadolibre/sync/stock"
 
 export const maxDuration = 300
 

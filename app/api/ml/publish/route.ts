@@ -1,8 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { refreshTokenIfNeeded } from "@/lib/mercadolibre"
-import { calculateMlPrice } from "@/lib/ml/price-calculator"
-import { generateFallbackImage } from "@/lib/ml/fallback-image"
+import { calculateMlPrice } from "@/domains/mercadolibre/price-calculator"
+import { generateFallbackImage } from "@/domains/mercadolibre/publications/fallback-image"
 
 // POST: Publicar un producto del catalogo a ML
 export async function POST(request: NextRequest) {

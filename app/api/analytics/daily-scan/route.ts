@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { mlFetchJson } from "@/lib/ml/http"
+import { mlFetchJson } from "@/domains/mercadolibre/api-client"
 
 const SITE_ID = "MLA"
 const BATCH_DELAY_MS = 300

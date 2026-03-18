@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { mlFetchJson, isMlFetchError } from "@/lib/ml/http"
+import { mlFetchJson, isMlFetchError } from "@/domains/mercadolibre/api-client"
 import { refreshTokenIfNeeded } from "@/lib/mercadolibre"
 
 export const dynamic = "force-dynamic"

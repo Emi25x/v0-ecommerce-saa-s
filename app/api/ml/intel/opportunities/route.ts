@@ -16,7 +16,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { mlFetchJson, isMlFetchError } from "@/lib/ml/http"
+import { mlFetchJson, isMlFetchError } from "@/domains/mercadolibre/api-client"
 
 const SITE_ID = "MLA"
 const MAX_SELLERS_THRESHOLD = 20   // más de esto → no sugerir

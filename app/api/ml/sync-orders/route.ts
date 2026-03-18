@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
-import { executeSyncOrdersBatch } from "@/lib/ml/sync-orders-logic"
+import { executeSyncOrdersBatch } from "@/domains/mercadolibre/sync/orders"
 import { NextRequest, NextResponse } from "next/server"
 
 export const dynamic    = "force-dynamic"

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { calculateMlPriorities } from "@/lib/ml/calculate-priorities"
+import { calculateMlPriorities } from "@/domains/mercadolibre/priorities"
 
 export async function POST(req: Request) {
   try {

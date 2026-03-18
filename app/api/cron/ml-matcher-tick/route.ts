@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin"
 import { NextResponse } from "next/server"
-import { runMatcherBatch } from "@/lib/ml/matcher-logic"
+import { runMatcherBatch } from "@/domains/mercadolibre/matcher"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60

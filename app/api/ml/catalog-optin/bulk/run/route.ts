@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { normalizeEanForCatalog, resolveCatalogProductId, optinItemToCatalog } from "@/lib/ml/catalog-optin"
+import { normalizeEanForCatalog, resolveCatalogProductId, optinItemToCatalog } from "@/domains/mercadolibre/catalog-optin"
 const BATCH = 20
 const RESOLVE_DELAY = 200
 const OPTIN_DELAY   = 300

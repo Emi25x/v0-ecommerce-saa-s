@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { executeSingleTick } from "@/lib/ml/import-orchestrator"
+import { executeSingleTick } from "@/domains/mercadolibre/import/orchestrator"
 
 export const maxDuration = 60
 

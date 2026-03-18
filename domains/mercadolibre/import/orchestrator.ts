@@ -11,8 +11,8 @@
  * they now call these functions directly.
  */
 
-import { executeIndexBatch } from "./import-index-logic"
-import { executeWorkerBatch } from "./import-worker-logic"
+import { executeIndexBatch } from "./index-logic"
+import { executeWorkerBatch } from "./worker-logic"
 
 export interface TickResult {
   ok: boolean

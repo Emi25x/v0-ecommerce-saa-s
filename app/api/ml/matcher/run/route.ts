@@ -1,7 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin"
 import { NextResponse } from "next/server"
 import { protectAPI } from "@/lib/auth/protect-api"
-import { runMatcherBatch } from "@/lib/ml/matcher-logic"
+import { runMatcherBatch } from "@/domains/mercadolibre/matcher"
 
 export const maxDuration = 60
 

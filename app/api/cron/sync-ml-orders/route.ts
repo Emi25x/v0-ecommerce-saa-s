@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
-import { executeSyncOrdersBatch } from "@/lib/ml/sync-orders-logic"
+import { executeSyncOrdersBatch } from "@/domains/mercadolibre/sync/orders"
 import { NextResponse } from "next/server"
 import { startRun } from "@/lib/process-runs"
 

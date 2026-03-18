@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { executeWorkerBatch } from "@/lib/ml/import-worker-logic"
+import { executeWorkerBatch } from "@/domains/mercadolibre/import/worker-logic"
 
 export const maxDuration = 60
 

@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { executeSyncUpdates } from "@/lib/ml/sync-updates-logic"
+import { executeSyncUpdates } from "@/domains/mercadolibre/sync/updates"
 
 export const maxDuration = 300
 

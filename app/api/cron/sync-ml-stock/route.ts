@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
-import { executeSyncStockBatch } from "@/lib/ml/sync-stock-logic"
-import { getBestIdentifier } from "@/lib/ml/product-identifier-extractor"
+import { executeSyncStockBatch } from "@/domains/mercadolibre/sync/stock"
+import { getBestIdentifier } from "@/domains/mercadolibre/publications/identifier-extractor"
 import { NextResponse } from "next/server"
 import { startRun } from "@/lib/process-runs"
 
