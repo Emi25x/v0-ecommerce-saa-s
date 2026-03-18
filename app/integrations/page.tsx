@@ -9,9 +9,9 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useEffect, useState } from "react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { LibralConfigDialog } from "@/components/integrations/libral-config-dialog"
-import { WebhookStatusCard } from "@/components/webhook-status-card"
-import { MLAccountCard }       from "@/components/ml-account-card"
+import { LibralConfigDialog } from "@/components/suppliers/libral-config-dialog"
+import { WebhookStatusCard } from "@/components/shared/webhook-status-card"
+import { MLAccountCard }       from "@/components/mercadolibre/account-card"
 
 
 

@@ -11,13 +11,13 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Checkbox } from "@/components/ui/checkbox"
-import { AdvancedPagination } from "@/components/advanced-pagination"
+import { AdvancedPagination } from "@/components/shared/advanced-pagination"
 import { RefreshCw, Filter, Download, Package, Eye, Calendar, Truck, Printer, MapPin, Clock } from "lucide-react"
 
-import { MLConnectionStatus } from "@/components/ml-connection-status"
-import { LastUpdated } from "@/components/last-updated"
-import { SortSelector } from "@/components/sort-selector"
-import { ShipmentTrackingTimeline } from "@/components/shipment-tracking-timeline"
+import { MLConnectionStatus } from "@/components/mercadolibre/connection-status"
+import { LastUpdated } from "@/components/shared/last-updated"
+import { SortSelector } from "@/components/shared/sort-selector"
+import { ShipmentTrackingTimeline } from "@/components/shipping/tracking-timeline"
 
 interface Shipment {
   id: number

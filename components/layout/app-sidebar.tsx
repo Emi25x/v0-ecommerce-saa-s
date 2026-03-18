@@ -46,10 +46,10 @@ import {
   Radar,
   Facebook,
 } from "lucide-react"
-import { LogoutButton } from "@/components/logout-button"
-import { UserDisplay } from "@/components/user-display"
-import { SidebarSection } from "@/components/sidebar/sidebar-section"
-import { SidebarLink } from "@/components/sidebar/sidebar-link"
+import { LogoutButton } from "@/components/layout/logout-button"
+import { UserDisplay } from "@/components/layout/user-display"
+import { SidebarSection } from "@/components/layout/sidebar-section"
+import { SidebarLink } from "@/components/layout/sidebar-link"
 
 // ML brand logo (not available in lucide-react)
 const MLLogo = ({ className }: { className?: string }) => (

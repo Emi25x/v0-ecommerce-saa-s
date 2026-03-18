@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
-import { ShopifyStoreCard } from "@/components/integrations/shopify-store-card"
-import { ShopifyStoreDialog } from "@/components/integrations/shopify-store-dialog"
+import { ShopifyStoreCard } from "@/components/shopify/store-card"
+import { ShopifyStoreDialog } from "@/components/shopify/store-dialog"
 import { useToast } from "@/hooks/use-toast"
 import { Plus, ArrowLeft, Loader2 } from "lucide-react"
 import Link from "next/link"

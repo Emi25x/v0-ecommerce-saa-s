@@ -3,7 +3,7 @@ import type { Metadata } from "next"
 import { Suspense } from "react"
 import { MigrationProvider } from "@/components/migration-provider"
 import { Toaster } from "@/components/ui/toaster"
-import { ConditionalSidebar } from "@/components/conditional-sidebar"
+import { ConditionalSidebar } from "@/components/layout/conditional-sidebar"
 import "./globals.css"
 
 export const metadata: Metadata = {
