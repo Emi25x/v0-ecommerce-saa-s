@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Reset progress (including scroll_id for fresh scroll pagination)
+    // Also reset audit counters so they don't carry over stale data
     const { error: updateError } = await supabase
       .from("ml_import_progress")
       .update({
@@ -43,7 +44,18 @@ export async function POST(request: NextRequest) {
         status: "idle",
         paused_until: null,
         last_error: null,
+        last_error_at: null,
         last_run_at: null,
+        // audit counters
+        ml_items_seen_count: 0,
+        db_rows_upserted_count: 0,
+        upsert_errors_count: 0,
+        // metric counters
+        discovered_count: 0,
+        fetched_count: 0,
+        upsert_new_count: 0,
+        request_count: 0,
+        finished_at: null,
       })
       .eq("account_id", account_id)
 

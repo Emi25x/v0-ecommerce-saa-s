@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { getValidAccessToken } from "@/lib/mercadolibre"
 import { NextRequest, NextResponse } from "next/server"
 import { protectAPI } from "@/lib/auth/protect-api"
+import { startRun } from "@/lib/process-runs"
 
 export const maxDuration = 60
 
@@ -99,6 +100,7 @@ export async function POST(request: NextRequest) {
 
   const startTime = Date.now()
   let accountId: string | null = null
+  let run: Awaited<ReturnType<typeof startRun>> | null = null
 
   try {
     const body = await request.json()
@@ -182,6 +184,9 @@ export async function POST(request: NextRequest) {
       .from("ml_import_progress")
       .update({ status: "running", last_run_at: new Date().toISOString(), last_error: null })
       .eq("account_id", accountId)
+
+    // ── Audit trail via process_runs ──────────────────────────────────────
+    run = await startRun(supabase, "ml_import_pro", "ML Import Pro")
 
     const accessToken  = await getValidAccessToken(accountId)
     const authHeader   = { Authorization: `Bearer ${accessToken}` }
@@ -665,6 +670,24 @@ export async function POST(request: NextRequest) {
       .eq("account_id", accountId)
       .single()
 
+    // ── Registrar run exitoso en process_runs ─────────────────────────────
+    await run.complete({
+      rows_processed: mlSeenCount,
+      rows_updated:   importedCount,
+      rows_failed:    errorsCount,
+      log_json: {
+        account_id:    accountId,
+        ml_seen:       mlSeenCount,
+        db_upserted:   importedCount,
+        errors:        errorsCount,
+        rate_limited:  rateLimited,
+        has_more:      hasMore && !isDone,
+        total_seen:    finalCounts?.ml_items_seen_count    ?? 0,
+        total_upserted: finalCounts?.db_rows_upserted_count ?? 0,
+        ml_total:      finalCounts?.publications_total     ?? 0,
+      },
+    })
+
     return NextResponse.json({
       ok:                     true,
       imported_count:         importedCount,                           // filas persistidas en esta corrida
@@ -693,6 +716,8 @@ export async function POST(request: NextRequest) {
           .eq("account_id", accountId)
       } catch { /* ignorar */ }
     }
+    // run.fail es best-effort — si run es noop (tabla no existe) no falla
+    if (run) await run.fail(error).catch(() => {})
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   }
 }
