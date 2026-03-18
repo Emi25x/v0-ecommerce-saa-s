@@ -74,8 +74,7 @@ export default function BatchImportPage() {
     addLog(`Iniciando importacion por lotes de ${sourceName}...`)
 
     const nameLower = sourceName.toLowerCase()
-    // Ambas fuentes Azeta (Total y Parcial) usan el flujo azeta/download → azeta/process.
-    // El batch genérico no puede manejar el ZIP de Total (~230MB) ni los errores del servidor de Azeta.
+    // Azeta usa rutas dedicadas: import-catalog (catálogo ZIP/CSV) o import-stock (stock diario).
     const isAzeta = nameLower.includes("azeta")
 
     // AZETA: llama directamente a import-catalog (descarga ZIP/CSV server-side, sin Blob intermedio)
