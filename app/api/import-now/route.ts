@@ -1,9 +1,9 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { mergeStockBySource } from "@/lib/stock-helpers"
-import { runLibralStockImport } from "@/lib/libral/run-stock-import"
-import { runAzetaStockUpdate } from "@/lib/azeta/update-stock-import"
-import { runArnoiaStockImport } from "@/lib/arnoia/run-stock-import"
+import { mergeStockBySource } from "@/domains/inventory/stock-helpers"
+import { runLibralStockImport } from "@/domains/suppliers/libral/stock-import"
+import { runAzetaStockUpdate } from "@/domains/suppliers/azeta/stock-import"
+import { runArnoiaStockImport } from "@/domains/suppliers/arnoia/stock-import"
 
 console.log("[v0] ========================================")
 console.log("[v0] IMPORT-NOW ENDPOINT MODULE LOADED")

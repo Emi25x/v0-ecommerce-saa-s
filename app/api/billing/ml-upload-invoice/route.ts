@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { buildFacturaHTML } from "@/lib/arca/pdf"
-import { htmlToPdfBuffer } from "@/lib/billing/generate-pdf"
-import { buildFacturaHtmlParams } from "@/lib/billing/build-factura-html-params"
+import { buildFacturaHTML } from "@/domains/billing/arca/pdf"
+import { htmlToPdfBuffer } from "@/domains/billing/pdf-generator"
+import { buildFacturaHtmlParams } from "@/domains/billing/factura-builder"
 
 // Puppeteer necesita más tiempo que el default de 10s
 export const maxDuration = 60

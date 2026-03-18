@@ -14,7 +14,7 @@
  */
 
 import { createClient } from "@/lib/supabase/server"
-import { getValidToken } from "@/lib/shopify-auth"
+import { getValidToken } from "@/domains/shopify/auth"
 import { NextRequest, NextResponse } from "next/server"
 
 export async function POST(request: NextRequest) {

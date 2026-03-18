@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { isLibralTokenValid } from "@/lib/libral"
+import { isLibralTokenValid } from "@/domains/suppliers/libral/client"
 import { createClient } from "@/lib/supabase/server"
 
 export async function GET(request: NextRequest) {

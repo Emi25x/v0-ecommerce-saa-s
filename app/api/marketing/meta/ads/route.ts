@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin"
 import { NextRequest, NextResponse } from "next/server"
-import { getMetaAdsCampaigns, getMetaAccountInfo } from "@/lib/marketing/meta"
+import { getMetaAdsCampaigns, getMetaAccountInfo } from "@/domains/marketing/meta"
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)

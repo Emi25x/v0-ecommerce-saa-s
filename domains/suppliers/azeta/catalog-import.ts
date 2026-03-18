@@ -12,7 +12,7 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin"
-import { normalizeEan } from "@/lib/ean-utils"
+import { normalizeEan } from "@/domains/inventory/ean-utils"
 
 // URL de fallback — solo si no está configurado en import_sources
 const AZETA_TOTAL_URL =

@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { runCatalogImport } from "@/lib/azeta/run-catalog-import"
+import { runCatalogImport } from "@/domains/suppliers/azeta/catalog-import"
 
 export const maxDuration = 300
 

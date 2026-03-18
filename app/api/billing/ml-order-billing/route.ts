@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { getMLOrderBilling } from "@/lib/billing/get-ml-order-billing"
+import { getMLOrderBilling } from "@/domains/billing/ml-order-billing"
 
 // GET /api/billing/ml-order-billing?account_id=X&order_id=Y[&debug=1]
 //

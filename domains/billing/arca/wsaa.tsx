@@ -6,10 +6,10 @@
  */
 
 import { createClient }               from "@/lib/supabase/server"
-import { buildTRA, signTRA, callWSAA } from "@/lib/arca/wsaa-utils"
+import { buildTRA, signTRA, callWSAA } from "@/domains/billing/arca/wsaa-utils"
 
 // Re-exportar para que los importadores existentes no rompan
-export { buildTRA, signTRA, callWSAA } from "@/lib/arca/wsaa-utils"
+export { buildTRA, signTRA, callWSAA } from "@/domains/billing/arca/wsaa-utils"
 
 type ArcaConfig = {
   id: string

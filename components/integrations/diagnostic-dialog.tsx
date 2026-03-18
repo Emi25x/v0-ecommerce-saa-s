@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { CheckCircle2, XCircle, Loader2, AlertCircle } from "lucide-react"
-import type { DiagnosticResult } from "@/lib/integrations/diagnostics"
+import type { DiagnosticResult } from "@/domains/integrations/diagnostics"
 
 interface DiagnosticDialogProps {
   open: boolean

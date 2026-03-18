@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextRequest, NextResponse } from "next/server"
-import { pushProductToShopify } from "@/lib/shopify/push-product"
+import { pushProductToShopify } from "@/domains/shopify/push-product"
 
 export const maxDuration = 300
 

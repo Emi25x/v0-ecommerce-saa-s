@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/components/ui/use-toast"
-import { PLATFORMS } from "@/lib/marketing/platforms"
+import { PLATFORMS } from "@/domains/marketing/platforms"
 import Link from "next/link"
 
 const EMAIL_PLATFORMS = ["klaviyo", "mailchimp", "brevo", "hubspot", "activecampaign", "whatsapp"] as const

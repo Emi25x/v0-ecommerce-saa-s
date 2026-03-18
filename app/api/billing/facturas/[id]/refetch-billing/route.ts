@@ -1,8 +1,8 @@
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { NextResponse } from "next/server"
-import { getMLOrderBilling } from "@/lib/billing/get-ml-order-billing"
-import { normalizeDocType } from "@/lib/billing/normalize-doc-type"
+import { getMLOrderBilling } from "@/domains/billing/ml-order-billing"
+import { normalizeDocType } from "@/domains/billing/doc-type"
 
 /**
  * POST /api/billing/facturas/{id}/refetch-billing

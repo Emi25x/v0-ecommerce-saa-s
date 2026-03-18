@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/components/ui/use-toast"
-import { PLATFORMS, CATEGORY_LABELS } from "@/lib/marketing/platforms"
+import { PLATFORMS, CATEGORY_LABELS } from "@/domains/marketing/platforms"
 import type { PlatformDefinition } from "@/types/marketing"
 import Link from "next/link"
 

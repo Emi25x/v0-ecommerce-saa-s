@@ -13,7 +13,7 @@
 
 import { createClient } from "@/lib/supabase/server"
 import { NextRequest, NextResponse } from "next/server"
-import { getValidToken } from "@/lib/shopify-auth"
+import { getValidToken } from "@/domains/shopify/auth"
 
 // GraphQL query that fetches products WITH metafields
 const PRODUCTS_WITH_METAFIELDS_QUERY = `

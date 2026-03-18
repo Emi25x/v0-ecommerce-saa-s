@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { runLibralStockImport } from "@/lib/libral/run-stock-import"
+import { runLibralStockImport } from "@/domains/suppliers/libral/stock-import"
 import { executeBatchImport } from "@/lib/import/batch-import"
 
 /**

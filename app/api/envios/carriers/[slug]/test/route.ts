@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { createFastMailClient, FastMailConfig, FastMailCredentials } from "@/lib/carriers/fastmail"
-import { createCabifyClient, CabifyConfig, CabifyCredentials } from "@/lib/carriers/cabify"
+import { createFastMailClient, FastMailConfig, FastMailCredentials } from "@/domains/shipping/carriers/fastmail"
+import { createCabifyClient, CabifyConfig, CabifyCredentials } from "@/domains/shipping/carriers/cabify"
 
 export async function POST(_req: NextRequest, { params }: { params: { slug: string } }) {
   const supabase = createAdminClient()

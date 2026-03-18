@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { getLibralToken, queryLibralProducts, delayBetweenBatches } from "@/lib/libral"
-import { mergeStockBySource } from "@/lib/stock-helpers"
+import { getLibralToken, queryLibralProducts, delayBetweenBatches } from "@/domains/suppliers/libral/client"
+import { mergeStockBySource } from "@/domains/inventory/stock-helpers"
 
 // Sincroniza stock y precios solo cuando hay cambios
 // Detecta productos nuevos automáticamente

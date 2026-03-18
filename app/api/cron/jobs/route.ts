@@ -6,7 +6,7 @@
  */
 import { NextResponse } from "next/server"
 import { calculateMlPriorities } from "@/domains/mercadolibre/priorities"
-import { fetchRadarNews } from "@/lib/radar/fetch-news"
+import { fetchRadarNews } from "@/domains/radar/fetch-news"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 120

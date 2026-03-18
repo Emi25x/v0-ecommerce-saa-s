@@ -15,7 +15,7 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin"
-import { normalizeEan } from "@/lib/ean-utils"
+import { normalizeEan } from "@/domains/inventory/ean-utils"
 import { detectDelimiter } from "@/lib/import/csv-helpers"
 import { startRun } from "@/lib/process-runs"
 

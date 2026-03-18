@@ -6,7 +6,7 @@
  */
 import { NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { createFastMailClient, type FastMailConfig, type FastMailCredentials } from "@/lib/carriers/fastmail"
+import { createFastMailClient, type FastMailConfig, type FastMailCredentials } from "@/domains/shipping/carriers/fastmail"
 
 export const dynamic = "force-dynamic"
 

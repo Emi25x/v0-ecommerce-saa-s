@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { renewAndPersistToken } from "@/lib/shopify-auth"
+import { renewAndPersistToken } from "@/domains/shopify/auth"
 import { startRun } from "@/lib/process-runs"
 
 // POST /api/shopify/sync

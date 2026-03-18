@@ -9,7 +9,7 @@
 
 import { createClient }  from "@/lib/supabase/server"
 import { NextRequest, NextResponse } from "next/server"
-import { pushProductToShopify } from "@/lib/shopify/push-product"
+import { pushProductToShopify } from "@/domains/shopify/push-product"
 
 export async function POST(req: NextRequest) {
   try {

@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextRequest, NextResponse } from "next/server"
-import { calculatePrice, type PriceListConfig, type ProductInput } from "@/lib/pricing/engine"
+import { calculatePrice, type PriceListConfig, type ProductInput } from "@/domains/pricing/engine"
 
 export const dynamic = "force-dynamic"
 

@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { generateAuthDiagnostics, runDiagnostics } from "@/lib/integrations/diagnostics"
+import { generateAuthDiagnostics, runDiagnostics } from "@/domains/integrations/diagnostics"
 
 export async function POST(request: NextRequest) {
   try {

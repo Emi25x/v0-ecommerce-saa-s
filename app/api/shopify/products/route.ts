@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { getValidToken } from "@/lib/shopify-auth"
+import { getValidToken } from "@/domains/shopify/auth"
 
 // Llama a GraphQL para buscar en TODA la tienda por título, SKU o barcode/ISBN
 async function searchProductsGraphQL(

@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { updateLibralStock } from "@/lib/libral"
+import { updateLibralStock } from "@/domains/suppliers/libral/client"
 import { createClient } from "@/lib/supabase/server"
 
 export async function POST(request: NextRequest) {

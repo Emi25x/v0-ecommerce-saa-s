@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { fetchRadarNews } from "@/lib/radar/fetch-news"
+import { fetchRadarNews } from "@/domains/radar/fetch-news"
 
 export async function GET(req: Request) {
   const authHeader = req.headers.get("authorization")

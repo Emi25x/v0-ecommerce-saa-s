@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getShopifyProducts } from "@/lib/shopify"
+import { getShopifyProducts } from "@/domains/shopify/types"
 
 export async function POST() {
   try {

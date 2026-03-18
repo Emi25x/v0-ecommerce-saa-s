@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin"
 import { NextRequest, NextResponse } from "next/server"
-import { getMerchantProducts } from "@/lib/marketing/google"
+import { getMerchantProducts } from "@/domains/marketing/google"
 
 export async function GET(request: NextRequest) {
   const supabase = createAdminClient()

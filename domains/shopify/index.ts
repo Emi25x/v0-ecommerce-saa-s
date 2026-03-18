@@ -1,7 +1,7 @@
 // Shopify integration following the new modular architecture
 
-import type { BaseIntegration, IntegrationConfig, UnifiedProduct } from "../types"
-import * as shopifyClient from "./client"
+import type { BaseIntegration, IntegrationConfig, UnifiedProduct } from "@/domains/integrations/types"
+import * as shopifyClient from "./api-client"
 
 export class ShopifyIntegration implements BaseIntegration {
   config: IntegrationConfig = {
@@ -151,5 +151,5 @@ export class ShopifyIntegration implements BaseIntegration {
 }
 
 // Register the integration
-import { integrationRegistry } from "../registry"
+import { integrationRegistry } from "@/domains/integrations/registry"
 integrationRegistry.register(new ShopifyIntegration())

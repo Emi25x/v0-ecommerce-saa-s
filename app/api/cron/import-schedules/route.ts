@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { executeFullImport } from "@/lib/import/batch-import"
-import { runCatalogImport } from "@/lib/azeta/run-catalog-import"
-import { runAzetaStockUpdate } from "@/lib/azeta/update-stock-import"
-import { runLibralStockImport } from "@/lib/libral/run-stock-import"
-import { runArnoiaStockImport } from "@/lib/arnoia/run-stock-import"
+import { runCatalogImport } from "@/domains/suppliers/azeta/catalog-import"
+import { runAzetaStockUpdate } from "@/domains/suppliers/azeta/stock-import"
+import { runLibralStockImport } from "@/domains/suppliers/libral/stock-import"
+import { runArnoiaStockImport } from "@/domains/suppliers/arnoia/stock-import"
 // TODO: Implementar sync ML como función directa en lugar de fetch
 // import { syncStockWithML } from "@/lib/ml/sync-stock"
 

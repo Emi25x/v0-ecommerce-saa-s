@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { getShopifyProducts } from "@/lib/shopify"
+import { getShopifyProducts } from "@/domains/shopify/types"
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {

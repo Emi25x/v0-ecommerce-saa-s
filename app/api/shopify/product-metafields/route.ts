@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { getValidToken } from "@/lib/shopify-auth"
+import { getValidToken } from "@/domains/shopify/auth"
 
 // GET /api/shopify/product-metafields?store_id=xxx&product_id=yyy
 // Retorna los metafields de un producto Shopify

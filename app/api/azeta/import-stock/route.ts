@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { runAzetaStockUpdate } from "@/lib/azeta/update-stock-import"
+import { runAzetaStockUpdate } from "@/domains/suppliers/azeta/stock-import"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300 // 5 minutos

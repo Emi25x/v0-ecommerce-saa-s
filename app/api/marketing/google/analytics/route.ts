@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin"
 import { NextRequest, NextResponse } from "next/server"
-import { getGA4Report, getGA4Realtime } from "@/lib/marketing/google"
+import { getGA4Report, getGA4Realtime } from "@/domains/marketing/google"
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)

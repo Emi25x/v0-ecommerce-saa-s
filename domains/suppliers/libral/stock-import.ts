@@ -13,8 +13,8 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin"
-import { authenticateLibral, isLibralTokenValid, queryLibralProducts } from "@/lib/libral"
-import { mergeStockBySource } from "@/lib/stock-helpers"
+import { authenticateLibral, isLibralTokenValid, queryLibralProducts } from "@/domains/suppliers/libral/client"
+import { mergeStockBySource } from "@/domains/inventory/stock-helpers"
 
 const PAGE_SIZE = 1000
 const UPSERT_CHUNK = 500

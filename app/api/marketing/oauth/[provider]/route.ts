@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
-import { buildGoogleOAuthUrl } from "@/lib/marketing/google"
-import { buildMetaOAuthUrl } from "@/lib/marketing/meta"
-import { buildTikTokOAuthUrl } from "@/lib/marketing/tiktok"
+import { buildGoogleOAuthUrl } from "@/domains/marketing/google"
+import { buildMetaOAuthUrl } from "@/domains/marketing/meta"
+import { buildTikTokOAuthUrl } from "@/domains/marketing/tiktok"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { getAppOrigin } from "@/lib/config"
 

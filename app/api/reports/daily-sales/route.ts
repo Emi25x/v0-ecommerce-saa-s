@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { generateDailySalesReport, sendDailySalesEmail } from "@/lib/reports/daily-sales"
+import { generateDailySalesReport, sendDailySalesEmail } from "@/domains/radar/daily-sales"
 
 export async function POST(request: NextRequest) {
   try {

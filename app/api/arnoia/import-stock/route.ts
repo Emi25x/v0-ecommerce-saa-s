@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { runArnoiaStockImport } from "@/lib/arnoia/run-stock-import"
+import { runArnoiaStockImport } from "@/domains/suppliers/arnoia/stock-import"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300

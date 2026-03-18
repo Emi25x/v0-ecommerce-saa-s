@@ -4,7 +4,7 @@
  * both from the HTTP route and from push-batch without self-fetch.
  */
 
-import { getValidToken } from "@/lib/shopify-auth"
+import { getValidToken } from "@/domains/shopify/auth"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 // ── Helpers ────────────────────────────────────────────────────────────────

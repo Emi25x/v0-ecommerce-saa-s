@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getLibralProducts } from "@/lib/libral"
+import { getLibralProducts } from "@/domains/suppliers/libral/client"
 import { createClient } from "@/lib/supabase/server"
-import { mergeStockBySource } from "@/lib/stock-helpers"
+import { mergeStockBySource } from "@/domains/inventory/stock-helpers"
 
 export async function POST(request: NextRequest) {
   try {

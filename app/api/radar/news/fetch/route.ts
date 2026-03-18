@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { fetchRadarNews } from "@/lib/radar/fetch-news"
+import { fetchRadarNews } from "@/domains/radar/fetch-news"
 
 export const maxDuration = 60
 

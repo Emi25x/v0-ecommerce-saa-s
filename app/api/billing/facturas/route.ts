@@ -1,10 +1,10 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { getWSAATicket } from "@/lib/arca/wsaa"
-import { requestCAE } from "@/lib/arca/wsfe"
-import type { FacturaItem } from "@/lib/arca/wsfe"
-import { getMLOrderBilling } from "@/lib/billing/get-ml-order-billing"
-import { normalizeDocType } from "@/lib/billing/normalize-doc-type"
+import { getWSAATicket } from "@/domains/billing/arca/wsaa"
+import { requestCAE } from "@/domains/billing/arca/wsfe"
+import type { FacturaItem } from "@/domains/billing/arca/wsfe"
+import { getMLOrderBilling } from "@/domains/billing/ml-order-billing"
+import { normalizeDocType } from "@/domains/billing/doc-type"
 
 // GET — listar facturas con paginación y filtros
 export async function GET(request: Request) {

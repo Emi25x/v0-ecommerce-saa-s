@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getLibralToken } from "@/lib/libral"
+import { getLibralToken } from "@/domains/suppliers/libral/client"
 
 async function testLibralConnection(token: string) {
   const testConfigs = [

@@ -7,7 +7,7 @@ import {
   getHubSpotCampaigns, getHubSpotContacts,
   getActiveCampaignCampaigns,
   getWhatsAppTemplates, getWhatsAppPhoneInfo,
-} from "@/lib/marketing/email"
+} from "@/domains/marketing/email"
 
 export async function GET(
   request: NextRequest,

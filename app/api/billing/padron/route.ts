@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { consultarPersona } from "@/lib/arca/padron"
+import { consultarPersona } from "@/domains/billing/arca/padron"
 
 export async function GET(req: NextRequest) {
   const cuit = req.nextUrl.searchParams.get("cuit")?.replace(/\D/g, "")

@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { buildFacturaHTML } from "@/lib/arca/pdf"
-import { buildFacturaHtmlParams } from "@/lib/billing/build-factura-html-params"
+import { buildFacturaHTML } from "@/domains/billing/arca/pdf"
+import { buildFacturaHtmlParams } from "@/domains/billing/factura-builder"
 
 function buildPDFResponse(factura: any) {
   const config = factura.arca_config as any

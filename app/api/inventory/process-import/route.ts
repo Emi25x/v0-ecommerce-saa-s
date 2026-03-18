@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import { type NextRequest, NextResponse } from "next/server"
-import { mergeStockBySource } from "@/lib/stock-helpers"
+import { mergeStockBySource } from "@/domains/inventory/stock-helpers"
 
 export const maxDuration = 300 // 5 minutos para imports grandes
 

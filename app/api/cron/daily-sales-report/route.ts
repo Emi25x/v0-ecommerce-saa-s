@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { sendDailySalesEmail } from "@/lib/reports/daily-sales"
+import { sendDailySalesEmail } from "@/domains/radar/daily-sales"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60

@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import Papa from "papaparse"
-import { mergeStockBySource } from "@/lib/stock-helpers"
+import { mergeStockBySource } from "@/domains/inventory/stock-helpers"
 
 const BATCH_SIZE = 100
 
