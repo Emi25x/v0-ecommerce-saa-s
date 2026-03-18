@@ -9,21 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-
-const Columns3 = ({ className }: { className?: string }) => (
-  <svg
-    className={className}
-    width="24"
-    height="24"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-  >
-    <rect width="7" height="18" x="3" y="3" rx="1" />
-    <rect width="7" height="18" x="14" y="3" rx="1" />
-  </svg>
-)
+import { Columns3 } from "lucide-react"
 
 interface Column {
   id: string

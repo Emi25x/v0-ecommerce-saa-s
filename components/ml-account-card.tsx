@@ -16,102 +16,18 @@ import {
 } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-
-const CheckCircle = () => (
-  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-    />
-  </svg>
-)
-
-const XCircle = () => (
-  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
-    />
-  </svg>
-)
-
-const Settings = () => (
-  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37.996.608 2.296.07 2.572-1.065z"
-    />
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-  </svg>
-)
-
-const Trash = () => (
-  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-    />
-  </svg>
-)
-
-const Edit = () => (
-  <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-    />
-  </svg>
-)
-
-const Check = () => (
-  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-  </svg>
-)
-
-const RefreshCw = ({ className }: { className?: string }) => (
-  <svg className={`h-4 w-4 ${className ?? ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-  </svg>
-)
-
-const X = () => (
-  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-  </svg>
-)
-
-const ExternalLink = () => (
-  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M10 6H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-    />
-  </svg>
-)
-
-const Globe = () => (
-  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"
-    />
-  </svg>
-)
+import {
+  CheckCircle2 as CheckCircle,
+  XCircle,
+  Settings,
+  Trash2 as Trash,
+  Pencil as Edit,
+  Check,
+  RefreshCw,
+  X,
+  ExternalLink,
+  Globe,
+} from "lucide-react"
 
 interface MLAccount {
   id: string
@@ -359,7 +275,7 @@ export function MLAccountCard({
                     autoFocus
                   />
                   <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleSaveNickname}>
-                    <Check />
+                    <Check className="h-4 w-4" />
                   </Button>
                   <Button
                     size="icon"
@@ -370,14 +286,14 @@ export function MLAccountCard({
                       setIsEditingNickname(false)
                     }}
                   >
-                    <X />
+                    <X className="h-4 w-4" />
                   </Button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
                   <CardTitle className="text-lg">{nickname}</CardTitle>
                   <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setIsEditingNickname(true)}>
-                    <Edit />
+                    <Edit className="h-3 w-3" />
                   </Button>
                 </div>
               )}
@@ -387,12 +303,12 @@ export function MLAccountCard({
           <Badge variant={isConnected ? "default" : "destructive"} className="gap-1">
             {isConnected ? (
               <>
-                <CheckCircle />
+                <CheckCircle className="h-4 w-4" />
                 Conectada
               </>
             ) : (
               <>
-                <XCircle />
+                <XCircle className="h-4 w-4" />
                 {account.tokenExpired ? "Token Expirado" : "Desconectada"}
               </>
             )}
@@ -402,7 +318,7 @@ export function MLAccountCard({
       <CardContent className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor={`browser-${account.id}`} className="text-sm font-medium flex items-center gap-2">
-            <Globe />
+            <Globe className="h-4 w-4" />
             Navegador Preferido
           </Label>
           <div className="space-y-2">
@@ -511,7 +427,7 @@ export function MLAccountCard({
           <Dialog open={showConfig} onOpenChange={setShowConfig}>
             <DialogTrigger asChild>
               <Button variant="outline" className="flex-1 bg-transparent">
-                <Settings />
+                <Settings className="h-4 w-4" />
                 <span className="ml-2">Webhooks</span>
               </Button>
             </DialogTrigger>
@@ -555,7 +471,7 @@ export function MLAccountCard({
                 <div className="flex justify-between">
                   <Button variant="outline" asChild>
                     <a href="https://developers.mercadolibre.com.ar" target="_blank" rel="noopener noreferrer">
-                      <ExternalLink />
+                      <ExternalLink className="h-4 w-4" />
                       <span className="ml-2">Ir a Developers</span>
                     </a>
                   </Button>
@@ -581,13 +497,13 @@ export function MLAccountCard({
       disabled={isSyncing}
       className="bg-transparent"
     >
-      <RefreshCw className={isSyncing ? "animate-spin" : ""} />
+      <RefreshCw className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
       <span className="ml-1">{isSyncing ? "Sincronizando..." : "Sincronizar"}</span>
     </Button>
   )}
   
   <Button variant="destructive" size="icon" onClick={handleDelete} disabled={isDeleting}>
-            <Trash />
+            <Trash className="h-4 w-4" />
           </Button>
         </div>
 

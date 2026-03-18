@@ -2,8 +2,7 @@
 
 import { Input } from "@/components/ui/input"
 import { toast } from "@/components/ui/use-toast" // Import toast
-import { Copy } from "@/components/ui/icons/copy" // Import Copy icon
-import { Package, ExternalLink, CheckCircle2, XCircle, Plus, AlertTriangle, ChevronRight } from "lucide-react"
+import { Package, ExternalLink, CheckCircle2, XCircle, Plus, AlertTriangle, ChevronRight, Copy } from "lucide-react"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
