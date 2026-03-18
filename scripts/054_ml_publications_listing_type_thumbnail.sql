@@ -8,6 +8,11 @@ ALTER TABLE ml_publications
 -- Relax weight constraint: allow items down to 1g (some small items like bookmarks, stickers)
 -- The old constraint (50g-30kg) silently dropped lightweight items on upsert.
 ALTER TABLE ml_publications DROP CONSTRAINT IF EXISTS ml_publications_weight_range_check;
+
+-- Nullify invalid weights (0, negative, or > 30kg) so the new constraint can be applied
+UPDATE ml_publications SET meli_weight_g = NULL
+  WHERE meli_weight_g IS NOT NULL AND (meli_weight_g < 1 OR meli_weight_g > 30000);
+
 ALTER TABLE ml_publications ADD CONSTRAINT ml_publications_weight_range_check
   CHECK (meli_weight_g IS NULL OR (meli_weight_g >= 1 AND meli_weight_g <= 30000));
 
