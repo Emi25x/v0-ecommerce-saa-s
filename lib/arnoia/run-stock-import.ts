@@ -144,6 +144,15 @@ export async function runArnoiaStockImport(): Promise<ArnoiaStockImportResult> {
         totalNotFound += batchEans.length - batchUpdated
         console.log(`[ARNOIA-STOCK] Batch ${i}-${i + batchEans.length}: ${batchUpdated} updated (source_key=${stockKey})`)
       }
+
+      // Checkpoint: update process_runs so progress is visible mid-run.
+      // If the function times out, we know how far it got.
+      await run.checkpoint({
+        rows_processed: Math.min(i + BATCH_SIZE, eans.length),
+        rows_updated: totalUpdated,
+        rows_failed: totalNotFound,
+        log_json: { checkpoint: true, batch_offset: i + BATCH_SIZE, total_eans: eans.length, zeroed: 0 },
+      })
     }
 
     // ── Zero-out: poner stock_by_source[source_key] = 0 en productos que

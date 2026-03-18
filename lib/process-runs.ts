@@ -16,6 +16,8 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 
 export interface RunHandle {
   id: string
+  /** Update counters mid-run without changing status (checkpoint) */
+  checkpoint(counters: Partial<RunCounters>): Promise<void>
   complete(counters?: Partial<RunCounters>): Promise<void>
   fail(err: unknown): Promise<void>
 }
@@ -83,8 +85,22 @@ export async function startRun(
       .eq("id", runId)
   }
 
+  const checkpoint = async (counters: Partial<RunCounters>) => {
+    await supabase
+      .from("process_runs")
+      .update({
+        rows_processed: counters.rows_processed ?? 0,
+        rows_updated: counters.rows_updated ?? 0,
+        rows_failed: counters.rows_failed ?? 0,
+        log_json: counters.log_json ?? {},
+      })
+      .eq("id", runId)
+      .then(() => {}) // ignore errors — checkpoint is best-effort
+  }
+
   return {
     id: runId,
+    checkpoint,
     complete: (counters) => finish("completed", counters),
     fail: (err) => {
       const msg = err instanceof Error ? err.message : String(err)
@@ -97,6 +113,7 @@ export async function startRun(
 function noopHandle(): RunHandle {
   return {
     id: "noop",
+    checkpoint: async () => {},
     complete: async () => {},
     fail: async () => {},
   }
