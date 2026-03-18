@@ -518,6 +518,8 @@ export async function POST(request: NextRequest) {
             sold_quantity:            b.sold_quantity      ?? 0,
             status:                   b.status,
             permalink:                b.permalink,
+            listing_type_id:          b.listing_type_id ?? null,
+            thumbnail:                b.thumbnail       ?? null,
             sku,
             isbn,
             gtin,
