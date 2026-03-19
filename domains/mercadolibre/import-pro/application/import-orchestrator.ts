@@ -12,6 +12,7 @@
  * - Persist via repositories
  * - Track audit counters
  * - Handle scroll expiration and completion detection
+ * - Structured logging with per-operation timing
  */
 
 import type {
@@ -31,7 +32,8 @@ import type {
   MlRawItem,
 } from "../domain/types"
 
-import type { Logger } from "@/lib/observability/logger"
+import type { StructuredLogger } from "@/lib/logger"
+import { measure } from "@/lib/logger"
 
 import {
   ML_MULTIGET_MAX_IDS,
@@ -103,8 +105,9 @@ export class ImportOrchestrator {
     account: MlAccount,
     progress: ImportProgress,
     input: ImportRunInput,
-    log?: Logger,
+    log?: StructuredLogger,
   ): Promise<ImportRunResult> {
+    const runStart = performance.now()
     const startTime = Date.now()
     const accountId = input.account_id
     const maxMs = (input.max_seconds ?? 12) * 1000
@@ -120,7 +123,12 @@ export class ImportOrchestrator {
 
     // Start audit trail
     const runHandle = await this.runLogger.start()
-    log?.info("scan_loop_started", { maxMs, batchSize, concurrency })
+    log?.info("Import run started", "import.run", {
+      max_ms: maxMs,
+      batch_size: batchSize,
+      concurrency,
+      status: "started",
+    })
 
     let importedCount = 0
     let mlSeenCount = 0
@@ -129,6 +137,11 @@ export class ImportOrchestrator {
     let hasMore = true
     let consecutiveZeroScans = 0
     let loopIteration = 0
+
+    // Cumulative timing
+    let totalScanMs = 0
+    let totalMultigetMs = 0
+    let totalUpsertMs = 0
 
     try {
       // ── Time-bounded scan loop ──────────────────────────────────────────
@@ -142,17 +155,24 @@ export class ImportOrchestrator {
         const scrollId = cur.scroll_id
         const offset = cur.publications_offset
 
-        // ── Step 1: Scan for item IDs ─────────────────────────────────────
+        // ── Step 1: Scan for item IDs (TIMED) ────────────────────────────
         let scanPage
         try {
-          scanPage = await this.mlClient.scanItems(
-            account.ml_user_id,
-            scrollId,
-            (progress.publications_scope || "all") as "all" | "active_only",
+          const scanResult = await measure(() =>
+            this.mlClient.scanItems(
+              account.ml_user_id,
+              scrollId,
+              (progress.publications_scope || "all") as "all" | "active_only",
+            ),
           )
+          scanPage = scanResult.result
+          totalScanMs += scanResult.duration_ms
         } catch (err: unknown) {
           errorsCount++
-          log?.error("scan_failed", err, { offset, scrollId: scrollId ?? undefined, iteration: loopIteration })
+          log?.error("Scan failed", err, "ml.scan", {
+            offset,
+            iteration: loopIteration,
+          })
           const errMsg = err instanceof Error ? err.message : String(err)
           await this.progressRepo.update(accountId, {
             last_error: `Scan failed: ${errMsg.slice(0, 300)}`,
@@ -163,7 +183,10 @@ export class ImportOrchestrator {
 
         // Rate limited by ML
         if (scanPage.item_ids.length === 0 && scanPage.total === 0 && !scrollId) {
-          log?.warn("possible_rate_limit_or_empty", { total: scanPage.total })
+          log?.warn("Possible rate limit or empty account", "ml.scan", {
+            status: "rate_limited",
+            total: scanPage.total,
+          })
         }
 
         mlSeenCount += scanPage.item_ids.length
@@ -173,7 +196,10 @@ export class ImportOrchestrator {
           consecutiveZeroScans++
 
           if (consecutiveZeroScans >= MAX_CONSECUTIVE_EMPTY_SCANS) {
-            log?.warn("consecutive_empty_scans_limit", { consecutiveZeroScans })
+            log?.warn("Consecutive empty scans limit reached", "import.scan_loop", {
+              consecutive_zero_scans: consecutiveZeroScans,
+              status: "cursor_reset",
+            })
             await this.progressRepo.update(accountId, {
               status: "idle",
               scroll_id: null,
@@ -206,16 +232,20 @@ export class ImportOrchestrator {
 
         // Fix publications_total on first page only
         if (!scrollId && scanPage.total > 0) {
-          log?.info("publications_total_set", { total: scanPage.total })
+          log?.info("Publications total discovered", "import.scan_loop", {
+            total: scanPage.total,
+          })
           await this.progressRepo.update(accountId, { publications_total: scanPage.total })
         }
 
-        // ── Step 2: Hydrate items via multiget ──────────────────────────────
+        // ── Step 2: Hydrate items via multiget (TIMED) ────────────────────
         const batches = this.chunkArray(scanPage.item_ids, batchSize)
         const multigetTasks = batches.map(
           (batch) => () => this.mlClient.getItemDetails(batch),
         )
-        const multigetResults = await runPool(multigetTasks, concurrency)
+        const multigetResult = await measure(() => runPool(multigetTasks, concurrency))
+        totalMultigetMs += multigetResult.duration_ms
+        const multigetResults = multigetResult.result
 
         // ── Step 3: Map to publication rows ──────────────────────────────
         const allItems: MlRawItem[] = []
@@ -230,21 +260,30 @@ export class ImportOrchestrator {
         }
 
         if (multigetErrors > 0) {
-          log?.warn("multiget_partial_failure", { multigetErrors, batchCount: batches.length })
+          log?.warn("Multiget partial failure", "ml.multiget", {
+            status: "partial",
+            errors: multigetErrors,
+            batch_count: batches.length,
+          })
         }
 
         const now = new Date().toISOString()
         const toUpsert = mapItemsToPublications(allItems, accountId, now)
 
-        // ── Step 4: Persist ─────────────────────────────────────────────
+        // ── Step 4: Persist (TIMED) ─────────────────────────────────────
         let batchUpserted = 0
 
         if (toUpsert.length > 0) {
-          const { count, error } = await this.publicationRepo.upsert(toUpsert)
+          const upsertResult = await measure(() => this.publicationRepo.upsert(toUpsert))
+          totalUpsertMs += upsertResult.duration_ms
+          const { count, error } = upsertResult.result
 
           if (error) {
             errorsCount += toUpsert.length
-            log?.error("upsert_failed", new Error(error), { rowCount: toUpsert.length })
+            log?.error("Upsert failed", new Error(error), "db.upsert", {
+              duration_ms: upsertResult.duration_ms,
+              row_count: toUpsert.length,
+            })
             await this.progressRepo.update(accountId, {
               last_error: `Upsert failed (${toUpsert.length} rows): ${error}`,
               last_error_at: now,
@@ -255,18 +294,30 @@ export class ImportOrchestrator {
 
             if (count < toUpsert.length) {
               errorsCount += toUpsert.length - count
-              log?.warn("upsert_partial", { expected: toUpsert.length, actual: count })
+              log?.warn("Upsert partial", "db.upsert", {
+                duration_ms: upsertResult.duration_ms,
+                status: "partial",
+                expected: toUpsert.length,
+                actual: count,
+              })
+            } else {
+              log?.info("Upsert completed", "db.upsert", {
+                duration_ms: upsertResult.duration_ms,
+                status: "ok",
+                rows: batchUpserted,
+              })
             }
           }
         }
 
-        log?.info("scan_iteration", {
+        log?.info("Scan iteration completed", "import.scan_loop", {
           iteration: loopIteration,
           scanned: scanPage.item_ids.length,
           hydrated: allItems.length,
           upserted: batchUpserted,
           offset: offset + scanPage.item_ids.length,
-          elapsedMs: Date.now() - startTime,
+          elapsed_ms: Date.now() - startTime,
+          status: "ok",
         })
 
         // ── Step 5: Update counters ─────────────────────────────────────
@@ -284,7 +335,10 @@ export class ImportOrchestrator {
       }
     } catch (err: unknown) {
       // Unexpected error — mark as error and let the caller handle
-      log?.error("scan_loop_crashed", err)
+      log?.error("Scan loop crashed", err, "import.run", {
+        iteration: loopIteration,
+        status: "crashed",
+      })
       const msg = err instanceof Error ? err.message : String(err)
       await this.progressRepo.update(accountId, {
         status: "failed",
@@ -304,7 +358,7 @@ export class ImportOrchestrator {
       await this.progressRepo.update(accountId, { status: "idle" })
     }
 
-    const elapsedMs = Date.now() - startTime
+    const totalDurationMs = Math.round(performance.now() - runStart)
 
     // Complete audit trail
     await runHandle.complete({
@@ -321,7 +375,26 @@ export class ImportOrchestrator {
         total_seen: finalProgress?.ml_items_seen_count ?? 0,
         total_upserted: finalProgress?.db_rows_upserted_count ?? 0,
         ml_total: finalProgress?.publications_total ?? 0,
+        timing: {
+          total_ms: totalDurationMs,
+          scan_ms: totalScanMs,
+          multiget_ms: totalMultigetMs,
+          upsert_ms: totalUpsertMs,
+        },
       },
+    })
+
+    log?.info("Import run completed", "import.run", {
+      status: isDone ? "done" : hasMore ? "has_more" : "idle",
+      duration_ms: totalDurationMs,
+      iterations: loopIteration,
+      imported: importedCount,
+      ml_seen: mlSeenCount,
+      errors: errorsCount,
+      rate_limited: rateLimited,
+      timing_scan_ms: totalScanMs,
+      timing_multiget_ms: totalMultigetMs,
+      timing_upsert_ms: totalUpsertMs,
     })
 
     return {
@@ -334,7 +407,7 @@ export class ImportOrchestrator {
       total_upsert_errors: finalProgress?.upsert_errors_count ?? 0,
       ml_total: finalProgress?.publications_total ?? 0,
       db_gap: (finalProgress?.publications_total ?? 0) - (finalProgress?.db_rows_upserted_count ?? 0),
-      elapsed_ms: elapsedMs,
+      elapsed_ms: totalDurationMs,
       has_more: hasMore && !isDone,
       last_scroll_id: finalProgress?.scroll_id ?? null,
       errors_count: errorsCount,
@@ -396,7 +469,7 @@ export class ImportOrchestrator {
     accountId: string,
     totalFromApi: number,
     _runHandle: IRunHandle,
-    log?: Logger,
+    log?: StructuredLogger,
   ): Promise<{ hasMore: boolean }> {
     const progress = await this.progressRepo.get(accountId)
     if (!progress) return { hasMore: false }
@@ -415,10 +488,11 @@ export class ImportOrchestrator {
     const scrollExpired = mlTotal > 0 && pctCovered < SCROLL_COVERAGE_THRESHOLD
 
     if (scrollExpired) {
-      log?.warn("scroll_expired", {
-        pctCovered: Math.round(pctCovered * 100),
-        totalSeen,
-        mlTotal,
+      log?.warn("Scroll expired, resetting cursor", "import.scroll", {
+        status: "scroll_expired",
+        pct_covered: Math.round(pctCovered * 100),
+        total_seen: totalSeen,
+        ml_total: mlTotal,
       })
       await this.progressRepo.update(accountId, {
         status: "idle",
@@ -435,12 +509,12 @@ export class ImportOrchestrator {
     const upsertHealthy = totalSeen === 0 || totalUpserted / totalSeen >= UPSERT_HEALTH_THRESHOLD
     const finalStatus = upsertHealthy ? "done" : "scan_complete_pending_verification"
 
-    log?.info("scan_complete", {
-      finalStatus,
-      totalSeen,
-      totalUpserted,
-      mlTotal,
-      upsertHealthy,
+    log?.info("Scan complete", "import.scan_loop", {
+      status: finalStatus,
+      total_seen: totalSeen,
+      total_upserted: totalUpserted,
+      ml_total: mlTotal,
+      upsert_healthy: upsertHealthy,
     })
 
     await this.progressRepo.update(accountId, {

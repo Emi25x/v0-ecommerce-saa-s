@@ -12,16 +12,19 @@ import { SupabaseProgressRepository } from "../infrastructure/supabase-progress-
 import { SupabasePublicationRepository } from "../infrastructure/supabase-publication-repo"
 import { SupabaseAccountRepository } from "../infrastructure/supabase-account-repo"
 import { ProcessRunLogger } from "../infrastructure/process-run-logger"
+import type { StructuredLogger } from "@/lib/logger"
 
 /**
  * Creates a fully wired ImportOrchestrator with Supabase infrastructure.
  * The ML client is created lazily (needs account_id for token resolution).
+ * Optional logger is passed through to the ML client for operation-level timing.
  */
 export async function createOrchestrator(
   db: SupabaseClient,
   accountId: string,
+  log?: StructuredLogger,
 ): Promise<ImportOrchestrator> {
-  const mlClient = await MercadoLibreClient.create(accountId)
+  const mlClient = await MercadoLibreClient.create(accountId, log)
   const progressRepo = new SupabaseProgressRepository(db)
   const publicationRepo = new SupabasePublicationRepository(db)
   const accountRepo = new SupabaseAccountRepository(db)

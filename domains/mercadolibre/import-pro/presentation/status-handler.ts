@@ -4,13 +4,13 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/db/admin"
-import { createLogger, generateRequestId } from "@/lib/observability/logger"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
 import { createReadOnlyOrchestrator } from "../application/factory"
 import { parseAccountIdFromQuery } from "../application/request-parser"
 import { ImportDomainError } from "../domain/errors"
 
 export async function handleStatus(request: NextRequest): Promise<NextResponse> {
-  const log = createLogger({ requestId: generateRequestId(), process: "import-pro.status" })
+  const log = createStructuredLogger({ request_id: genRequestId() })
 
   try {
     const { searchParams } = new URL(request.url)
@@ -26,7 +26,7 @@ export async function handleStatus(request: NextRequest): Promise<NextResponse> 
       return NextResponse.json(error.toJSON(), { status: error.httpStatus })
     }
 
-    log.error("status_failed", error)
+    log.error("Status check failed", error, "import.status")
     const message = error instanceof Error ? error.message : "Unknown error"
     return NextResponse.json({ error: message }, { status: 500 })
   }
