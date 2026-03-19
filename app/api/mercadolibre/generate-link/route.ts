@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { generateCodeVerifier, generateCodeChallenge, getMercadoLibreAuthUrl } from "@/lib/mercadolibre"
+import { getAppOrigin } from "@/lib/env/config"
 
 // Genera una URL OAuth de ML con PKCE guardado en BD (no en cookie)
 // Así el link puede abrirse en cualquier browser/sesión sin depender de cookies
 export async function POST(request: NextRequest) {
   try {
-    const supabase   = await createClient()
-    const origin      = request.nextUrl.origin
+    const supabase = await createClient()
+    const origin = getAppOrigin(request)
     const redirectUri = `${origin}/api/mercadolibre/callback`
 
-    const codeVerifier  = generateCodeVerifier()
+    const codeVerifier = generateCodeVerifier()
     const codeChallenge = await generateCodeChallenge(codeVerifier)
 
     // Guardar verifier en BD con TTL de 30 minutos
@@ -25,7 +26,7 @@ export async function POST(request: NextRequest) {
     }
 
     // El token_id va en el state para que el callback lo recupere de la BD
-    const state   = encodeURIComponent(`token=${token.id}`)
+    const state = encodeURIComponent(`token=${token.id}`)
     const authUrl = getMercadoLibreAuthUrl(redirectUri, codeChallenge, state)
 
     return NextResponse.json({ url: authUrl, token_id: token.id })

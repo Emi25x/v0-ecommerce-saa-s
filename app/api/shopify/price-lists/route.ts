@@ -5,16 +5,18 @@
  */
 
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
 export const dynamic = "force-dynamic"
 
 export async function GET() {
   try {
     const supabase = await createClient()
-    const { data: { user }, error: authErr } = await supabase.auth.getUser()
-    if (authErr || !user)
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 })
+    const {
+      data: { user },
+      error: authErr,
+    } = await supabase.auth.getUser()
+    if (authErr || !user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 })
 
     const { data, error } = await supabase
       .from("price_lists")

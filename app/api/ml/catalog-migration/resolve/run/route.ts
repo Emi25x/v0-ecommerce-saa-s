@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
-import { mlFetchJson, isMlFetchError } from "@/lib/ml/http"
+import { createAdminClient } from "@/lib/db/admin"
+import { mlFetchJson, isMlFetchError } from "@/domains/mercadolibre/api-client"
 import { refreshTokenIfNeeded } from "@/lib/mercadolibre"
 
 export const dynamic = "force-dynamic"
@@ -25,7 +25,8 @@ export async function POST(req: NextRequest) {
   if (!job) return NextResponse.json({ error: "Job no encontrado" }, { status: 404 })
   if (job.status === "canceled") return NextResponse.json({ ok: false, done: true, reason: "canceled" })
 
-  await supabase.from("ml_catalog_migration_jobs")
+  await supabase
+    .from("ml_catalog_migration_jobs")
     .update({ status: "running", last_heartbeat_at: new Date().toISOString() })
     .eq("id", jobId)
 
@@ -43,18 +44,25 @@ export async function POST(req: NextRequest) {
     .limit(batchSize)
 
   if (!pending || pending.length === 0) {
-    await supabase.from("ml_catalog_migration_jobs").update({
-      status: "completed",
-      phase: "resolve_catalog_product",
-    }).eq("id", jobId)
+    await supabase
+      .from("ml_catalog_migration_jobs")
+      .update({
+        status: "completed",
+        phase: "resolve_catalog_product",
+      })
+      .eq("id", jobId)
     return NextResponse.json({ ok: true, done: true, processed: 0 })
   }
 
-  let resolved = 0, notFound = 0, ambiguous = 0, errors = 0
+  let resolved = 0,
+    notFound = 0,
+    ambiguous = 0,
+    errors = 0
 
   for (const item of pending) {
     if (!item.ean) {
-      await supabase.from("ml_catalog_migration_items")
+      await supabase
+        .from("ml_catalog_migration_items")
         .update({ resolve_status: "not_found", error: "EAN nulo" })
         .eq("id", item.id)
       notFound++
@@ -65,13 +73,20 @@ export async function POST(req: NextRequest) {
       // Buscar en ML catalog por GTIN
       const site = account.ml_accounts?.site_id || "MLA"
       const searchUrl = `https://api.mercadolibre.com/products/search?status=active&site_id=${site}&GTIN=${item.ean}&limit=5`
-      const searchData = await mlFetchJson(searchUrl, { accessToken }, { account_id: job.account_id, op_name: `resolve_ean_${item.ean}` })
+      const searchData = await mlFetchJson(
+        searchUrl,
+        { accessToken },
+        { account_id: job.account_id, op_name: `resolve_ean_${item.ean}` },
+      )
 
       if (isMlFetchError(searchData)) {
-        await supabase.from("ml_catalog_migration_items").update({
-          resolve_status: "error",
-          error: searchData.body_text?.slice(0, 300),
-        }).eq("id", item.id)
+        await supabase
+          .from("ml_catalog_migration_items")
+          .update({
+            resolve_status: "error",
+            error: searchData.body_text?.slice(0, 300),
+          })
+          .eq("id", item.id)
         errors++
         continue
       }
@@ -82,24 +97,33 @@ export async function POST(req: NextRequest) {
         await supabase.from("ml_catalog_migration_items").update({ resolve_status: "not_found" }).eq("id", item.id)
         notFound++
       } else if (results.length === 1) {
-        await supabase.from("ml_catalog_migration_items").update({
-          resolve_status: "resolved",
-          catalog_product_id: results[0].id,
-        }).eq("id", item.id)
+        await supabase
+          .from("ml_catalog_migration_items")
+          .update({
+            resolve_status: "resolved",
+            catalog_product_id: results[0].id,
+          })
+          .eq("id", item.id)
         resolved++
       } else {
         // Múltiples matches — ambiguo, no migrar
-        await supabase.from("ml_catalog_migration_items").update({
-          resolve_status: "ambiguous",
-          error: `${results.length} matches para EAN ${item.ean}`,
-        }).eq("id", item.id)
+        await supabase
+          .from("ml_catalog_migration_items")
+          .update({
+            resolve_status: "ambiguous",
+            error: `${results.length} matches para EAN ${item.ean}`,
+          })
+          .eq("id", item.id)
         ambiguous++
       }
     } catch (err: any) {
-      await supabase.from("ml_catalog_migration_items").update({
-        resolve_status: "error",
-        error: err.message?.slice(0, 300),
-      }).eq("id", item.id)
+      await supabase
+        .from("ml_catalog_migration_items")
+        .update({
+          resolve_status: "error",
+          error: err.message?.slice(0, 300),
+        })
+        .eq("id", item.id)
       errors++
     }
 
@@ -108,10 +132,13 @@ export async function POST(req: NextRequest) {
   }
 
   // Actualizar contadores del job
-  await supabase.from("ml_catalog_migration_jobs").update({
-    resolved_count: job.resolved_count + resolved,
-    last_heartbeat_at: new Date().toISOString(),
-  }).eq("id", jobId)
+  await supabase
+    .from("ml_catalog_migration_jobs")
+    .update({
+      resolved_count: job.resolved_count + resolved,
+      last_heartbeat_at: new Date().toISOString(),
+    })
+    .eq("id", jobId)
 
   // Verificar si quedan pendientes
   const { count: remaining } = await supabase
@@ -124,10 +151,13 @@ export async function POST(req: NextRequest) {
   const done = (remaining ?? 0) === 0
 
   if (done) {
-    await supabase.from("ml_catalog_migration_jobs").update({
-      status: "completed",
-      phase: "resolve_catalog_product",
-    }).eq("id", jobId)
+    await supabase
+      .from("ml_catalog_migration_jobs")
+      .update({
+        status: "completed",
+        phase: "resolve_catalog_product",
+      })
+      .eq("id", jobId)
   }
 
   return NextResponse.json({

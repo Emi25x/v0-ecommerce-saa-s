@@ -5,8 +5,12 @@
  * Llama a POST /api/v2/sucursalesByCliente.json y normaliza la respuesta.
  */
 import { NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
-import { createFastMailClient, type FastMailConfig, type FastMailCredentials } from "@/lib/carriers/fastmail"
+import { createAdminClient } from "@/lib/db/admin"
+import {
+  createFastMailClient,
+  type FastMailConfig,
+  type FastMailCredentials,
+} from "@/domains/shipping/carriers/fastmail"
 
 export const dynamic = "force-dynamic"
 
@@ -23,10 +27,7 @@ export async function GET() {
   }
 
   try {
-    const client = createFastMailClient(
-      carrier.config as FastMailConfig,
-      carrier.credentials as FastMailCredentials,
-    )
+    const client = createFastMailClient(carrier.config as FastMailConfig, carrier.credentials as FastMailCredentials)
 
     const sucursales = await client.getSucursales()
     return NextResponse.json({ sucursales })

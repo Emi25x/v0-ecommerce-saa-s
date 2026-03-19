@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,29 +18,48 @@ export async function GET(request: NextRequest) {
 
     if (search && search.trim().length < 3 && search.trim().length > 0) {
       return NextResponse.json(
-        { products: [], page: 1, limit, total: 0, totalPages: 1, message: "La búsqueda requiere al menos 3 caracteres" },
-        { status: 200 }
+        {
+          products: [],
+          page: 1,
+          limit,
+          total: 0,
+          totalPages: 1,
+          message: "La búsqueda requiere al menos 3 caracteres",
+        },
+        { status: 200 },
       )
     }
 
-    const selectColumns = "id, sku, title, ean, isbn, price, stock, source, created_at, updated_at, image_url, author, brand, language, pages, binding, category, description, year_edition, height, width, thickness, canonical_weight_g"
+    const FULL_SELECT =
+      "id, sku, title, ean, isbn, price, stock, source, created_at, updated_at, image_url, author, brand, language, pages, binding, category, description, year_edition, height, width, thickness, canonical_weight_g, cost_price, custom_fields"
+    const SAFE_SELECT =
+      "id, sku, title, ean, price, stock, source, created_at, updated_at, image_url, brand, category, description, custom_fields"
     const countType = search ? "exact" : "estimated"
-    let query = supabase.from("products").select(selectColumns, { count: countType })
 
-    if (search) {
-      const trimmedSearch = search.trim()
-      const isNumericCode = /^\d{10,}$/.test(trimmedSearch)
-
-      if (isNumericCode) {
-        query = query.or(`ean.eq.${trimmedSearch},isbn.eq.${trimmedSearch},sku.eq.${trimmedSearch}`)
-      } else {
-        query = query.or(`sku.ilike.${trimmedSearch},sku.ilike.%${trimmedSearch}%,title.ilike.%${trimmedSearch}%`)
+    function buildQuery(selectCols: string) {
+      let q = supabase.from("products").select(selectCols, { count: countType })
+      if (search) {
+        const trimmedSearch = search.trim()
+        const isNumericCode = /^\d{10,}$/.test(trimmedSearch)
+        if (isNumericCode) {
+          q = q.or(`ean.eq.${trimmedSearch},sku.eq.${trimmedSearch}`)
+        } else {
+          q = q.or(`sku.ilike.${trimmedSearch},sku.ilike.%${trimmedSearch}%,title.ilike.%${trimmedSearch}%`)
+        }
       }
+      return q.order(safeSortBy, { ascending: sortOrder === "asc" }).range(offset, offset + limit - 1)
     }
 
-    const { data: products, error, count } = await query
-      .order(safeSortBy, { ascending: sortOrder === "asc" })
-      .range(offset, offset + limit - 1)
+    let { data: products, error, count } = await buildQuery(FULL_SELECT)
+
+    // Si falla por columnas inexistentes, reintentar con columnas seguras
+    if (error && error.message?.includes("column")) {
+      console.warn(`[products] select completo falló: ${error.message}, reintentando con columnas base`)
+      const retry = await buildQuery(SAFE_SELECT)
+      products = retry.data
+      error = retry.error
+      count = retry.count
+    }
 
     if (error) {
       if (error.message.includes("timeout") || error.message.includes("canceling statement")) {
@@ -63,7 +82,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const normalizedProducts = products?.map((product) => {
+    const normalizedProducts = products?.map((product: any) => {
       const sourceIds = Array.isArray(product.source) ? product.source : product.source ? [product.source] : []
 
       const sourceNames = sourceIds

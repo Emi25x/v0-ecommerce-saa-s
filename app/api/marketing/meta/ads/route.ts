@@ -1,6 +1,6 @@
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 import { NextRequest, NextResponse } from "next/server"
-import { getMetaAdsCampaigns, getMetaAccountInfo } from "@/lib/marketing/meta"
+import { getMetaAdsCampaigns, getMetaAccountInfo } from "@/domains/marketing/meta"
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -23,17 +23,20 @@ export async function GET(request: NextRequest) {
       getMetaAccountInfo(conn.credentials).catch(() => null),
     ])
 
-    const totals = campaigns.reduce((acc: any, c: any) => ({
-      impressions: acc.impressions + c.impressions,
-      clicks: acc.clicks + c.clicks,
-      spend: acc.spend + c.spend,
-      conversions: acc.conversions + c.conversions,
-      conversion_value: acc.conversion_value + c.conversion_value,
-      reach: acc.reach + c.reach,
-    }), { impressions: 0, clicks: 0, spend: 0, conversions: 0, conversion_value: 0, reach: 0 })
+    const totals = campaigns.reduce(
+      (acc: any, c: any) => ({
+        impressions: acc.impressions + c.impressions,
+        clicks: acc.clicks + c.clicks,
+        spend: acc.spend + c.spend,
+        conversions: acc.conversions + c.conversions,
+        conversion_value: acc.conversion_value + c.conversion_value,
+        reach: acc.reach + c.reach,
+      }),
+      { impressions: 0, clicks: 0, spend: 0, conversions: 0, conversion_value: 0, reach: 0 },
+    )
 
     totals.roas = totals.spend > 0 ? totals.conversion_value / totals.spend : 0
-    totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions * 100) : 0
+    totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0
 
     return NextResponse.json({ campaigns, totals, account, startDate, endDate })
   } catch (err: any) {

@@ -67,8 +67,8 @@ export function getMercadoLibreAuthUrl(redirectUri: string, codeChallenge: strin
   }
 
   const encodedRedirectUri = encodeURIComponent(redirectUri)
-  const scope              = encodeURIComponent("offline_access read write")
-  const encodedChallenge   = encodeURIComponent(codeChallenge)
+  const scope = encodeURIComponent("offline_access read write")
+  const encodedChallenge = encodeURIComponent(codeChallenge)
 
   let authUrl = `https://auth.mercadolibre.com/authorization?response_type=code&client_id=${clientId}&redirect_uri=${encodedRedirectUri}&scope=${scope}&code_challenge=${encodedChallenge}&code_challenge_method=S256`
   if (state) authUrl += `&state=${state}`
@@ -166,7 +166,7 @@ export async function refreshTokenIfNeeded(account: {
   refresh_token: string
   token_expires_at: string
 }): Promise<{ id: string; access_token: string; refresh_token: string; token_expires_at: string }> {
-  const { createClient } = await import("@/lib/supabase/server")
+  const { createClient } = await import("@/lib/db/server")
   const supabase = await createClient()
 
   // Check if token is expired or will expire in the next 5 minutes
@@ -209,14 +209,14 @@ export async function refreshTokenIfNeeded(account: {
  * This function checks the database for the token and refreshes it if expired
  */
 export async function getValidAccessToken(accountId: string): Promise<string> {
-  const { createClient } = await import("@/lib/supabase/server")
+  const { createClient } = await import("@/lib/db/server")
   const supabase = await createClient()
-  
+
   const { data: account, error } = await supabase.from("ml_accounts").select("*").eq("id", accountId).single()
-  
+
   if (error || !account) {
-  console.error("[v0] ML Token - Account not found for account_id:", accountId, error)
-  throw new Error("MercadoLibre account not found. Please connect your MercadoLibre account first.")
+    console.error("[v0] ML Token - Account not found for account_id:", accountId, error)
+    throw new Error("MercadoLibre account not found. Please connect your MercadoLibre account first.")
   }
 
   console.log("[v0] ML Token - Account found:", account.id)

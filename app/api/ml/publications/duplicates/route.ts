@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 
 // GET /api/ml/publications/duplicates?account_id=xxx
 // Devuelve grupos de SKUs con 2+ publicaciones activas/pausadas.
@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
     const { data, error } = await supabase
       .from("ml_publications")
       .select(
-        "id, ml_item_id, account_id, title, sku, ean, isbn, status, price, current_stock, catalog_listing, product_id, permalink, updated_at"
+        "id, ml_item_id, account_id, title, sku, ean, isbn, status, price, current_stock, catalog_listing, product_id, permalink, updated_at",
       )
       .eq("account_id", accountId)
       .not("sku", "is", null)
@@ -46,8 +46,8 @@ export async function GET(req: NextRequest) {
     const groups: Array<{ sku: string; traditional: (typeof data)[number][]; catalog: (typeof data)[number][] }> = []
     for (const [sku, pubs] of Object.entries(bySku)) {
       if ((pubs?.length ?? 0) < 2) continue
-      const traditional = pubs!.filter(p => !p.catalog_listing)
-      const catalog     = pubs!.filter(p =>  p.catalog_listing)
+      const traditional = pubs!.filter((p) => !p.catalog_listing)
+      const catalog = pubs!.filter((p) => p.catalog_listing)
       groups.push({ sku, traditional, catalog })
     }
 
@@ -55,18 +55,12 @@ export async function GET(req: NextRequest) {
 
     // ── Enriquecer con datos de ML: sold_quantity y listing_type_id ──────────
     // listing_type_id indica si tiene cuotas (gold_premium = cuotas sin interés).
-    let mlStats: Record<string, { sold_quantity: number; listing_type_id: string | null }> = {}
+    const mlStats: Record<string, { sold_quantity: number; listing_type_id: string | null }> = {}
 
-    const { data: account } = await supabase
-      .from("ml_accounts")
-      .select("access_token")
-      .eq("id", accountId)
-      .single()
+    const { data: account } = await supabase.from("ml_accounts").select("access_token").eq("id", accountId).single()
 
     if (account?.access_token && groups.length > 0) {
-      const allItemIds = groups.flatMap(g =>
-        [...g.traditional, ...g.catalog].map(p => p.ml_item_id)
-      )
+      const allItemIds = groups.flatMap((g) => [...g.traditional, ...g.catalog].map((p) => p.ml_item_id))
 
       // Multiget en chunks de 20 (límite real de ML API)
       for (let i = 0; i < allItemIds.length; i += 20) {
@@ -74,14 +68,17 @@ export async function GET(req: NextRequest) {
         try {
           const res = await fetch(
             `https://api.mercadolibre.com/items?ids=${chunk.join(",")}&attributes=id,sold_quantity,listing_type_id`,
-            { headers: { Authorization: `Bearer ${account.access_token}` } }
+            { headers: { Authorization: `Bearer ${account.access_token}` } },
           )
           if (res.ok) {
-            const items: Array<{ code: number; body: { id: string; sold_quantity?: number; listing_type_id?: string } }> = await res.json()
+            const items: Array<{
+              code: number
+              body: { id: string; sold_quantity?: number; listing_type_id?: string }
+            }> = await res.json()
             for (const item of items) {
               if (item.code === 200 && item.body?.id) {
                 mlStats[item.body.id] = {
-                  sold_quantity:   item.body.sold_quantity   ?? 0,
+                  sold_quantity: item.body.sold_quantity ?? 0,
                   listing_type_id: item.body.listing_type_id ?? null,
                 }
               }

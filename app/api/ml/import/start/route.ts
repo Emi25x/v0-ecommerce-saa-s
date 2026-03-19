@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextResponse } from "next/server"
 
 export const maxDuration = 10
@@ -18,11 +18,7 @@ export async function POST(request: Request) {
     }
 
     // Obtener cuenta
-    const { data: account } = await supabase
-      .from("ml_accounts")
-      .select("*")
-      .eq("id", account_id)
-      .maybeSingle()
+    const { data: account } = await supabase.from("ml_accounts").select("*").eq("id", account_id).maybeSingle()
 
     if (!account) {
       return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
@@ -42,7 +38,7 @@ export async function POST(request: Request) {
         success: true,
         message: "Importación en progreso",
         job_id: activeJob.id,
-        status: activeJob.status
+        status: activeJob.status,
       })
     }
 
@@ -56,7 +52,7 @@ export async function POST(request: Request) {
         current_offset: 0,
         processed_items: 0,
         failed_items: 0,
-        started_at: new Date().toISOString()
+        started_at: new Date().toISOString(),
       })
       .select()
       .single()
@@ -73,9 +69,8 @@ export async function POST(request: Request) {
       message: "Importación iniciada. El proceso se ejecutará automáticamente.",
       job_id: newJob.id,
       status: "indexing",
-      total_items: account.total_ml_publications || 0
+      total_items: account.total_ml_publications || 0,
     })
-
   } catch (error: any) {
     console.error("[v0] Error in start:", error)
     return NextResponse.json({ error: error.message }, { status: 500 })

@@ -4,11 +4,11 @@
  */
 export function normalizeText(text: string): string {
   if (!text) return ""
-  
+
   return text
     .toLowerCase()
-    .normalize('NFD') // Descomponer caracteres unicode
-    .replace(/[\u0300-\u036f]/g, '') // Quitar marcas diacríticas (tildes)
+    .normalize("NFD") // Descomponer caracteres unicode
+    .replace(/[\u0300-\u036f]/g, "") // Quitar marcas diacríticas (tildes)
     .trim()
 }
 

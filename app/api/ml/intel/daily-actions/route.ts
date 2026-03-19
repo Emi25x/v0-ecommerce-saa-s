@@ -7,7 +7,7 @@
  * - oportunidades nuevas con score alto (azul)
  */
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 
 const ZONE_LOW = 31000
 const ZONE_HIGH = 34000
@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
     opp_id?: string
   }> = []
 
-  for (const pub of (pubs ?? [])) {
+  for (const pub of pubs ?? []) {
     const snap = snapMap.get(pub.ean!)
     const myPrice = Number(pub.price) || 0
     if (!snap || !myPrice) continue
@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Agregar oportunidades
-  for (const opp of (opps ?? [])) {
+  for (const opp of opps ?? []) {
     actions.push({
       type: "opportunity",
       priority: "info",

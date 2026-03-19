@@ -1,7 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getValidAccessToken, getProductMetrics, getProductHealth } from "@/lib/mercadolibre"
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
     const userId = request.cookies.get("ml_user_id")?.value
 
@@ -10,7 +11,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     }
 
     const accessToken = await getValidAccessToken(userId)
-    const productId = params.id
+    const productId = id
 
     // Get metrics and health in parallel
     const [metrics, health] = await Promise.all([

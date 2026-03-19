@@ -3,7 +3,7 @@
  * Actualiza periódicamente el import_history para que el cliente sepa que el proceso sigue vivo
  */
 
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
 export class ImportHeartbeat {
   private historyId: string | null
@@ -25,12 +25,12 @@ export class ImportHeartbeat {
       try {
         const supabase = await createClient()
         this.beatCount++
-        
+
         await supabase
           .from("import_history")
           .update({
             last_message: `Procesando... (heartbeat ${this.beatCount})`,
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
           })
           .eq("id", this.historyId!)
 

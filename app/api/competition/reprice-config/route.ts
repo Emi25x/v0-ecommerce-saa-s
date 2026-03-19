@@ -5,11 +5,11 @@
  */
 
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
 export async function GET(req: NextRequest) {
   try {
-    const supabase  = await createClient()
+    const supabase = await createClient()
     const { searchParams } = new URL(req.url)
     const ml_item_id = searchParams.get("ml_item_id")
     const account_id = searchParams.get("account_id")
@@ -56,19 +56,19 @@ export async function POST(req: NextRequest) {
     const {
       ml_item_id,
       account_id,
-      enabled      = false,
+      enabled = false,
       min_price,
-      max_price    = null,
+      max_price = null,
       target_price = null,
-      strategy     = "win_buybox",
+      strategy = "win_buybox",
     } = body
 
     if (!ml_item_id || min_price === undefined || min_price === null || min_price === "") {
       return NextResponse.json({ ok: false, error: "ml_item_id y min_price son requeridos" }, { status: 400 })
     }
 
-    const minPriceNum    = Number(min_price)
-    const maxPriceNum    = max_price    !== null ? Number(max_price)    : null
+    const minPriceNum = Number(min_price)
+    const maxPriceNum = max_price !== null ? Number(max_price) : null
     const targetPriceNum = target_price !== null ? Number(target_price) : null
 
     if (isNaN(minPriceNum) || minPriceNum <= 0) {
@@ -88,13 +88,13 @@ export async function POST(req: NextRequest) {
       .upsert(
         {
           ml_item_id,
-          account_id:   account_id ?? null,
+          account_id: account_id ?? null,
           enabled,
-          min_price:    minPriceNum,
-          max_price:    maxPriceNum,
+          min_price: minPriceNum,
+          max_price: maxPriceNum,
           target_price: targetPriceNum,
-          strategy:     strategyVal,
-          updated_at:   new Date().toISOString(),
+          strategy: strategyVal,
+          updated_at: new Date().toISOString(),
         },
         { onConflict: "ml_item_id" },
       )

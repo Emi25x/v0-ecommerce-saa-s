@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -22,7 +22,9 @@ export async function GET(request: NextRequest) {
     const today = new Date().toISOString().slice(0, 10)
     const { data, error } = await supabase
       .from("ml_market_snapshots")
-      .select("id, ean, category_id, min_price, median_price, avg_price, sellers_count, full_sellers_count, free_shipping_rate, sold_qty_proxy, captured_at")
+      .select(
+        "id, ean, category_id, min_price, median_price, avg_price, sellers_count, full_sellers_count, free_shipping_rate, sold_qty_proxy, captured_at",
+      )
       .eq("account_id", account_id)
       .eq("captured_day", today)
       .order("captured_at", { ascending: false })
@@ -35,7 +37,9 @@ export async function GET(request: NextRequest) {
   // type === "opportunities"
   const { data, error } = await supabase
     .from("ml_opportunities")
-    .select("id, ean, title, category_id, min_price, median_price, sellers_count, full_sellers_count, sold_qty_proxy, opportunity_score, status, created_at")
+    .select(
+      "id, ean, title, category_id, min_price, median_price, sellers_count, full_sellers_count, sold_qty_proxy, opportunity_score, status, created_at",
+    )
     .eq("account_id", account_id)
     .eq("status", status)
     .order("opportunity_score", { ascending: false })

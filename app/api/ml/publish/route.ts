@@ -1,260 +1,73 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { refreshTokenIfNeeded } from "@/lib/mercadolibre"
-
-// Cache de tipo de cambio EUR (TTL: 30 minutos)
-let eurRateCache: { rate: number; cachedAt: number } | null = null
-const EUR_RATE_CACHE_TTL = 30 * 60 * 1000
-
-// Calcular precio usando la formula de margen
-async function calculatePriceForProduct(costPriceEur: number, marginPercent: number) {
-  // Obtener tipo de cambio EUR billetes BNA (con cache de 30 min)
-  let exchangeRate = 1765
-  const now = Date.now()
-  if (eurRateCache && now - eurRateCache.cachedAt < EUR_RATE_CACHE_TTL) {
-    exchangeRate = eurRateCache.rate
-  } else {
-    try {
-      const rateResponse = await fetch("https://dolarapi.com/v1/cotizaciones/eur")
-      if (rateResponse.ok) {
-        const rateData = await rateResponse.json()
-        exchangeRate = Math.round((rateData.venta || 1718) * 1.027) // EUR billetes
-        eurRateCache = { rate: exchangeRate, cachedAt: now }
-      }
-    } catch {
-      // Usar fallback
-    }
-  }
-
-  const mlFeePercent = 0.13 // 13% comision ML
-  const costInArs = costPriceEur * exchangeRate
-  const costWithMargin = costInArs * (1 + marginPercent / 100)
-
-  // Calcular precio iterativamente para manejar el umbral de $33k
-  const shippingCost = 5500
-  let finalPrice = 0
-  let iterations = 0
-  const maxIterations = 5
-
-  const getCosts = (price: number) => {
-    let fixedFee = 0
-    let shipping = 0
-
-    if (price < 15000) {
-      fixedFee = 1115
-    } else if (price < 25000) {
-      fixedFee = 2300
-    } else if (price < 33000) {
-      fixedFee = 2810
-    } else {
-      fixedFee = 0
-      shipping = shippingCost
-    }
-
-    return { fixedFee, shipping }
-  }
-
-  let prevPrice = 0
-  let currentPrice = costWithMargin / (1 - mlFeePercent)
-  let mlFixedFee = 0
-
-  while (Math.abs(currentPrice - prevPrice) > 100 && iterations < maxIterations) {
-    iterations++
-    prevPrice = currentPrice
-
-    const costs = getCosts(currentPrice)
-    mlFixedFee = costs.fixedFee
-    const currentShipping = costs.shipping
-
-    currentPrice = (costWithMargin + mlFixedFee + currentShipping) / (1 - mlFeePercent)
-  }
-
-  const finalCosts = getCosts(currentPrice)
-  finalPrice = Math.ceil(currentPrice / 10) * 10
-
-  return {
-    price: finalPrice,
-    exchangeRate,
-    costInArs: Math.round(costInArs),
-    fixedFee: finalCosts.fixedFee,
-    shippingCost: finalCosts.shipping
-  }
-}
+import {
+  loadPublishContext,
+  checkAlreadyPublished,
+  searchCatalog,
+  resolvePrice,
+  calculateActualMargin,
+  publishToMl,
+  addSellerSku,
+  addDescription,
+  doCatalogOptin,
+  savePublication,
+  saveCatalogPublication,
+  updateProductMlStatus,
+  buildWarnings,
+} from "@/domains/mercadolibre/publications/publisher"
+import { resolveProductImage } from "@/domains/mercadolibre/publications/image-uploader"
+import { buildMlTitle, buildMlDescription } from "@/domains/mercadolibre/publications/text-sanitizer"
+import {
+  buildTraditionalItem,
+  buildCatalogItem,
+  validateTraditionalItem,
+} from "@/domains/mercadolibre/publications/builder"
 
 // POST: Publicar un producto del catalogo a ML
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { 
-      product_id,      // ID del producto en nuestro catalogo
-      template_id,     // ID de la plantilla a usar
-      account_id,      // ID de la cuenta ML
-      override_price,  // Precio manual (opcional)
-      preview_only = true, // Solo generar preview, no publicar
-      publish_mode = "linked", // "linked", "catalog" o "traditional"
-      force_republish = false // Variable para forzar republicación
+    const {
+      product_id,
+      template_id,
+      account_id,
+      override_price,
+      preview_only = true,
+      publish_mode = "linked",
+      force_republish = false,
     } = body
 
     if (!product_id || !template_id || !account_id) {
-      return NextResponse.json({ 
-        success: false,
-        error: "product_id, template_id y account_id son requeridos" 
-      }, { status: 400 })
+      return NextResponse.json(
+        { success: false, error: "product_id, template_id y account_id son requeridos" },
+        { status: 400 },
+      )
     }
 
     const supabase = await createClient()
 
-    // Obtener el producto del catalogo
-    const { data: product, error: productError } = await supabase
-      .from("products")
-      .select("*")
-      .eq("id", product_id)
-      .single()
-
-    if (productError || !product) {
-      // Detectar si es error de rate limit
-      const errorMsg = productError?.message || ""
-      const isRateLimit = errorMsg.includes("Too Many") || errorMsg.includes("rate") || errorMsg.includes("429")
-      
-      console.log("[v0] Product error for id:", product_id, "Error:", productError, "IsRateLimit:", isRateLimit)
-      
-      return NextResponse.json({ 
-        success: false, 
-        error: isRateLimit 
-          ? "Demasiadas solicitudes. Intenta más lento." 
-          : `No existe en BD (ID: ${String(product_id).slice(0, 8)}...)`,
-        product_id_received: product_id,
-        db_error: errorMsg,
-        is_rate_limit: isRateLimit
-      }, { status: isRateLimit ? 429 : 404 })
-    }
-    
-    console.log("[v0] Product loaded from DB:", {
-      id: product.id,
-      title: product.title,
-      image_url: product.image_url,
-      description: product.description?.substring(0, 100) + "..."
+    // ── Load product, template, account ─────────────────────────────────────
+    const loaded = await loadPublishContext({
+      supabase,
+      productId: product_id,
+      templateId: template_id,
+      accountId: account_id,
+      refreshTokenFn: refreshTokenIfNeeded,
     })
+    if (!loaded.ok) return NextResponse.json(loaded.body, { status: loaded.status })
+    const { product, template, account, marginPercent, accessToken, validAccount } = loaded.ctx
 
-    // Obtener la plantilla
-    const { data: template, error: templateError } = await supabase
-      .from("ml_publication_templates")
-      .select("*")
-      .eq("id", template_id)
-      .single()
-
-    if (templateError || !template) {
-      return NextResponse.json({ success: false, error: "Plantilla no encontrada" }, { status: 404 })
-    }
-
-    // Si la plantilla tiene un perfil de precio vinculado, cargar el margen de ese perfil
-    let marginPercent = template.margin_percent || 20 // Valor por defecto
-    if (template.price_profile_id) {
-      const { data: priceProfile } = await supabase
-        .from("price_profiles")
-        .select("margin_percent")
-        .eq("id", template.price_profile_id)
-        .single()
-      
-      if (priceProfile) {
-        marginPercent = Number(priceProfile.margin_percent)
-        console.log("[v0] Using margin from price profile:", marginPercent, "%")
-      }
-    }
-
-    // Obtener la cuenta ML
-    const { data: account, error: accountError } = await supabase
-      .from("ml_accounts")
-      .select("*")
-      .eq("id", account_id)
-      .single()
-
-    if (accountError || !account) {
-      return NextResponse.json({ success: false, error: "Cuenta ML no encontrada" }, { status: 404 })
-    }
-
-    // Refrescar token si es necesario para tener access_token valido
-    const validAccount = await refreshTokenIfNeeded(account) as any
-    const accessToken = validAccount.access_token
-
-    // Verificar si el EAN/ISBN ya está publicado en ML por este vendedor
-    // Se verifica tanto en preview como en publicación real
-    let alreadyPublishedInfo: { exists: boolean; item_id?: string; source?: string } = { exists: false }
-    
-    if (product.ean) {
-      try {
-        // Buscar items del vendedor que tengan este EAN en atributos
-        const searchUrl = `https://api.mercadolibre.com/users/${validAccount.ml_user_id}/items/search?search_type=scan&attributes=GTIN:${product.ean}`
-        const searchResponse = await fetch(searchUrl, {
-          headers: { "Authorization": `Bearer ${accessToken}` }
-        })
-        
-        if (searchResponse.ok) {
-          const searchData = await searchResponse.json()
-          if (searchData.results && searchData.results.length > 0) {
-            const mlItemId = searchData.results[0]
-            alreadyPublishedInfo = { 
-              exists: true, 
-              item_id: mlItemId,
-              source: "mercadolibre"
-            }
-            
-            // Guardar en products que ya está publicado (si no lo teníamos)
-            if (!product.ml_item_id || product.ml_item_id !== mlItemId) {
-              await supabase
-                .from("products")
-                .update({
-                  ml_item_id: mlItemId,
-                  account_id: account_id,
-                  ml_status: "active",
-                  ml_last_checked_at: new Date().toISOString()
-                })
-                .eq("id", product_id)
-            }
-          } else {
-            // No está publicado en ML, actualizar last_checked
-            await supabase
-              .from("products")
-              .update({
-                ml_last_checked_at: new Date().toISOString()
-              })
-              .eq("id", product_id)
-          }
-        }
-        
-        // Verificar en ml_publications (per-cuenta — products.ml_item_id es global y no sirve aquí)
-        if (!alreadyPublishedInfo.exists) {
-          const { data: existingPub } = await supabase
-            .from("ml_publications")
-            .select("ml_item_id")
-            .eq("product_id", product_id)
-            .eq("account_id", account_id)
-            .maybeSingle()
-          
-          if (existingPub) {
-            alreadyPublishedInfo = { 
-              exists: true, 
-              item_id: existingPub.ml_item_id,
-              source: "database"
-            }
-            // Sincronizar con products
-            await supabase
-              .from("products")
-              .update({
-                ml_item_id: existingPub.ml_item_id,
-                account_id: account_id,
-                ml_status: "active",
-                ml_last_checked_at: new Date().toISOString()
-              })
-              .eq("id", product_id)
-          }
-        }
-      } catch (searchError) {
-        console.log("[v0] Error checking existing publication:", searchError)
-      }
-    }
-    
-// Si ya está publicado y NO es preview, rechazar
+    // ── Check duplicates ────────────────────────────────────────────────────
+    const alreadyPublishedInfo = await checkAlreadyPublished({
+      ean: product.ean,
+      productId: product_id,
+      accountId: account_id,
+      mlUserId: validAccount.ml_user_id,
+      accessToken,
+      supabase,
+      product,
+    })
     if (alreadyPublishedInfo.exists && !preview_only) {
       return NextResponse.json({
         success: false,
@@ -263,499 +76,62 @@ export async function POST(request: NextRequest) {
         existing_item_id: alreadyPublishedInfo.item_id,
         message: `El EAN ${product.ean} ya está publicado (${alreadyPublishedInfo.item_id})`,
         product_title: product.title,
-        product_ean: product.ean
+        product_ean: product.ean,
       })
     }
 
-    // Calcular el precio
-    let finalPrice = override_price
-    let priceCalculation = null
+    // ── Resolve price ───────────────────────────────────────────────────────
+    const {
+      finalPrice,
+      priceCalculation,
+      errorMessage: priceError,
+    } = await resolvePrice({ overridePrice: override_price, costPrice: product.cost_price, marginPercent })
+    if (!finalPrice) return NextResponse.json({ success: false, error: priceError }, { status: 400 })
 
-    if (!finalPrice && product.cost_price) {
-      // Usar marginPercent de perfil de precio (ya cargado arriba) en lugar del template
-      priceCalculation = await calculatePriceForProduct(product.cost_price, marginPercent)
-      finalPrice = priceCalculation.price
-    }
-
-    if (!finalPrice || finalPrice <= 0) {
-      return NextResponse.json({
-        success: false,
-        error: finalPrice !== undefined && finalPrice <= 0
-          ? `Precio calculado inválido (${finalPrice}). Verificar costo y margen del producto.`
-          : "No se pudo calcular el precio. El producto no tiene cost_price."
-      }, { status: 400 })
-    }
-
-    // Funcion para subir imagen directamente a ML usando multipart/form-data
-    // Esto evita problemas de Cloudflare porque subimos el binario directo a ML
-    // ML requiere mínimo 500px en uno de los lados
-    const uploadImageToML = async (imageUrl: string): Promise<{ id: string | null, error?: string }> => {
-      try {
-        // Descargar imagen con headers de navegador (timeout 10s)
-        const response = await fetch(imageUrl, {
-          signal: AbortSignal.timeout(10000),
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
-          }
-        })
-        
-        if (!response.ok) {
-          return { id: null, error: `No se pudo descargar la imagen (${response.status})` }
-        }
-        
-        const contentType = response.headers.get("content-type") || ""
-        if (contentType.includes("text/html")) {
-          return { id: null, error: "La URL de imagen está bloqueada por Cloudflare" }
-        }
-        
-        const imageBuffer = await response.arrayBuffer()
-        if (imageBuffer.byteLength < 1000) {
-          return { id: null, error: "La imagen es muy pequeña (menos de 1KB)" }
-        }
-        
-        // Crear FormData para multipart upload
-        const formData = new FormData()
-        const blob = new Blob([imageBuffer], { type: contentType || "image/jpeg" })
-        formData.append("file", blob, "image.jpg")
-        
-        // Subir a ML usando multipart/form-data
-        const uploadResponse = await fetch("https://api.mercadolibre.com/pictures/items/upload", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${accessToken}`,
-          },
-          body: formData,
-        })
-        
-        if (!uploadResponse.ok) {
-          const errorData = await uploadResponse.json().catch(() => ({ message: "Error desconocido" }))
-          // ML devuelve error específico si la imagen es menor a 500px
-          if (errorData.message?.includes("500 píxeles")) {
-            return { id: null, error: "imagen_pequena" }
-          }
-          return { id: null, error: errorData.message || "Error al subir imagen a ML" }
-        }
-        
-        const uploadData = await uploadResponse.json()
-        return { id: uploadData.id }
-      } catch (error) {
-        return { id: null, error: `Error: ${error}` }
-      }
-    }
-    
-    // Funcion para subir imagen fallback de Libroide
-    const uploadFallbackImage = async (): Promise<string | null> => {
-      try {
-        // Generar la imagen fallback desde nuestro endpoint
-        const baseUrl = process.env.VERCEL_URL 
-          ? `https://${process.env.VERCEL_URL}` 
-          : process.env.NEXT_PUBLIC_VERCEL_URL 
-            ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-            : "http://localhost:3000"
-        
-        const fallbackUrl = `${baseUrl}/api/ml/fallback-image`
-        const response = await fetch(fallbackUrl)
-        
-        if (!response.ok) {
-          console.log("[v0] Failed to generate fallback image")
-          return null
-        }
-        
-        const imageBuffer = await response.arrayBuffer()
-        const formData = new FormData()
-        const blob = new Blob([imageBuffer], { type: "image/png" })
-        formData.append("file", blob, "libroide-fallback.png")
-        
-        const uploadResponse = await fetch("https://api.mercadolibre.com/pictures/items/upload", {
-          method: "POST",
-          headers: { "Authorization": `Bearer ${accessToken}` },
-          body: formData,
-        })
-        
-        if (!uploadResponse.ok) {
-          console.log("[v0] Failed to upload fallback image to ML")
-          return null
-        }
-        
-        const uploadData = await uploadResponse.json()
-        console.log("[v0] Fallback image uploaded to ML:", uploadData.id)
-        return uploadData.id
-      } catch (error) {
-        console.log("[v0] Error uploading fallback image:", error)
-        return null
-      }
-    }
-    
-    // Subir imagen a ML si existe
-    let mlPictureId: string | null = null
-    let imageWarning: string | null = null
-    
-    if (product.image_url) {
-      const uploadResult = await uploadImageToML(product.image_url)
-      mlPictureId = uploadResult.id
-      
-      // Si la imagen es muy pequeña, usar imagen fallback de Libroide
-      if (uploadResult.error === "imagen_pequena") {
-        console.log("[v0] Image too small, using Libroide fallback image")
-        mlPictureId = await uploadFallbackImage()
-        imageWarning = "Imagen original muy pequeña. Se usó imagen de Libroide."
-      } else if (uploadResult.error) {
-        imageWarning = uploadResult.error
-      }
-    } else {
-      // Sin imagen original, usar fallback
-      console.log("[v0] No image URL, using Libroide fallback image")
-      mlPictureId = await uploadFallbackImage()
-      imageWarning = "Sin imagen original. Se usó imagen de Libroide."
-    }
-
-    // Funcion para sanitizar texto a plain text (quitar HTML y caracteres especiales)
-    // ML solo acepta caracteres ASCII básicos y algunos extendidos
-    const sanitizeToPlainText = (text: string): string => {
-      return text
-        // Quitar tags HTML
-        .replace(/<[^>]*>/g, ' ')
-        // Convertir entidades HTML comunes
-        .replace(/&nbsp;/g, ' ')
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;/g, "'")
-        .replace(/&aacute;/gi, 'a')
-        .replace(/&eacute;/gi, 'e')
-        .replace(/&iacute;/gi, 'i')
-        .replace(/&oacute;/gi, 'o')
-        .replace(/&uacute;/gi, 'u')
-        .replace(/&ntilde;/gi, 'n')
-        .replace(/&#\d+;/g, '') // Quitar entidades numéricas
-        // Quitar cualquier otra entidad HTML
-        .replace(/&[a-zA-Z]+;/g, '')
-        // Reemplazar caracteres Unicode problemáticos
-        .replace(/[""]/g, '"') // Comillas tipográficas
-        .replace(/['']/g, "'") // Apóstrofes tipográficos
-        .replace(/[–—]/g, '-') // Guiones largos
-        .replace(/[…]/g, '...') // Puntos suspensivos
-        .replace(/[•·]/g, '-') // Viñetas
-        .replace(/[©®™]/g, '') // Símbolos de copyright
-        .replace(/[€£¥]/g, '$') // Símbolos de moneda
-        .replace(/[°]/g, ' grados ') // Símbolo de grados
-        .replace(/[½¼¾]/g, '') // Fracciones
-        .replace(/[←→↑↓↔]/g, '') // Flechas
-        .replace(/[★☆♠♣♥♦]/g, '') // Símbolos especiales
-        // Quitar caracteres de control y no imprimibles
-        .replace(/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '')
-        // Quitar caracteres Unicode fuera del rango latino básico extendido
-        .replace(/[^\x20-\x7E\xA0-\xFF\n]/g, '')
-        // Normalizar saltos de linea
-        .replace(/\r\n/g, '\n')
-        .replace(/\r/g, '\n')
-        // Quitar espacios múltiples
-        .replace(/[ \t]+/g, ' ')
-        // Quitar lineas vacias multiples
-        .replace(/\n{3,}/g, '\n\n')
-        // Quitar espacios al inicio/fin de líneas
-        .replace(/^[ \t]+|[ \t]+$/gm, '')
-        .trim()
-    }
-
-    // Reemplazar variables en la descripcion de la plantilla
-    // Construir el titulo usando el template (ej: "Libro {title} {author} {brand}")
-    const defaultTitle = product.title || "Libro"
-    let mlTitle = template.title_template || defaultTitle
-    mlTitle = mlTitle.replace(/{title}/g, product.title || "")
-    mlTitle = mlTitle.replace(/{author}/g, product.author || "")
-    mlTitle = mlTitle.replace(/{brand}/g, product.brand || "")
-    mlTitle = mlTitle.replace(/{ean}/g, product.ean || "")
-    // Limpiar espacios múltiples y truncar a 60 caracteres (límite de ML para family_name)
-    mlTitle = mlTitle.replace(/\s+/g, ' ').trim().substring(0, 60)
-    
+    // ── Resolve image, title, description, catalog ──────────────────────────
+    const { mlPictureId, imageWarning } = await resolveProductImage(product.image_url, accessToken)
+    const mlTitle = buildMlTitle(template.title_template, product)
+    const description = buildMlDescription(template.description_template, product)
+    const { catalogProductId } = await searchCatalog(product.ean, accessToken)
+    console.log("[v0] Product image_url from DB:", product.image_url)
     console.log("[v0] ML Title from template:", mlTitle)
 
-    // Si no hay template de descripcion, crear una descripcion por defecto
-    const defaultDescription = `${product.title || "Libro"}
-
-Autor: ${product.author || "No especificado"}
-Editorial: ${product.brand || "No especificada"}
-ISBN: ${product.ean || product.isbn || "No especificado"}
-Idioma: ${product.language || "Español"}
-${product.pages ? `Páginas: ${product.pages}` : ""}
-${product.binding ? `Encuadernación: ${product.binding}` : ""}
-${product.year_edition ? `Año de edición: ${product.year_edition}` : ""}
-${product.subject ? `Materia: ${product.subject}` : ""}
-${product.category ? `Categoría: ${product.category}` : ""}
-${product.width && product.height && product.thickness ? `Dimensiones: ${product.width} x ${product.height} x ${product.thickness} cm` : ""}
-${product.canonical_weight_g ? `Peso: ${product.canonical_weight_g} gramos` : ""}
-
-${product.description || ""}
-
-Libro nuevo. Envíos a todo el país.`
-
-    let description = template.description_template || defaultDescription
-    description = description.replace(/{title}/g, product.title || "")
-    description = description.replace(/{author}/g, product.author || "")
-    description = description.replace(/{brand}/g, product.brand || "")
-    description = description.replace(/{ean}/g, product.ean || "")
-    description = description.replace(/{pages}/g, product.pages?.toString() || "")
-    description = description.replace(/{binding}/g, product.binding || "")
-    description = description.replace(/{language}/g, product.language || "")
-    description = description.replace(/{year_edition}/g, product.year_edition?.toString() || "")
-    description = description.replace(/{category}/g, product.category || "")
-    description = description.replace(/{subject}/g, product.subject || "")
-    description = description.replace(/{description}/g, product.description || "")
-    description = description.replace(/{width}/g, product.width?.toString() || "")
-    description = description.replace(/{height}/g, product.height?.toString() || "")
-    description = description.replace(/{thickness}/g, product.thickness?.toString() || "")
-    
-    // Sanitizar la descripcion para que sea plain text (ML rechaza HTML)
-    description = sanitizeToPlainText(description)
-
-    // Buscar en el catalogo de ML si el modo es "catalog" o "linked"
-    let familyName: string | null = null
-    let catalogProductId: string | null = null
-    
-    // SIEMPRE buscar en catalogo - ML rechaza "title" si el ISBN existe en su catalogo
-    if (product.ean && accessToken) {
-      try {
-        const catalogSearch = await fetch(
-          `https://api.mercadolibre.com/products/search?status=active&site_id=MLA&product_identifier=${product.ean}`,
-          { headers: { Authorization: `Bearer ${accessToken}` } }
-        )
-        
-        if (catalogSearch.ok) {
-          const catalogData = await catalogSearch.json()
-          if (catalogData.results && catalogData.results.length > 0) {
-            catalogProductId = catalogData.results[0].id
-            familyName = catalogData.results[0].name || catalogData.results[0].id
-          }
-        }
-      } catch {
-        // Continuar sin catalogo
-      }
-    }
-
-    // Construir el objeto de publicacion para ML segun el modo SELECCIONADO POR EL USUARIO
+    // ── Build ML item ───────────────────────────────────────────────────────
     let mlItem: Record<string, unknown>
-
-    // Helper para construir publicacion tradicional
-    const buildTraditionalItem = () => {
-      // Mapeo de codigos de idioma a value_id de ML
-      const languageMap: Record<string, string> = {
-        "SPA": "313886", // Español
-        "ENG": "313885", // Inglés
-        "POR": "1258229", // Portugués
-        "FRA": "313883", // Francés
-        "ITA": "313889", // Italiano
-        "DEU": "313884", // Alemán
-        "RUS": "313887", // Ruso
-        "JPN": "313888", // Japonés
-        "CHI": "2466958", // Chino
-      }
-      
-      const attributes: Array<{ id: string; value_name?: string; value_id?: string }> = []
-      
-      // MAPEO DE CAMPOS: Nuestra BD -> Atributos ML (MLA412445 - Libros Fisicos)
-      // Basado en publicacion real MLA2199217606 de la cuenta LIBROESVIDA
-      // 
-      // Nuestra BD          | ML Attribute ID    | ML Attribute Name         | Tipo
-      // --------------------|--------------------|-----------------------------|-------
-      // title               | BOOK_TITLE         | Título del libro           | string (required)
-      // author              | AUTHOR             | Autor                      | string (required)
-      // brand               | BOOK_PUBLISHER     | Editorial del libro        | string (required)
-      // -                   | BOOK_GENRE         | Género del libro           | list (value_id required)
-      // ean/isbn            | GTIN               | ISBN                       | string
-      // language            | LANGUAGE           | Idioma                     | list (value_id)
-      // year_edition        | PUBLICATION_YEAR   | Año de publicación         | string
-      // binding             | BOOK_COVER         | Tapa del libro             | string
-      // pages               | PAGES_NUMBER       | Cantidad de páginas        | string
-      
-      // REQUERIDOS por ML para MLA412445
-      // BOOK_TITLE - Titulo (required)
-      attributes.push({ id: "BOOK_TITLE", value_name: product.title?.substring(0, 255) || "Libro" })
-      
-      // AUTHOR - Autor (required)
-      attributes.push({ id: "AUTHOR", value_name: product.author || "Desconocido" })
-      
-      // BOOK_GENRE - Genero del libro (REQUIRED - usa value_id)
-      // value_id "7538039" = "Literatura y ficción" (valor generico seguro)
-      attributes.push({ id: "BOOK_GENRE", value_id: "7538039" })
-      
-      // BOOK_PUBLISHER - Editorial del libro (REQUIRED - NO es "PUBLISHER")
-      attributes.push({ id: "BOOK_PUBLISHER", value_name: product.brand?.substring(0, 255) || "Editorial independiente" })
-      
-      // GTIN/ISBN
-      if (product.ean) {
-        attributes.push({ id: "GTIN", value_name: product.ean })
-      }
-      
-      // LANGUAGE - usa value_id (lista cerrada)
-      const langCode = (product.language || "SPA").toUpperCase().substring(0, 3)
-      const langValueId = languageMap[langCode] || "313886" // Default Español
-      attributes.push({ id: "LANGUAGE", value_id: langValueId })
-      
-      // Opcionales
-      if (product.year_edition) {
-        attributes.push({ id: "PUBLICATION_YEAR", value_name: product.year_edition.toString() })
-      }
-      
-      // BOOK_COVER - Tapa del libro (Blanda/Dura) - solo enviar si tenemos valor válido
-      if (product.binding) {
-        const bindingLower = product.binding.toLowerCase()
-        const coverMap: Record<string, string> = {
-          "rustica": "Blanda",
-          "rústica": "Blanda",
-          "tapa blanda": "Blanda", 
-          "paperback": "Blanda",
-          "blanda": "Blanda",
-          "tapa dura": "Dura",
-          "hardcover": "Dura",
-          "carton": "Dura",
-          "cartón": "Dura",
-          "dura": "Dura",
-        }
-        const coverValue = coverMap[bindingLower]
-        if (coverValue) {
-          attributes.push({ id: "BOOK_COVER", value_name: coverValue })
-        }
-      }
-      
-      // PAGES_NUMBER - Cantidad de paginas
-      if (product.pages) {
-        attributes.push({ id: "PAGES_NUMBER", value_name: product.pages.toString() })
-      }
-      
-      // DIMENSIONES (en milímetros para ML)
-      if (product.width && product.width > 0) {
-        attributes.push({ id: "ITEM_WIDTH", value_name: `${Math.round(product.width * 10)} mm` })
-      }
-      if (product.height && product.height > 0) {
-        attributes.push({ id: "ITEM_HEIGHT", value_name: `${Math.round(product.height * 10)} mm` })
-      }
-      if (product.thickness && product.thickness > 0) {
-        attributes.push({ id: "ITEM_THICKNESS", value_name: `${Math.round(product.thickness * 10)} mm` })
-      }
-      
-      // PESO (si tenemos canonical_weight_g)
-      if (product.canonical_weight_g && product.canonical_weight_g > 0) {
-        attributes.push({ id: "ITEM_WEIGHT", value_name: `${product.canonical_weight_g} g` })
-      }
-      
-      // Usar el ID de imagen subido a ML (NO usamos fallback a URL porque ML la rechazará si es pequeña)
-      const pictures: Array<{ id?: string; source?: string }> = []
-      if (mlPictureId) {
-        pictures.push({ id: mlPictureId })
-      }
-      // Si no hay mlPictureId, se publica sin imagen (mejor que fallar)
-      
-      return {
-        site_id: "MLA",
-        category_id: template.category_id || "MLA412445", // Libros Fisicos
-        family_name: mlTitle,
-        price: finalPrice,
-        currency_id: template.currency_id || "ARS",
-        available_quantity: Math.min(product.stock || 1, 50),
-        buying_mode: "buy_it_now",
-        condition: template.condition || "new",
-        listing_type_id: template.listing_type_id || "gold_special",
-        // ATRIBUTOS OBLIGATORIOS (incluyen BOOK_TITLE)
-        attributes: attributes,
-        // NOTA: seller_sku NO es válido para listings tradicionales en ML API
-        // NOTA: La descripción se agrega en POST separado después de crear el item
-        // Imagenes
-        pictures: pictures,
-        // Garantia y tiempo de disponibilidad via sale_terms
-        sale_terms: [
-          {
-            id: "WARRANTY_TYPE",
-            value_name: template.warranty_type || "Garantía del vendedor"
-          },
-          {
-            id: "WARRANTY_TIME", 
-            value_name: template.warranty_time || "30 días"
-          },
-          ...(template.handling_days && template.handling_days > 0 ? [{
-            id: "MANUFACTURING_TIME",
-            value_name: `${template.handling_days} días`
-          }] : [])
-        ],
-        // Configuracion de envio
-        shipping: {
-          mode: template.shipping_mode || "me2",
-          local_pick_up: template.local_pick_up || false,
-          free_shipping: template.free_shipping || false
-        },
-      }
-    }
-    
-    // Helper para construir publicacion de catalogo
-    const buildCatalogItem = () => {
-      const pictures: Array<{ id?: string; source?: string }> = []
-      if (mlPictureId) {
-        pictures.push({ id: mlPictureId })
-      }
-      
-      return {
-        site_id: "MLA",
-        catalog_product_id: catalogProductId,
-        catalog_listing: true,
-        price: finalPrice,
-        currency_id: template.currency_id || "ARS",
-        available_quantity: Math.min(product.stock || 1, 50),
-        buying_mode: "buy_it_now",
-        condition: template.condition || "new",
-        listing_type_id: template.listing_type_id || "gold_special",
-        pictures: pictures,
-        sale_terms: [
-          {
-            id: "WARRANTY_TYPE",
-            value_name: template.warranty_type || "Garantía del vendedor"
-          },
-          {
-            id: "WARRANTY_TIME", 
-            value_name: template.warranty_time || "30 días"
-          },
-          ...(template.handling_days && template.handling_days > 0 ? [{
-            id: "MANUFACTURING_TIME",
-            value_name: `${template.handling_days} días`
-          }] : [])
-        ],
-        shipping: {
-          mode: template.shipping_mode || "me2",
-          local_pick_up: template.local_pick_up || false,
-          free_shipping: template.free_shipping || false
-        },
-      }
-    }
-    
-    // RESPETAR el modo seleccionado por el usuario
     if (publish_mode === "catalog") {
-      // Usuario quiere SOLO catalogo
-      if (!catalogProductId) {
-        return NextResponse.json({
-          success: false,
-          error: `No está en catálogo ML (ISBN: ${product.ean}). Usa modo "Tradicional".`,
-          not_in_catalog: true
-        }, { status: 400 })
-      }
-      mlItem = buildCatalogItem()
-    } else if (publish_mode === "traditional") {
-      // Usuario quiere SOLO tradicional - siempre usar tradicional
-      mlItem = buildTraditionalItem()
+      if (!catalogProductId)
+        return NextResponse.json(
+          {
+            success: false,
+            error: `No está en catálogo ML (ISBN: ${product.ean}). Usa modo "Tradicional".`,
+            not_in_catalog: true,
+          },
+          { status: 400 },
+        )
+      mlItem = buildCatalogItem({ template, catalogProductId, finalPrice, mlPictureId, stock: product.stock })
     } else {
-      // Modo "linked": tradicional primero, luego optin a catalogo si existe
-      mlItem = buildTraditionalItem()
+      mlItem = buildTraditionalItem({ product, template, mlTitle, finalPrice, mlPictureId })
     }
 
-    // Calcular margen real para verificacion
-    const mlCommission = finalPrice * 0.13
-    const shippingCostFinal = priceCalculation?.shippingCost || 0
-    const fixedFeeFinal = priceCalculation?.fixedFee || 0
-    const netReceived = finalPrice - mlCommission - shippingCostFinal - fixedFeeFinal
-    const costInArs = priceCalculation?.costInArs || (product.cost_price * 1765)
-    const actualMargin = ((netReceived - costInArs) / costInArs) * 100
+    // ── Validate ────────────────────────────────────────────────────────────
+    if (publish_mode !== "catalog") {
+      const validationError = validateTraditionalItem(mlItem, product.id, product.title)
+      if (validationError)
+        return NextResponse.json({ success: false, error: validationError, validation_error: true }, { status: 400 })
+    }
+    if (!mlItem.price || typeof mlItem.price !== "number" || (mlItem.price as number) <= 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Precio inválido: ${mlItem.price}. No se pudo calcular el precio de venta.`,
+          validation_error: true,
+        },
+        { status: 400 },
+      )
+    }
 
-    // Si es solo preview, retornar sin publicar
+    // ── Preview mode ────────────────────────────────────────────────────────
+    const actualMargin = calculateActualMargin({ finalPrice, priceCalculation, costPrice: product.cost_price })
     if (preview_only) {
       return NextResponse.json({
         success: true,
@@ -765,320 +141,74 @@ Libro nuevo. Envíos a todo el país.`
           multiplier: Math.round(finalPrice / product.cost_price),
           exchange_rate: priceCalculation?.exchangeRate || 1765,
           ml_item: mlItem,
-          already_published: alreadyPublishedInfo.exists ? {
-            item_id: alreadyPublishedInfo.item_id,
-            source: alreadyPublishedInfo.source
-          } : null
-        }
+          already_published: alreadyPublishedInfo.exists
+            ? { item_id: alreadyPublishedInfo.item_id, source: alreadyPublishedInfo.source }
+            : null,
+        },
       })
     }
 
-    // El mlItem ya esta preparado correctamente segun el publish_mode
-    // Para "linked" y "traditional" ya tiene title y family_name
-    // Para "catalog" ya tiene catalog_product_id y catalog_listing
-    const itemToPublish = mlItem
-    
-    // VALIDACION ESTRICTA antes de enviar a ML
-    const item = itemToPublish as Record<string, unknown>
-    
-    // Validar family_name (requerido para tradicional/linked)
-    if (publish_mode !== "catalog") {
-      if (!item.family_name || typeof item.family_name !== 'string' || item.family_name.trim().length === 0) {
-        return NextResponse.json({
-          success: false,
-          error: `family_name inválido: "${item.family_name}". El título del producto no puede estar vacío.`,
-          validation_error: true
-        }, { status: 400 })
-      }
-      
-      // Validar atributos requeridos
-      const attrs = item.attributes as Array<{id: string, value_name?: string, value_id?: string}>
-      const bookTitle = attrs?.find(a => a.id === "BOOK_TITLE")
-      const author = attrs?.find(a => a.id === "AUTHOR")
-      const publisher = attrs?.find(a => a.id === "BOOK_PUBLISHER")
-      const genre = attrs?.find(a => a.id === "BOOK_GENRE")
-      
-      if (!bookTitle || !bookTitle.value_name || bookTitle.value_name.trim().length === 0) {
-        return NextResponse.json({
-          success: false,
-          error: `BOOK_TITLE inválido. El producto "${product.id}" no tiene título válido.`,
-          validation_error: true
-        }, { status: 400 })
-      }
-      
-      if (!author || !author.value_name || author.value_name.trim().length === 0) {
-        return NextResponse.json({
-          success: false,
-          error: `AUTHOR inválido. El producto "${product.title}" no tiene autor válido.`,
-          validation_error: true
-        }, { status: 400 })
-      }
-      
-      if (!publisher || !publisher.value_name || publisher.value_name.trim().length === 0) {
-        return NextResponse.json({
-          success: false,
-          error: `BOOK_PUBLISHER inválido. El producto "${product.title}" no tiene editorial válida.`,
-          validation_error: true
-        }, { status: 400 })
-      }
-      
-      if (!genre || !genre.value_id) {
-        return NextResponse.json({
-          success: false,
-          error: `BOOK_GENRE inválido. Error interno de validación.`,
-          validation_error: true
-        }, { status: 400 })
-      }
-    }
-    
-    // Validar precio (requerido siempre)
-    if (!item.price || typeof item.price !== 'number' || item.price <= 0) {
-      return NextResponse.json({
-        success: false,
-        error: `Precio inválido: ${item.price}. No se pudo calcular el precio de venta.`,
-        validation_error: true
-      }, { status: 400 })
-    }
-    
-    // Log para debug - ver exactamente que se envia a ML
-    console.log("[v0] Item to publish - family_name:", item.family_name)
-    console.log("[v0] Item to publish - price:", item.price)
-    console.log("[v0] Item to publish - pictures:", JSON.stringify(item.pictures))
-    console.log("[v0] Item to publish - shipping:", JSON.stringify(item.shipping))
-    console.log("[v0] Item to publish - attributes (first 5):", JSON.stringify((item.attributes as Array<unknown>)?.slice(0, 5)))
-    console.log("[v0] Product image_url from DB:", product.image_url)
-
-    // Publicar en ML (tradicional primero si es linked)
-    const mlResponse = await fetch("https://api.mercadolibre.com/items", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(itemToPublish)
-    })
-
-    const mlData = await mlResponse.json()
-
-    if (!mlResponse.ok) {
-      console.log("[v0] ML Error Response:", JSON.stringify(mlData))
-      
-      // ML puede devolver errores en varios formatos
-      let errorMsg = "Error al publicar en ML"
-      const invalidFields: string[] = []
-      
-      // Buscar campos inválidos en la respuesta de ML
-      if (mlData.cause && Array.isArray(mlData.cause)) {
-        mlData.cause.forEach((cause: any) => {
-          if (cause.message) {
-            invalidFields.push(cause.message)
-          }
-          if (cause.field) {
-            invalidFields.push(`Campo "${cause.field}": ${cause.message || 'inválido'}`)
-          }
-        })
-      }
-      
-      if (invalidFields.length > 0) {
-        errorMsg = `Campos inválidos: ${invalidFields.join("; ")}`
-      } else if (mlData.message) {
-        errorMsg = mlData.message
-      } else if (mlData.error) {
-        errorMsg = mlData.error
-      }
-      
-      return NextResponse.json({
-        success: false,
-        error: errorMsg,
-        invalid_fields: invalidFields.length > 0 ? invalidFields : undefined,
-        ml_error_detail: mlData, // Incluir toda la respuesta para debug
-        product_info: {
-          id: product.id,
-          title: product.title,
-          author: product.author,
-          brand: product.brand,
-          ean: product.ean,
-          cost_price: product.cost_price
-        }
-      }, { status: 400 })
+    // ── Publish to ML ───────────────────────────────────────────────────────
+    const { ok, data: mlData, errorResponse } = await publishToMl({ itemToPublish: mlItem, accessToken })
+    if (!ok) {
+      return NextResponse.json(
+        {
+          ...errorResponse,
+          product_info: {
+            id: product.id,
+            title: product.title,
+            author: product.author,
+            brand: product.brand,
+            ean: product.ean,
+            cost_price: product.cost_price,
+          },
+        },
+        { status: 400 },
+      )
     }
 
-    // Agregar seller_sku via PUT (ML no lo acepta en POST inicial)
-    let sellerSkuAdded = false
+    // ── Post-publish steps ──────────────────────────────────────────────────
     const sellerSkuValue = product.ean || product.sku || null
-    if (sellerSkuValue) {
-      try {
-        console.log("[v0] Adding seller_sku to item", mlData.id, "value:", sellerSkuValue)
-        const skuResponse = await fetch(`https://api.mercadolibre.com/items/${mlData.id}`, {
-          method: "PUT",
-          headers: {
-            "Authorization": `Bearer ${accessToken}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({ seller_custom_field: sellerSkuValue })
-        })
-        
-        if (!skuResponse.ok) {
-          const skuError = await skuResponse.json()
-          console.log("[v0] Error adding seller_sku:", JSON.stringify(skuError))
-        } else {
-          console.log("[v0] seller_sku added successfully")
-          sellerSkuAdded = true
-        }
-      } catch (skuErr) {
-        console.log("[v0] Exception adding seller_sku:", skuErr)
-      }
-    }
-    
-    // Agregar descripción en un POST separado (ML lo requiere así)
-    let descriptionAdded = false
-    let descriptionError: string | null = null
-    if (description && description.trim()) {
-      try {
-        console.log("[v0] Adding description to item", mlData.id, "length:", description.length)
-        const descResponse = await fetch(`https://api.mercadolibre.com/items/${mlData.id}/description`, {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${accessToken}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({ plain_text: description })
-        })
-        
-        if (!descResponse.ok) {
-          const descError = await descResponse.json()
-          console.log("[v0] Error adding description:", JSON.stringify(descError))
-          descriptionError = descError.message || descError.error || "Error desconocido"
-        } else {
-          console.log("[v0] Description added successfully")
-          descriptionAdded = true
-        }
-      } catch (descErr) {
-        console.log("[v0] Exception adding description:", descErr)
-        descriptionError = String(descErr)
-      }
-    } else {
-      console.log("[v0] No description to add (empty or null)")
-      descriptionError = "Descripción vacía o no disponible"
-    }
+    const sellerSkuAdded = sellerSkuValue
+      ? await addSellerSku({ mlItemId: mlData.id, sku: sellerSkuValue, accessToken })
+      : false
+    const { added: descriptionAdded, error: descriptionError } = await addDescription({
+      mlItemId: mlData.id,
+      description,
+      accessToken,
+    })
+    await savePublication({ supabase, productId: product.id, accountId: account.id, mlData })
 
-    // Guardar publicacion tradicional en nuestra base de datos
-    const { error: insertError } = await supabase
-      .from("ml_publications")
-      .insert({
-        product_id: product.id,
-        account_id: account.id,
-        ml_item_id: mlData.id,
-        title: mlData.title,
-        price: mlData.price,
-        status: mlData.status,
-        permalink: mlData.permalink,
-        published_at: new Date().toISOString()
-      })
-
-    if (insertError) {
-      console.error("Error saving publication:", insertError)
-    }
-
-    // Si es modo "linked" y tenemos catalog_product_id, hacer optin al catalogo
     let catalogListing = null
     if (publish_mode === "linked" && catalogProductId) {
-      try {
-        // Si el item está pausado, activarlo primero
-        if (mlData.status === "paused") {
-          console.log("[v0] Item created as paused, activating before optin...")
-          const activateResponse = await fetch(`https://api.mercadolibre.com/items/${mlData.id}`, {
-            method: "PUT",
-            headers: {
-              "Authorization": `Bearer ${accessToken}`,
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ status: "active" })
-          })
-          
-          if (!activateResponse.ok) {
-            const activateError = await activateResponse.json()
-            console.error("[v0] Error activating item:", activateError)
-            // No hacer optin si no se pudo activar
-            throw new Error("No se pudo activar el item para optin")
-          }
-          
-          console.log("[v0] Item activated, waiting for ML to process...")
-          // Esperar 2 segundos para que ML procese el cambio de estado
-          await new Promise(resolve => setTimeout(resolve, 2000))
-          
-          // Verificar que realmente se activó
-          const verifyResponse = await fetch(`https://api.mercadolibre.com/items/${mlData.id}`, {
-            headers: { "Authorization": `Bearer ${accessToken}` }
-          })
-          
-          if (verifyResponse.ok) {
-            const verifyData = await verifyResponse.json()
-            console.log("[v0] Item status after activate:", verifyData.status)
-            if (verifyData.status === "paused") {
-              console.error("[v0] Item still paused, skipping optin")
-              throw new Error("Item sigue pausado después de activar")
-            }
-          }
-        }
-        
-        const optinResponse = await fetch("https://api.mercadolibre.com/items/catalog_listings", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${accessToken}`,
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            item_id: mlData.id,
-            catalog_product_id: catalogProductId
-          })
-        })
-
-        if (optinResponse.ok) {
-          catalogListing = await optinResponse.json()
-          
-          // Guardar tambien la publicacion de catalogo vinculada
-          if (catalogListing.id) {
-            await supabase
-              .from("ml_publications")
-              .insert({
-                product_id: product.id,
-                account_id: account.id,
-                ml_item_id: catalogListing.id,
-                title: catalogListing.title || mlData.title,
-                price: catalogListing.price || mlData.price,
-                status: catalogListing.status || "active",
-                permalink: catalogListing.permalink,
-                published_at: new Date().toISOString()
-              })
-          }
-        } else {
-          const optinError = await optinResponse.json()
-          console.error("Error en optin catalogo:", optinError)
-        }
-      } catch (optinErr) {
-        console.error("Error al vincular con catalogo:", optinErr)
-      }
-    }
-
-    // Guardar estado de publicación en products
-    await supabase
-      .from("products")
-      .update({
-        ml_item_id: mlData.id,
-        ml_account_id: account.id,
-        ml_status: mlData.status || "active",
-        ml_published_at: new Date().toISOString(),
-        ml_permalink: mlData.permalink
+      catalogListing = await doCatalogOptin({
+        mlItemId: mlData.id,
+        mlItemStatus: mlData.status,
+        catalogProductId,
+        accessToken,
       })
-      .eq("id", product_id)
+      if (catalogListing)
+        await saveCatalogPublication({
+          supabase,
+          productId: product.id,
+          accountId: account.id,
+          catalogListing,
+          fallbackTitle: mlData.title,
+          fallbackPrice: mlData.price,
+        })
+    }
+    await updateProductMlStatus({ supabase, productId: product_id, accountId: account.id, mlData })
 
-    // Compilar advertencias de fallos silenciosos
-    const warnings: string[] = []
-    if (imageWarning) warnings.push(`Imagen: ${imageWarning}`)
-    if (!sellerSkuAdded && sellerSkuValue) warnings.push("SKU no pudo agregarse al listing")
-    if (!descriptionAdded) warnings.push(`Descripción no agregada${descriptionError ? `: ${descriptionError}` : ""}`)
-    if (publish_mode === "linked" && catalogProductId && !catalogListing) warnings.push("Catalog opt-in falló, publicado solo como listing tradicional")
+    const warnings = buildWarnings({
+      imageWarning,
+      sellerSkuAdded,
+      sellerSkuValue,
+      descriptionAdded,
+      descriptionError,
+      publishMode: publish_mode,
+      catalogProductId,
+      catalogListing,
+    })
 
     return NextResponse.json({
       success: true,
@@ -1096,16 +226,12 @@ Libro nuevo. Envíos a todo el país.`
       seller_sku_value: sellerSkuValue,
       description_added: descriptionAdded,
       description_error: descriptionError,
-      catalog_listing: catalogListing ? {
-        status: catalogListing.status,
-        catalog_product_id: catalogListing.catalog_product_id
-      } : null
+      catalog_listing: catalogListing
+        ? { status: catalogListing.status, catalog_product_id: catalogListing.catalog_product_id }
+        : null,
     })
   } catch (error: any) {
     console.error("[v0] Error in publish route:", error)
-    return NextResponse.json({ 
-      success: false, 
-      error: error.message || "Error interno del servidor" 
-    }, { status: 500 })
+    return NextResponse.json({ success: false, error: error.message || "Error interno del servidor" }, { status: 500 })
   }
 }

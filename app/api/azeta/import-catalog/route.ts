@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { runCatalogImport } from "@/lib/azeta/run-catalog-import"
+import { requireCron } from "@/lib/auth/require-auth"
+import { runCatalogImport } from "@/domains/suppliers/azeta/catalog-import"
 
 export const maxDuration = 300
 
@@ -22,16 +23,20 @@ export const preferredRegion = "fra1"
  */
 
 export async function GET(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
   return POST(request)
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
   let source_id: string | undefined
   let source_name: string | undefined
 
   try {
     const body = await request.json().catch(() => ({}))
-    source_id   = body.source_id   || undefined
+    source_id = body.source_id || undefined
     source_name = body.source_name || undefined
   } catch {}
 
@@ -40,18 +45,11 @@ export async function POST(request: NextRequest) {
   if (!wantsSSE) {
     // Modo cron / server-side: respuesta JSON simple
     try {
-      const result = await runCatalogImport(
-        source_id   ? { source_id }   :
-        source_name ? { source_name } :
-        undefined
-      )
+      const result = await runCatalogImport(source_id ? { source_id } : source_name ? { source_name } : undefined)
       return NextResponse.json(result, { status: result.success ? 200 : 500 })
     } catch (err: any) {
       console.error("[import-catalog] Unhandled error:", err)
-      return NextResponse.json(
-        { success: false, error: err?.message ?? "Error interno del servidor" },
-        { status: 500 }
-      )
+      return NextResponse.json({ success: false, error: err?.message ?? "Error interno del servidor" }, { status: 500 })
     }
   }
 
@@ -74,11 +72,9 @@ export async function POST(request: NextRequest) {
         send({ type: "start", message: "Iniciando importación Azeta..." })
 
         const result = await runCatalogImport(
-          source_id   ? { source_id }   :
-          source_name ? { source_name } :
-          undefined,
+          source_id ? { source_id } : source_name ? { source_name } : undefined,
           // Callback de progreso: llamado después de cada batch flush
-          (progress) => send({ type: "progress", ...progress })
+          (progress) => send({ type: "progress", ...progress }),
         )
 
         send({ type: "done", ...result })
@@ -86,16 +82,18 @@ export async function POST(request: NextRequest) {
         console.error("[import-catalog][SSE] Error:", err.message)
         send({ type: "error", error: err.message })
       } finally {
-        try { controller.close() } catch {}
+        try {
+          controller.close()
+        } catch {}
       }
     },
   })
 
   return new Response(stream, {
     headers: {
-      "Content-Type":  "text/event-stream",
+      "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
-      "Connection":    "keep-alive",
+      Connection: "keep-alive",
       "X-Accel-Buffering": "no", // desactivar buffering en Nginx/proxies
     },
   })

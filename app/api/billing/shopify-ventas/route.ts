@@ -1,22 +1,24 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextResponse } from "next/server"
 
 // GET — lista órdenes de Shopify enriquecidas con estado de facturación
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const store_id         = searchParams.get("store_id")
+    const store_id = searchParams.get("store_id")
     const financial_status = searchParams.get("financial_status") || "paid"
-    const facturado        = searchParams.get("facturado")  || "all"
-    const page_info        = searchParams.get("page_info")  || ""
-    const fecha_desde      = searchParams.get("fecha_desde") || ""
-    const fecha_hasta      = searchParams.get("fecha_hasta") || ""
-    const limit            = Math.min(Number(searchParams.get("limit") || "50"), 250)
+    const facturado = searchParams.get("facturado") || "all"
+    const page_info = searchParams.get("page_info") || ""
+    const fecha_desde = searchParams.get("fecha_desde") || ""
+    const fecha_hasta = searchParams.get("fecha_hasta") || ""
+    const limit = Math.min(Number(searchParams.get("limit") || "50"), 250)
 
     if (!store_id) return NextResponse.json({ error: "store_id requerido" }, { status: 400 })
 
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const { data: store } = await supabase
@@ -45,21 +47,23 @@ export async function GET(request: Request) {
 
     if (!res.ok) {
       let msg = `HTTP ${res.status}`
-      try { msg = `HTTP ${res.status}: ${(await res.json()).errors ?? ""}` } catch {}
+      try {
+        msg = `HTTP ${res.status}: ${(await res.json()).errors ?? ""}`
+      } catch {}
       return NextResponse.json({ error: msg }, { status: res.status })
     }
 
-    const json   = await res.json()
+    const json = await res.json()
     const orders = (json.orders ?? []) as any[]
 
     // Cursor de paginación desde el header Link
     const linkHeader = res.headers.get("link") || ""
-    const nextMatch  = linkHeader.match(/<[^>]*page_info=([^&>]+)[^>]*>;\s*rel="next"/)
-    const prevMatch  = linkHeader.match(/<[^>]*page_info=([^&>]+)[^>]*>;\s*rel="previous"/)
+    const nextMatch = linkHeader.match(/<[^>]*page_info=([^&>]+)[^>]*>;\s*rel="next"/)
+    const prevMatch = linkHeader.match(/<[^>]*page_info=([^&>]+)[^>]*>;\s*rel="previous"/)
 
     // Enriquecer con estado de facturación desde nuestra DB
-    const orderIds = orders.map(o => String(o.id))
-    let facturadaMap: Record<string, any> = {}
+    const orderIds = orders.map((o) => String(o.id))
+    const facturadaMap: Record<string, any> = {}
     if (orderIds.length > 0) {
       const { data: facturas } = await supabase
         .from("shopify_order_facturas")
@@ -71,37 +75,37 @@ export async function GET(request: Request) {
       }
     }
 
-    const enriched = orders.map(o => {
-      const ba      = o.billing_address || {}
-      const nombre  = [ba.first_name, ba.last_name].filter(Boolean).join(" ") || o.customer?.email || "Desconocido"
+    const enriched = orders.map((o) => {
+      const ba = o.billing_address || {}
+      const nombre = [ba.first_name, ba.last_name].filter(Boolean).join(" ") || o.customer?.email || "Desconocido"
       const facInfo = facturadaMap[String(o.id)] ?? null
       return {
-        id:                 o.id,
-        fecha:              o.created_at,
-        financial_status:   o.financial_status,
+        id: o.id,
+        fecha: o.created_at,
+        financial_status: o.financial_status,
         fulfillment_status: o.fulfillment_status,
-        total:              parseFloat(o.total_price || "0"),
-        moneda:             o.currency,
-        comprador:          nombre,
-        email:              o.customer?.email || null,
-        items:              (o.line_items ?? []).map((li: any) => ({
-          titulo:   li.title || li.name || "",
-          sku:      li.sku   || null,
+        total: parseFloat(o.total_price || "0"),
+        moneda: o.currency,
+        comprador: nombre,
+        email: o.customer?.email || null,
+        items: (o.line_items ?? []).map((li: any) => ({
+          titulo: li.title || li.name || "",
+          sku: li.sku || null,
           cantidad: li.quantity,
-          precio:   parseFloat(li.price || "0"),
+          precio: parseFloat(li.price || "0"),
         })),
-        billing_address:   ba,
-        note_attributes:   o.note_attributes || [],
-        note:              o.note || null,
-        facturada:         !!facInfo,
-        factura_info:      facInfo,
+        billing_address: ba,
+        note_attributes: o.note_attributes || [],
+        note: o.note || null,
+        facturada: !!facInfo,
+        factura_info: facInfo,
       }
     })
 
     // Aplicar filtro de facturado (server-side sobre la página devuelta por Shopify)
     let filtered = enriched
-    if (facturado === "no") filtered = enriched.filter(o => !o.facturada)
-    else if (facturado === "si") filtered = enriched.filter(o => o.facturada)
+    if (facturado === "no") filtered = enriched.filter((o) => !o.facturada)
+    else if (facturado === "si") filtered = enriched.filter((o) => o.facturada)
 
     return NextResponse.json({
       ok: true,
@@ -109,7 +113,7 @@ export async function GET(request: Request) {
       pagination: {
         next_page_info: nextMatch?.[1] ?? null,
         prev_page_info: prevMatch?.[1] ?? null,
-        page_size:      orders.length,
+        page_size: orders.length,
       },
     })
   } catch (e: any) {
@@ -121,7 +125,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const { shopify_order_ids, store_id, factura_id, empresa_id } = await request.json()
@@ -130,12 +136,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "shopify_order_ids y store_id requeridos" }, { status: 400 })
     }
 
-    const rows = (shopify_order_ids as string[]).map(order_id => ({
-      user_id:          user.id,
+    const rows = (shopify_order_ids as string[]).map((order_id) => ({
+      user_id: user.id,
       shopify_order_id: String(order_id),
       store_id,
-      factura_id:       factura_id  || null,
-      empresa_id:       empresa_id  || null,
+      factura_id: factura_id || null,
+      empresa_id: empresa_id || null,
     }))
 
     const { error } = await supabase

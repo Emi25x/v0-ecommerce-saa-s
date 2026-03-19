@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
-import { mlFetchJson, isMlFetchError } from "@/lib/ml/http"
+import { createAdminClient } from "@/lib/db/admin"
+import { mlFetchJson, isMlFetchError } from "@/domains/mercadolibre/api-client"
 import { refreshTokenIfNeeded } from "@/lib/mercadolibre"
 
 export const dynamic = "force-dynamic"
@@ -31,12 +31,13 @@ export async function POST(req: NextRequest) {
   }
 
   // Marcar running
-  await supabase.from("ml_catalog_migration_jobs")
+  await supabase
+    .from("ml_catalog_migration_jobs")
     .update({ status: "running", last_heartbeat_at: new Date().toISOString() })
     .eq("id", jobId)
 
   const account = job.ml_accounts
-  const validAccount = await refreshTokenIfNeeded(account) as any
+  const validAccount = (await refreshTokenIfNeeded(account)) as any
   const accessToken = validAccount.access_token
   const mlUserId = validAccount.ml_user_id
 
@@ -48,13 +49,20 @@ export async function POST(req: NextRequest) {
   // Fetch del listado de items del seller por offset
   const itemsUrl = `https://api.mercadolibre.com/users/${mlUserId}/items/search?offset=${offset}&limit=${limit}&status=active`
 
-  const searchData = await mlFetchJson(itemsUrl, { accessToken }, { account_id: job.account_id, op_name: "catalog_audit_search" })
+  const searchData = await mlFetchJson(
+    itemsUrl,
+    { accessToken },
+    { account_id: job.account_id, op_name: "catalog_audit_search" },
+  )
 
   if (isMlFetchError(searchData)) {
-    await supabase.from("ml_catalog_migration_jobs").update({
-      status: "failed",
-      last_error: `Error buscando items ML: ${searchData.body_text?.slice(0, 300)}`,
-    }).eq("id", jobId)
+    await supabase
+      .from("ml_catalog_migration_jobs")
+      .update({
+        status: "failed",
+        last_error: `Error buscando items ML: ${searchData.body_text?.slice(0, 300)}`,
+      })
+      .eq("id", jobId)
     return NextResponse.json({ ok: false, done: true, error: searchData.body_text?.slice(0, 300) }, { status: 502 })
   }
 
@@ -62,16 +70,21 @@ export async function POST(req: NextRequest) {
   const paging = searchData.paging || {}
   const totalEstimated: number = paging.total || job.total_estimated || 0
 
-  console.log(`[CATALOG-AUDIT-RUN] job=${jobId.slice(0,8)} offset=${offset} limit=${limit} got=${itemIds.length} total=${totalEstimated}`)
+  console.log(
+    `[CATALOG-AUDIT-RUN] job=${jobId.slice(0, 8)} offset=${offset} limit=${limit} got=${itemIds.length} total=${totalEstimated}`,
+  )
 
   // Si no hay más items, fase audit completada
   if (itemIds.length === 0) {
-    await supabase.from("ml_catalog_migration_jobs").update({
-      status: "completed",
-      phase: "audit",
-      total_estimated: totalEstimated,
-      last_heartbeat_at: new Date().toISOString(),
-    }).eq("id", jobId)
+    await supabase
+      .from("ml_catalog_migration_jobs")
+      .update({
+        status: "completed",
+        phase: "audit",
+        total_estimated: totalEstimated,
+        last_heartbeat_at: new Date().toISOString(),
+      })
+      .eq("id", jobId)
     return NextResponse.json({ ok: true, done: true, processed: 0, total_estimated: totalEstimated })
   }
 
@@ -86,7 +99,11 @@ export async function POST(req: NextRequest) {
     const subIds = itemIds.slice(i, i + SUB_BATCH)
     const detailUrl = `https://api.mercadolibre.com/items?ids=${subIds.join(",")}&attributes=id,catalog_product_id,attributes,status`
 
-    const detailData = await mlFetchJson(detailUrl, { accessToken }, { account_id: job.account_id, op_name: "catalog_audit_detail" })
+    const detailData = await mlFetchJson(
+      detailUrl,
+      { accessToken },
+      { account_id: job.account_id, op_name: "catalog_audit_detail" },
+    )
     if (isMlFetchError(detailData)) {
       console.error(`[CATALOG-AUDIT-RUN] Error detalle batch i=${i}:`, detailData.body_text?.slice(0, 200))
       continue
@@ -106,7 +123,7 @@ export async function POST(req: NextRequest) {
         let ean: string | null = null
         if (item.attributes) {
           const gtinAttr = (item.attributes as any[]).find(
-            (a: any) => a.id === "GTIN" || a.id === "EAN" || a.id === "ISBN"
+            (a: any) => a.id === "GTIN" || a.id === "EAN" || a.id === "ISBN",
           )
           if (gtinAttr?.value_name) ean = String(gtinAttr.value_name).replace(/\D/g, "") || null
         }
@@ -150,17 +167,20 @@ export async function POST(req: NextRequest) {
   console.log(`[CATALOG-AUDIT-RUN] newOffset=${newOffset} cumulative=${cumulativeProcessed} isLastPage=${isLastPage}`)
 
   // Actualizar job
-  await supabase.from("ml_catalog_migration_jobs").update({
-    status: isLastPage ? "completed" : "running",
-    phase: "audit",
-    total_estimated: totalEstimated || job.total_estimated,
-    processed_count: cumulativeProcessed,
-    already_catalog_count: job.already_catalog_count + batchAlreadyCatalog,
-    no_ean_count: job.no_ean_count + batchNoEan,
-    candidates_count: job.candidates_count + batchCandidates,
-    cursor: newCursor,
-    last_heartbeat_at: new Date().toISOString(),
-  }).eq("id", jobId)
+  await supabase
+    .from("ml_catalog_migration_jobs")
+    .update({
+      status: isLastPage ? "completed" : "running",
+      phase: "audit",
+      total_estimated: totalEstimated || job.total_estimated,
+      processed_count: cumulativeProcessed,
+      already_catalog_count: job.already_catalog_count + batchAlreadyCatalog,
+      no_ean_count: job.no_ean_count + batchNoEan,
+      candidates_count: job.candidates_count + batchCandidates,
+      cursor: newCursor,
+      last_heartbeat_at: new Date().toISOString(),
+    })
+    .eq("id", jobId)
 
   return NextResponse.json({
     ok: true,

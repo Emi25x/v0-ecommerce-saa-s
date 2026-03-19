@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
 export async function GET() {
   try {
@@ -8,7 +8,8 @@ export async function GET() {
     // Obtener schedules activos con información de la fuente
     const { data: schedules, error: schedulesError } = await supabase
       .from("import_schedules")
-      .select(`
+      .select(
+        `
         *,
         import_sources (
           id,
@@ -17,7 +18,8 @@ export async function GET() {
           feed_type,
           last_import_at
         )
-      `)
+      `,
+      )
       .order("next_run_at", { ascending: true })
 
     if (schedulesError) {
@@ -28,13 +30,15 @@ export async function GET() {
     // Obtener historial de importaciones (últimas 50)
     const { data: history, error: historyError } = await supabase
       .from("import_history")
-      .select(`
+      .select(
+        `
         *,
         import_sources (
           id,
           name
         )
-      `)
+      `,
+      )
       .order("started_at", { ascending: false })
       .limit(50)
 

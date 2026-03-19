@@ -1,16 +1,12 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
     const supabase = await createClient()
 
-    const { data, error } = await supabase
-      .from("import_sources")
-      .select("id, name, feed_type")
-      .eq("id", id)
-      .single()
+    const { data, error } = await supabase.from("import_sources").select("id, name, feed_type").eq("id", id).single()
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 404 })

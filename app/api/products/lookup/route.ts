@@ -2,7 +2,7 @@
  * GET /api/products/lookup?ean=<value>
  * Busca un producto por EAN o ISBN y devuelve sus campos principales.
  */
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextRequest, NextResponse } from "next/server"
 
 export async function GET(req: NextRequest) {
@@ -13,12 +13,14 @@ export async function GET(req: NextRequest) {
     const supabase = await createClient()
     const { data: product } = await supabase
       .from("products")
-      .select(`
+      .select(
+        `
         id, title, description, brand, category, author, sku, ean, isbn,
         price, canonical_weight_g, image_url, language, binding, pages,
         year_edition, ibic_subjects, subject, course, height, width,
         thickness, condition, custom_fields, ml_item_id
-      `)
+      `,
+      )
       .or(`ean.eq.${ean},isbn.eq.${ean}`)
       .limit(1)
       .maybeSingle()

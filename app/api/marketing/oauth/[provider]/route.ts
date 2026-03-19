@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
-import { buildGoogleOAuthUrl } from "@/lib/marketing/google"
-import { buildMetaOAuthUrl } from "@/lib/marketing/meta"
-import { buildTikTokOAuthUrl } from "@/lib/marketing/tiktok"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { buildGoogleOAuthUrl } from "@/domains/marketing/google"
+import { buildMetaOAuthUrl } from "@/domains/marketing/meta"
+import { buildTikTokOAuthUrl } from "@/domains/marketing/tiktok"
+import { createAdminClient } from "@/lib/db/admin"
+import { getAppOrigin } from "@/lib/env/config"
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ provider: string }> }
-) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ provider: string }> }) {
   const { provider } = await params
-  const origin = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin
+  const origin = getAppOrigin(request)
   const redirectUri = `${origin}/api/marketing/oauth/callback`
 
   // Load credentials from DB

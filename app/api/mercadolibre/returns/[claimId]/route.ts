@@ -1,7 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
-export async function GET(request: NextRequest, { params }: { params: { claimId: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ claimId: string }> }) {
+  const { claimId } = await params
   try {
     const supabase = await createClient()
 
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest, { params }: { params: { claimId:
     }
 
     // Fetch return details from MercadoLibre API
-    const response = await fetch(`https://api.mercadolibre.com/post-purchase/v2/claims/${params.claimId}/returns`, {
+    const response = await fetch(`https://api.mercadolibre.com/post-purchase/v2/claims/${claimId}/returns`, {
       headers: {
         Authorization: `Bearer ${credentials.access_token}`,
       },

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 
 export const dynamic = "force-dynamic"
 
@@ -24,23 +24,26 @@ export async function POST(req: NextRequest) {
   const { nombre, direccion, localidad, provincia, cp, telefono, email, es_default } = body
 
   if (!nombre || !direccion || !localidad || !provincia || !cp) {
-    return NextResponse.json(
-      { error: "nombre, direccion, localidad, provincia y cp son requeridos" },
-      { status: 400 }
-    )
+    return NextResponse.json({ error: "nombre, direccion, localidad, provincia y cp son requeridos" }, { status: 400 })
   }
 
   // Si es_default, quitar el default anterior
   if (es_default) {
-    await supabase
-      .from("remitentes")
-      .update({ es_default: false })
-      .eq("es_default", true)
+    await supabase.from("remitentes").update({ es_default: false }).eq("es_default", true)
   }
 
   const { data, error } = await supabase
     .from("remitentes")
-    .insert({ nombre, direccion, localidad, provincia, cp, telefono: telefono || null, email: email || null, es_default: !!es_default })
+    .insert({
+      nombre,
+      direccion,
+      localidad,
+      provincia,
+      cp,
+      telefono: telefono || null,
+      email: email || null,
+      es_default: !!es_default,
+    })
     .select()
     .single()
 

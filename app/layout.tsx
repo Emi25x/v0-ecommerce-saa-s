@@ -1,15 +1,21 @@
 import type React from "react"
-import type { Metadata } from "next"
-import { Suspense } from "react"
-import { MigrationProvider } from "@/components/migration-provider"
+import type { Metadata, Viewport } from "next"
+import { ThemeProvider } from "@/components/layout/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
-import { ConditionalSidebar } from "@/components/conditional-sidebar"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "Ecommerce Manager",
-  description: "Gestiona tu ecommerce con integraciones de Mercado Libre, Shopify y más.",
-  generator: "v0.app",
+  title: {
+    default: "Nexo Commerce",
+    template: "%s | Nexo Commerce",
+  },
+  description: "Plataforma de gestión e-commerce multi-canal. Inventario, pedidos, envíos y facturación en un solo lugar.",
+}
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#0a0a0a",
 }
 
 export default function RootLayout({
@@ -18,17 +24,12 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="es" className="dark">
+    <html lang="es" suppressHydrationWarning>
       <body className="font-sans antialiased">
-        <MigrationProvider>
-          <div className="flex min-h-screen">
-            <ConditionalSidebar />
-            <main className="flex-1">
-              <Suspense fallback={null}>{children}</Suspense>
-            </main>
-          </div>
-        </MigrationProvider>
-        <Toaster />
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+          <div className="flex min-h-dvh">{children}</div>
+          <Toaster />
+        </ThemeProvider>
       </body>
     </html>
   )

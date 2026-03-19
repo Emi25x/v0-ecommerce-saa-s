@@ -1,18 +1,23 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
-import { runAzetaStockUpdate } from "@/lib/azeta/update-stock-import"
+import { requireCron } from "@/lib/auth/require-auth"
+import { createAdminClient } from "@/lib/db/admin"
+import { runAzetaStockUpdate } from "@/domains/suppliers/azeta/stock-import"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300 // 5 minutos
 
 // Vercel Cron invoca con GET — delegar a POST
 export async function GET(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
   const isCron = request.headers.get("x-vercel-cron") === "1"
   console.log(`[AZETA-STOCK] GET - ${isCron ? "cron" : "manual"}`)
   return POST(request)
 }
 
-export async function POST(_request: NextRequest) {
+export async function POST(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
   const supabase = createAdminClient()
 
   try {
@@ -38,12 +43,12 @@ export async function POST(_request: NextRequest) {
     return NextResponse.json({
       success: true,
       stats: {
-        processed:      result.processed,
-        updated:        result.updated,
-        not_found:      result.not_found,
-        zeroed:         result.zeroed,
-        skipped:        result.skipped,
-        duration_ms:    result.elapsed_ms,
+        processed: result.processed,
+        updated: result.updated,
+        not_found: result.not_found,
+        zeroed: result.zeroed,
+        skipped: result.skipped,
+        duration_ms: result.elapsed_ms,
       },
     })
   } catch (error: any) {

@@ -1,10 +1,13 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { type NextRequest, NextResponse } from "next/server"
+import { requireCron } from "@/lib/auth/require-auth"
 
-export async function GET(request: NextRequest, { params }: { params: { jobId: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ jobId: string }> }) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
+
+  const { jobId } = await params
   try {
-    const { jobId } = params
-
     const supabase = await createClient()
 
     const { data: history, error } = await supabase.from("import_history").select("*").eq("id", jobId).single()

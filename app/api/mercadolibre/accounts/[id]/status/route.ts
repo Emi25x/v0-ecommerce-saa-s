@@ -1,9 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+import { createAdminClient } from "@/lib/db/admin"
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   const supabase = createAdminClient()
   try {
-    const accountId = params.id
+    const accountId = id
 
     // Obtener la cuenta de la base de datos
     const { data: account, error } = await supabase.from("ml_accounts").select("*").eq("id", accountId).single()

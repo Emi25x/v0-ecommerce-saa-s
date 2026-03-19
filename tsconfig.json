@@ -1,11 +1,13 @@
 {
   "compilerOptions": {
     "lib": ["dom", "dom.iterable", "esnext"],
-    "allowJs": true,
-    "target": "ES6",
+    "allowJs": false,
+    "target": "ES2022",
     "skipLibCheck": true,
     "strict": true,
     "noEmit": true,
+    // TODO: Enable once existing array access patterns are fixed (~100 errors)
+    // "noUncheckedIndexedAccess": true,
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",

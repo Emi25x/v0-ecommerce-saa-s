@@ -1,29 +1,29 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextResponse } from "next/server"
-import { getWSAATicket } from "@/lib/arca/wsaa"
-import { requestCAE } from "@/lib/arca/wsfe"
-import type { FacturaItem } from "@/lib/arca/wsfe"
-import { getMLOrderBilling } from "@/lib/billing/get-ml-order-billing"
+import { getWSAATicket } from "@/domains/billing/arca/wsaa"
+import { requestCAE } from "@/domains/billing/arca/wsfe"
+import type { FacturaItem } from "@/domains/billing/arca/wsfe"
+import { getMLOrderBilling } from "@/domains/billing/ml-order-billing"
+import { normalizeDocType } from "@/domains/billing/doc-type"
 
 // GET — listar facturas con paginación y filtros
 export async function GET(request: Request) {
   try {
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const { searchParams } = new URL(request.url)
-    const page       = parseInt(searchParams.get("page") || "1")
-    const limit      = parseInt(searchParams.get("limit") || "20")
-    const estado     = searchParams.get("estado") || ""
-    const q          = searchParams.get("q") || ""
+    const page = parseInt(searchParams.get("page") || "1")
+    const limit = parseInt(searchParams.get("limit") || "20")
+    const estado = searchParams.get("estado") || ""
+    const q = searchParams.get("q") || ""
     const empresa_id = searchParams.get("empresa_id") || ""
-    const offset     = (page - 1) * limit
+    const offset = (page - 1) * limit
 
-    let query = supabase
-      .from("facturas")
-      .select("*", { count: "exact" })
-      .eq("user_id", user.id)
+    let query = supabase.from("facturas").select("*", { count: "exact" }).eq("user_id", user.id)
 
     if (empresa_id) query = query.eq("empresa_id", empresa_id)
     if (estado) query = query.eq("estado", estado)
@@ -44,17 +44,28 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const body = await request.json()
-    let {
-      tipo_comprobante, concepto,
-      tipo_doc_receptor, nro_doc_receptor, receptor_nombre, receptor_domicilio, receptor_condicion_iva,
-      items, moneda, orden_id,
-      origen,                  // "ml" | "manual" | undefined — mapea a columna `origen`
-      billing_info_snapshot,   // raw billing_info de ML para auditoría
+    const {
+      tipo_comprobante,
+      concepto,
+      items,
+      moneda,
+      orden_id,
+      origen, // "ml" | "manual" | undefined — mapea a columna `origen`
       account_id: bodyAccountId,
+    } = body
+    let {
+      tipo_doc_receptor,
+      nro_doc_receptor,
+      receptor_nombre,
+      receptor_domicilio,
+      receptor_condicion_iva,
+      billing_info_snapshot, // raw billing_info de ML para auditoría
     } = body
 
     if (!items?.length) return NextResponse.json({ error: "La factura debe tener al menos un ítem" }, { status: 400 })
@@ -74,38 +85,33 @@ export async function POST(request: Request) {
         if (bi.ok) {
           // Guardar solo los campos fiscales en el snapshot (sin metadatos del endpoint)
           billing_info_snapshot = {
-            nombre:        bi.nombre,
-            doc_tipo:      bi.doc_tipo,
-            doc_numero:    bi.doc_numero,
+            nombre: bi.nombre,
+            doc_tipo: bi.doc_tipo,
+            doc_numero: bi.doc_numero,
             condicion_iva: bi.condicion_iva,
-            direccion:     bi.direccion,
-            missing:       bi.billing_info_missing ?? false,
+            direccion: bi.direccion,
+            missing: bi.billing_info_missing ?? false,
           }
 
           if (!bi.billing_info_missing) {
             // Datos fiscales reales — sobrescriben siempre el input del frontend
             // porque /billing_info es la fuente de verdad fiscal de ML.
-            receptor_nombre        = bi.nombre        || receptor_nombre
-            receptor_domicilio     = bi.direccion     || receptor_domicilio     || null
+            receptor_nombre = bi.nombre || receptor_nombre
+            receptor_domicilio = bi.direccion || receptor_domicilio || null
             receptor_condicion_iva = bi.condicion_iva || receptor_condicion_iva || "consumidor_final"
 
             // doc_tipo → tipo_doc_receptor numérico (ARCA: 80=CUIT, 86=CUIL, 96=DNI, 99=sin identificar)
             if (bi.doc_numero) {
-              const docTipoRaw = (bi.doc_tipo || "").toUpperCase().trim()
-              tipo_doc_receptor = docTipoRaw === "CUIT" ? "80"
-                : docTipoRaw === "CUIL"                 ? "86"
-                : docTipoRaw === "DNI"                  ? "96"
-                : docTipoRaw === "CI"                   ? "96"
-                : "96"   // default: DNI si hay número pero tipo desconocido
-              nro_doc_receptor  = String(bi.doc_numero).replace(/\D/g, "")
+              tipo_doc_receptor = String(normalizeDocType(bi.doc_tipo))
+              nro_doc_receptor = String(bi.doc_numero).replace(/\D/g, "")
             }
           } else {
             // billing_info_missing: ML no tiene datos fiscales del comprador.
             // Permitir consumidor final con warning — no bloquear la factura.
-            billing_info_warning  = "billing_info_missing: se emite como Consumidor Final"
-            receptor_nombre       = receptor_nombre       || "Consumidor Final"
-            tipo_doc_receptor     = tipo_doc_receptor     || "99"
-            nro_doc_receptor      = nro_doc_receptor      || "0"
+            billing_info_warning = "billing_info_missing: se emite como Consumidor Final"
+            receptor_nombre = receptor_nombre || "Consumidor Final"
+            tipo_doc_receptor = tipo_doc_receptor || "99"
+            nro_doc_receptor = nro_doc_receptor || "0"
             receptor_condicion_iva = receptor_condicion_iva || "consumidor_final"
           }
         }
@@ -130,7 +136,10 @@ export async function POST(request: Request) {
     const { data: config, error: cfgErr } = await cfgQuery.limit(1).single()
 
     if (cfgErr || !config) {
-      return NextResponse.json({ error: "Configuración ARCA no encontrada. Completá los datos en Facturación > Configuración." }, { status: 400 })
+      return NextResponse.json(
+        { error: "Configuración ARCA no encontrada. Completá los datos en Facturación > Configuración." },
+        { status: 400 },
+      )
     }
 
     // Obtener ticket WSAA (con caché)
@@ -139,22 +148,25 @@ export async function POST(request: Request) {
     // Calcular subtotal e iva si no vienen precalculados (ej: desde ML)
     const r2 = (n: number) => Math.round(n * 100) / 100
     const typedItems: FacturaItem[] = items.map((item: any) => {
-      const qty   = Number(item.cantidad) || 1
+      const qty = Number(item.cantidad) || 1
       const price = r2(Number(item.precio_unitario) || 0)
-      const aliq  = Number(item.alicuota_iva) || 0
-      const base  = r2(qty * price)
-      const iva   = r2(base * aliq / 100)
+      const aliq = Number(item.alicuota_iva) || 0
+      const base = r2(qty * price)
+      const iva = r2((base * aliq) / 100)
       return {
-        descripcion:     item.descripcion || "",
-        cantidad:        qty,
+        descripcion: item.descripcion || "",
+        cantidad: qty,
         precio_unitario: price,
-        alicuota_iva:    aliq as 0 | 10.5 | 21 | 27,
-        subtotal:        base,
-        iva:             iva,
+        alicuota_iva: aliq as 0 | 10.5 | 21 | 27,
+        subtotal: base,
+        iva: iva,
       } satisfies FacturaItem
     })
 
-    let subtotal = 0, iva_105 = 0, iva_21 = 0, iva_27 = 0
+    let subtotal = 0,
+      iva_105 = 0,
+      iva_21 = 0,
+      iva_27 = 0
     for (const item of typedItems) {
       subtotal += item.subtotal
       if (item.alicuota_iva === 10.5) iva_105 += item.iva
@@ -168,16 +180,16 @@ export async function POST(request: Request) {
 
     // Solicitar CAE a ARCA
     const caeResp = await requestCAE({
-      cuit:             config.cuit,
-      punto_venta:      config.punto_venta,
+      cuit: config.cuit,
+      punto_venta: config.punto_venta,
       tipo_comprobante: parseInt(tipo_comprobante),
-      concepto:         concepto || 1,
+      concepto: concepto || 1,
       tipo_doc_receptor: parseInt(tipo_doc_receptor || "99"),
       nro_doc_receptor: nro_doc_receptor || "0",
       condicion_iva_receptor: receptor_condicion_iva || "consumidor_final",
       fecha,
-      items:    typedItems,
-      moneda:   moneda || "PES",
+      items: typedItems,
+      moneda: moneda || "PES",
       token,
       sign,
       ambiente: config.ambiente || config.modo,
@@ -187,33 +199,33 @@ export async function POST(request: Request) {
     const { data: factura, error: saveErr } = await supabase
       .from("facturas")
       .insert({
-        user_id:               user.id,
-        empresa_id:            config.id,
-        arca_config_id:        config.id,
-        punto_venta:           config.punto_venta,
-        tipo_comprobante:      parseInt(tipo_comprobante),
-        numero:                caeResp.numero,
-        cae:                   caeResp.cae,
-        cae_vencimiento:       `${caeResp.cae_vto.slice(0,4)}-${caeResp.cae_vto.slice(4,6)}-${caeResp.cae_vto.slice(6,8)}`,
-        tipo_doc_receptor:     parseInt(tipo_doc_receptor || "99"),
-        nro_doc_receptor:      nro_doc_receptor || "0",
+        user_id: user.id,
+        empresa_id: config.id,
+        arca_config_id: config.id,
+        punto_venta: config.punto_venta,
+        tipo_comprobante: parseInt(tipo_comprobante),
+        numero: caeResp.numero,
+        cae: caeResp.cae,
+        cae_vencimiento: `${caeResp.cae_vto.slice(0, 4)}-${caeResp.cae_vto.slice(4, 6)}-${caeResp.cae_vto.slice(6, 8)}`,
+        tipo_doc_receptor: parseInt(tipo_doc_receptor || "99"),
+        nro_doc_receptor: nro_doc_receptor || "0",
         razon_social_receptor: receptor_nombre,
         receptor_domicilio,
         receptor_condicion_iva: receptor_condicion_iva || "consumidor_final",
-        moneda:                moneda || "PES",
-        importe_neto:          subtotal,
-        importe_iva_105:       iva_105,
-        importe_iva_21:        iva_21,
-        importe_iva_27:        iva_27,
-        importe_iva:           parseFloat((iva_105 + iva_21 + iva_27).toFixed(2)),
-        importe_total:         total,
+        moneda: moneda || "PES",
+        importe_neto: subtotal,
+        importe_iva_105: iva_105,
+        importe_iva_21: iva_21,
+        importe_iva_27: iva_27,
+        importe_iva: parseFloat((iva_105 + iva_21 + iva_27).toFixed(2)),
+        importe_total: total,
         items,
-        estado:                "emitida",
-        orden_id:              orden_id || null,
-        origen:                origen || (orden_id ? "ml" : "manual"),
+        estado: "emitida",
+        orden_id: orden_id || null,
+        origen: origen || (orden_id ? "ml" : "manual"),
         billing_info_snapshot: billing_info_snapshot || null,
-        fecha:                 new Date().toISOString().slice(0, 10),
-        concepto:              concepto || 1,
+        fecha: new Date().toISOString().slice(0, 10),
+        concepto: concepto || 1,
       })
       .select()
       .single()

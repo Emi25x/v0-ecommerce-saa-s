@@ -5,7 +5,7 @@ export const maxDuration = 60
 
 export async function GET(request: NextRequest) {
   const url = request.nextUrl.searchParams.get("url")
-  
+
   if (!url) {
     return NextResponse.json({ error: "URL requerida" }, { status: 400 })
   }
@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   try {
     console.log("[v0] Descargando archivo CSV para análisis...")
     const response = await fetch(url)
-    
+
     if (!response.ok) {
       return NextResponse.json({ error: "Error descargando archivo" }, { status: 500 })
     }
@@ -34,11 +34,12 @@ export async function GET(request: NextRequest) {
     const columns = Object.keys(firstRow || {})
 
     // Buscar columna EAN (puede llamarse EAN, ean, ISBN, isbn, etc)
-    const eanColumn = columns.find(c => 
-      c.toLowerCase() === "ean" || 
-      c.toLowerCase() === "isbn" || 
-      c.toLowerCase().includes("ean") ||
-      c.toLowerCase().includes("isbn")
+    const eanColumn = columns.find(
+      (c) =>
+        c.toLowerCase() === "ean" ||
+        c.toLowerCase() === "isbn" ||
+        c.toLowerCase().includes("ean") ||
+        c.toLowerCase().includes("isbn"),
     )
 
     console.log("[v0] Columnas encontradas:", columns.slice(0, 10))
@@ -63,13 +64,12 @@ export async function GET(request: NextRequest) {
       conEan,
       sinEan,
       porcentajeConEan: ((conEan / data.length) * 100).toFixed(2),
-      ejemplos: (data as Record<string, string>[]).slice(0, 3).map(row => ({
+      ejemplos: (data as Record<string, string>[]).slice(0, 3).map((row) => ({
         ean: eanColumn ? row[eanColumn] : null,
         sku: row["Codigo interno"] || row["SKU"] || row["sku"],
         titulo: row["Titulo"] || row["TITULO"] || row["title"],
-      }))
+      })),
     })
-
   } catch (error) {
     console.error("[v0] Error analizando CSV:", error)
     return NextResponse.json({ error: String(error) }, { status: 500 })

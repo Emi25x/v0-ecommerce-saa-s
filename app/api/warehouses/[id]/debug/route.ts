@@ -1,14 +1,11 @@
 import { NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 
 /**
  * GET /api/warehouses/[id]/debug
  * Diagnóstico completo del almacén. Solo para desarrollo.
  */
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const supabase = createAdminClient()
   const { id: warehouseId } = await params
   const result: Record<string, any> = { warehouseId }

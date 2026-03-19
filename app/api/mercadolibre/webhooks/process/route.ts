@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { getValidAccessToken } from "@/lib/mercadolibre"
 
 // Endpoint para procesar las notificaciones en cola
@@ -150,7 +150,7 @@ async function processOrderUpdate(orderData: any, userId: string) {
     const items: any[] = orderData.order_items ?? []
     for (const line of items) {
       const mlItemId = line.item?.id
-      const qtySold  = line.quantity ?? 0
+      const qtySold = line.quantity ?? 0
       if (!mlItemId || qtySold <= 0) continue
 
       const { data: pub } = await supabase
@@ -164,13 +164,13 @@ async function processOrderUpdate(orderData: any, userId: string) {
       const newQty = (pub.current_stock ?? 0) - qtySold
 
       await supabase.from("ml_stock_history").insert({
-        ml_item_id:          mlItemId,
-        account_id:          pub.account_id,
-        old_quantity:        pub.current_stock,
-        new_quantity:        Math.max(0, newQty),
-        changed_by_user_id:  null,
-        source:              "order_sold",
-        notes:               `Orden #${orderData.id} — ${qtySold} u. vendida${qtySold !== 1 ? "s" : ""}`,
+        ml_item_id: mlItemId,
+        account_id: pub.account_id,
+        old_quantity: pub.current_stock,
+        new_quantity: Math.max(0, newQty),
+        changed_by_user_id: null,
+        source: "order_sold",
+        notes: `Orden #${orderData.id} — ${qtySold} u. vendida${qtySold !== 1 ? "s" : ""}`,
       })
     }
   }
@@ -226,13 +226,13 @@ async function processItemUpdate(itemData: any, userId: string) {
   // Si el stock cambió, registrar en historial (cambio viene desde ML)
   if (pub && newQty !== null && newQty !== pub.current_stock) {
     await supabase.from("ml_stock_history").insert({
-      ml_item_id:          itemData.id,
-      account_id:          pub.account_id,
-      old_quantity:        pub.current_stock,
-      new_quantity:        newQty,
-      changed_by_user_id:  null,   // no se conoce vía webhook
-      source:              "webhook_item_update",
-      notes:               `Estado ML: ${itemData.status ?? "?"}`,
+      ml_item_id: itemData.id,
+      account_id: pub.account_id,
+      old_quantity: pub.current_stock,
+      new_quantity: newQty,
+      changed_by_user_id: null, // no se conoce vía webhook
+      source: "webhook_item_update",
+      notes: `Estado ML: ${itemData.status ?? "?"}`,
     })
 
     // Actualizar stock en ml_publications
@@ -240,10 +240,10 @@ async function processItemUpdate(itemData: any, userId: string) {
       .from("ml_publications")
       .update({
         current_stock: newQty,
-        status:        itemData.status ?? undefined,
-        price:         itemData.price  ?? undefined,
-        last_sync_at:  new Date().toISOString(),
-        updated_at:    new Date().toISOString(),
+        status: itemData.status ?? undefined,
+        price: itemData.price ?? undefined,
+        last_sync_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       })
       .eq("ml_item_id", itemData.id)
   }

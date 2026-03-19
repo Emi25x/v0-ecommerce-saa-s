@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { getValidAccessToken } from "@/lib/mercadolibre"
 import { NextRequest, NextResponse } from "next/server"
 
@@ -16,7 +16,9 @@ export const maxDuration = 60
  */
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const body = await request.json()
@@ -26,11 +28,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "account_id required" }, { status: 400 })
   }
 
-  const { data: account } = await supabase
-    .from("ml_accounts")
-    .select("id, ml_user_id")
-    .eq("id", account_id)
-    .single()
+  const { data: account } = await supabase.from("ml_accounts").select("id, ml_user_id").eq("id", account_id).single()
 
   if (!account) {
     return NextResponse.json({ error: "Account not found" }, { status: 404 })
@@ -45,7 +43,9 @@ export async function POST(request: NextRequest) {
     .select("ml_order_id, shipping_id")
     .eq("account_id", account_id)
     .not("shipping_id", "is", null)
-    .or("shipping_status.is.null,shipping_status.eq.ready_to_ship,shipping_status.eq.shipped,shipping_status.eq.handling,shipping_status.eq.pending")
+    .or(
+      "shipping_status.is.null,shipping_status.eq.ready_to_ship,shipping_status.eq.shipped,shipping_status.eq.handling,shipping_status.eq.pending",
+    )
 
   if (fecha_desde) ordersQuery = ordersQuery.gte("date_created", fecha_desde)
   if (fecha_hasta) ordersQuery = ordersQuery.lte("date_created", fecha_hasta)
@@ -72,10 +72,10 @@ export async function POST(request: NextRequest) {
 
     const settled = await Promise.allSettled(
       batch.map(async (order) => {
-        const res = await fetch(
-          `https://api.mercadolibre.com/shipments/${order.shipping_id}`,
-          { headers: authHeader, signal: AbortSignal.timeout(10_000) },
-        )
+        const res = await fetch(`https://api.mercadolibre.com/shipments/${order.shipping_id}`, {
+          headers: authHeader,
+          signal: AbortSignal.timeout(10_000),
+        })
         if (!res.ok) return null
         const data = await res.json()
         if (!data.status) return null
@@ -85,10 +85,11 @@ export async function POST(request: NextRequest) {
 
     // Actualizar DB en un solo upsert por batch
     const toUpdate = settled
-      .filter((r): r is PromiseFulfilledResult<{ ml_order_id: any; status: string }> =>
-        r.status === "fulfilled" && r.value !== null,
+      .filter(
+        (r): r is PromiseFulfilledResult<{ ml_order_id: any; status: string }> =>
+          r.status === "fulfilled" && r.value !== null,
       )
-      .map(r => r.value)
+      .map((r) => r.value)
 
     for (const row of toUpdate) {
       await supabase

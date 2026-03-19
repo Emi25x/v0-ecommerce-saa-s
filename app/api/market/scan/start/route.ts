@@ -4,7 +4,7 @@
  * Si ya hay un job running, lo devuelve sin crear uno nuevo.
  */
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 
 export const dynamic = "force-dynamic"
 

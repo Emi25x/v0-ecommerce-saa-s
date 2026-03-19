@@ -1,0 +1,607 @@
+"use client"
+
+import { Input } from "@/components/ui/input"
+import { toast } from "@/components/ui/use-toast" // Import toast
+import { Package, ExternalLink, CheckCircle2, XCircle, Plus, AlertTriangle, ChevronRight, Copy } from "lucide-react"
+
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { useEffect, useState } from "react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { LibralConfigDialog } from "@/components/suppliers/libral-config-dialog"
+import { WebhookStatusCard } from "@/components/shared/webhook-status-card"
+import { MLAccountCard } from "@/components/mercadolibre/account-card"
+
+export default function IntegrationsPage() {
+  const [shopifyConnected, setShopifyConnected] = useState(false)
+  const [testingShopify, setTestingShopify] = useState(false)
+  const [mlConnected, setMlConnected] = useState(false)
+  const [libralConnected, setLibralConnected] = useState(false)
+  const [showLibralConfig, setShowLibralConfig] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [testingLibralAuth, setTestingLibralAuth] = useState(false)
+  const [authTestResults, setAuthTestResults] = useState<string | null>(null)
+  const [testingDiagnosis, setTestingDiagnosis] = useState(false)
+  const [diagnosisResults, setDiagnosisResults] = useState<string | null>(null)
+  const [mlAccounts, setMlAccounts] = useState<any[]>([])
+  const [loadingAccounts, setLoadingAccounts] = useState(true)
+  const [runningMigration, setRunningMigration] = useState(false)
+  const [migrationMessage, setMigrationMessage] = useState<string | null>(null)
+  const [generatingLink, setGeneratingLink] = useState(false)
+  const [shareableLink, setShareableLink] = useState<string | null>(null)
+
+  useEffect(() => {
+    testShopifyConnection()
+    fetchMlAccounts()
+    checkLibralConnection()
+
+    const params = new URLSearchParams(window.location.search)
+    const mlConnectedParam = params.get("ml_connected")
+    const mlUser = params.get("ml_user")
+    const error = params.get("error")
+    const message = params.get("message")
+
+    if (mlConnectedParam === "true") {
+      checkMlConnection()
+      setSuccessMessage(`Mercado Libre conectado exitosamente${mlUser ? ` como ${mlUser}` : ""}`)
+    }
+
+    if (error) {
+      let errorText = "Error al conectar con Mercado Libre"
+      if (error === "no_code") {
+        errorText = "No se recibió código de autorización"
+      } else if (error === "auth_failed") {
+        errorText = message ? decodeURIComponent(message) : "Falló la autenticación"
+      } else if (error === "ml_error") {
+        errorText = message ? `Error de Mercado Libre: ${message}` : "Error de Mercado Libre"
+      }
+      setErrorMessage(errorText)
+    }
+
+    if (params.toString()) {
+      window.history.replaceState({}, "", window.location.pathname)
+    }
+  }, [])
+
+  useEffect(() => {
+    console.log("[v0] mlAccounts changed. New length:", mlAccounts.length)
+    console.log("[v0] mlAccounts content:", mlAccounts)
+  }, [mlAccounts])
+
+  const checkMlConnection = async () => {
+    try {
+      const response = await fetch("/api/mercadolibre/status")
+      const data = await response.json()
+      console.log("[v0] ML connection status:", data)
+      setMlConnected(data.connected)
+    } catch (error) {
+      console.error("[v0] Failed to check ML connection:", error)
+      setMlConnected(false)
+    }
+  }
+
+  const testShopifyConnection = async () => {
+    setTestingShopify(true)
+    try {
+      const response = await fetch("/api/shopify/test-connection")
+      const data = await response.json()
+      setShopifyConnected(data.connected)
+    } catch (error) {
+      console.error("[v0] Failed to test Shopify connection:", error)
+      setShopifyConnected(false)
+    } finally {
+      setTestingShopify(false)
+    }
+  }
+
+  const checkLibralConnection = async () => {
+    try {
+      const response = await fetch("/api/libral/test-connection")
+      const data = await response.json()
+      setLibralConnected(data.connected)
+    } catch (error) {
+      console.error("[v0] Failed to check Libral connection:", error)
+      setLibralConnected(false)
+    }
+  }
+
+  // Generar link de autorización dinámico con PKCE en BD
+  const handleConnectML = async () => {
+    setGeneratingLink(true)
+    try {
+      const res = await fetch("/api/mercadolibre/generate-link", { method: "POST" })
+      const data = await res.json()
+      if (res.ok && data.url) {
+        // Abrir el link de ML OAuth en la ventana top (salir del iframe si aplica)
+        const target = window.top || window
+        target.location.href = data.url
+      } else {
+        toast({ title: "Error", description: "No se pudo generar el link de autorización", variant: "destructive" })
+      }
+    } catch {
+      toast({ title: "Error", description: "Error al conectar con el servidor", variant: "destructive" })
+    } finally {
+      setGeneratingLink(false)
+    }
+  }
+
+  // Generar link "copiable" que puede abrirse en cualquier browser
+  const generateShareableLink = async () => {
+    setGeneratingLink(true)
+    try {
+      const res = await fetch("/api/mercadolibre/generate-link", { method: "POST" })
+      const data = await res.json()
+      if (res.ok && data.url) {
+        setShareableLink(data.url)
+        navigator.clipboard.writeText(data.url)
+        toast({
+          title: "Link generado y copiado",
+          description: "El link de autorización fue copiado al portapapeles. Es válido por 30 minutos.",
+        })
+      } else {
+        toast({ title: "Error", description: "No se pudo generar el link", variant: "destructive" })
+      }
+    } catch {
+      toast({ title: "Error", description: "Error al generar el link", variant: "destructive" })
+    } finally {
+      setGeneratingLink(false)
+    }
+  }
+
+  const testLibralAuth = async () => {
+    setTestingLibralAuth(true)
+    setAuthTestResults(null)
+    try {
+      const response = await fetch("/api/libral/test-auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: "LIBRAL_APP",
+          password: "JH7kl%64321",
+        }),
+      })
+      const data = await response.json()
+      setAuthTestResults(JSON.stringify(data, null, 2))
+    } catch (error) {
+      console.error("[v0] Failed to test Libral auth:", error)
+      setAuthTestResults(`Error: ${error}`)
+    } finally {
+      setTestingLibralAuth(false)
+    }
+  }
+
+  const runDiagnosis = async () => {
+    setTestingDiagnosis(true)
+    setDiagnosisResults(null)
+    try {
+      const response = await fetch("/api/libral/diagnose")
+      const data = await response.json()
+      setDiagnosisResults(JSON.stringify(data, null, 2))
+    } catch (error) {
+      console.error("[v0] Failed to run diagnosis:", error)
+      setDiagnosisResults(`Error: ${error}`)
+    } finally {
+      setTestingDiagnosis(false)
+    }
+  }
+
+  const fetchMlAccounts = async () => {
+    try {
+      console.log("[v0] Fetching ML accounts...")
+      const response = await fetch("/api/mercadolibre/accounts")
+      console.log("[v0] Response status:", response.status)
+
+      const data = await response.json()
+      console.log("[v0] Response data:", data)
+
+      if (data.accounts && Array.isArray(data.accounts)) {
+        console.log("[v0] Setting", data.accounts.length, "ML accounts")
+        setMlAccounts(data.accounts)
+      } else {
+        console.log("[v0] No accounts array in response, setting empty array")
+        setMlAccounts([])
+      }
+    } catch (error) {
+      console.error("[v0] Failed to fetch ML accounts:", error)
+      setMlAccounts([])
+    } finally {
+      setLoadingAccounts(false)
+    }
+  }
+
+  const runMigration = async () => {
+    setRunningMigration(true)
+    setMigrationMessage(null)
+    try {
+      const response = await fetch("/api/mercadolibre/migrate-browser-preference", {
+        method: "POST",
+      })
+      const data = await response.json()
+
+      if (data.success) {
+        setMigrationMessage("✓ Migración completada exitosamente")
+        setSuccessMessage("Base de datos actualizada. Ahora puedes configurar el navegador preferido para cada cuenta.")
+        // Recargar las cuentas para obtener el nuevo campo
+        fetchMlAccounts()
+      } else {
+        setMigrationMessage(`✗ Error: ${data.error}`)
+        setErrorMessage(`Error en la migración: ${data.error}`)
+      }
+    } catch (error) {
+      console.error("[v0] Migration failed:", error)
+      setMigrationMessage(`✗ Error: ${error}`)
+      setErrorMessage("Error al ejecutar la migración")
+    } finally {
+      setRunningMigration(false)
+    }
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col">
+      <header className="sticky top-0 z-10 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="flex h-16 items-center gap-4 px-6">
+          <div className="flex items-center gap-2">
+            <Package className="h-6 w-6" />
+            <h1 className="text-xl font-semibold">Ecommerce Manager</h1>
+          </div>
+        </div>
+      </header>
+
+      <main className="flex-1 p-6">
+        <div className="mb-8">
+          <h2 className="text-3xl font-bold tracking-tight">Integraciones</h2>
+          <p className="text-muted-foreground">Conecta y gestiona tus plataformas de ecommerce</p>
+        </div>
+
+        {successMessage && (
+          <Alert className="mb-6 border-green-500/50 bg-green-500/10">
+            <CheckCircle2 className="h-4 w-4 text-green-500" />
+            <AlertDescription className="text-green-500">{successMessage}</AlertDescription>
+          </Alert>
+        )}
+
+        {errorMessage && (
+          <Alert className="mb-6 border-destructive/50 bg-destructive/10">
+            <XCircle className="h-4 w-4 text-destructive" />
+            <AlertDescription className="text-destructive">{errorMessage}</AlertDescription>
+          </Alert>
+        )}
+
+        <div className="grid gap-6 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
+                    <Package className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <CardTitle>Libral ERP</CardTitle>
+                    <CardDescription>Sistema de gestión interno</CardDescription>
+                  </div>
+                </div>
+                <Badge variant={libralConnected ? "default" : "secondary"} className="gap-1">
+                  {libralConnected ? (
+                    <>
+                      <CheckCircle2 className="h-3 w-3" />
+                      Conectado
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="h-3 w-3" />
+                      Desconectado
+                    </>
+                  )}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Conecta tu ERP Libral para importar productos, sincronizar stock y gestionar pedidos automáticamente.
+              </p>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                  <span>Importación de productos</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                  <span>Sincronización de stock</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                  <span>Gestión de pedidos</span>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={() => setShowLibralConfig(true)} className="flex-1">
+                  {libralConnected ? "Reconfigurar" : "Conectar"}
+                </Button>
+                <Button onClick={runDiagnosis} disabled={testingDiagnosis} variant="outline">
+                  {testingDiagnosis ? "Diagnosticando..." : "Diagnosticar"}
+                </Button>
+              </div>
+              {diagnosisResults && (
+                <div className="rounded-lg bg-muted p-4">
+                  <p className="mb-2 text-sm font-medium">Resultados de diagnóstico:</p>
+                  <pre className="max-h-96 overflow-auto text-xs">{diagnosisResults}</pre>
+                </div>
+              )}
+              {authTestResults && (
+                <div className="rounded-lg bg-muted p-4">
+                  <p className="mb-2 text-sm font-medium">Resultados de prueba:</p>
+                  <pre className="overflow-auto text-xs">{authTestResults}</pre>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
+                    <svg className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M14.867 5.166l-4.24 13.668h3.155l4.24-13.668h-3.155zm-6.84 0L3.787 18.834h3.155l4.24-13.668H8.027z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <CardTitle>Mercado Libre</CardTitle>
+                    <CardDescription>API de Mercado Libre</CardDescription>
+                  </div>
+                </div>
+                <Badge variant={mlConnected ? "default" : "secondary"} className="gap-1">
+                  {mlConnected ? (
+                    <>
+                      <CheckCircle2 className="h-3 w-3" />
+                      Conectado
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="h-3 w-3" />
+                      Desconectado
+                    </>
+                  )}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Conecta tu cuenta de Mercado Libre para sincronizar productos, gestionar inventario y actualizar precios
+                automáticamente.
+              </p>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                  <span>Sincronización de productos</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                  <span>Gestión de inventario</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                  <span>Actualización de precios</span>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button className="flex-1" disabled={generatingLink} onClick={handleConnectML}>
+                  {generatingLink ? "Generando..." : mlConnected ? "Reconectar" : "Conectar"}
+                </Button>
+                <Button variant="outline" size="icon" asChild>
+                  <a href="https://developers.mercadolibre.com.ar" target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="h-4 w-4" />
+                  </a>
+                </Button>
+              </div>
+
+              {/* Refrescar token */}
+              {mlConnected && (
+                <div className="pt-3 border-t">
+                  <Button
+                    variant="outline"
+                    className="w-full bg-transparent"
+                    onClick={async () => {
+                      try {
+                        const res = await fetch("/api/mercadolibre/refresh-token", { method: "POST" })
+                        const data = await res.json()
+                        if (res.ok) {
+                          toast({
+                            title: "Token actualizado",
+                            description: `Token válido hasta: ${new Date(data.expires_at).toLocaleString()}`,
+                          })
+                        } else {
+                          toast({
+                            title: "Error al refrescar",
+                            description: data.message || "Necesitas reconectar la cuenta",
+                            variant: "destructive",
+                          })
+                        }
+                      } catch {
+                        toast({
+                          title: "Error",
+                          description: "No se pudo refrescar el token",
+                          variant: "destructive",
+                        })
+                      }
+                    }}
+                  >
+                    Refrescar Token de ML
+                  </Button>
+                </div>
+              )}
+
+              {/* Links a funcionalidades ML */}
+              <div className="pt-3 border-t space-y-2">
+                <Button variant="outline" className="w-full bg-transparent" asChild>
+                  <a href="/integrations/ml-templates">Configurar Plantillas y Precios</a>
+                </Button>
+                <Button variant="default" className="w-full" asChild>
+                  <a href="/integrations/ml-publish">Publicar Productos en ML</a>
+                </Button>
+              </div>
+
+              {/* Link de autorización para copiar */}
+              <div className="pt-3 border-t">
+                <label className="text-xs font-medium text-muted-foreground mb-2 block">
+                  Link de autorización (válido por 30 minutos)
+                </label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={shareableLink || "Genera un link para compartir..."}
+                    readOnly
+                    className="font-mono text-xs"
+                  />
+                  <Button variant="outline" size="sm" disabled={generatingLink} onClick={generateShareableLink}>
+                    {generatingLink ? "..." : <Copy className="h-4 w-4" />}
+                  </Button>
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Genera un link de un solo uso para conectar cualquier cuenta de ML desde cualquier dispositivo
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-muted">
+                    <svg className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M15.337 2.126c-.011-.016-.023-.031-.037-.044a.095.095 0 0 0-.065-.027c-.011 0-1.195.054-1.195.054s-.93-.905-1.032-1.006c-.102-.102-.3-.073-.377-.05 0 0-.188.058-.5.155-.07-.203-.178-.454-.327-.708-.456-.776-1.122-1.185-1.926-1.185h-.06c-.29-.367-.647-.53-.908-.53C8.683-1.215 8.5-.99 8.37-.67c-.326.8-.6 1.797-.77 2.43-.53.164-1.006.31-1.337.413-.515.16-.53.176-.597.664-.05.37-1.368 10.533-1.368 10.533l10.639 2.005 4.813-1.19S15.348 2.142 15.337 2.126zm-3.13-.49l-.84.26c0-.01.002-1.17.002-1.17.405.03.68.48.838.91zm-1.376.425l-1.607.497c.156-.59.447-1.176.795-1.563.12-.133.285-.296.48-.43.002.51.01 1.23.332 1.496zm-.87-2.09c.11 0 .22.036.325.11-.47.23-.94.65-1.29 1.27-.43.76-.67 1.61-.76 2.25l-1.32.41c.17-.77 1.04-3.81 3.04-4.04z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <CardTitle>Shopify</CardTitle>
+                    <CardDescription>API de Shopify</CardDescription>
+                  </div>
+                </div>
+                <Badge variant={shopifyConnected ? "default" : "secondary"} className="gap-1">
+                  {shopifyConnected ? (
+                    <>
+                      <CheckCircle2 className="h-3 w-3" />
+                      Conectado
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="h-3 w-3" />
+                      Desconectado
+                    </>
+                  )}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Conecta tu tienda Shopify para sincronizar productos, gestionar inventario y mantener todo actualizado.
+              </p>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                  <span>Sincronización de productos</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                  <span>Gestión de inventario</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                  <span>Actualización de precios</span>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={testShopifyConnection} disabled={testingShopify} className="flex-1">
+                  {testingShopify ? "Probando..." : shopifyConnected ? "Reconectar" : "Probar Conexión"}
+                </Button>
+                <Button variant="outline" asChild>
+                  <a href="/integrations/shopify-stores">Gestionar Tiendas</a>
+                </Button>
+                <Button variant="outline" size="icon" asChild>
+                  <a href="https://shopify.dev" target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="h-4 w-4" />
+                  </a>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="mt-8">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-2xl font-semibold">Cuentas de Mercado Libre</h3>
+              <p className="text-sm text-muted-foreground">Gestiona múltiples cuentas de Mercado Libre</p>
+            </div>
+            <div className="flex gap-2">
+              <Button onClick={handleConnectML} disabled={generatingLink}>
+                <Plus className="mr-2 h-4 w-4" />
+                {generatingLink ? "Generando..." : "Agregar Cuenta"}
+              </Button>
+            </div>
+          </div>
+
+          {loadingAccounts ? (
+            <div className="text-center py-8 text-muted-foreground">Cargando cuentas...</div>
+          ) : mlAccounts.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <p className="text-muted-foreground mb-4">No hay cuentas de Mercado Libre conectadas</p>
+                <Button onClick={handleConnectML} disabled={generatingLink}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  {generatingLink ? "Generando..." : "Conectar Primera Cuenta"}
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {mlAccounts.map((account, index) => (
+                <MLAccountCard
+                  key={account.id || index}
+                  account={account}
+                  onUpdate={fetchMlAccounts}
+                  onDelete={fetchMlAccounts}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Acceso rápido a publicaciones con alertas */}
+        {mlAccounts.length > 0 && (
+          <a
+            href="/integrations/ml-publicaciones"
+            className="mt-6 flex items-center justify-between rounded-lg border border-amber-500/20 bg-amber-500/5 px-5 py-4 transition-colors hover:bg-amber-500/10 group"
+          >
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-400" />
+              <div>
+                <p className="font-medium text-sm">Publicaciones con alertas</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Elegibles para competir y publicaciones esperando catálogo
+                </p>
+              </div>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+          </a>
+        )}
+
+        <div className="mt-6">
+          <h3 className="mb-4 text-xl font-semibold">Notificaciones en Tiempo Real</h3>
+          <WebhookStatusCard />
+        </div>
+      </main>
+
+      <LibralConfigDialog
+        open={showLibralConfig}
+        onOpenChange={setShowLibralConfig}
+        onSuccess={() => {
+          checkLibralConnection()
+          setSuccessMessage("Libral ERP conectado exitosamente")
+        }}
+      />
+    </div>
+  )
+}

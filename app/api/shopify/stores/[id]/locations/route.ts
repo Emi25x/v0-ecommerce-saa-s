@@ -1,6 +1,6 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextResponse } from "next/server"
-import { getShopifyLocations } from "@/lib/shopify"
+import { getShopifyLocations } from "@/domains/shopify/types"
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
-import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/db/admin"
+import { createClient } from "@/lib/db/server"
 
 /**
  * GET  → checks if warehouse_id column exists on import_sources
@@ -21,7 +21,10 @@ async function columnExists(adminSupabase: ReturnType<typeof createAdminClient>)
 export async function GET() {
   try {
     const supabase = await createClient()
-    const { data: { user }, error } = await supabase.auth.getUser()
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser()
     if (error || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const admin = createAdminClient()
@@ -35,7 +38,10 @@ export async function GET() {
 export async function POST() {
   try {
     const supabase = await createClient()
-    const { data: { user }, error } = await supabase.auth.getUser()
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser()
     if (error || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const admin = createAdminClient()

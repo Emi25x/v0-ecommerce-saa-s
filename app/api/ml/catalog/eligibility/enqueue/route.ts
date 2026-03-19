@@ -8,7 +8,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,12 +23,12 @@ export async function POST(req: NextRequest) {
     const { data, error } = await supabase
       .from("ml_jobs")
       .insert({
-        type:       "catalog_index",
+        type: "catalog_index",
         account_id,
-        status:     "pending",
-        payload:    { force },
-        run_after:  new Date().toISOString(),
-        attempts:   0,
+        status: "pending",
+        payload: { force },
+        run_after: new Date().toISOString(),
+        attempts: 0,
       })
       .select("id")
       .single()

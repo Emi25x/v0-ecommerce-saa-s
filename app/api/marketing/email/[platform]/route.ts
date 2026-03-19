@@ -1,18 +1,21 @@
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 import { NextRequest, NextResponse } from "next/server"
 import {
-  getKlaviyoCampaigns, getKlaviyoLists, getKlaviyoFlows,
-  getMailchimpCampaigns, getMailchimpLists,
-  getBrevoEmailCampaigns, getBrevoContacts,
-  getHubSpotCampaigns, getHubSpotContacts,
+  getKlaviyoCampaigns,
+  getKlaviyoLists,
+  getKlaviyoFlows,
+  getMailchimpCampaigns,
+  getMailchimpLists,
+  getBrevoEmailCampaigns,
+  getBrevoContacts,
+  getHubSpotCampaigns,
+  getHubSpotContacts,
   getActiveCampaignCampaigns,
-  getWhatsAppTemplates, getWhatsAppPhoneInfo,
-} from "@/lib/marketing/email"
+  getWhatsAppTemplates,
+  getWhatsAppPhoneInfo,
+} from "@/domains/marketing/email"
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ platform: string }> }
-) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ platform: string }> }) {
   const { platform } = await params
   const supabase = createAdminClient()
 

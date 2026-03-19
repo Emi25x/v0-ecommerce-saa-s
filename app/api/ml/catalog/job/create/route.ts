@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 
 export const dynamic = "force-dynamic"
 
@@ -46,9 +46,7 @@ export async function POST(req: NextRequest) {
     status: "pending",
   }))
 
-  const { error: itemsErr } = await supabase
-    .from("ml_catalog_job_items")
-    .insert(itemsToInsert)
+  const { error: itemsErr } = await supabase.from("ml_catalog_job_items").insert(itemsToInsert)
 
   if (itemsErr) {
     // Limpiar job si falló la inserción de items

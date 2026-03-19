@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { getValidAccessToken } from "@/lib/mercadolibre"
 
 const ML_API_BASE = "https://api.mercadolibre.com"
@@ -20,18 +20,17 @@ interface MLOrder {
   order_items: MLOrderItem[]
 }
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { itemId: string } }
-) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ itemId: string }> }) {
+  const { itemId } = await params
   try {
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 })
     }
 
-    const { itemId } = params
     const { searchParams } = new URL(request.url)
     const accountId = searchParams.get("account_id")
 
@@ -44,7 +43,8 @@ export async function GET(
 
     let stockQuery = supabase
       .from("ml_stock_history")
-      .select(`
+      .select(
+        `
         id,
         ml_item_id,
         account_id,
@@ -54,7 +54,8 @@ export async function GET(
         source,
         notes,
         created_at
-      `)
+      `,
+      )
       .eq("ml_item_id", itemId)
       .gte("created_at", sevenDaysAgo)
       .order("created_at", { ascending: false })
@@ -140,10 +141,7 @@ export async function GET(
           // Filtrar por item Y por fecha (últimos 7 días)
           orders = allOrders.filter((o) => {
             const orderDate = new Date(o.date_created)
-            return (
-              orderDate >= sevenDaysAgoDate &&
-              o.order_items?.some((oi) => oi.item?.id === itemId)
-            )
+            return orderDate >= sevenDaysAgoDate && o.order_items?.some((oi) => oi.item?.id === itemId)
           })
         } else {
           console.error("[history] ML API error:", mlResp.status, await mlResp.text())
@@ -158,21 +156,21 @@ export async function GET(
     const sales = orders.map((o) => {
       const itemLine = o.order_items.find((oi) => oi.item?.id === itemId)
       return {
-        order_id:     o.id,
-        status:       o.status,
-        date:         o.date_created,
-        qty_sold:     itemLine?.quantity ?? 0,
-        unit_price:   itemLine?.unit_price ?? 0,
+        order_id: o.id,
+        status: o.status,
+        date: o.date_created,
+        qty_sold: itemLine?.quantity ?? 0,
+        unit_price: itemLine?.unit_price ?? 0,
         total_amount: o.total_amount,
       }
     })
 
     return NextResponse.json({
-      item_id:        itemId,
-      stock_history:  stockHistory ?? [],
-      ml_snapshot:    mlItemSnapshot,
+      item_id: itemId,
+      stock_history: stockHistory ?? [],
+      ml_snapshot: mlItemSnapshot,
       sales,
-      period_days:    7,
+      period_days: 7,
     })
   } catch (error) {
     console.error("[history] Unexpected error:", error)

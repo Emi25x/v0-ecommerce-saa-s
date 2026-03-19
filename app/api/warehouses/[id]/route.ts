@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createClient()
     const { id } = await params
@@ -23,11 +20,7 @@ export async function PATCH(
 
     // If this is set as default, unset other defaults first
     if (is_default) {
-      await supabase
-        .from("warehouses")
-        .update({ is_default: false })
-        .eq("owner_user_id", user.id)
-        .neq("id", id)
+      await supabase.from("warehouses").update({ is_default: false }).eq("owner_user_id", user.id).neq("id", id)
     }
 
     const updatePayload: Record<string, unknown> = {
@@ -49,7 +42,9 @@ export async function PATCH(
     // Fallback: if notes column is missing (schema cache not yet refreshed),
     // retry without it so the rest of the update still succeeds.
     if (error?.message?.includes("notes")) {
-      console.error("[WAREHOUSES] notes column missing — retrying without it. Run migration: ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS notes text;")
+      console.error(
+        "[WAREHOUSES] notes column missing — retrying without it. Run migration: ALTER TABLE warehouses ADD COLUMN IF NOT EXISTS notes text;",
+      )
       delete updatePayload.notes
       ;({ data: warehouse, error } = await supabase
         .from("warehouses")
@@ -72,17 +67,11 @@ export async function PATCH(
     return NextResponse.json({ warehouse })
   } catch (error) {
     console.error("[WAREHOUSES] Error:", error)
-    return NextResponse.json(
-      { error: "Failed to update warehouse" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: "Failed to update warehouse" }, { status: 500 })
   }
 }
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createClient()
     const { id } = await params
@@ -103,17 +92,10 @@ export async function DELETE(
       .eq("warehouse_id", id)
 
     if (count && count > 0) {
-      return NextResponse.json(
-        { error: "Cannot delete warehouse with existing catalog items" },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: "Cannot delete warehouse with existing catalog items" }, { status: 400 })
     }
 
-    const { error } = await supabase
-      .from("warehouses")
-      .delete()
-      .eq("id", id)
-      .eq("owner_user_id", user.id)
+    const { error } = await supabase.from("warehouses").delete().eq("id", id).eq("owner_user_id", user.id)
 
     if (error) {
       console.error("[WAREHOUSES] Error deleting warehouse:", error)
@@ -123,9 +105,6 @@ export async function DELETE(
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("[WAREHOUSES] Error:", error)
-    return NextResponse.json(
-      { error: "Failed to delete warehouse" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: "Failed to delete warehouse" }, { status: 500 })
   }
 }

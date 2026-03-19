@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { type NextRequest, NextResponse } from "next/server"
 
 export async function GET(request: NextRequest) {
@@ -22,11 +22,8 @@ export async function GET(request: NextRequest) {
     // Si hay account_id, usar ml_publications (per-cuenta); si no, caer al campo global
     let publishedProductIds: string[] = []
     if (!showAll && accountId) {
-      const { data: pubRows } = await supabase
-        .from("ml_publications")
-        .select("product_id")
-        .eq("account_id", accountId)
-      publishedProductIds = (pubRows || []).map(r => r.product_id)
+      const { data: pubRows } = await supabase.from("ml_publications").select("product_id").eq("account_id", accountId)
+      publishedProductIds = (pubRows || []).map((r) => r.product_id)
     }
 
     // Si solo necesitamos IDs (para publicación masiva)
@@ -56,12 +53,12 @@ export async function GET(request: NextRequest) {
             query = query.is("ml_item_id", null)
           }
         }
-        
+
         // Filtrar IBD
         if (excludeIbd) {
           query = query.or("is_ibd.is.null,is_ibd.eq.false")
         }
-        
+
         if (language) {
           query = query.ilike("language", language)
         }
@@ -71,18 +68,18 @@ export async function GET(request: NextRequest) {
         if (search) {
           query = query.or(`title.ilike.%${search}%,ean.ilike.%${search}%`)
         }
-        
+
         const { data: batch } = await query.range(offset, offset + batchSize - 1)
-        
+
         if (!batch || batch.length === 0) {
           hasMore = false
         } else {
-          allIds.push(...batch.map(p => p.id))
+          allIds.push(...batch.map((p) => p.id))
           offset += batchSize
           if (batch.length < batchSize) hasMore = false
         }
       }
-      
+
       // Contar publicados en la cuenta seleccionada (o globalmente si no hay cuenta)
       let publishedCount = 0
       if (accountId) {
@@ -102,7 +99,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         ids: allIds,
         total: allIds.length,
-        published_count: publishedCount
+        published_count: publishedCount,
       })
     }
 
@@ -112,7 +109,9 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from("products")
-      .select("id, ean, title, cost_price, price, stock, brand, image_url, language, is_ibd, ml_item_id, ml_status, ml_published_at")
+      .select(
+        "id, ean, title, cost_price, price, stock, brand, image_url, language, is_ibd, ml_item_id, ml_status, ml_published_at",
+      )
       .gt("cost_price", 0)
       .gte("stock", minStock)
       .gte("cost_price", minPrice)
@@ -128,12 +127,12 @@ export async function GET(request: NextRequest) {
         query = query.is("ml_item_id", null)
       }
     }
-    
+
     // Filtrar IBD
     if (excludeIbd) {
       query = query.or("is_ibd.is.null,is_ibd.eq.false")
     }
-    
+
     if (language) {
       query = query.ilike("language", language)
     }
@@ -143,7 +142,7 @@ export async function GET(request: NextRequest) {
     if (search) {
       query = query.or(`title.ilike.%${search}%,ean.ilike.%${search}%`)
     }
-    
+
     const { data: allProducts, error } = await query.range(from, to)
 
     if (error) {
@@ -167,14 +166,14 @@ export async function GET(request: NextRequest) {
     }
     // Marcar cuales estan publicados (per-cuenta si hay account_id, global si no)
     const publishedSet = new Set(publishedProductIds)
-    const productsWithStatus = (allProducts || []).map(p => ({
+    const productsWithStatus = (allProducts || []).map((p) => ({
       ...p,
-      is_published: accountId ? publishedSet.has(p.id) : !!p.ml_item_id
+      is_published: accountId ? publishedSet.has(p.id) : !!p.ml_item_id,
     }))
 
     const hasMore = (allProducts?.length || 0) >= pageSize
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       products: productsWithStatus,
       total: productsWithStatus.length,
       published_count: publishedCount || 0,
@@ -182,7 +181,7 @@ export async function GET(request: NextRequest) {
       page_size: pageSize,
       min_stock: minStock,
       show_all: showAll,
-      has_more: hasMore
+      has_more: hasMore,
     })
   } catch (error) {
     console.error("Error fetching available products:", error)

@@ -1,13 +1,19 @@
+import { type NextRequest } from "next/server"
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
+import { sendDailySalesEmail } from "@/domains/radar/daily-sales"
+import { requireCron } from "@/lib/auth/require-auth"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
+
   try {
     console.log("[v0] Cron: Ejecutando reporte diario de ventas")
-    
+
     const supabase = await createClient()
 
     // Obtener configuración
@@ -27,20 +33,13 @@ export async function GET() {
       return NextResponse.json({ message: "No hay destinatarios" })
     }
 
-    // Llamar al endpoint de generación de reporte
-    const baseUrl = process.env.NEXT_PUBLIC_VERCEL_URL || process.env.VERCEL_URL || "http://localhost:3000"
-    const response = await fetch(`${baseUrl}/api/reports/daily-sales`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        date: new Date().toISOString().split("T")[0],
-        send_email: true,
-        email_recipients: settings.email_recipients
-      })
+    const result = await sendDailySalesEmail({
+      date: new Date().toISOString().split("T")[0],
+      email_recipients: settings.email_recipients,
     })
 
-    if (!response.ok) {
-      throw new Error("Error generando reporte")
+    if (!result.success) {
+      throw new Error(result.error || "Error enviando reporte")
     }
 
     console.log("[v0] Reporte enviado exitosamente a:", settings.email_recipients)
@@ -48,14 +47,10 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       message: "Reporte enviado",
-      recipients: settings.email_recipients
+      recipients: settings.email_recipients,
     })
-
   } catch (error) {
     console.error("[v0] Error en cron de reportes:", error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Error desconocido" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Error desconocido" }, { status: 500 })
   }
 }

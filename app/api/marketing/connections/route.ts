@@ -1,4 +1,4 @@
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 import { NextRequest, NextResponse } from "next/server"
 
 export async function GET(request: NextRequest) {
@@ -28,15 +28,18 @@ export async function POST(request: NextRequest) {
   // Upsert by platform (one connection per platform for now)
   const { data, error } = await supabase
     .from("marketing_connections")
-    .upsert({
-      platform,
-      account_id: account_id ?? null,
-      account_name: account_name ?? null,
-      credentials: credentials ?? {},
-      metadata: metadata ?? {},
-      is_active: true,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "platform" })
+    .upsert(
+      {
+        platform,
+        account_id: account_id ?? null,
+        account_name: account_name ?? null,
+        credentials: credentials ?? {},
+        metadata: metadata ?? {},
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "platform" },
+    )
     .select()
     .single()
 

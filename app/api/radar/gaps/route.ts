@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 
 export async function GET(req: NextRequest) {
   const supabase = createAdminClient()
   const { searchParams } = new URL(req.url)
   const status = searchParams.get("status")
-  const page   = parseInt(searchParams.get("page") ?? "0")
-  const limit  = Math.min(parseInt(searchParams.get("limit") ?? "50"), 200)
+  const page = parseInt(searchParams.get("page") ?? "0")
+  const limit = Math.min(parseInt(searchParams.get("limit") ?? "50"), 200)
 
   try {
     let qb = supabase

@@ -11,7 +11,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -99,7 +99,10 @@ export async function GET(request: NextRequest) {
       const text = encoding === "latin1" ? textLatin1 : textUtf8
       result.encoding_detected = encoding
 
-      const lines = text.split("\n").filter(l => l.trim()).slice(0, maxRows + 2)
+      const lines = text
+        .split("\n")
+        .filter((l) => l.trim())
+        .slice(0, maxRows + 2)
       if (lines.length === 0) {
         result.error = "Archivo vacío"
         results.push(result)
@@ -131,7 +134,7 @@ export async function GET(request: NextRequest) {
       // Parsear headers o columnas
       const sep = detectedDelimiter
       if (hasHeader) {
-        result.headers = firstLine.split(sep).map(h => h.replace(/['"]/g, "").trim())
+        result.headers = firstLine.split(sep).map((h) => h.replace(/['"]/g, "").trim())
         result.column_count = result.headers.length
       } else {
         result.note_no_header = "Sin encabezado — col0=EAN, col1=stock (u otros según importer)"
@@ -141,11 +144,13 @@ export async function GET(request: NextRequest) {
 
       // Primeras filas de datos
       const dataStart = hasHeader ? 1 : 0
-      result.sample_rows = lines.slice(dataStart, dataStart + maxRows).map(line => {
-        const cols = line.split(sep).map(v => v.replace(/['"]/g, "").trim())
+      result.sample_rows = lines.slice(dataStart, dataStart + maxRows).map((line) => {
+        const cols = line.split(sep).map((v) => v.replace(/['"]/g, "").trim())
         if (hasHeader && result.headers) {
           const obj: Record<string, string> = {}
-          result.headers.forEach((h: string, i: number) => { obj[h] = cols[i] ?? "" })
+          result.headers.forEach((h: string, i: number) => {
+            obj[h] = cols[i] ?? ""
+          })
           return obj
         }
         return cols
@@ -163,10 +168,11 @@ export async function GET(request: NextRequest) {
           mappingCheck[field] = result.headers.includes(csvCol) ? "OK" : "MISSING"
         }
         result.column_mapping_check = mappingCheck
-        const missing = Object.entries(mappingCheck).filter(([, v]) => v === "MISSING").map(([k]) => k)
+        const missing = Object.entries(mappingCheck)
+          .filter(([, v]) => v === "MISSING")
+          .map(([k]) => k)
         result.mapping_issues = missing.length > 0 ? missing : null
       }
-
     } catch (e: any) {
       result.error = e.name === "AbortError" ? "Timeout (>15s)" : e.message
     }

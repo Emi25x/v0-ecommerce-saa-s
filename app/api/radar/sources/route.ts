@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 
 export async function GET() {
   const supabase = createAdminClient()
@@ -18,7 +18,13 @@ export async function POST(req: Request) {
   if (!name || !kind) return NextResponse.json({ error: "name y kind son requeridos" }, { status: 400 })
   const { data, error } = await supabase
     .from("editorial_radar_sources")
-    .insert({ name, kind, url: url || null, sync_interval_hours: sync_interval_hours ?? 24, config_json: config_json ?? null })
+    .insert({
+      name,
+      kind,
+      url: url || null,
+      sync_interval_hours: sync_interval_hours ?? 24,
+      config_json: config_json ?? null,
+    })
     .select()
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

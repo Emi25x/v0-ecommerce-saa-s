@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextResponse } from "next/server"
 
 export async function GET(request: Request) {
@@ -49,7 +49,7 @@ export async function GET(request: Request) {
       total_publications: totalInDB,
       linked_publications: linkedInDB,
       unlinked_publications: totalInDB - linkedInDB,
-      pending_import: Math.max(0, totalInML - totalInDB)
+      pending_import: Math.max(0, totalInML - totalInDB),
     })
   } catch (error) {
     console.error("Error fetching account stats:", error)

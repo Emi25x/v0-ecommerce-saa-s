@@ -1,4 +1,4 @@
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 import { NextRequest, NextResponse } from "next/server"
 
 /**
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
       .eq("account_id", accountId)
       .maybeSingle()
 
-    if (error && error.code !== 'PGRST116') {
+    if (error && error.code !== "PGRST116") {
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
     }
 
@@ -30,44 +30,42 @@ export async function GET(request: NextRequest) {
     const safeProgress = {
       account_id: accountId,
       status: progress?.status || "idle",
-      
+
       // Timestamps
       started_at: progress?.started_at || null,
       finished_at: progress?.finished_at || null,
       last_heartbeat_at: progress?.last_heartbeat_at || null,
       last_run_at: progress?.last_run_at || null,
-      
+
       // Contadores principales
       total_target: progress?.total_target || 0,
       processed_count: progress?.processed_count || 0,
-      
+
       // Contadores de outcomes
       matched_count: progress?.matched_count || 0,
       ambiguous_count: progress?.ambiguous_count || 0,
       not_found_count: progress?.not_found_count || 0,
       invalid_identifier_count: progress?.invalid_identifier_count || 0,
       error_count: progress?.error_count || 0,
-      
+
       // Métricas calculadas
-      percent: progress?.total_target > 0 
-        ? Math.min(100, ((progress.processed_count || 0) / progress.total_target) * 100)
-        : 0,
-      
+      percent:
+        progress?.total_target > 0 ? Math.min(100, ((progress.processed_count || 0) / progress.total_target) * 100) : 0,
+
       speed_per_sec: calculateSpeed(progress),
       eta_seconds: calculateETA(progress),
-      
+
       // Error tracking
       last_error: progress?.last_error || null,
-      
+
       // Cursor para reanudar
-      cursor: progress?.cursor || null
+      cursor: progress?.cursor || null,
     }
 
     return NextResponse.json({
       ok: true,
-      progress: safeProgress
+      progress: safeProgress,
     })
-
   } catch (error: any) {
     console.error(`[MATCHER-STATUS] Error:`, error)
     return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
@@ -79,7 +77,7 @@ export async function GET(request: NextRequest) {
  */
 function calculateSpeed(progress: any): number {
   if (!progress?.started_at || !progress?.processed_count) return 0
-  
+
   try {
     const elapsed = (Date.now() - new Date(progress.started_at).getTime()) / 1000
     if (elapsed <= 0) return 0
@@ -94,12 +92,12 @@ function calculateSpeed(progress: any): number {
  */
 function calculateETA(progress: any): number | null {
   if (!progress?.total_target || !progress?.processed_count) return null
-  
+
   const remaining = progress.total_target - progress.processed_count
   if (remaining <= 0) return 0
-  
+
   const speed = calculateSpeed(progress)
   if (speed <= 0) return null
-  
+
   return Math.round(remaining / speed)
 }

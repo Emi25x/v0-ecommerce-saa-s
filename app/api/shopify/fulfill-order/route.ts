@@ -13,8 +13,8 @@
  *   notify_customer — true por defecto (envía email al cliente)
  */
 
-import { createClient } from "@/lib/supabase/server"
-import { getValidToken } from "@/lib/shopify-auth"
+import { createClient } from "@/lib/db/server"
+import { getValidToken } from "@/domains/shopify/auth"
 import { NextRequest, NextResponse } from "next/server"
 
 export async function POST(request: NextRequest) {
@@ -25,19 +25,19 @@ export async function POST(request: NextRequest) {
       order_id,
       tracking_number,
       tracking_url,
-      carrier_name    = "Cabify Logistics",
+      carrier_name = "Cabify Logistics",
       notify_customer = true,
     } = body
 
     if (!store_id || !order_id || !tracking_number) {
-      return NextResponse.json(
-        { error: "store_id, order_id y tracking_number son requeridos" },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: "store_id, order_id y tracking_number son requeridos" }, { status: 400 })
     }
 
     const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
@@ -55,11 +55,11 @@ export async function POST(request: NextRequest) {
     }
 
     const accessToken = await getValidToken(supabase, store)
-    const domain      = store.shop_domain
-    const apiBase     = `https://${domain}/admin/api/2024-01`
-    const headers     = {
+    const domain = store.shop_domain
+    const apiBase = `https://${domain}/admin/api/2024-01`
+    const headers = {
       "X-Shopify-Access-Token": accessToken,
-      "Content-Type":           "application/json",
+      "Content-Type": "application/json",
     }
 
     // ── Paso 1: Obtener fulfillment_order_id ──────────────────────────────────
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
       const txt = await foRes.text()
       return NextResponse.json(
         { error: `No se pudo obtener fulfillment orders: HTTP ${foRes.status} — ${txt.slice(0, 200)}` },
-        { status: foRes.status }
+        { status: foRes.status },
       )
     }
 
@@ -76,24 +76,24 @@ export async function POST(request: NextRequest) {
     const fulfillmentOrders: any[] = foJson.fulfillment_orders ?? []
 
     // Solo los que están en estado "open" (pendientes de enviar)
-    const openFOs = fulfillmentOrders.filter(fo => fo.status === "open")
+    const openFOs = fulfillmentOrders.filter((fo) => fo.status === "open")
 
     if (openFOs.length === 0) {
       return NextResponse.json(
         { error: "Este pedido no tiene líneas pendientes de envío (ya está fulfillado o cancelado)" },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
     // ── Paso 2: Crear fulfillment con tracking ────────────────────────────────
     const fulfillmentBody = {
       fulfillment: {
-        line_items_by_fulfillment_order: openFOs.map(fo => ({
+        line_items_by_fulfillment_order: openFOs.map((fo) => ({
           fulfillment_order_id: fo.id,
         })),
         tracking_info: {
-          number:  tracking_number,
-          url:     tracking_url ?? null,
+          number: tracking_number,
+          url: tracking_url ?? null,
           company: carrier_name,
         },
         notify_customer,
@@ -101,35 +101,35 @@ export async function POST(request: NextRequest) {
     }
 
     const fulfillRes = await fetch(`${apiBase}/fulfillments.json`, {
-      method:  "POST",
+      method: "POST",
       headers,
-      body:    JSON.stringify(fulfillmentBody),
+      body: JSON.stringify(fulfillmentBody),
     })
 
     const fulfillText = await fulfillRes.text()
     let fulfillJson: any = {}
-    try { fulfillJson = JSON.parse(fulfillText) } catch {}
+    try {
+      fulfillJson = JSON.parse(fulfillText)
+    } catch {}
 
     if (!fulfillRes.ok) {
-      const msg = fulfillJson?.errors
-        ? JSON.stringify(fulfillJson.errors)
-        : fulfillText.slice(0, 300)
+      const msg = fulfillJson?.errors ? JSON.stringify(fulfillJson.errors) : fulfillText.slice(0, 300)
       return NextResponse.json(
         { error: `Shopify fulfillment error ${fulfillRes.status}: ${msg}` },
-        { status: fulfillRes.status }
+        { status: fulfillRes.status },
       )
     }
 
     const fulfillment = fulfillJson.fulfillment
 
     return NextResponse.json({
-      ok:             true,
+      ok: true,
       fulfillment_id: fulfillment?.id,
-      status:         fulfillment?.status,
+      status: fulfillment?.status,
       tracking_number: fulfillment?.tracking_number ?? tracking_number,
-      tracking_url:   fulfillment?.tracking_url     ?? tracking_url,
+      tracking_url: fulfillment?.tracking_url ?? tracking_url,
       notify_customer,
-      message:        notify_customer
+      message: notify_customer
         ? "Pedido marcado como enviado. El cliente recibirá un email con el tracking."
         : "Pedido marcado como enviado (sin notificación al cliente).",
     })

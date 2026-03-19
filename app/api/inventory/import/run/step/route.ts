@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { requireCron } from "@/lib/auth/require-auth"
+import { createClient } from "@/lib/db/server"
 import Papa from "papaparse"
 
 export const maxDuration = 60 // Anti-timeout: máximo 60s por chunk
@@ -30,8 +31,10 @@ function normalizeHeader(header: string): string {
  * Procesa UN chunk de filas desde Storage (resumible, anti-timeout)
  */
 export async function POST(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
   console.log("[v0][RUN/STEP] ========== VERSION 2024-DELIMITER-FIX ==========")
-  
+
   try {
     const supabase = await createClient()
     const body = await request.json()
@@ -42,11 +45,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 1. Obtener run actual
-    const { data: run, error: runError } = await supabase
-      .from("import_runs")
-      .select("*")
-      .eq("id", run_id)
-      .single()
+    const { data: run, error: runError } = await supabase.from("import_runs").select("*").eq("id", run_id).single()
 
     if (runError || !run) {
       return NextResponse.json({ error: "Run no encontrado" }, { status: 404 })
@@ -58,69 +57,75 @@ export async function POST(request: NextRequest) {
         ok: true,
         status: run.status,
         reason: `Run en estado ${run.status}, no se puede procesar`,
-        continue: false
+        continue: false,
       })
     }
 
     console.log(`[v0][RUN/STEP] Procesando chunk para run_id=${run_id}, offset=${run.processed_rows}`)
 
     // 2. Leer CSV desde Storage
-    const { data: csvBlob, error: downloadError } = await supabase
-      .storage
-      .from("imports")
-      .download(run.storage_path!)
+    const { data: csvBlob, error: downloadError } = await supabase.storage.from("imports").download(run.storage_path!)
 
     if (downloadError || !csvBlob) {
       console.error(`[v0][RUN/STEP] Error leyendo Storage:`, downloadError)
-      
+
       await supabase
         .from("import_runs")
-        .update({ 
-          status: "failed", 
+        .update({
+          status: "failed",
           last_error: `Error leyendo Storage: ${downloadError?.message}`,
-          finished_at: new Date().toISOString()
+          finished_at: new Date().toISOString(),
         })
         .eq("id", run_id)
 
-      return NextResponse.json({ 
-        error: `Error leyendo CSV: ${downloadError?.message}` 
-      }, { status: 500 })
+      return NextResponse.json(
+        {
+          error: `Error leyendo CSV: ${downloadError?.message}`,
+        },
+        { status: 500 },
+      )
     }
 
     const csvText = await csvBlob.text()
 
     // 3. FORZAR delimiter hardcodeado SIEMPRE según source (ignorar metadata y processed_rows)
     console.log(`[v0][RUN/STEP] 🔍 CRITICAL DEBUG - processed_rows: ${run.processed_rows}`)
-    
+
     const runMetadata = run.metadata as any
     let detectedDelimiter: string
-    
+
     // OBTENER SOURCE SIEMPRE para determinar delimiter
     const { data: sourceForDelimiter } = await supabase
       .from("import_sources")
       .select("*")
       .eq("id", run.source_id)
       .single()
-    
-    console.log(`[v0][RUN/STEP] 🔍 Source fetched: ${sourceForDelimiter ? sourceForDelimiter.name : 'NULL'}`)
-    
+
+    console.log(`[v0][RUN/STEP] 🔍 Source fetched: ${sourceForDelimiter ? sourceForDelimiter.name : "NULL"}`)
+
     if (sourceForDelimiter) {
       const url = sourceForDelimiter.url_template || ""
       const name = sourceForDelimiter.name || ""
       const nameLower = name.toLowerCase()
-      
+
       console.log(`[v0][RUN/STEP] 🔍 Source: "${name}", URL: ${url}`)
-      
+
       // HARDCODED delimiters según proveedor:
       // - AZETA Total/Catálogo/Parcial: pipe "|"
       // - AZETA Stock: semicolon ";"
       // - ARNOIA: auto-detect
-      
+
       if (nameLower.includes("azeta") && nameLower.includes("stock")) {
         // AZETA Stock usa ";"
         detectedDelimiter = ";"
         console.log(`[v0][RUN/STEP] ✅ HARDCODED delimiter para AZETA Stock: ";"`)
-      } else if (nameLower.includes("azeta") || url.includes("notexto") || nameLower.includes("total") || nameLower.includes("catalogo") || nameLower.includes("parcial")) {
+      } else if (
+        nameLower.includes("azeta") ||
+        url.includes("notexto") ||
+        nameLower.includes("total") ||
+        nameLower.includes("catalogo") ||
+        nameLower.includes("parcial")
+      ) {
         // AZETA Total / Catálogo / Parcial usan "|"
         detectedDelimiter = "|"
         console.log(`[v0][RUN/STEP] ✅ HARDCODED delimiter para AZETA Catálogo/Total/Parcial: "|"`)
@@ -132,9 +137,9 @@ export async function POST(request: NextRequest) {
         // Fallback: auto-detectar para otras fuentes
         const firstLine = csvText.split("\n")[0] || ""
         const candidates = ["|", ";", "\t", ","]
-        const counts = candidates.map(d => ({
+        const counts = candidates.map((d) => ({
           delimiter: d,
-          count: firstLine.split(d).length
+          count: firstLine.split(d).length,
         }))
         counts.sort((a, b) => b.count - a.count)
         detectedDelimiter = counts[0].delimiter
@@ -145,7 +150,7 @@ export async function POST(request: NextRequest) {
       detectedDelimiter = runMetadata?.detected_delimiter || ","
       console.log(`[v0][RUN/STEP] ⚠️ No source found, using: "${detectedDelimiter}"`)
     }
-    
+
     // Guardar en metadata en el primer chunk
     if (run.processed_rows === 0) {
       // Guardar en metadata para logging/referencia
@@ -154,62 +159,66 @@ export async function POST(request: NextRequest) {
         .update({
           metadata: {
             ...runMetadata,
-            detected_delimiter: detectedDelimiter
-          }
+            detected_delimiter: detectedDelimiter,
+          },
         })
         .eq("id", run_id)
     }
 
     // 4. Parsear CSV completo usando el delimiter correcto
-    const parsed = Papa.parse(csvText, { 
-      header: true, 
+    const parsed = Papa.parse(csvText, {
+      header: true,
       skipEmptyLines: true,
-      delimiter: detectedDelimiter 
+      delimiter: detectedDelimiter,
     })
-    
+
     // 5. Normalizar TODOS los headers
     const headersOriginal = parsed.meta.fields || []
     const headersNormalized = headersOriginal.map(normalizeHeader)
-    
+
     // Debug headers (SIEMPRE en primer chunk)
     if (run.processed_rows === 0) {
       console.log(`[v0][DEBUG] ========================================`)
       console.log(`[v0][DEBUG] === INICIO DEBUG PRIMER CHUNK ===`)
       console.log(`[v0][DEBUG] ========================================`)
       console.log(`[v0][DEBUG] Delimiter: "${detectedDelimiter}"`)
-      console.log(`[v0][DEBUG] Headers (${headersOriginal.length} primeros): ${headersOriginal.slice(0, 10).join(", ")}`)
+      console.log(
+        `[v0][DEBUG] Headers (${headersOriginal.length} primeros): ${headersOriginal.slice(0, 10).join(", ")}`,
+      )
       console.log(`[v0][DEBUG] Total headers detectados: ${headersOriginal.length}`)
-      
+
       // VALIDACIÓN CRÍTICA: Verificar que existe columna EAN para AZETA
-      const hasEan = headersNormalized.some(h => h.toLowerCase().includes("ean"))
-      
+      const hasEan = headersNormalized.some((h) => h.toLowerCase().includes("ean"))
+
       if (!hasEan) {
         console.log(`[v0][DEBUG] ❌ ERROR: No se encontró columna "Ean" en headers`)
         console.log(`[v0][DEBUG] Headers originales: ${headersOriginal.join(", ")}`)
-        
+
         // Abortar si es AZETA y no tiene EAN
         const { data: sourceForValidation } = await supabase
           .from("import_sources")
           .select("name")
           .eq("id", run.source_id)
           .single()
-        
+
         if (sourceForValidation?.name.toLowerCase().includes("azeta")) {
-          throw new Error(`CSV de Azeta no parseado correctamente (delimiter incorrecto). Esperado '|'. Headers detectados: ${headersOriginal.slice(0, 5).join(", ")}`)
+          throw new Error(
+            `CSV de Azeta no parseado correctamente (delimiter incorrecto). Esperado '|'. Headers detectados: ${headersOriginal.slice(0, 5).join(", ")}`,
+          )
         }
       } else {
         console.log(`[v0][DEBUG] ✓ Columna EAN encontrada`)
       }
-      
+
       console.log(`[v0][DEBUG] ========================================`)
     }
-    
+
     // Crear mapeo: header original → normalizado
     const headerMap = new Map<string, string>()
     headersOriginal.forEach((orig, idx) => {
       headerMap.set(orig, headersNormalized[idx])
     })
-    
+
     // Convertir TODAS las filas a usar headers normalizados
     const allRowsRaw = parsed.data as Array<Record<string, any>>
     const allRows = allRowsRaw.map((row) => {
@@ -226,7 +235,7 @@ export async function POST(request: NextRequest) {
     // Debug: Sample EAN de la primera fila (SIEMPRE en primer chunk)
     if (run.processed_rows === 0 && allRows.length > 0) {
       const firstRow = allRows[0]
-      const eanField = Object.keys(firstRow).find(k => k.toLowerCase().includes("ean"))
+      const eanField = Object.keys(firstRow).find((k) => k.toLowerCase().includes("ean"))
       const sampleEan = eanField ? firstRow[eanField] : "(no encontrado)"
       console.log(`[v0][DEBUG] Sample EAN: ${sampleEan}`)
     }
@@ -238,13 +247,13 @@ export async function POST(request: NextRequest) {
     if (chunk.length === 0) {
       // Terminado
       console.log(`[v0][RUN/STEP] No hay más filas, completando run`)
-      
+
       await supabase
         .from("import_runs")
         .update({
           status: "completed",
           finished_at: new Date().toISOString(),
-          heartbeat_at: new Date().toISOString()
+          heartbeat_at: new Date().toISOString(),
         })
         .eq("id", run_id)
 
@@ -255,7 +264,7 @@ export async function POST(request: NextRequest) {
         total_rows: run.total_rows,
         created_count: run.created_count,
         updated_count: run.updated_count,
-        continue: false
+        continue: false,
       })
     }
 
@@ -276,7 +285,7 @@ export async function POST(request: NextRequest) {
 
     // 8. Ya no necesitamos auto-detectar porque los headers están normalizados
     // Accedemos directamente usando headers normalizados: "ean", "isbn", "titulo", etc.
-    
+
     // 9. Procesar chunk
     const productsToInsert: Array<Record<string, any>> = []
     let skipped_missing = 0
@@ -291,31 +300,31 @@ export async function POST(request: NextRequest) {
     for (const row of chunk) {
       // Acceder directamente con headers normalizados
       // "Ean" → "ean", "EAN" → "ean", " Ean " → "ean", "﻿Ean" → "ean"
-      let eanRaw = row["ean"]?.trim() || row["ean13"]?.trim() || row["gtin"]?.trim()
+      const eanRaw = row["ean"]?.trim() || row["ean13"]?.trim() || row["gtin"]?.trim()
       const isbnRaw = row["isbn"]?.trim() || row["isbn13"]?.trim()
-      
+
       // Debug primera fila del primer chunk
       if (run.processed_rows === 0 && productsToInsert.length === 0 && skipped_missing === 0) {
         console.log(`[v0][DEBUG] === PRIMERA FILA - EXTRACCIÓN ===`)
         console.log(`[v0][DEBUG] Total claves en row: ${Object.keys(row).length}`)
         console.log(`[v0][DEBUG] TODAS las claves (primeras 30):`, Object.keys(row).slice(0, 30).join(" | "))
-        console.log(`[v0][DEBUG] Buscando: row["ean"] = "${row["ean"] || '(NO EXISTE)'}"`)
-        console.log(`[v0][DEBUG] Buscando: row["ean13"] = "${row["ean13"] || '(NO EXISTE)'}"`)
-        console.log(`[v0][DEBUG] Buscando: row["gtin"] = "${row["gtin"] || '(NO EXISTE)'}"`)
-        console.log(`[v0][DEBUG] Buscando: row["isbn"] = "${row["isbn"] || '(NO EXISTE)'}"`)
-        console.log(`[v0][DEBUG] Buscando: row["isbn13"] = "${row["isbn13"] || '(NO EXISTE)'}"`)
-        console.log(`[v0][DEBUG] eanRaw resultante = "${eanRaw || '(VACÍO)'}"`)
-        console.log(`[v0][DEBUG] isbnRaw resultante = "${isbnRaw || '(VACÍO)'}"`)
-        
+        console.log(`[v0][DEBUG] Buscando: row["ean"] = "${row["ean"] || "(NO EXISTE)"}"`)
+        console.log(`[v0][DEBUG] Buscando: row["ean13"] = "${row["ean13"] || "(NO EXISTE)"}"`)
+        console.log(`[v0][DEBUG] Buscando: row["gtin"] = "${row["gtin"] || "(NO EXISTE)"}"`)
+        console.log(`[v0][DEBUG] Buscando: row["isbn"] = "${row["isbn"] || "(NO EXISTE)"}"`)
+        console.log(`[v0][DEBUG] Buscando: row["isbn13"] = "${row["isbn13"] || "(NO EXISTE)"}"`)
+        console.log(`[v0][DEBUG] eanRaw resultante = "${eanRaw || "(VACÍO)"}"`)
+        console.log(`[v0][DEBUG] isbnRaw resultante = "${isbnRaw || "(VACÍO)"}"`)
+
         // Mostrar primeros 10 valores de la fila como ejemplo
         const firstKeys = Object.keys(row).slice(0, 10)
         console.log(`[v0][DEBUG] === VALORES DE EJEMPLO (primeros 10 campos) ===`)
-        firstKeys.forEach(key => {
+        firstKeys.forEach((key) => {
           const val = row[key]
-          console.log(`[v0][DEBUG]   "${key}" => "${val ? val.substring(0, 60) : '(vacío)'}"`)
+          console.log(`[v0][DEBUG]   "${key}" => "${val ? val.substring(0, 60) : "(vacío)"}"`)
         })
       }
-      
+
       let ean = normalizeEan(eanRaw)
       if (!ean && isbnRaw) {
         ean = normalizeEan(isbnRaw)
@@ -342,14 +351,22 @@ export async function POST(request: NextRequest) {
 
       // Precio: usar pvp o precio, reemplazar coma decimal
       const priceRaw = row["pvp"] || row["precio"] || row["price"] || "0"
-      const cost_price = parseFloat(priceRaw.toString().replace(",", ".").replace(/[^\d.]/g, "")) || null
+      const cost_price =
+        parseFloat(
+          priceRaw
+            .toString()
+            .replace(",", ".")
+            .replace(/[^\d.]/g, ""),
+        ) || null
 
       // Imagen: "url" en Arnoia Act contiene la portada
-      const image_url = row["url"]?.trim() || row["portada"]?.trim() || row["imagen"]?.trim() || row["image"]?.trim() || null
+      const image_url =
+        row["url"]?.trim() || row["portada"]?.trim() || row["imagen"]?.trim() || row["image"]?.trim() || null
 
       // Descripcion: "sinopsis(html)" viene normalizado a "sinopsis_html_" o buscar por substring
-      const descKey = Object.keys(row).find(k => k.includes("sinopsis"))
-      const description = (descKey ? row[descKey]?.trim() : null) || row["descripcion"]?.trim() || row["description"]?.trim() || null
+      const descKey = Object.keys(row).find((k) => k.includes("sinopsis"))
+      const description =
+        (descKey ? row[descKey]?.trim() : null) || row["descripcion"]?.trim() || row["description"]?.trim() || null
 
       // Editorial: "editorial" → brand
       const brand = row["editorial"]?.trim() || row["marca"]?.trim() || row["brand"]?.trim() || null
@@ -358,7 +375,7 @@ export async function POST(request: NextRequest) {
       const language = row["idioma"]?.trim() || row["language"]?.trim() || null
 
       // Año edicion
-      const yearKey = Object.keys(row).find(k => k.includes("ano") || k.includes("ano_edicion"))
+      const yearKey = Object.keys(row).find((k) => k.includes("ano") || k.includes("ano_edicion"))
       const year_edition = (yearKey ? row[yearKey]?.trim() : null) || row["year_edition"]?.trim() || null
 
       // Código interno
@@ -380,7 +397,9 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    console.log(`[v0][RUN/STEP] Productos a insertar: ${productsToInsert.length}, skipped: ${skipped_missing + skipped_invalid}`)
+    console.log(
+      `[v0][RUN/STEP] Productos a insertar: ${productsToInsert.length}, skipped: ${skipped_missing + skipped_invalid}`,
+    )
 
     // 10. Insertar en DB (upsert por EAN) en batches pequeños para evitar timeout
     let createdCount = 0
@@ -388,23 +407,20 @@ export async function POST(request: NextRequest) {
     let upsertErrors = 0
 
     if (productsToInsert.length > 0) {
-      console.log(`[v0][RUN/STEP] Iniciando upsert de ${productsToInsert.length} productos en batches de ${UPSERT_BATCH_SIZE}`)
+      console.log(
+        `[v0][RUN/STEP] Iniciando upsert de ${productsToInsert.length} productos en batches de ${UPSERT_BATCH_SIZE}`,
+      )
 
       // Obtener EANs que ya existen para distinguir created vs updated
-      const allEans = productsToInsert.map(p => p.ean)
-      const { data: existingRows } = await supabase
-        .from("products")
-        .select("ean")
-        .in("ean", allEans)
+      const allEans = productsToInsert.map((p) => p.ean)
+      const { data: existingRows } = await supabase.from("products").select("ean").in("ean", allEans)
       const existingEans = new Set((existingRows || []).map((r: any) => r.ean))
 
       // Dividir en batches pequeños
       for (let i = 0; i < productsToInsert.length; i += UPSERT_BATCH_SIZE) {
         const batch = productsToInsert.slice(i, i + UPSERT_BATCH_SIZE)
-        
-        const { error } = await supabase
-          .from("products")
-          .upsert(batch, { onConflict: "ean" })
+
+        const { error } = await supabase.from("products").upsert(batch, { onConflict: "ean" })
 
         if (error) {
           console.error(`[v0][RUN/STEP] Error en batch ${i}-${i + batch.length}:`, error.message)
@@ -419,8 +435,10 @@ export async function POST(request: NextRequest) {
           }
         }
       }
-      
-      console.log(`[v0][RUN/STEP] Upsert completado: ${createdCount} creados, ${updatedCount} actualizados, ${upsertErrors} errores`)
+
+      console.log(
+        `[v0][RUN/STEP] Upsert completado: ${createdCount} creados, ${updatedCount} actualizados, ${upsertErrors} errores`,
+      )
     }
 
     // 11. Actualizar run
@@ -437,24 +455,32 @@ export async function POST(request: NextRequest) {
         skipped_invalid_key: run.skipped_invalid_key + skipped_invalid,
         heartbeat_at: new Date().toISOString(),
         status: done ? "completed" : "running",
-        finished_at: done ? new Date().toISOString() : null
+        finished_at: done ? new Date().toISOString() : null,
       })
       .eq("id", run_id)
 
     console.log(`[v0][RUN/STEP] Chunk completado. Progreso: ${newProcessedRows}/${run.total_rows}`)
 
     // Preparar info de debug para retornar (solo en primer chunk)
-    const debugInfo = run.processed_rows === 0 ? {
-      headers_original: headersOriginal.slice(0, 30),
-      headers_normalized: headersNormalized.slice(0, 30),
-      delimiter: detectedDelimiter,
-      first_row_keys: chunk.length > 0 ? Object.keys(chunk[0]).slice(0, 20) : [],
-      first_row_ean: chunk.length > 0 ? (chunk[0]["ean"] || '(NO EXISTE)') : null,
-      first_row_isbn: chunk.length > 0 ? (chunk[0]["isbn"] || '(NO EXISTE)') : null,
-      first_row_sample: chunk.length > 0 ? Object.fromEntries(
-        Object.entries(chunk[0]).slice(0, 5).map(([k, v]: [string, any]) => [k, v?.substring?.(0, 50) || v])
-      ) : null
-    } : undefined
+    const debugInfo =
+      run.processed_rows === 0
+        ? {
+            headers_original: headersOriginal.slice(0, 30),
+            headers_normalized: headersNormalized.slice(0, 30),
+            delimiter: detectedDelimiter,
+            first_row_keys: chunk.length > 0 ? Object.keys(chunk[0]).slice(0, 20) : [],
+            first_row_ean: chunk.length > 0 ? chunk[0]["ean"] || "(NO EXISTE)" : null,
+            first_row_isbn: chunk.length > 0 ? chunk[0]["isbn"] || "(NO EXISTE)" : null,
+            first_row_sample:
+              chunk.length > 0
+                ? Object.fromEntries(
+                    Object.entries(chunk[0])
+                      .slice(0, 5)
+                      .map(([k, v]: [string, any]) => [k, v?.substring?.(0, 50) || v]),
+                  )
+                : null,
+          }
+        : undefined
 
     return NextResponse.json({
       ok: true,
@@ -466,13 +492,15 @@ export async function POST(request: NextRequest) {
       skipped_missing_key: run.skipped_missing_key + skipped_missing,
       skipped_invalid_key: run.skipped_invalid_key + skipped_invalid,
       continue: !done,
-      debug_first_chunk: debugInfo // Solo en primer chunk
+      debug_first_chunk: debugInfo, // Solo en primer chunk
     })
-
   } catch (error: any) {
     console.error("[v0][RUN/STEP] Error inesperado:", error)
-    return NextResponse.json({ 
-      error: error.message || "Error interno del servidor" 
-    }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: error.message || "Error interno del servidor",
+      },
+      { status: 500 },
+    )
   }
 }

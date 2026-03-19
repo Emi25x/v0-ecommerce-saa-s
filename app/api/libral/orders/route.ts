@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getLibralOrders } from "@/lib/libral"
+import { getLibralOrders } from "@/domains/suppliers/libral/client"
 
 export async function GET(request: NextRequest) {
   try {

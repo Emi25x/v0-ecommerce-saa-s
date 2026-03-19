@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createClient } from "@/lib/db/server"
+import { createAdminClient } from "@/lib/db/admin"
 
 /**
  * POST /api/warehouses/[id]/assign-sources
@@ -9,10 +9,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
  *  - Desvincula las fuentes que tenían este warehouse_id pero ya no están en source_ids
  *  - Hace backfill de stock_by_source[primarySourceId] para productos aún no atribuidos
  */
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createClient()
     const supabaseAdmin = createAdminClient()
@@ -43,10 +40,7 @@ export async function POST(
 
     // Si no hay fuentes seleccionadas, desvincular todo y salir
     if (!source_ids || source_ids.length === 0) {
-      await supabase
-        .from("import_sources")
-        .update({ warehouse_id: null })
-        .eq("warehouse_id", warehouseId)
+      await supabase.from("import_sources").update({ warehouse_id: null }).eq("warehouse_id", warehouseId)
       return NextResponse.json({
         success: true,
         assigned_sources: 0,
@@ -57,20 +51,12 @@ export async function POST(
 
     // Desvincular fuentes de este warehouse que no están en la nueva lista
     // Usar filter directo para evitar problemas con NOT IN y UUIDs
-    const { data: currentLinked } = await supabase
-      .from("import_sources")
-      .select("id")
-      .eq("warehouse_id", warehouseId)
+    const { data: currentLinked } = await supabase.from("import_sources").select("id").eq("warehouse_id", warehouseId)
 
-    const toUnlink = (currentLinked ?? [])
-      .map((s) => s.id)
-      .filter((id) => !source_ids.includes(id))
+    const toUnlink = (currentLinked ?? []).map((s) => s.id).filter((id) => !source_ids.includes(id))
 
     if (toUnlink.length > 0) {
-      await supabase
-        .from("import_sources")
-        .update({ warehouse_id: null })
-        .in("id", toUnlink)
+      await supabase.from("import_sources").update({ warehouse_id: null }).in("id", toUnlink)
     }
 
     // Vincular las fuentes seleccionadas
@@ -91,15 +77,13 @@ export async function POST(
       .select("id, name, source_key")
       .eq("id", source_ids[0])
       .single()
-    const primarySourceKey: string = (primarySource as any)?.source_key
-      ?? (primarySource?.name?.split(" ")[0].toLowerCase())
-      ?? source_ids[0]
+    const primarySourceKey: string =
+      (primarySource as any)?.source_key ?? primarySource?.name?.split(" ")[0].toLowerCase() ?? source_ids[0]
     let backfilled = 0
     const CHUNK = 1000
     let offset = 0
     const FETCH_LIMIT = 10000
 
-    // eslint-disable-next-line no-constant-condition
     while (true) {
       // Fetch products with stock > 0 that don't yet have this source key in stock_by_source
       const { data: prods, error: fetchErr } = await supabaseAdmin
@@ -123,9 +107,7 @@ export async function POST(
           // Merge with existing keys instead of replacing the whole object
           stock_by_source: { ...(p.stock_by_source ?? {}), [primarySourceKey]: p.stock ?? 0 },
         }))
-        const { error: upsertErr } = await supabaseAdmin
-          .from("products")
-          .upsert(updates, { onConflict: "id" })
+        const { error: upsertErr } = await supabaseAdmin.from("products").upsert(updates, { onConflict: "id" })
         if (upsertErr) {
           console.warn("[ASSIGN-SOURCES] backfill upsert error:", upsertErr.message)
         } else {

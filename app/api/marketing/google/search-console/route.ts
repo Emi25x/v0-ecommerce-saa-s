@@ -1,6 +1,6 @@
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 import { NextRequest, NextResponse } from "next/server"
-import { getSearchConsoleData } from "@/lib/marketing/google"
+import { getSearchConsoleData } from "@/domains/marketing/google"
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -20,7 +20,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const rows = await getSearchConsoleData(conn.credentials, {
-      startDate, endDate,
+      startDate,
+      endDate,
       dimensions: [dimension],
     })
     return NextResponse.json({ rows, dimension, startDate, endDate })

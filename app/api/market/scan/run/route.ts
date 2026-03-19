@@ -4,7 +4,7 @@
  * Devuelve { done, cursor, scanned, skipped_cached, skipped_invalid, errors, job }
  */
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 // mlFetchJson no se usa — búsqueda pública de ML no requiere Authorization
 
 export const dynamic = "force-dynamic"
@@ -43,7 +43,7 @@ function normalizeEan(raw: string | null | undefined): string | null {
 }
 
 function delay(ms: number) {
-  return new Promise<void>(r => setTimeout(r, ms))
+  return new Promise<void>((r) => setTimeout(r, ms))
 }
 
 export async function POST(req: NextRequest) {
@@ -56,11 +56,7 @@ export async function POST(req: NextRequest) {
   const supabase = createAdminClient()
 
   // Cargar job
-  const { data: job, error: jobErr } = await supabase
-    .from("market_scan_jobs")
-    .select("*")
-    .eq("id", job_id)
-    .single()
+  const { data: job, error: jobErr } = await supabase.from("market_scan_jobs").select("*").eq("id", job_id).single()
 
   if (jobErr || !job) {
     return NextResponse.json({ error: "Job no encontrado" }, { status: 404 })
@@ -78,7 +74,10 @@ export async function POST(req: NextRequest) {
     .single()
 
   if (!account?.access_token) {
-    await supabase.from("market_scan_jobs").update({ status: "failed", last_error: "sin access_token", ended_at: new Date().toISOString() }).eq("id", job_id)
+    await supabase
+      .from("market_scan_jobs")
+      .update({ status: "failed", last_error: "sin access_token", ended_at: new Date().toISOString() })
+      .eq("id", job_id)
     return NextResponse.json({ error: "Cuenta sin access_token" }, { status: 400 })
   }
 
@@ -100,11 +99,23 @@ export async function POST(req: NextRequest) {
 
   if (batch.length === 0) {
     // No hay más publicaciones — job completo
-    await supabase.from("market_scan_jobs").update({
-      status: "completed",
-      ended_at: new Date().toISOString(),
-    }).eq("id", job_id)
-    return NextResponse.json({ ok: true, done: true, cursor, scanned: 0, skipped_cached: 0, skipped_invalid: 0, errors: 0, job: { ...job, status: "completed" } })
+    await supabase
+      .from("market_scan_jobs")
+      .update({
+        status: "completed",
+        ended_at: new Date().toISOString(),
+      })
+      .eq("id", job_id)
+    return NextResponse.json({
+      ok: true,
+      done: true,
+      cursor,
+      scanned: 0,
+      skipped_cached: 0,
+      skipped_invalid: 0,
+      errors: 0,
+      job: { ...job, status: "completed" },
+    })
   }
 
   // Construir mapa EAN normalizado → título (deduplicar)
@@ -114,7 +125,10 @@ export async function POST(req: NextRequest) {
     // Prioridad: ean → isbn → gtin
     const rawEan = p.ean ?? p.isbn ?? p.gtin
     const normalized = normalizeEan(rawEan)
-    if (!normalized) { skippedInvalidBatch++; continue }
+    if (!normalized) {
+      skippedInvalidBatch++
+      continue
+    }
     if (!eanMap.has(normalized)) eanMap.set(normalized, p.title || "")
   }
 
@@ -131,7 +145,7 @@ export async function POST(req: NextRequest) {
     .in("ean", eanList)
 
   const cachedSet = new Set((cached ?? []).map((r: any) => r.ean))
-  const toScan = eanList.filter(e => !cachedSet.has(e))
+  const toScan = eanList.filter((e) => !cachedSet.has(e))
 
   console.log(`[MARKET-SCAN-RUN] toScan=${toScan.length} ya_cacheados=${cachedSet.size}`)
 
@@ -148,8 +162,8 @@ export async function POST(req: NextRequest) {
       try {
         httpRes = await fetch(url, {
           headers: {
-            "Accept": "application/json",
-            "Authorization": `Bearer ${account.access_token}`,
+            Accept: "application/json",
+            Authorization: `Bearer ${account.access_token}`,
           },
           signal: controller.signal,
         })
@@ -160,7 +174,9 @@ export async function POST(req: NextRequest) {
       if (!httpRes.ok) {
         const body = await httpRes.text()
         if (!firstErrorLogged) {
-          console.error(`[MARKET-SCAN-RUN] PRIMER ERROR HTTP ${httpRes.status} EAN=${ean} url=${url} body=${body.slice(0, 400)}`)
+          console.error(
+            `[MARKET-SCAN-RUN] PRIMER ERROR HTTP ${httpRes.status} EAN=${ean} url=${url} body=${body.slice(0, 400)}`,
+          )
           firstErrorLogged = true
         }
         errors++
@@ -171,11 +187,20 @@ export async function POST(req: NextRequest) {
       const res = await httpRes.json()
 
       const items: any[] = res.results ?? []
-      if (items.length === 0) { await delay(DELAY_MS); continue }
+      if (items.length === 0) {
+        await delay(DELAY_MS)
+        continue
+      }
 
-      const prices = items.map((i: any) => i.price).filter((p: any) => typeof p === "number" && p > 0).sort((a: number, b: number) => a - b)
+      const prices = items
+        .map((i: any) => i.price)
+        .filter((p: any) => typeof p === "number" && p > 0)
+        .sort((a: number, b: number) => a - b)
       const minPrice = prices[0] ?? null
-      const avgPrice = prices.length > 0 ? parseFloat((prices.reduce((s: number, p: number) => s + p, 0) / prices.length).toFixed(2)) : null
+      const avgPrice =
+        prices.length > 0
+          ? parseFloat((prices.reduce((s: number, p: number) => s + p, 0) / prices.length).toFixed(2))
+          : null
       const medianPrice = prices.length > 0 ? prices[Math.floor(prices.length / 2)] : null
       const sellersCount = new Set(items.map((i: any) => i.seller?.id).filter(Boolean)).size
       const fullSellersCount = items.filter((i: any) => i.shipping?.free_shipping).length
@@ -184,9 +209,8 @@ export async function POST(req: NextRequest) {
       const categoryId = items[0]?.category_id ?? null
       const sampleItemIds = items.slice(0, 5).map((i: any) => i.id)
 
-      const { error: upsertErr } = await supabase
-        .from("ml_market_snapshots")
-        .upsert({
+      const { error: upsertErr } = await supabase.from("ml_market_snapshots").upsert(
+        {
           account_id: job.account_id,
           ean,
           category_id: categoryId,
@@ -200,7 +224,9 @@ export async function POST(req: NextRequest) {
           free_shipping_rate: freeShippingRate,
           sold_qty_proxy: soldQtyProxy,
           sample_item_ids: sampleItemIds,
-        }, { onConflict: "account_id,ean,captured_day", ignoreDuplicates: false })
+        },
+        { onConflict: "account_id,ean,captured_day", ignoreDuplicates: false },
+      )
 
       if (upsertErr) {
         console.error(`[MARKET-SCAN-RUN] upsert error EAN ${ean}:`, upsertErr.message)
@@ -225,18 +251,26 @@ export async function POST(req: NextRequest) {
   const done = batch.length < batchSize // si trajo menos que el batch, terminó
 
   // Actualizar job
-  await supabase.from("market_scan_jobs").update({
+  await supabase
+    .from("market_scan_jobs")
+    .update({
+      cursor: newCursor,
+      status: done ? "completed" : "running",
+      scanned: (job.scanned ?? 0) + scanned,
+      skipped_cached: (job.skipped_cached ?? 0) + cachedSet.size,
+      skipped_invalid: (job.skipped_invalid ?? 0) + skippedInvalidBatch,
+      errors: (job.errors ?? 0) + errors,
+      last_heartbeat_at: new Date().toISOString(),
+      ...(done ? { ended_at: new Date().toISOString() } : {}),
+    })
+    .eq("id", job_id)
+
+  const updatedJob = {
+    ...job,
     cursor: newCursor,
     status: done ? "completed" : "running",
     scanned: (job.scanned ?? 0) + scanned,
-    skipped_cached: (job.skipped_cached ?? 0) + cachedSet.size,
-    skipped_invalid: (job.skipped_invalid ?? 0) + skippedInvalidBatch,
-    errors: (job.errors ?? 0) + errors,
-    last_heartbeat_at: new Date().toISOString(),
-    ...(done ? { ended_at: new Date().toISOString() } : {}),
-  }).eq("id", job_id)
-
-  const updatedJob = { ...job, cursor: newCursor, status: done ? "completed" : "running", scanned: (job.scanned ?? 0) + scanned }
+  }
 
   console.log(`[MARKET-SCAN-RUN] done=${done} cursor=${newCursor} scanned=${scanned} errors=${errors}`)
 

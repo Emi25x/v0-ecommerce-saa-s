@@ -4,52 +4,36 @@
  *   1. calculate_ml_publish_priorities — recalculates all product scores
  *   2. update_industry_news            — fetches RSS feeds & detects adaptations
  */
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
+import { requireCron } from "@/lib/auth/require-auth"
+import { calculateMlPriorities } from "@/domains/mercadolibre/priorities"
+import { fetchRadarNews } from "@/domains/radar/fetch-news"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 120
 
-export async function GET(req: Request) {
-  const secret = req.headers.get("Authorization")?.replace("Bearer ", "")
-  if (secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
-
-  const base = process.env.APP_URL ?? process.env.NEXT_PUBLIC_VERCEL_URL
-    ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-    : "http://localhost:3000"
+export async function GET(req: NextRequest) {
+  const auth = await requireCron(req)
+  if (auth.error) return auth.response
 
   const results: Record<string, unknown> = {}
 
   // 1. Calculate ML publish priorities
   try {
-    const res  = await fetch(`${base}/api/ml/priorities/calculate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    })
-    results.ml_priorities = await res.json()
+    results.ml_priorities = await calculateMlPriorities()
   } catch (e: any) {
     results.ml_priorities = { error: e.message }
   }
 
   // 2. Fetch & process industry news RSS feeds
   try {
-    const res  = await fetch(`${base}/api/radar/news/fetch`, {
-      method: "POST",
-      headers: {
-        "Content-Type":  "application/json",
-        "x-cron-secret": process.env.CRON_SECRET ?? "",
-      },
-      body: JSON.stringify({ manual: false }),
-    })
-    results.industry_news = await res.json()
+    results.industry_news = await fetchRadarNews({ manual: false })
   } catch (e: any) {
     results.industry_news = { error: e.message }
   }
 
   return NextResponse.json({
-    ok:        true,
+    ok: true,
     timestamp: new Date().toISOString(),
     results,
   })

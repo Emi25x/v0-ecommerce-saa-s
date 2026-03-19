@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextRequest, NextResponse } from "next/server"
 import { protectAPI } from "@/lib/auth/protect-api"
 
@@ -14,8 +14,8 @@ const VALID_TYPES = [
 ]
 
 export async function POST(request: NextRequest) {
-  const authError = await protectAPI()
-  if (authError) return authError
+  const authCheck = await protectAPI()
+  if (authCheck.error) return authCheck.response
 
   try {
     const body = await request.json()

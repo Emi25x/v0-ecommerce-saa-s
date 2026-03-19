@@ -48,7 +48,7 @@ export async function POST(request: Request) {
 
     // Obtener detalles completos del item de ML
     const itemResponse = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
-      headers: { Authorization: `Bearer ${accessToken}` }
+      headers: { Authorization: `Bearer ${accessToken}` },
     })
 
     if (!itemResponse.ok) {
@@ -62,8 +62,8 @@ export async function POST(request: Request) {
     // Extraer SKU/GTIN/ISBN
     let sku = itemData.seller_custom_field || ""
     if (!sku && itemData.attributes) {
-      const skuAttr = itemData.attributes.find((attr: any) => 
-        attr.id === 'SELLER_SKU' || attr.id === 'ISBN' || attr.id === 'GTIN' || attr.id === 'EAN'
+      const skuAttr = itemData.attributes.find(
+        (attr: any) => attr.id === "SELLER_SKU" || attr.id === "ISBN" || attr.id === "GTIN" || attr.id === "EAN",
       )
       if (skuAttr) {
         sku = skuAttr.value_name || ""
@@ -73,12 +73,8 @@ export async function POST(request: Request) {
     // Buscar product_id por SKU
     let productId = null
     if (sku) {
-      const { data: product } = await supabase
-        .from("products")
-        .select("id")
-        .eq("ean", sku)
-        .maybeSingle()
-      
+      const { data: product } = await supabase.from("products").select("id").eq("ean", sku).maybeSingle()
+
       productId = product?.id || null
     }
 
@@ -92,18 +88,21 @@ export async function POST(request: Request) {
         current_stock: itemData.available_quantity,
         status: itemData.status,
         permalink: itemData.permalink,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
       })
       .eq("ml_item_id", itemId)
 
     if (error) {
       console.error("[v0] Error actualizando publicación:", error)
     } else {
-      console.log("[v0] Publicación actualizada:", itemId, productId ? `vinculada a producto ${productId}` : "sin vincular")
+      console.log(
+        "[v0] Publicación actualizada:",
+        itemId,
+        productId ? `vinculada a producto ${productId}` : "sin vincular",
+      )
     }
 
     return NextResponse.json({ success: true })
-
   } catch (error) {
     console.error("[v0] Error en webhook ML:", error)
     // Siempre retornar 200 para que ML no reintente
@@ -113,8 +112,8 @@ export async function POST(request: Request) {
 
 // GET para verificación de webhook
 export async function GET() {
-  return NextResponse.json({ 
+  return NextResponse.json({
     message: "Webhook ML endpoint",
-    status: "active" 
+    status: "active",
   })
 }

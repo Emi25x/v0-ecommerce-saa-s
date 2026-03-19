@@ -1,6 +1,7 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextResponse } from "next/server"
-import { renewAndPersistToken } from "@/lib/shopify-auth"
+import { renewAndPersistToken } from "@/domains/shopify/auth"
+import { startRun } from "@/lib/process-runs"
 
 // POST /api/shopify/sync
 // Usa streaming NDJSON para evitar timeouts con catálogos grandes.
@@ -16,11 +17,19 @@ export async function POST(request: Request) {
 
   const stream = new ReadableStream({
     async start(controller) {
+      let run: Awaited<ReturnType<typeof startRun>> | null = null
       try {
-
         const supabase = await createClient()
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) { send(controller, { error: "Unauthorized" }); controller.close(); return }
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
+        if (!user) {
+          send(controller, { error: "Unauthorized" })
+          controller.close()
+          return
+        }
+
+        run = await startRun(supabase, "shopify_sync", "Shopify Sync")
 
         const { data: storeRaw } = await supabase
           .from("shopify_stores")
@@ -29,7 +38,11 @@ export async function POST(request: Request) {
           .eq("owner_user_id", user.id)
           .single()
 
-        if (!storeRaw) { send(controller, { error: "Tienda no encontrada" }); controller.close(); return }
+        if (!storeRaw) {
+          send(controller, { error: "Tienda no encontrada" })
+          controller.close()
+          return
+        }
 
         let store = storeRaw
         if (storeRaw.api_key && storeRaw.api_secret) {
@@ -57,18 +70,16 @@ export async function POST(request: Request) {
             ? new URLSearchParams({ page_info: nextPageInfo, limit: "250" })
             : new URLSearchParams({ status: "active", limit: "250" })
 
-          let res: Response = await fetch(
-            `https://${store.shop_domain}/admin/api/2024-01/products.json?${params}`,
-            { headers: { "X-Shopify-Access-Token": store.access_token } }
-          )
+          let res: Response = await fetch(`https://${store.shop_domain}/admin/api/2024-01/products.json?${params}`, {
+            headers: { "X-Shopify-Access-Token": store.access_token },
+          })
 
           if (res.status === 401 && store.api_key && store.api_secret) {
             const newToken = await renewAndPersistToken(supabase, store)
             store = { ...store, access_token: newToken }
-            res = await fetch(
-              `https://${store.shop_domain}/admin/api/2024-01/products.json?${params}`,
-              { headers: { "X-Shopify-Access-Token": newToken } }
-            )
+            res = await fetch(`https://${store.shop_domain}/admin/api/2024-01/products.json?${params}`, {
+              headers: { "X-Shopify-Access-Token": newToken },
+            })
           }
 
           if (!res.ok) throw new Error(`Shopify HTTP ${res.status}`)
@@ -78,25 +89,23 @@ export async function POST(request: Request) {
           for (const p of json.products ?? []) {
             for (const v of p.variants ?? []) {
               rows.push({
-                store_id:           store.id,
+                store_id: store.id,
                 shopify_product_id: p.id,
                 shopify_variant_id: v.id,
-                shopify_title:      p.title,
-                shopify_sku:        v.sku ?? "",
-                shopify_barcode:    v.barcode ?? "",
-                shopify_price:      Number(v.price ?? 0),
-                shopify_status:     p.status ?? "active",
-                shopify_image_url:  p.image?.src ?? null,
-                fetched_at:         fetchedAt,
+                shopify_title: p.title,
+                shopify_sku: v.sku ?? "",
+                shopify_barcode: v.barcode ?? "",
+                shopify_price: Number(v.price ?? 0),
+                shopify_status: p.status ?? "active",
+                shopify_image_url: p.image?.src ?? null,
+                fetched_at: fetchedAt,
               })
             }
           }
 
           // Insertar en lotes en la tabla cache
           for (let i = 0; i < rows.length; i += CACHE_BATCH) {
-            await supabase
-              .from("shopify_variants_cache")
-              .insert(rows.slice(i, i + CACHE_BATCH))
+            await supabase.from("shopify_variants_cache").insert(rows.slice(i, i + CACHE_BATCH))
           }
 
           totalVariants += rows.length
@@ -116,31 +125,47 @@ export async function POST(request: Request) {
         // ── FASE 2: Matching SQL directo en la DB (instantáneo) ───────────────
         send(controller, { phase: "matching", message: "Ejecutando vinculación SQL..." })
 
-        const { data: matchResult, error: matchError } = await supabase
-          .rpc("run_shopify_matching_v2", { p_store_id: store.id })
+        const { data: matchResult, error: matchError } = await supabase.rpc("run_shopify_matching_v2", {
+          p_store_id: store.id,
+        })
 
         if (matchError) throw new Error(`Matching SQL: ${matchError.message}`)
 
         const r = matchResult as any
 
         // Resultado final
+        await run.complete({
+          rows_processed: totalVariants,
+          rows_updated: r.total_linked ?? 0,
+          log_json: {
+            store_id: store.id,
+            shop_domain: store.shop_domain,
+            shopify_variants_total: totalVariants,
+            db_products_scanned: r.db_count,
+            matched_ean: r.matched_ean,
+            matched_isbn: r.matched_isbn,
+          },
+        })
+
         send(controller, {
-          ok: true, phase: "done",
-          store_id:              store.id,
-          shop_domain:           store.shop_domain,
+          ok: true,
+          phase: "done",
+          store_id: store.id,
+          shop_domain: store.shop_domain,
           shopify_variants_total: totalVariants,
-          db_products_scanned:   r.db_count,
-          matched:               r.total_linked,
-          matched_ean:           r.matched_ean,
-          matched_isbn:          r.matched_isbn,
-          skipped:               (r.db_count ?? 0) - (r.total_linked ?? 0),
+          db_products_scanned: r.db_count,
+          matched: r.total_linked,
+          matched_ean: r.matched_ean,
+          matched_isbn: r.matched_isbn,
+          skipped: (r.db_count ?? 0) - (r.total_linked ?? 0),
         })
       } catch (e: any) {
+        await run?.fail(e)
         send(controller, { error: e.message })
       } finally {
         controller.close()
       }
-    }
+    },
   })
 
   return new Response(stream, {
@@ -160,11 +185,12 @@ export async function GET(request: Request) {
     if (!store_id) return NextResponse.json({ error: "store_id requerido" }, { status: 400 })
 
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-    const { data, error } = await supabase
-      .rpc("get_sync_stats", { p_store_id: store_id })
+    const { data, error } = await supabase.rpc("get_sync_stats", { p_store_id: store_id })
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 

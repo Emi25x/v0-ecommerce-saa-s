@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 
 export const dynamic = "force-dynamic"
 
@@ -12,11 +12,7 @@ export async function GET(req: NextRequest) {
 
   if (job_id) {
     // Status de un job específico con sus items
-    const { data: job, error } = await supabase
-      .from("ml_catalog_jobs")
-      .select("*")
-      .eq("id", job_id)
-      .single()
+    const { data: job, error } = await supabase.from("ml_catalog_jobs").select("*").eq("id", job_id).single()
     if (error || !job) return NextResponse.json({ error: "Job no encontrado" }, { status: 404 })
 
     const { data: items } = await supabase

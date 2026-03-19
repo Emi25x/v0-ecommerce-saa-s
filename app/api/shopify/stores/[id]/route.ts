@@ -1,6 +1,6 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextResponse } from "next/server"
-import { getShopifyProducts } from "@/lib/shopify"
+import { getShopifyProducts } from "@/domains/shopify/types"
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -17,7 +17,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     }
 
     const body = await request.json()
-    const { access_token, default_location_id, is_active } = body
+    const { name, access_token, default_location_id, is_active } = body
 
     // Build update object
     const updates: any = {
@@ -26,7 +26,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
     if (access_token !== undefined) {
       updates.access_token = access_token
-      
+
       // If updating access token, validate it
       const { data: store } = await supabase
         .from("shopify_stores")
@@ -44,10 +44,14 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
               error: "Invalid access token",
               details: testError.message,
             },
-            { status: 400 }
+            { status: 400 },
           )
         }
       }
+    }
+
+    if (name !== undefined) {
+      updates.name = name
     }
 
     if (default_location_id !== undefined) {

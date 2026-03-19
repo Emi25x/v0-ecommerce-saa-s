@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { requireCron } from "@/lib/auth/require-auth"
+import { createClient } from "@/lib/db/server"
 import Papa from "papaparse"
 
 // Declare the normalizeSku function
@@ -8,6 +9,8 @@ const normalizeSku = (val: string) => String(val).trim().replace(/^0+/, "") || v
 export const maxDuration = 300 // 5 minutes max execution time
 
 export async function POST(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
   const startTime = Date.now()
 
   try {
@@ -140,22 +143,22 @@ export async function POST(request: NextRequest) {
     const getColumnValue = (row: Record<string, any>, columnName: string): any => {
       // Primero intentar con el nombre exacto
       if (row[columnName] !== undefined) return row[columnName]
-      
+
       // Buscar case-insensitive
       const lowerColumnName = columnName.toLowerCase()
       const keys = Object.keys(row)
-      const matchingKey = keys.find(k => k.toLowerCase() === lowerColumnName)
-      
+      const matchingKey = keys.find((k) => k.toLowerCase() === lowerColumnName)
+
       return matchingKey ? row[matchingKey] : undefined
     }
 
     // Determinar si debemos hacer match por EAN en lugar de SKU
     const matchField = mapping.match_field || "sku" // "sku" o "ean"
-    const matchColumn = matchField === "ean" ? (mapping.ean || "ean") : (mapping.sku || "sku")
+    const matchColumn = matchField === "ean" ? mapping.ean || "ean" : mapping.sku || "sku"
 
     for (let i = 0; i < products.length; i += BATCH_SIZE) {
       const batch = products.slice(i, i + BATCH_SIZE)
-      
+
       // Obtener los valores para hacer match (EAN o SKU según configuración)
       const batchMatchValues = batch
         .map((p) => getColumnValue(p, matchColumn))
@@ -169,28 +172,24 @@ export async function POST(request: NextRequest) {
         .in(matchField, batchMatchValues)
 
       // Crear set de valores existentes según el campo de match
-      const existingMatchSet = new Set(
-        existingProducts?.map((p) => matchField === "ean" ? p.ean : p.sku) || []
-      )
+      const existingMatchSet = new Set(existingProducts?.map((p) => (matchField === "ean" ? p.ean : p.sku)) || [])
       // Mapa matchValue → { sku, stock_by_source }
       const existingProductMap = new Map(
         existingProducts?.map((p) => [
           matchField === "ean" ? p.ean : p.sku,
-          { sku: p.sku, stock_by_source: p.stock_by_source || {} }
-        ]) || []
+          { sku: p.sku, stock_by_source: p.stock_by_source || {} },
+        ]) || [],
       )
       // También crear un mapa para obtener el SKU desde el EAN cuando hacemos match por EAN
-      const eanToSkuMap = new Map(
-        existingProducts?.map((p) => [p.ean, p.sku]) || []
-      )
+      const eanToSkuMap = new Map(existingProducts?.map((p) => [p.ean, p.sku]) || [])
 
       const upsertPromises = batch.map(async (row) => {
         try {
           const skuColumn = mapping.sku || "sku"
           const eanColumn = mapping.ean || "ean"
-          
+
           // Usar getColumnValue para búsqueda case-insensitive
-          let sku = getColumnValue(row, skuColumn)
+          const sku = getColumnValue(row, skuColumn)
           const ean = getColumnValue(row, eanColumn)
           const price = getColumnValue(row, mapping.price || "price")
           const stock = getColumnValue(row, mapping.stock || "stock")
@@ -198,14 +197,14 @@ export async function POST(request: NextRequest) {
           // Normalizar valores
           const normalizedSku = sku ? normalizeValue(String(sku)) : null
           const normalizedEan = ean ? normalizeValue(String(ean)) : null
-          
+
           // El valor para hacer match
           const matchValue = matchField === "ean" ? normalizedEan : normalizedSku
-          
+
           if (!matchValue) return null
 
           const exists = existingMatchSet.has(matchValue)
-          
+
           // Si hacemos match por EAN, necesitamos el SKU existente para actualizar
           const existingSku = matchField === "ean" ? eanToSkuMap.get(matchValue) : normalizedSku
 
@@ -237,12 +236,12 @@ export async function POST(request: NextRequest) {
             source: [source.id],
             ...(Object.keys(customFields).length > 0 ? { custom_fields: customFields } : {}),
           }
-          
+
           // Agregar EAN si está disponible
           if (normalizedEan) {
             productData.ean = normalizedEan
           }
-          
+
           // Agregar SKU si está disponible (para productos nuevos)
           if (normalizedSku) {
             productData.sku = normalizedSku
@@ -267,11 +266,12 @@ export async function POST(request: NextRequest) {
           } else if (!exists) {
             // New product with complete data
             productData.sku = normalizedSku || normalizedEan
-            productData.title = getColumnValue(row, mapping.name || mapping.title || "name") || normalizedSku || normalizedEan
+            productData.title =
+              getColumnValue(row, mapping.name || mapping.title || "name") || normalizedSku || normalizedEan
             productData.description = getColumnValue(row, mapping.description || "description")
             productData.category = getColumnValue(row, mapping.category || "category")
             productData.brand = getColumnValue(row, mapping.brand || "brand")
-            
+
             // Campos adicionales si están mapeados
             if (mapping.author) productData.author = getColumnValue(row, mapping.author)
             if (mapping.image_url) productData.image_url = getColumnValue(row, mapping.image_url)
@@ -281,27 +281,22 @@ export async function POST(request: NextRequest) {
           if (exists) {
             const updateField = matchField === "ean" ? "ean" : "sku"
             const updateValue = matchField === "ean" ? normalizedEan : existingSku || normalizedSku
-            
+
             // Debug: log datos de actualización para primeros productos
             if (i === 0 && batch.indexOf(row) < 3) {
               console.log("[v0] UPDATE - EAN:", normalizedEan, "SKU:", normalizedSku)
               console.log("[v0] UPDATE - productData.ean:", productData.ean)
               console.log("[v0] UPDATE - updateField:", updateField, "updateValue:", updateValue)
             }
-            
-            const { error } = await supabase
-              .from("products")
-              .update(productData)
-              .eq(updateField, updateValue)
+
+            const { error } = await supabase.from("products").update(productData).eq(updateField, updateValue)
             if (error) throw error
           } else {
             // Asegurar que tenga SKU para insertar
             if (!productData.sku) {
               productData.sku = normalizedEan || `AUTO-${Date.now()}`
             }
-            const { error } = await supabase
-              .from("products")
-              .insert(productData)
+            const { error } = await supabase.from("products").insert(productData)
             if (error) throw error
           }
 

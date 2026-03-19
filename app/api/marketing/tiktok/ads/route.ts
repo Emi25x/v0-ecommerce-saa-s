@@ -1,6 +1,6 @@
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 import { NextRequest, NextResponse } from "next/server"
-import { getTikTokCampaigns, getTikTokReport } from "@/lib/marketing/tiktok"
+import { getTikTokCampaigns, getTikTokReport } from "@/domains/marketing/tiktok"
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)

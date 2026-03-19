@@ -1,22 +1,23 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
 /**
  * GET /api/cs/conversations/[id]
  * Returns a conversation with its messages.
  */
-export async function GET(
-  _request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   const supabase = await createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
   if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const { data: conversation, error } = await supabase
     .from("cs_conversations")
     .select("*")
-    .eq("id", params.id)
+    .eq("id", id)
     .eq("user_id", user.id)
     .single()
 
@@ -25,22 +26,19 @@ export async function GET(
   const { data: messages } = await supabase
     .from("cs_messages")
     .select("*")
-    .eq("conversation_id", params.id)
+    .eq("conversation_id", id)
     .order("created_at", { ascending: true })
 
   // Mark all inbound messages as read
   await supabase
     .from("cs_messages")
     .update({ is_read: true, read_at: new Date().toISOString() })
-    .eq("conversation_id", params.id)
+    .eq("conversation_id", id)
     .eq("is_read", false)
     .eq("direction", "inbound")
 
   // Reset unread count
-  await supabase
-    .from("cs_conversations")
-    .update({ unread_count: 0 })
-    .eq("id", params.id)
+  await supabase.from("cs_conversations").update({ unread_count: 0 }).eq("id", id)
 
   return NextResponse.json({ conversation, messages: messages ?? [] })
 }
@@ -49,12 +47,13 @@ export async function GET(
  * PATCH /api/cs/conversations/[id]
  * Update conversation status, priority, etc.
  */
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   const supabase = await createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
   if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const body = await request.json().catch(() => ({}))
@@ -71,7 +70,7 @@ export async function PATCH(
   const { data, error } = await supabase
     .from("cs_conversations")
     .update(updates)
-    .eq("id", params.id)
+    .eq("id", id)
     .eq("user_id", user.id)
     .select()
     .single()

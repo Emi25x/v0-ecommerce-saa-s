@@ -1,6 +1,6 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextResponse } from "next/server"
-import { getValidToken } from "@/lib/shopify-auth"
+import { getValidToken } from "@/domains/shopify/auth"
 
 export async function GET(request: Request) {
   try {
@@ -15,7 +15,10 @@ export async function GET(request: Request) {
     }
 
     const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     // Buscar la tienda con credenciales para poder renovar el token si venció
@@ -52,7 +55,9 @@ export async function GET(request: Request) {
 
     if (!res.ok) {
       let msg = `HTTP ${res.status}`
-      try { msg = `HTTP ${res.status}: ${JSON.parse(text).errors ?? text.slice(0, 200)}` } catch {}
+      try {
+        msg = `HTTP ${res.status}: ${JSON.parse(text).errors ?? text.slice(0, 200)}`
+      } catch {}
       console.error("[SHOPIFY-ORDERS]", msg)
       return NextResponse.json({ error: msg }, { status: res.status })
     }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 
 export const dynamic = "force-dynamic"
 
@@ -35,6 +35,10 @@ export async function POST(req: NextRequest) {
   const { job_id } = await req.json().catch(() => ({}))
   if (!job_id) return NextResponse.json({ error: "job_id requerido" }, { status: 400 })
   const supabase = createAdminClient()
-  await supabase.from("market_scan_jobs").update({ status: "cancelled", ended_at: new Date().toISOString() }).eq("id", job_id).eq("status", "running")
+  await supabase
+    .from("market_scan_jobs")
+    .update({ status: "cancelled", ended_at: new Date().toISOString() })
+    .eq("id", job_id)
+    .eq("status", "running")
   return NextResponse.json({ ok: true })
 }

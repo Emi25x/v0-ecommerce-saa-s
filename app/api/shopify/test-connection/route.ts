@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
-import { normalizeDomain, exchangeCredentialsForToken, fetchShopInfo } from "@/lib/shopify-auth"
+import { createClient } from "@/lib/db/server"
+import { normalizeDomain, exchangeCredentialsForToken, fetchShopInfo } from "@/domains/shopify/auth"
 
 // POST: probar credenciales — soporta access_token directo O api_key + api_secret (OAuth exchange)
 export async function POST(request: Request) {
@@ -17,7 +17,10 @@ export async function POST(request: Request) {
 
     if (!token) {
       if (!api_key || !api_secret) {
-        return NextResponse.json({ connected: false, error: "Se requiere access_token o api_key + api_secret" }, { status: 400 })
+        return NextResponse.json(
+          { connected: false, error: "Se requiere access_token o api_key + api_secret" },
+          { status: 400 },
+        )
       }
       // Intercambiar credenciales por token OAuth
       token = await exchangeCredentialsForToken(domain, api_key, api_secret)
@@ -47,7 +50,10 @@ export async function GET(request: Request) {
     }
 
     const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const { data: store } = await supabase

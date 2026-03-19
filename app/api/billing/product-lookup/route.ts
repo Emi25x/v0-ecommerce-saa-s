@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: "No autorizado" }, { status: 401 })
 
     const q = request.nextUrl.searchParams.get("q")?.trim()
@@ -12,10 +14,7 @@ export async function GET(request: NextRequest) {
 
     const isNumeric = /^\d+$/.test(q)
 
-    let query = supabase
-      .from("products")
-      .select("id, sku, ean, isbn, title, price")
-      .limit(8)
+    let query = supabase.from("products").select("id, sku, ean, isbn, title, price").limit(8)
 
     if (isNumeric) {
       // Búsqueda exacta por SKU, EAN o ISBN

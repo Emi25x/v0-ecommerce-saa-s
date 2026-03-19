@@ -1,9 +1,13 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { getLibralProducts } from "@/lib/libral"
-import { createClient } from "@/lib/supabase/server"
-import { mergeStockBySource } from "@/lib/stock-helpers"
+import { getLibralProducts } from "@/domains/suppliers/libral/client"
+import { createClient } from "@/lib/db/server"
+import { mergeStockBySource } from "@/domains/inventory/stock-helpers"
+import { requireCron } from "@/lib/auth/require-auth"
 
 export async function POST(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
+
   try {
     const token = request.cookies.get("libral_access_token")?.value
 
@@ -51,7 +55,9 @@ export async function POST(request: NextRequest) {
           .single()
 
         const { stock_by_source, stock } = mergeStockBySource(
-          existingProduct?.stock_by_source, libralSourceId, libralProduct.stockdisponibletotal
+          existingProduct?.stock_by_source,
+          libralSourceId,
+          libralProduct.stockdisponibletotal,
         )
 
         const productData = {

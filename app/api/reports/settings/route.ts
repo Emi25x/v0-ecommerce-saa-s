@@ -1,10 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
 export async function GET() {
   try {
     const supabase = await createClient()
-    
+
     const { data: settings } = await supabase
       .from("report_settings")
       .select("*")
@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
         enabled: body.enabled,
         email_recipients: body.email_recipients,
         send_time: body.send_time || "23:59:00",
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
       })
       .eq("report_type", "daily_sales")
       .select()

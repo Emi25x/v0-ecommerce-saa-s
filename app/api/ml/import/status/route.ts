@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextResponse } from "next/server"
 
 /**
@@ -17,13 +17,9 @@ export async function GET(request: Request) {
     }
 
     let job = null
-    
+
     if (job_id) {
-      const { data } = await supabase
-        .from("ml_import_jobs")
-        .select("*")
-        .eq("id", job_id)
-        .maybeSingle()
+      const { data } = await supabase.from("ml_import_jobs").select("*").eq("id", job_id).maybeSingle()
       job = data
     } else if (account_id) {
       // Fallback: buscar último job activo por account_id
@@ -42,19 +38,14 @@ export async function GET(request: Request) {
     }
 
     // Obtener estadísticas de la cola
-    const { data: queueStats } = await supabase
-      .from("ml_import_queue")
-      .select("status")
-      .eq("job_id", job.id)
+    const { data: queueStats } = await supabase.from("ml_import_queue").select("status").eq("job_id", job.id)
 
-    const pending = queueStats?.filter(i => i.status === "pending").length || 0
-    const processing = queueStats?.filter(i => i.status === "processing").length || 0
-    const completed = queueStats?.filter(i => i.status === "completed").length || 0
-    const failed = queueStats?.filter(i => i.status === "failed").length || 0
+    const pending = queueStats?.filter((i) => i.status === "pending").length || 0
+    const processing = queueStats?.filter((i) => i.status === "processing").length || 0
+    const completed = queueStats?.filter((i) => i.status === "completed").length || 0
+    const failed = queueStats?.filter((i) => i.status === "failed").length || 0
 
-    const progress = job.total_items > 0 
-      ? Math.round(((completed + failed) / job.total_items) * 100)
-      : 0
+    const progress = job.total_items > 0 ? Math.round(((completed + failed) / job.total_items) * 100) : 0
 
     return NextResponse.json({
       job_id: job.id,
@@ -67,9 +58,8 @@ export async function GET(request: Request) {
       progress,
       started_at: job.started_at,
       completed_at: job.completed_at,
-      error_message: job.error_message
+      error_message: job.error_message,
     })
-
   } catch (error: any) {
     console.error("[v0] Error in status:", error)
     return NextResponse.json({ error: error.message }, { status: 500 })

@@ -1,8 +1,8 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextRequest, NextResponse } from "next/server"
-import { calculatePrice, type PriceListConfig, type ProductInput } from "@/lib/pricing/engine"
+import { calculatePrice, type PriceListConfig, type ProductInput } from "@/domains/pricing/engine"
 
-export const dynamic    = "force-dynamic"
+export const dynamic = "force-dynamic"
 export const maxDuration = 60
 
 /**
@@ -12,11 +12,10 @@ export const maxDuration = 60
  */
 export async function POST(req: NextRequest) {
   try {
-    const supabase      = await createClient()
+    const supabase = await createClient()
     const { price_list_id } = await req.json()
 
-    if (!price_list_id)
-      return NextResponse.json({ ok: false, error: "price_list_id required" }, { status: 400 })
+    if (!price_list_id) return NextResponse.json({ ok: false, error: "price_list_id required" }, { status: 400 })
 
     // Load list — join warehouse to get base_currency
     const { data: listRow, error: listErr } = await supabase
@@ -25,11 +24,10 @@ export async function POST(req: NextRequest) {
       .eq("id", price_list_id)
       .single()
 
-    if (listErr || !listRow)
-      return NextResponse.json({ ok: false, error: "price list not found" }, { status: 404 })
+    if (listErr || !listRow) return NextResponse.json({ ok: false, error: "price list not found" }, { status: 404 })
 
     const fromCurrency: string | null = listRow.warehouse?.base_currency ?? null
-    const toCurrency:   string        = listRow.currency
+    const toCurrency: string = listRow.currency
 
     // Auto-resolve FX rate once for the entire batch
     let resolvedFxRate: number | null = null
@@ -46,14 +44,14 @@ export async function POST(req: NextRequest) {
     }
 
     const list: PriceListConfig = {
-      id:               listRow.id,
-      name:             listRow.name,
-      pricing_base:     listRow.pricing_base,
-      currency:         toCurrency,
-      from_currency:    fromCurrency,
+      id: listRow.id,
+      name: listRow.name,
+      pricing_base: listRow.pricing_base,
+      currency: toCurrency,
+      from_currency: fromCurrency,
       resolved_fx_rate: resolvedFxRate,
-      rules:            listRow.rules?.[0] ?? null,
-      fee_rules:        listRow.fee_rules ?? [],
+      rules: listRow.rules?.[0] ?? null,
+      fee_rules: listRow.fee_rules ?? [],
     }
 
     // Load all products with costs + pvp
@@ -63,43 +61,41 @@ export async function POST(req: NextRequest) {
 
     if (prodErr) throw prodErr
 
-    const now      = new Date().toISOString()
-    const batch    = (products ?? []).map((p: any) => {
+    const now = new Date().toISOString()
+    const batch = (products ?? []).map((p: any) => {
       const costRow = p.costs?.[0]
       const input: ProductInput = {
-        product_id:           p.id,
-        supplier_cost:        costRow?.supplier_cost ?? null,
+        product_id: p.id,
+        supplier_cost: costRow?.supplier_cost ?? null,
         import_shipping_cost: costRow?.import_shipping_cost ?? list.rules?.default_import_shipping_cost ?? 0,
-        pvp_editorial:        p.pvp_editorial ?? null,
+        pvp_editorial: p.pvp_editorial ?? null,
       }
       const calc = calculatePrice(list, input)
       return {
-        product_id:           p.id,
-        price_list_id:        price_list_id,
-        calculated_price:     calc.calculated_price,
-        calculated_margin:    calc.calculated_margin,
-        base_cost:            calc.total_cost,
-        base_pvp:             calc.pvp_editorial,
-        pricing_base_used:    calc.pricing_base_used,
-        fx_used:              calc.fx_rate,
-        commission_amount:    calc.commission_amount,
-        fixed_fee_amount:     calc.fixed_fee_amount,
+        product_id: p.id,
+        price_list_id: price_list_id,
+        calculated_price: calc.calculated_price,
+        calculated_margin: calc.calculated_margin,
+        base_cost: calc.total_cost,
+        base_pvp: calc.pvp_editorial,
+        pricing_base_used: calc.pricing_base_used,
+        fx_used: calc.fx_rate,
+        commission_amount: calc.commission_amount,
+        fixed_fee_amount: calc.fixed_fee_amount,
         shipping_cost_amount: calc.shipping_cost_amount,
-        calculation_json:     calc,
-        has_warnings:         calc.warnings.length > 0,
-        margin_below_min:     calc.margin_below_min,
-        updated_at:           now,
+        calculation_json: calc,
+        has_warnings: calc.warnings.length > 0,
+        margin_below_min: calc.margin_below_min,
+        updated_at: now,
       }
     })
 
     // Upsert in chunks of 200
     let upserted = 0
-    const CHUNK  = 200
+    const CHUNK = 200
     for (let i = 0; i < batch.length; i += CHUNK) {
-      const chunk      = batch.slice(i, i + CHUNK)
-      const { error }  = await supabase
-        .from("product_prices")
-        .upsert(chunk, { onConflict: "product_id,price_list_id" })
+      const chunk = batch.slice(i, i + CHUNK)
+      const { error } = await supabase.from("product_prices").upsert(chunk, { onConflict: "product_id,price_list_id" })
       if (error) throw error
       upserted += chunk.length
     }

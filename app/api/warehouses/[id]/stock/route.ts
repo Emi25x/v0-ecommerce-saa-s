@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
 const PAGE_SIZE = 50
 
@@ -12,15 +12,15 @@ const PAGE_SIZE = 50
  *     (ej: stock_by_source->>'libral' IS NOT NULL para fuente "Libral Argentina")
  *     Si no hay datos en stock_by_source aún, fallback: todos los productos con stock > 0.
  */
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createClient()
     const { id: warehouseId } = await params
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
@@ -103,10 +103,7 @@ export async function GET(
       .range(offset, offset + PAGE_SIZE - 1)
 
     // Always filter by stock > 0 for both data and count
-    let countQ = supabase
-      .from("products")
-      .select("*", { count: "exact", head: true })
-      .gt("stock", 0)
+    let countQ = supabase.from("products").select("*", { count: "exact", head: true }).gt("stock", 0)
 
     if (hasSourceData) {
       // Filtrar por source_key en stock_by_source
@@ -136,15 +133,24 @@ export async function GET(
         data_source: "products_error",
         linked_sources: sourceNames,
         source_keys: sourceKeys,
-        pagination: { total: totalCount ?? 0, page, page_size: PAGE_SIZE, total_pages: Math.ceil((totalCount ?? 0) / PAGE_SIZE) },
+        pagination: {
+          total: totalCount ?? 0,
+          page,
+          page_size: PAGE_SIZE,
+          total_pages: Math.ceil((totalCount ?? 0) / PAGE_SIZE),
+        },
         stats: { total_skus: totalCount ?? 0, total_units: 0, matched_skus: 0, unmatched_skus: 0 },
         error: prodErr.message,
       })
     }
 
     const prodItems = (prodData ?? []) as Array<{
-      id: string; sku: string | null; title: string | null
-      stock: number | null; cost_price: number | null; stock_by_source: Record<string, number> | null
+      id: string
+      sku: string | null
+      title: string | null
+      stock: number | null
+      cost_price: number | null
+      stock_by_source: Record<string, number> | null
     }>
 
     // ML enrichment
@@ -214,10 +220,9 @@ async function catalogModeResponse({ supabase, warehouseId, warehouse, sourceNam
   // Query catalog items WITHOUT inline join to avoid PostgREST join issues
   let catQ = supabase
     .from("supplier_catalog_items")
-    .select(
-      "id, supplier_ean, supplier_sku, title, stock_quantity, price_original, matched_by, product_id",
-      { count: "exact" }
-    )
+    .select("id, supplier_ean, supplier_sku, title, stock_quantity, price_original, matched_by, product_id", {
+      count: "exact",
+    })
     .eq("warehouse_id", warehouseId)
     .order("created_at", { ascending: false })
     .range(offset, offset + PAGE_SIZE - 1)
@@ -245,7 +250,11 @@ async function catalogModeResponse({ supabase, warehouseId, warehouse, sourceNam
 
   const [{ count: catTotalCount }, { count: matchedCount }] = await Promise.all([
     supabase.from("supplier_catalog_items").select("*", { count: "exact", head: true }).eq("warehouse_id", warehouseId),
-    supabase.from("supplier_catalog_items").select("*", { count: "exact", head: true }).eq("warehouse_id", warehouseId).not("product_id", "is", null),
+    supabase
+      .from("supplier_catalog_items")
+      .select("*", { count: "exact", head: true })
+      .eq("warehouse_id", warehouseId)
+      .not("product_id", "is", null),
   ])
 
   const totalSKUs = catTotalCount ?? 0
@@ -273,17 +282,19 @@ async function catalogModeResponse({ supabase, warehouseId, warehouse, sourceNam
     linked_sources: sourceNames,
     source_keys: [],
     pagination: { total: reliableTotal, page, page_size: PAGE_SIZE, total_pages: Math.ceil(reliableTotal / PAGE_SIZE) },
-    stats: { total_skus: totalSKUs, total_units: totalUnits, matched_skus: matchedSKUs, unmatched_skus: totalSKUs - matchedSKUs },
+    stats: {
+      total_skus: totalSKUs,
+      total_units: totalUnits,
+      matched_skus: matchedSKUs,
+      unmatched_skus: totalSKUs - matchedSKUs,
+    },
   })
 }
 
 async function fetchProductMap(supabase: any, productIds: string[]) {
   const productMap: Record<string, { id: string; sku: string | null; title: string | null }> = {}
   if (productIds.length === 0) return productMap
-  const { data: products, error } = await supabase
-    .from("products")
-    .select("id, sku, title")
-    .in("id", productIds)
+  const { data: products, error } = await supabase.from("products").select("id, sku, title").in("id", productIds)
   if (error) console.error("[WAREHOUSE STOCK] fetchProductMap error:", error.message)
   for (const p of products ?? []) {
     if (!p.id) continue

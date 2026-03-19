@@ -1,4 +1,4 @@
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 import { NextRequest, NextResponse } from "next/server"
 
 /**
@@ -12,10 +12,10 @@ import { NextRequest, NextResponse } from "next/server"
  */
 export async function POST(request: NextRequest) {
   const supabase = createAdminClient()
-  const body     = await request.json()
+  const body = await request.json()
 
   const warehouseId: string = body.warehouse_id
-  const dryRun: boolean     = body.dry_run === true
+  const dryRun: boolean = body.dry_run === true
 
   if (!warehouseId) {
     return NextResponse.json({ error: "warehouse_id requerido" }, { status: 400 })
@@ -42,10 +42,7 @@ export async function POST(request: NextRequest) {
 
   // ── Fetch products by EAN ──────────────────────────────────────────────────
   const eans = [...totals.keys()]
-  const { data: products } = await supabase
-    .from("products")
-    .select("id, ean")
-    .in("ean", eans)
+  const { data: products } = await supabase.from("products").select("id, ean").in("ean", eans)
 
   const eanToProductId = new Map<string, string>()
   for (const p of products ?? []) {
@@ -59,31 +56,28 @@ export async function POST(request: NextRequest) {
       product_found: eanToProductId.has(ean),
     }))
     return NextResponse.json({
-      ok:         true,
-      dry_run:    true,
+      ok: true,
+      dry_run: true,
       total_eans: totals.size,
-      matched:    eanToProductId.size,
-      not_found:  totals.size - eanToProductId.size,
+      matched: eanToProductId.size,
+      not_found: totals.size - eanToProductId.size,
       preview,
     })
   }
 
   // ── Update products.stock ──────────────────────────────────────────────────
-  let updated  = 0
+  let updated = 0
   let notFound = 0
-  const CHUNK  = 200
+  const CHUNK = 200
 
   const updates = [...totals.entries()]
     .map(([ean, qty]) => ({ id: eanToProductId.get(ean), qty }))
-    .filter(u => u.id != null)
+    .filter((u) => u.id != null)
 
   for (let i = 0; i < updates.length; i += CHUNK) {
     const chunk = updates.slice(i, i + CHUNK)
     for (const u of chunk) {
-      const { error } = await supabase
-        .from("products")
-        .update({ stock: u.qty })
-        .eq("id", u.id!)
+      const { error } = await supabase.from("products").update({ stock: u.qty }).eq("id", u.id!)
       if (error) continue
       updated++
     }
@@ -92,7 +86,7 @@ export async function POST(request: NextRequest) {
   notFound = totals.size - eanToProductId.size
 
   return NextResponse.json({
-    ok:        true,
+    ok: true,
     updated,
     not_found: notFound,
     total_eans: totals.size,
@@ -104,21 +98,22 @@ export async function POST(request: NextRequest) {
  * Devuelve resumen de stock por proveedor para un warehouse
  */
 export async function GET(request: NextRequest) {
-  const supabase    = createAdminClient()
+  const supabase = createAdminClient()
   const warehouseId = new URL(request.url).searchParams.get("warehouse_id")
 
-  const query = supabase
-    .from("supplier_stock")
-    .select("supplier_id, ean, quantity, updated_at, suppliers(name, code)")
+  const query = supabase.from("supplier_stock").select("supplier_id, ean, quantity, updated_at, suppliers(name, code)")
   if (warehouseId) query.eq("warehouse_id", warehouseId as any)
 
   const { data, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   // Summarize per supplier
-  const bySupplier = new Map<string, { name: string; code: string; eans: number; total_stock: number; updated_at: string | null }>()
+  const bySupplier = new Map<
+    string,
+    { name: string; code: string; eans: number; total_stock: number; updated_at: string | null }
+  >()
   for (const row of data ?? []) {
-    const sid  = row.supplier_id
+    const sid = row.supplier_id
     const name = (row as any).suppliers?.name ?? sid
     const code = (row as any).suppliers?.code ?? sid
     if (!bySupplier.has(sid)) bySupplier.set(sid, { name, code, eans: 0, total_stock: 0, updated_at: null })
@@ -129,7 +124,7 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json({
-    ok:        true,
+    ok: true,
     warehouse_id: warehouseId,
     suppliers: [...bySupplier.values()],
     total_eans: data?.length ?? 0,

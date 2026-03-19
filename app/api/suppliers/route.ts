@@ -1,4 +1,4 @@
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 import { NextResponse } from "next/server"
 
 /**
@@ -9,10 +9,7 @@ export async function GET() {
   try {
     const supabase = createAdminClient()
 
-    const { data: suppliers, error } = await supabase
-      .from("suppliers")
-      .select("*")
-      .order("name")
+    const { data: suppliers, error } = await supabase.from("suppliers").select("*").order("name")
 
     if (error) throw error
 
@@ -44,10 +41,9 @@ export async function POST(request: Request) {
     }
 
     // Try insert, progressively truncating code if the column is too short
-    const lengthsToTry = [
-      payload.code?.length ?? 0,
-      20, 10, 5, 2,
-    ].filter((v, i, a) => v > 0 && a.indexOf(v) === i).sort((a, b) => b - a)
+    const lengthsToTry = [payload.code?.length ?? 0, 20, 10, 5, 2]
+      .filter((v, i, a) => v > 0 && a.indexOf(v) === i)
+      .sort((a, b) => b - a)
 
     let lastError: any = null
     for (const maxLen of lengthsToTry) {
@@ -59,7 +55,8 @@ export async function POST(request: Request) {
 
       if (!error) return NextResponse.json({ supplier })
 
-      const isLengthError = error.message?.includes("character varying") ||
+      const isLengthError =
+        error.message?.includes("character varying") ||
         error.message?.includes("too long") ||
         error.message?.includes("value too long")
 
@@ -74,4 +71,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }
-

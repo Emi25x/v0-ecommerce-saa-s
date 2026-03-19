@@ -51,6 +51,14 @@
     {
       "path": "/api/cron/jobs",
       "schedule": "0 */12 * * *"
+    },
+    {
+      "path": "/api/cron/ml-matcher-tick",
+      "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/cron/resume-imports",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

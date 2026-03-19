@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextResponse } from "next/server"
 
 export async function GET() {
@@ -32,7 +32,7 @@ export async function GET() {
           console.log(`[v0] ${source.name} - HEAD devolvió ${response.status}, fallback a GET Range`)
           response = await fetch(source.url_template, {
             method: "GET",
-            headers: { "Range": "bytes=0-2048" },
+            headers: { Range: "bytes=0-2048" },
           })
           fallbackUsed = true
         }
@@ -41,7 +41,9 @@ export async function GET() {
         const contentLength = response.headers.get("content-length")
         const etag = response.headers.get("etag")
 
-        console.log(`[v0] ${source.name} - status:${response.status} fallback:${fallbackUsed} Last-Modified:${lastModified} Content-Length:${contentLength}`)
+        console.log(
+          `[v0] ${source.name} - status:${response.status} fallback:${fallbackUsed} Last-Modified:${lastModified} Content-Length:${contentLength}`,
+        )
 
         results.push({
           name: source.name,

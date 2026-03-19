@@ -1,21 +1,19 @@
-import { createClient } from "@/lib/supabase/server"
+import { type NextRequest } from "next/server"
+import { createClient } from "@/lib/db/server"
+import { executeSyncStockBatch } from "@/domains/mercadolibre/sync/stock"
+import { getBestIdentifier } from "@/domains/mercadolibre/publications/identifier-extractor"
 import { NextResponse } from "next/server"
+import { startRun } from "@/lib/process-runs"
+import { requireCron } from "@/lib/auth/require-auth"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300 // 5 minutos
 
-export async function GET(request: Request) {
-  try {
-    // En Vercel, los crons están protegidos por defecto
-    const authHeader = request.headers.get("authorization")
-    if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      // Solo verificar si CRON_SECRET está configurado
-      const isVercelCron = request.headers.get("x-vercel-cron") === "true"
-      if (!isVercelCron && process.env.NODE_ENV === "production") {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-      }
-    }
+export async function GET(request: NextRequest) {
+  const cronAuth = await requireCron(request)
+  if (cronAuth.error) return cronAuth.response
 
+  try {
     const supabase = await createClient()
 
     // Obtener todas las cuentas ML con auto_sync_stock habilitado
@@ -33,59 +31,64 @@ export async function GET(request: Request) {
       return NextResponse.json({ message: "No accounts with auto_sync_stock enabled" })
     }
 
+    const run = await startRun(supabase, "ml_sync_stock", "ML Sync Stock (cron)")
     const results = []
+    let totalLinked = 0,
+      totalProcessed = 0,
+      totalErrors = 0
 
     for (const account of accounts) {
       try {
         // 1. Primero vincular publicaciones sin product_id
         const linkResult = await linkPublicationsToProducts(supabase, account)
-        
-        // 2. Luego sincronizar stock
-        const baseUrl = process.env.VERCEL_URL 
-          ? `https://${process.env.VERCEL_URL}` 
-          : process.env.NEXT_PUBLIC_VERCEL_URL || "http://localhost:3000"
-        
-        const syncResponse = await fetch(`${baseUrl}/api/ml/sync-stock`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ account_id: account.id })
+
+        // 2. Luego sincronizar stock (llamada directa, sin self-fetch)
+        const syncResult = await executeSyncStockBatch(supabase, {
+          account_id: account.id,
+          limit: 200,
         })
-        
-        const syncResult = await syncResponse.json()
-        
+
+        totalLinked += syncResult.linked ?? 0
+        totalProcessed += syncResult.processed ?? 0
+        totalErrors += syncResult.errors ?? 0
+
         results.push({
           account: account.nickname,
           linked: linkResult,
-          sync: syncResult
+          sync: syncResult,
         })
       } catch (error) {
+        totalErrors++
         console.error(`Error processing account ${account.nickname}:`, error)
         results.push({
           account: account.nickname,
-          error: error instanceof Error ? error.message : "Unknown error"
+          error: error instanceof Error ? error.message : "Unknown error",
         })
       }
     }
 
+    await run.complete({
+      rows_processed: totalProcessed,
+      rows_updated: totalLinked,
+      rows_failed: totalErrors,
+      log_json: { accounts_count: accounts.length, results },
+    })
+
     return NextResponse.json({
       success: true,
       processed: accounts.length,
-      results
+      results,
     })
-
   } catch (error) {
     console.error("Error in sync-ml-stock cron:", error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 })
   }
 }
 
 // Función para vincular publicaciones con productos por EAN
 async function linkPublicationsToProducts(
   supabase: any,
-  account: { id: string; nickname: string; access_token: string; ml_user_id: string }
+  account: { id: string; nickname: string; access_token: string; ml_user_id: string },
 ) {
   // Obtener publicaciones sin product_id
   const { data: unlinkedPubs, error: pubsError } = await supabase
@@ -111,7 +114,7 @@ async function linkPublicationsToProducts(
       // Obtener detalles de ML
       const response = await fetch(
         `https://api.mercadolibre.com/items?ids=${itemIds}&attributes=id,seller_sku,seller_custom_field,attributes`,
-        { headers: { Authorization: `Bearer ${account.access_token}` } }
+        { headers: { Authorization: `Bearer ${account.access_token}` } },
       )
 
       if (!response.ok) continue
@@ -125,26 +128,12 @@ async function linkPublicationsToProducts(
         const pub = batch.find((p: any) => p.ml_item_id === item.id)
         if (!pub) continue
 
-        // Extraer EAN: primero seller_sku, luego seller_custom_field, luego GTIN
-        let ean = item.seller_sku || item.seller_custom_field || null
-
-        if (!ean && item.attributes) {
-          for (const attr of item.attributes) {
-            if (["GTIN", "EAN", "ISBN"].includes(attr.id) && attr.value_name) {
-              ean = attr.value_name
-              break
-            }
-          }
-        }
-
+        // Extraer EAN usando extractor compartido
+        const ean = getBestIdentifier(item)
         if (!ean) continue
 
         // Buscar producto por EAN
-        const { data: product } = await supabase
-          .from("products")
-          .select("id")
-          .eq("ean", ean)
-          .maybeSingle()
+        const { data: product } = await supabase.from("products").select("id").eq("ean", ean).maybeSingle()
 
         if (product) {
           // Vincular publicación con producto
@@ -162,8 +151,7 @@ async function linkPublicationsToProducts(
       }
 
       // Delay entre lotes
-      await new Promise(resolve => setTimeout(resolve, 200))
-
+      await new Promise((resolve) => setTimeout(resolve, 200))
     } catch (error) {
       console.error("Error processing batch:", error)
       errors++
@@ -173,6 +161,6 @@ async function linkPublicationsToProducts(
   return {
     unlinked: unlinkedPubs.length,
     linked,
-    errors
+    errors,
   }
 }

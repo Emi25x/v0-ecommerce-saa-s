@@ -1,0 +1,609 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Loader2, CheckCircle, XCircle, RefreshCw, Package, TrendingUp } from "lucide-react"
+
+interface AccountSyncStatus {
+  id: string
+  nickname: string
+  auto_sync_stock: boolean
+  auto_sync_new_listings: boolean
+  last_stock_sync_at: string | null
+  last_new_listings_sync_at: string | null
+  stock_sync_count: number
+  new_listings_count: number
+}
+
+interface AccountStats {
+  total_in_ml: number
+  total_publications: number
+  linked_publications: number
+  active_publications: number
+  unlinked_publications: number
+  pending_import: number
+}
+
+export function SyncStatusCard() {
+  const [accounts, setAccounts] = useState<AccountSyncStatus[]>([])
+  const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState<string | null>(null)
+  const [syncResult, setSyncResult] = useState<string | null>(null)
+  const [accountStats, setAccountStats] = useState<Record<string, AccountStats>>({})
+  const [autoSyncing, setAutoSyncing] = useState(false)
+  const [autoSyncResult, setAutoSyncResult] = useState<string | null>(null)
+  const [syncingAll, setSyncingAll] = useState(false)
+  const [syncAllResult, setSyncAllResult] = useState<string | null>(null)
+  const [batchImporting, setBatchImporting] = useState<string | null>(null)
+  const [batchImportProgress, setBatchImportProgress] = useState<Record<string, any>>({})
+  const [batchImportJobIds, setBatchImportJobIds] = useState<Record<string, string>>({})
+  const [advancingImport, setAdvancingImport] = useState(false)
+  const [advanceResult, setAdvanceResult] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetchAccounts()
+  }, [])
+
+  const fetchAccounts = async () => {
+    try {
+      const response = await fetch("/api/mercadolibre/accounts")
+      const data = await response.json()
+      if (data.accounts) {
+        setAccounts(data.accounts)
+        // Fetch stats for each account
+        for (const account of data.accounts) {
+          fetchAccountStats(account.id)
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching accounts:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchAccountStats = async (accountId: string) => {
+    try {
+      const response = await fetch(`/api/ml/account-stats?account_id=${accountId}`)
+      const stats = await response.json()
+      if (!stats.error) {
+        setAccountStats((prev) => ({ ...prev, [accountId]: stats }))
+      }
+    } catch (error) {
+      console.error("Error fetching account stats:", error)
+    }
+  }
+
+  const handleAutoSyncComplete = async () => {
+    if (accounts.length === 0) {
+      setAutoSyncResult("No hay cuentas para sincronizar")
+      return
+    }
+
+    setAutoSyncing(true)
+    setAutoSyncResult("Sincronizando publicaciones de a 50 por vez...")
+
+    try {
+      const account = accounts[0] // Primera cuenta
+      let offset = 0
+      let hasMore = true
+      let totalProcessed = 0
+
+      while (hasMore && totalProcessed < 500) {
+        // Máximo 500 items por sesión
+        setAutoSyncResult(`Procesando items ${offset}-${offset + 50}... (total: ${totalProcessed})`)
+
+        const response = await fetch("/api/ml/sync-stock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            account_id: account.id,
+            limit: 50,
+            offset: offset,
+            auto_continue: false,
+          }),
+        })
+
+        if (!response.ok) {
+          const error = await response.json()
+          if (response.status === 429) {
+            setAutoSyncResult(
+              `Rate limit alcanzado después de ${totalProcessed} items. Esperá 5 minutos y apretá de nuevo.`,
+            )
+            break
+          }
+          setAutoSyncResult(`Error: ${error.error}`)
+          break
+        }
+
+        const data = await response.json()
+        totalProcessed += data.processed
+        hasMore = data.has_more
+        offset = data.next_offset
+
+        setAutoSyncResult(`Procesados ${totalProcessed} - Progreso: ${data.progress}`)
+
+        if (!hasMore) {
+          setAutoSyncResult(`✓ Completado: ${totalProcessed} publicaciones sincronizadas`)
+          break
+        }
+
+        // Delay de 2 segundos entre batches
+        await new Promise((resolve) => setTimeout(resolve, 2000))
+      }
+
+      if (hasMore && totalProcessed >= 500) {
+        setAutoSyncResult(`✓ ${totalProcessed} items sincronizados. Apretá de nuevo para continuar.`)
+      }
+
+      // Refrescar cuentas
+      setTimeout(() => {
+        fetchAccounts()
+      }, 2000)
+    } catch (error) {
+      console.error("Error auto sync:", error)
+      setAutoSyncResult("Error al sincronizar")
+    } finally {
+      setAutoSyncing(false)
+    }
+  }
+
+  const handleAdvanceImport = async () => {
+    setAdvancingImport(true)
+    setAdvanceResult(null)
+    try {
+      const response = await fetch(`/api/ml/import/run?secret=${process.env.NEXT_PUBLIC_CRON_SECRET || ""}`, {
+        method: "POST",
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.ok) {
+        setAdvanceResult(`Error: ${data.error || "Failed"}`)
+        setTimeout(() => setAdvanceResult(null), 5000)
+        return
+      }
+
+      setAdvanceResult(`✓ Ejecutados ${data.ticksRun} ticks | Offset: ${data.offset_before} → ${data.offset_after}`)
+      setTimeout(() => setAdvanceResult(null), 5000)
+
+      // Actualizar progreso si hay un job activo siendo monitoreado
+      Object.keys(batchImportJobIds).forEach((accountId) => {
+        const jobId = batchImportJobIds[accountId]
+        fetch(`/api/ml/import/status?job_id=${jobId}`)
+          .then((r) => r.json())
+          .then((statusData) => {
+            setBatchImportProgress((prev) => ({
+              ...prev,
+              [accountId]: statusData,
+            }))
+          })
+          .catch(console.error)
+      })
+    } catch (error: any) {
+      console.error("Error advancing import:", error)
+      setAdvanceResult(`Error: ${error.message}`)
+      setTimeout(() => setAdvanceResult(null), 5000)
+    } finally {
+      setAdvancingImport(false)
+    }
+  }
+
+  const handleBatchImport = async (accountId: string) => {
+    setBatchImporting(accountId)
+    try {
+      // Iniciar importación
+      const startResponse = await fetch("/api/ml/import/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: accountId }),
+      })
+
+      const startData = await startResponse.json()
+
+      if (!startResponse.ok || !startData.success) {
+        const errorMsg = startData.message || startData.error || "Error iniciando importación"
+        alert(errorMsg)
+        setBatchImporting(null)
+        return
+      }
+
+      const jobId = startData.job_id
+
+      // Guardar job_id en state y localStorage
+      setBatchImportJobIds((prev) => ({ ...prev, [accountId]: jobId }))
+      localStorage.setItem(`ml_import_job_${accountId}`, jobId)
+
+      // Monitorear progreso cada 3 segundos
+      const interval = setInterval(async () => {
+        try {
+          const statusResponse = await fetch(`/api/ml/import/status?job_id=${jobId}`)
+
+          if (!statusResponse.ok) {
+            const errorData = await statusResponse.json()
+            console.error("Error fetching import status:", errorData)
+
+            if (statusResponse.status === 404) {
+              // Job no encontrado, mostrar error y detener monitoreo
+              setBatchImportProgress((prev) => ({
+                ...prev,
+                [accountId]: {
+                  error: "Job no encontrado. Iniciá una nueva importación.",
+                  status: "failed",
+                },
+              }))
+              clearInterval(interval)
+              setBatchImporting(null)
+              localStorage.removeItem(`ml_import_job_${accountId}`)
+            }
+            return
+          }
+
+          const statusData = await statusResponse.json()
+
+          setBatchImportProgress((prev) => ({
+            ...prev,
+            [accountId]: statusData,
+          }))
+
+          // Si completó o falló, detener monitoreo
+          if (statusData.status === "completed" || statusData.status === "failed") {
+            clearInterval(interval)
+            setBatchImporting(null)
+            localStorage.removeItem(`ml_import_job_${accountId}`)
+            fetchAccounts() // Actualizar estadísticas
+          }
+        } catch (error) {
+          console.error("Error monitoring import:", error)
+        }
+      }, 3000)
+    } catch (error: any) {
+      console.error("Error in batch import:", error)
+      alert("Error: " + error.message)
+      setBatchImporting(null)
+    }
+  }
+
+  const handleSyncStock = async (accountId: string) => {
+    setSyncing(accountId)
+    setSyncResult(null)
+    try {
+      const response = await fetch("/api/ml/sync-stock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: accountId, limit: 100 }),
+      })
+      const data = await response.json()
+
+      if (data.rate_limited) {
+        setSyncResult("Límite de API. Intenta más tarde.")
+      } else if (data.error) {
+        setSyncResult(`Error: ${data.error}`)
+      } else {
+        setSyncResult(
+          `Procesados: ${data.processed}, Vinculados: ${data.linked}, Sin EAN: ${data.no_ean || 0}, Sin producto: ${data.no_product_match || 0}${data.has_more ? " - Hay más" : ""}`,
+        )
+      }
+
+      // NO refrescar automáticamente para evitar rate limit
+      // Solo mostrar el resultado
+      setTimeout(() => setSyncResult(null), 8000)
+    } catch (error) {
+      console.error("Error syncing stock:", error)
+      setSyncResult("Error al sincronizar")
+    } finally {
+      setSyncing(null)
+    }
+  }
+
+  const handleSyncAll = async () => {
+    setSyncingAll(true)
+    setSyncAllResult("Iniciando sincronización completa...")
+
+    try {
+      // Implementación para sincronizar todas las cuentas
+      for (const account of accounts) {
+        setSyncAllResult(`Iniciando ${account.nickname}...`)
+
+        const response = await fetch("/api/ml/sync-all", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ account_id: account.id }),
+        })
+
+        if (!response.ok) {
+          const error = await response.json()
+          setSyncAllResult(`Error en ${account.nickname}: ${error.error}`)
+          break
+        }
+
+        setSyncAllResult(`${account.nickname}: Sincronización iniciada en segundo plano...`)
+      }
+
+      setSyncAllResult(`✓ Sincronización completa iniciada.`)
+      // Refrescar cada 15 segundos para ver progreso
+      const interval = setInterval(() => fetchAccounts(), 15000)
+      setTimeout(() => {
+        clearInterval(interval)
+        setSyncAllResult(null)
+      }, 120000) // 2 minutos de monitoreo
+    } catch (error) {
+      console.error("Error sync all:", error)
+      setSyncAllResult("Error al iniciar sincronización")
+    } finally {
+      setSyncingAll(false)
+    }
+  }
+
+  const isToday = (dateStr: string | null) => {
+    if (!dateStr) return false
+    const date = new Date(dateStr)
+    const today = new Date()
+    return date.toDateString() === today.toDateString()
+  }
+
+  const isThisWeek = (dateStr: string | null) => {
+    if (!dateStr) return false
+    const date = new Date(dateStr)
+    const today = new Date()
+    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)
+    return date >= weekAgo
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <RefreshCw className="h-5 w-5" />
+            Estado de Sincronización ML
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-center py-8">
+          <Loader2 className="h-6 w-6 animate-spin" />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (accounts.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <RefreshCw className="h-5 w-5" />
+            Estado de Sincronización ML
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">No hay cuentas de ML conectadas</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5" />
+              Estado de Sincronización ML
+            </CardTitle>
+            <CardDescription>Última actualización de stock y publicaciones</CardDescription>
+          </div>
+        </div>
+        {autoSyncResult && (
+          <div className="mt-2 text-sm text-green-700 bg-green-50 border border-green-200 p-2 rounded">
+            {autoSyncResult}
+          </div>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {accounts.map((account) => {
+          const stockSyncedToday = isToday(account.last_stock_sync_at)
+          const newListingsThisWeek = isThisWeek(account.last_new_listings_sync_at)
+
+          return (
+            <div key={account.id} className="p-3 border rounded-lg space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">{account.nickname}</span>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleSyncStock(account.id)}
+                    disabled={syncing === account.id || batchImporting === account.id}
+                    className="bg-transparent"
+                  >
+                    {syncing === account.id ? <Loader2 className="h-3 w-3 animate-spin" /> : "Sincronizar"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={() => handleBatchImport(account.id)}
+                    disabled={batchImporting === account.id || syncing === account.id}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                  >
+                    {batchImporting === account.id ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        Importando...
+                      </>
+                    ) : (
+                      "Importación Completa"
+                    )}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleAdvanceImport}
+                    disabled={advancingImport}
+                    className="border-blue-600 text-blue-600 hover:bg-blue-50 bg-transparent"
+                  >
+                    {advancingImport ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        Avanzando...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="h-3 w-3 mr-1" />
+                        Avanzar Importación
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+              {syncResult && <div className="text-sm text-primary bg-primary/10 p-2 rounded">{syncResult}</div>}
+              {advanceResult && <div className="text-sm text-blue-600 bg-blue-50 p-2 rounded">{advanceResult}</div>}
+
+              <div className="grid grid-cols-2 gap-3">
+                {/* Stock Status */}
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Package className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Stock</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {stockSyncedToday ? (
+                      <Badge className="bg-green-500 text-white">
+                        <CheckCircle className="h-3 w-3 mr-1" />
+                        Actualizado hoy
+                      </Badge>
+                    ) : account.last_stock_sync_at ? (
+                      <Badge variant="outline" className="text-yellow-600 border-yellow-600">
+                        <XCircle className="h-3 w-3 mr-1" />
+                        {new Date(account.last_stock_sync_at).toLocaleDateString("es-AR")}
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-red-600 border-red-600">
+                        <XCircle className="h-3 w-3 mr-1" />
+                        Nunca
+                      </Badge>
+                    )}
+                  </div>
+                  {account.stock_sync_count > 0 && (
+                    <p className="text-xs text-muted-foreground">{account.stock_sync_count} productos</p>
+                  )}
+                </div>
+
+                {/* Publications Stats */}
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-medium">Publicaciones</span>
+                  </div>
+                  {accountStats[account.id] ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Badge className="bg-green-500 text-white">
+                          {accountStats[account.id].linked_publications} vinculadas
+                        </Badge>
+                        {accountStats[account.id].pending_import > 0 && (
+                          <Badge variant="outline" className="text-yellow-600 border-yellow-600">
+                            {accountStats[account.id].pending_import} pendientes
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {accountStats[account.id].total_in_ml} en ML / {accountStats[account.id].total_publications}{" "}
+                        importadas / {accountStats[account.id].unlinked_publications} sin producto
+                      </p>
+                    </div>
+                  ) : (
+                    <Badge variant="outline" className="text-muted-foreground">
+                      Cargando...
+                    </Badge>
+                  )}
+                </div>
+              </div>
+
+              {/* Auto-sync status */}
+              <div className="flex gap-2 text-xs">
+                <span className={account.auto_sync_stock ? "text-green-600" : "text-muted-foreground"}>
+                  {account.auto_sync_stock ? "Auto-sync stock activo" : "Auto-sync stock inactivo"}
+                </span>
+                <span className="text-muted-foreground">|</span>
+                <span className={account.auto_sync_new_listings ? "text-green-600" : "text-muted-foreground"}>
+                  {account.auto_sync_new_listings ? "Auto-publicar activo" : "Auto-publicar inactivo"}
+                </span>
+              </div>
+
+              {/* Batch import progress */}
+              {batchImportProgress[account.id] && (
+                <div className="space-y-2 p-3 bg-blue-50 border border-blue-200 rounded mt-2">
+                  {batchImportProgress[account.id].error ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium text-red-600">Error en Importación</span>
+                        <Badge variant="destructive">Error</Badge>
+                      </div>
+                      <p className="text-xs text-red-600">{batchImportProgress[account.id].error}</p>
+                      <Button
+                        size="sm"
+                        variant="default"
+                        onClick={() => {
+                          setBatchImportProgress((prev) => {
+                            const newProgress = { ...prev }
+                            delete newProgress[account.id]
+                            return newProgress
+                          })
+                        }}
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                      >
+                        Cerrar
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium">Importación por Lotes</span>
+                        <Badge
+                          variant={
+                            batchImportProgress[account.id].status === "completed"
+                              ? "default"
+                              : batchImportProgress[account.id].status === "failed"
+                                ? "destructive"
+                                : "secondary"
+                          }
+                        >
+                          {batchImportProgress[account.id].status}
+                        </Badge>
+                      </div>
+                      <div className="text-xs text-muted-foreground space-y-1">
+                        <div className="flex justify-between">
+                          <span>Progreso:</span>
+                          <span className="font-medium">{batchImportProgress[account.id].progress}%</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className="bg-blue-600 h-2 rounded-full transition-all"
+                            style={{ width: `${batchImportProgress[account.id].progress}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Procesadas: {batchImportProgress[account.id].processed_items || 0}</span>
+                          <span>Total: {batchImportProgress[account.id].total_items || 0}</span>
+                        </div>
+                        {batchImportProgress[account.id].failed_items > 0 && (
+                          <div className="text-red-600">Fallidas: {batchImportProgress[account.id].failed_items}</div>
+                        )}
+                        {batchImportProgress[account.id].error_message && (
+                          <div className="text-red-600">Error: {batchImportProgress[account.id].error_message}</div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </CardContent>
+    </Card>
+  )
+}

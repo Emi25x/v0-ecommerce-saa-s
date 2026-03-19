@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 import { NextResponse } from "next/server"
 
 /**
@@ -12,19 +12,22 @@ export async function POST(request: Request) {
     const { account_id, ml_item_id, product_id, matched_value } = body
 
     if (!account_id || !ml_item_id || !product_id) {
-      return NextResponse.json({ 
-        error: "account_id, ml_item_id y product_id son requeridos" 
-      }, { status: 400 })
+      return NextResponse.json(
+        {
+          error: "account_id, ml_item_id y product_id son requeridos",
+        },
+        { status: 400 },
+      )
     }
 
     const supabase = await createClient()
 
     // Usar función RPC atómica para el match (valida y actualiza ambas tablas en una transacción)
-    const { data: result, error: rpcError } = await supabase.rpc('manual_match_publication', {
+    const { data: result, error: rpcError } = await supabase.rpc("manual_match_publication", {
       p_account_id: account_id,
       p_ml_item_id: ml_item_id,
       p_product_id: product_id,
-      p_user_id: null // TODO: agregar user_id cuando se implemente auth
+      p_user_id: null, // TODO: agregar user_id cuando se implemente auth
     })
 
     if (rpcError) {
@@ -34,9 +37,12 @@ export async function POST(request: Request) {
 
     // La función RPC retorna { success: boolean, error?: string, message?: string }
     if (!result?.success) {
-      return NextResponse.json({ 
-        error: result?.error || "Error desconocido al crear match" 
-      }, { status: 400 })
+      return NextResponse.json(
+        {
+          error: result?.error || "Error desconocido al crear match",
+        },
+        { status: 400 },
+      )
     }
 
     // Obtener datos para respuesta
@@ -47,11 +53,7 @@ export async function POST(request: Request) {
       .eq("ml_item_id", ml_item_id)
       .single()
 
-    const { data: product } = await supabase
-      .from("products")
-      .select("id, sku, title")
-      .eq("id", product_id)
-      .single()
+    const { data: product } = await supabase.from("products").select("id, sku, title").eq("id", product_id).single()
 
     return NextResponse.json({
       success: true,
@@ -59,14 +61,14 @@ export async function POST(request: Request) {
       match: {
         publication: {
           ml_item_id: publication?.ml_item_id,
-          title: publication?.title
+          title: publication?.title,
         },
         product: {
           id: product?.id,
           sku: product?.sku,
-          title: product?.title
-        }
-      }
+          title: product?.title,
+        },
+      },
     })
   } catch (error: any) {
     console.error("[v0] Manual match error:", error)

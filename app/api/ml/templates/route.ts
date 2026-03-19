@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
 export async function GET(request: NextRequest) {
   try {
@@ -26,10 +26,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ templates })
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Error interno" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Error interno" }, { status: 500 })
   }
 }
 
@@ -63,10 +60,7 @@ export async function POST(request: NextRequest) {
 
     // Si es default, quitar el default de otras plantillas
     if (is_default) {
-      await supabase
-        .from("ml_publication_templates")
-        .update({ is_default: false })
-        .eq("account_id", account_id)
+      await supabase.from("ml_publication_templates").update({ is_default: false }).eq("account_id", account_id)
     }
 
     const { data: template, error } = await supabase
@@ -100,10 +94,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, template })
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Error interno" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Error interno" }, { status: 500 })
   }
 }
 
@@ -147,10 +138,7 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({ success: true, template })
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Error interno" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Error interno" }, { status: 500 })
   }
 }
 
@@ -165,10 +153,7 @@ export async function DELETE(request: NextRequest) {
 
     const supabase = await createClient()
 
-    const { error } = await supabase
-      .from("ml_publication_templates")
-      .delete()
-      .eq("id", id)
+    const { error } = await supabase.from("ml_publication_templates").delete().eq("id", id)
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
@@ -176,9 +161,6 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Error interno" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Error interno" }, { status: 500 })
   }
 }

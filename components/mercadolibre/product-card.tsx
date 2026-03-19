@@ -1,12 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { toast as reactToastify } from "react-toastify"
-const toast = (opts: { title?: string; description?: string; variant?: string }) => {
-  const msg = [opts.title, opts.description].filter(Boolean).join(": ")
-  if (opts.variant === "destructive") reactToastify.error(msg)
-  else reactToastify.success(msg)
-}
+import { toast } from "@/hooks/use-toast"
 import type { Product } from "@/types/product"
 
 const ProductCard = ({ product, onUpdate }: { product: Product; onUpdate: () => void }) => {

@@ -1,20 +1,16 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
-
-console.log("[v0] ========================================")
-console.log("[v0] IMPORT START ENDPOINT MODULE LOADING")
-console.log("[v0] ========================================")
+import { requireCron } from "@/lib/auth/require-auth"
+import { createClient } from "@/lib/db/server"
+import { executeBatchImport } from "@/lib/import/batch-import"
 
 export async function POST(request: NextRequest) {
-  console.log("[v0] ========================================")
-  console.log("[v0] POST /api/inventory/import/start - CALLED")
-  console.log("[v0] ========================================")
-
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
   try {
     const body = await request.json()
     const { sourceId, importMode } = body
 
-    console.log("[v0] Request body:", { sourceId, importMode })
+    console.log("[v0] POST /api/inventory/import/start", { sourceId, importMode })
 
     const supabase = await createClient()
 
@@ -39,14 +35,35 @@ export async function POST(request: NextRequest) {
 
     console.log("[v0] Created history record:", historyRecord.id)
 
-    // Iniciar importación en background (sin esperar)
-    fetch(`${request.nextUrl.origin}/api/inventory/import/process`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ historyId: historyRecord.id, sourceId, importMode }),
-    }).catch((error) => {
-      console.error("[v0] Error starting background import:", error)
-    })
+    // Iniciar importación en background (llamada directa, sin self-fetch)
+    executeBatchImport(sourceId, 0, importMode || "update", true)
+      .then(async (r) => {
+        console.log(`[v0] Import completed: created=${r.created}, updated=${r.updated}, failed=${r.failed}`)
+        const sb = await createClient()
+        await sb
+          .from("import_history")
+          .update({
+            status: r.success ? "success" : "error",
+            completed_at: new Date().toISOString(),
+            products_imported: r.created,
+            products_updated: r.updated,
+            products_failed: r.failed,
+            error_message: r.error ?? null,
+          })
+          .eq("id", historyRecord.id)
+      })
+      .catch(async (err) => {
+        console.error("[v0] Error in background import:", err)
+        const sb = await createClient()
+        await sb
+          .from("import_history")
+          .update({
+            status: "error",
+            error_message: err.message,
+            completed_at: new Date().toISOString(),
+          })
+          .eq("id", historyRecord.id)
+      })
 
     return NextResponse.json({ historyId: historyRecord.id })
   } catch (error: any) {

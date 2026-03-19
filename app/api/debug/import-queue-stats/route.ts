@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     // Service role para bypassear RLS
     const supabaseUrl = process.env.SUPABASE_URL!
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-    
+
     if (!supabaseUrl || !supabaseServiceKey) {
       console.error(`[DEBUG-QUEUE-STATS] Missing Supabase credentials`)
       return NextResponse.json({ error: "Server configuration error" }, { status: 500 })
@@ -32,12 +32,15 @@ export async function GET(request: NextRequest) {
 
     if (totalError) {
       console.error(`[DEBUG-QUEUE-STATS] Error counting total:`, totalError.message, totalError)
-      return NextResponse.json({ 
-        error: "Failed to count total", 
-        details: totalError.message 
-      }, { status: 500 })
+      return NextResponse.json(
+        {
+          error: "Failed to count total",
+          details: totalError.message,
+        },
+        { status: 500 },
+      )
     }
-    
+
     console.log(`[DEBUG-QUEUE-STATS] Total publications: ${totalPubs}`)
 
     // Matched publications (product_id NOT NULL)
@@ -66,7 +69,7 @@ export async function GET(request: NextRequest) {
 
     // Updated last hour - check both updated_at and created_at separately
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-    
+
     const { count: updatedLastHour, error: updatedError } = await supabase
       .from("ml_publications")
       .select("*", { count: "exact", head: true })
@@ -77,9 +80,9 @@ export async function GET(request: NextRequest) {
       console.error(`[DEBUG-QUEUE-STATS] Error counting updated last hour:`, updatedError)
       // Try fallback with created_at if updated_at fails
     }
-    
+
     let recentCount = updatedLastHour || 0
-    
+
     // Si no hay updated_at, intentar con created_at
     if (!updatedLastHour || updatedLastHour === 0) {
       const { count: createdLastHour, error: createdError } = await supabase
@@ -87,7 +90,7 @@ export async function GET(request: NextRequest) {
         .select("*", { count: "exact", head: true })
         .eq("account_id", accountId)
         .gte("created_at", oneHourAgo)
-      
+
       if (!createdError && createdLastHour) {
         recentCount = createdLastHour
       }

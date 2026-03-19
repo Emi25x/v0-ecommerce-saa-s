@@ -1,12 +1,17 @@
-import { NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
-import { runLibralStockImport } from "@/lib/libral/run-stock-import"
+import { type NextRequest, NextResponse } from "next/server"
+import { createClient } from "@/lib/db/server"
+import { runLibralStockImport } from "@/domains/suppliers/libral/stock-import"
+import { executeBatchImport } from "@/lib/import/batch-import"
+import { requireCron } from "@/lib/auth/require-auth"
 
 /**
  * POST /api/inventory/sources/run
  * Ejecuta una importación para una fuente específica usando su UUID
  */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
+
   try {
     const body = await request.json()
     const { source_id, mode = "update" } = body
@@ -16,10 +21,7 @@ export async function POST(request: Request) {
     // Validar que source_id sea un UUID válido
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     if (!source_id || !uuidRegex.test(source_id)) {
-      return NextResponse.json(
-        { error: "source_not_found", message: "Invalid source_id format" },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: "source_not_found", message: "Invalid source_id format" }, { status: 404 })
     }
 
     const supabase = await createClient()
@@ -33,10 +35,7 @@ export async function POST(request: Request) {
 
     if (sourceError || !source) {
       console.error(`[SOURCES-RUN] Fuente no encontrada:`, sourceError)
-      return NextResponse.json(
-        { error: "source_not_found", message: "Import source not found" },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: "source_not_found", message: "Import source not found" }, { status: 404 })
     }
 
     console.log(`[SOURCES-RUN] Fuente encontrada: ${source.name} (${source.feed_type})`)
@@ -45,7 +44,7 @@ export async function POST(request: Request) {
     if (!source.url_template) {
       return NextResponse.json(
         { error: "no_url_configured", message: "Source has no URL template configured" },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
@@ -63,10 +62,7 @@ export async function POST(request: Request) {
 
     if (historyError) {
       console.error(`[SOURCES-RUN] Error creando history:`, historyError)
-      return NextResponse.json(
-        { error: "failed_to_create_history", message: historyError.message },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: "failed_to_create_history", message: historyError.message }, { status: 500 })
     }
 
     console.log(`[SOURCES-RUN] History record creado: ${historyRecord.id}`)
@@ -102,22 +98,41 @@ export async function POST(request: Request) {
       })
     }
 
-    // Resto de fuentes: disparar el batch import en background
-    // Esto permite que el proceso continúe aunque el usuario cierre la ventana
-    const batchImportUrl = `${process.env.NEXT_PUBLIC_VERCEL_URL ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` : "http://localhost:3000"}/api/inventory/import/batch`
-
-    // No esperamos la respuesta - fire and forget
-    fetch(batchImportUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sourceId: source.id,
-        historyId: historyRecord.id,
-        mode: mode,
-      }),
-    }).catch((err) => {
-      console.error(`[SOURCES-RUN] Error disparando batch import:`, err)
-    })
+    // Resto de fuentes: ejecutar batch import directamente (sin self-fetch)
+    // Se ejecuta en background sin esperar el resultado
+    executeBatchImport(source.id, 0, mode as "update" | "upsert" | "create", true)
+      .then((r) => {
+        console.log(
+          `[SOURCES-RUN] Batch import completado: created=${r.created}, updated=${r.updated}, failed=${r.failed}`,
+        )
+        // Actualizar history record con resultado
+        createClient().then((sb) => {
+          sb.from("import_history")
+            .update({
+              status: r.success ? "success" : "error",
+              completed_at: new Date().toISOString(),
+              products_imported: r.created,
+              products_updated: r.updated,
+              products_failed: r.failed,
+              error_message: r.error ?? null,
+            })
+            .eq("id", historyRecord.id)
+            .then(() => {})
+        })
+      })
+      .catch((err) => {
+        console.error(`[SOURCES-RUN] Error en batch import:`, err)
+        createClient().then((sb) => {
+          sb.from("import_history")
+            .update({
+              status: "error",
+              completed_at: new Date().toISOString(),
+              error_message: err.message ?? "Unknown error",
+            })
+            .eq("id", historyRecord.id)
+            .then(() => {})
+        })
+      })
 
     return NextResponse.json({
       success: true,
@@ -131,7 +146,7 @@ export async function POST(request: Request) {
     console.error(`[SOURCES-RUN] Error general:`, error)
     return NextResponse.json(
       { error: "internal_error", message: error.message || "Internal server error" },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }

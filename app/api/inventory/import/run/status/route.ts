@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { requireCron } from "@/lib/auth/require-auth"
+import { createClient } from "@/lib/db/server"
 
 /**
  * GET /api/inventory/import/run/status?run_id=xxx
  * Retorna estado actual del run con contrato estable
  */
 export async function GET(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
   try {
     const supabase = await createClient()
     const { searchParams } = new URL(request.url)
@@ -15,11 +18,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "run_id es requerido" }, { status: 400 })
     }
 
-    const { data: run, error: runError } = await supabase
-      .from("import_runs")
-      .select("*")
-      .eq("id", run_id)
-      .single()
+    const { data: run, error: runError } = await supabase.from("import_runs").select("*").eq("id", run_id).single()
 
     if (runError || !run) {
       return NextResponse.json({ error: "Run no encontrado" }, { status: 404 })
@@ -58,13 +57,15 @@ export async function GET(request: NextRequest) {
       last_error: run.last_error || null,
       heartbeat_at: run.heartbeat_at,
       speed_rows_sec: Math.round(speed_rows_sec * 100) / 100,
-      eta_sec
+      eta_sec,
     })
-
   } catch (error: any) {
     console.error("[v0][RUN/STATUS] Error inesperado:", error)
-    return NextResponse.json({ 
-      error: error.message || "Error interno del servidor" 
-    }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: error.message || "Error interno del servidor",
+      },
+      { status: 500 },
+    )
   }
 }

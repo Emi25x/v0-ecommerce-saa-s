@@ -1,11 +1,15 @@
-import { createClient } from "@/lib/supabase/server"
-import { NextResponse } from "next/server"
+import { createClient } from "@/lib/db/server"
+import { type NextRequest, NextResponse } from "next/server"
+import { requireCron } from "@/lib/auth/require-auth"
 
 console.log("[v0] ========================================")
 console.log("[v0] Source verification endpoint loaded")
 console.log("[v0] ========================================")
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
+
   console.log("[v0] GET /api/inventory/sources/verify - STARTING")
 
   try {

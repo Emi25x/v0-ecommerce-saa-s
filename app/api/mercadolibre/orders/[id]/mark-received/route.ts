@@ -1,10 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/server"
 
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
     const supabase = await createClient()
-    const orderId = params.id
+    const orderId = id
     const { item_id } = await request.json()
 
     console.log(`[v0] Marking item ${item_id} from order ${orderId} as received`)

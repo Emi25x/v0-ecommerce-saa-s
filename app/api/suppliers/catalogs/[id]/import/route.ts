@@ -1,25 +1,25 @@
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createAdminClient } from "@/lib/db/admin"
 import { NextRequest, NextResponse } from "next/server"
 import * as XLSX from "xlsx"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type CatalogMode   = "create_only" | "update_only" | "create_and_update"
+type CatalogMode = "create_only" | "update_only" | "create_and_update"
 type OverwriteMode = "none" | "only_empty_fields" | "all"
 
 interface ParsedRow {
-  ean:         string | null
-  isbn:        string | null
-  sku:         string | null
-  title:       string | null
-  author:      string | null
-  publisher:   string | null
-  price:       number | null
-  stock:       number | null
-  language:    string | null
-  pages:       number | null
-  binding:     string | null
-  category:    string | null
-  raw:         Record<string, any>
+  ean: string | null
+  isbn: string | null
+  sku: string | null
+  title: string | null
+  author: string | null
+  publisher: string | null
+  price: number | null
+  stock: number | null
+  language: string | null
+  pages: number | null
+  binding: string | null
+  category: string | null
+  raw: Record<string, any>
 }
 
 // ─── EAN normalizer ───────────────────────────────────────────────────────────
@@ -45,22 +45,25 @@ function parseRow(row: Record<string, any>): ParsedRow {
     }
     return null
   }
-  const eanRaw  = g("EAN","ean","Ean","GTIN","gtin","barcode","Barcode")
-  const isbnRaw = g("ISBN","isbn","Isbn")
+  const eanRaw = g("EAN", "ean", "Ean", "GTIN", "gtin", "barcode", "Barcode")
+  const isbnRaw = g("ISBN", "isbn", "Isbn")
   return {
-    ean:       normalizeEan(eanRaw),
-    isbn:      normalizeEan(isbnRaw),
-    sku:       g("SKU","sku","Sku","codigo","CODIGO","Codigo","cod"),
-    title:     g("Titulo","titulo","Title","title","TITULO","Descripcion","descripcion"),
-    author:    g("Autor","autor","Author","author","AUTOR"),
-    publisher: g("Editorial","editorial","Publisher","publisher","EDITORIAL","Sello","sello"),
-    price:     parseFloat(g("Precio","precio","Price","price","PVP","pvp") ?? "0") || null,
-    stock:     (() => { const v = parseInt(g("Stock","stock","Cantidad","cantidad","QTY","qty") ?? "0", 10); return isNaN(v) ? 0 : v })(),
-    language:  g("Idioma","idioma","Language","language"),
-    pages:     parseInt(g("Paginas","paginas","Pages","pages","PAGINAS") ?? "0") || null,
-    binding:   g("Encuadernacion","encuadernacion","Binding","binding","Formato","formato"),
-    category:  g("Categoria","categoria","Category","category","Materia","materia"),
-    raw:       row,
+    ean: normalizeEan(eanRaw),
+    isbn: normalizeEan(isbnRaw),
+    sku: g("SKU", "sku", "Sku", "codigo", "CODIGO", "Codigo", "cod"),
+    title: g("Titulo", "titulo", "Title", "title", "TITULO", "Descripcion", "descripcion"),
+    author: g("Autor", "autor", "Author", "author", "AUTOR"),
+    publisher: g("Editorial", "editorial", "Publisher", "publisher", "EDITORIAL", "Sello", "sello"),
+    price: parseFloat(g("Precio", "precio", "Price", "price", "PVP", "pvp") ?? "0") || null,
+    stock: (() => {
+      const v = parseInt(g("Stock", "stock", "Cantidad", "cantidad", "QTY", "qty") ?? "0", 10)
+      return isNaN(v) ? 0 : v
+    })(),
+    language: g("Idioma", "idioma", "Language", "language"),
+    pages: parseInt(g("Paginas", "paginas", "Pages", "pages", "PAGINAS") ?? "0") || null,
+    binding: g("Encuadernacion", "encuadernacion", "Binding", "binding", "Formato", "formato"),
+    category: g("Categoria", "categoria", "Category", "category", "Materia", "materia"),
+    raw: row,
   }
 }
 
@@ -73,18 +76,16 @@ function parseFileBytes(buffer: Buffer, format: string): Record<string, any>[] {
 
 // ─── POST handler ─────────────────────────────────────────────────────────────
 // Body: { preview?: boolean, catalog_mode?, overwrite_mode?, warehouse_id? }
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const supabase   = createAdminClient()
-  const catalogId  = params.id
-  const body       = await request.json()
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const supabase = createAdminClient()
+  const catalogId = id
+  const body = await request.json()
 
-  const previewOnly:   boolean       = body.preview === true
-  const catalogMode:   CatalogMode   = body.catalog_mode   ?? "update_only"
+  const previewOnly: boolean = body.preview === true
+  const catalogMode: CatalogMode = body.catalog_mode ?? "update_only"
   const overwriteMode: OverwriteMode = body.overwrite_mode ?? "only_empty_fields"
-  const warehouseId:   string | null = body.warehouse_id   ?? null
+  const warehouseId: string | null = body.warehouse_id ?? null
 
   // ── Fetch catalog ──────────────────────────────────────────────────────────
   const { data: catalog, error: catErr } = await supabase
@@ -99,12 +100,15 @@ export async function POST(
 
   // ── If not preview-only, persist mode config on the catalog ───────────────
   if (!previewOnly) {
-    await supabase.from("supplier_catalogs").update({
-      catalog_mode:   catalogMode,
-      overwrite_mode: overwriteMode,
-      warehouse_id:   warehouseId,
-      import_status:  "processing",
-    }).eq("id", catalogId)
+    await supabase
+      .from("supplier_catalogs")
+      .update({
+        catalog_mode: catalogMode,
+        overwrite_mode: overwriteMode,
+        warehouse_id: warehouseId,
+        import_status: "processing",
+      })
+      .eq("id", catalogId)
   }
 
   // ── Download file ──────────────────────────────────────────────────────────
@@ -120,11 +124,11 @@ export async function POST(
   }
 
   // ── Parse rows ─────────────────────────────────────────────────────────────
-  const parsed  = rawRows.map(parseRow)
+  const parsed = rawRows.map(parseRow)
   const totalRows = parsed.length
 
   // Keep only rows with a valid EAN
-  const withEan = parsed.filter(r => r.ean != null)
+  const withEan = parsed.filter((r) => r.ean != null)
   const validEan = withEan.length
   const skippedInvalid = totalRows - validEan
 
@@ -141,14 +145,14 @@ export async function POST(
 
   const eanToProduct = new Map<string, any>()
   for (const p of existingProducts ?? []) {
-    if (p.ean)  eanToProduct.set(p.ean.replace(/[^0-9]/g, ""),  p)
+    if (p.ean) eanToProduct.set(p.ean.replace(/[^0-9]/g, ""), p)
     if (p.isbn) eanToProduct.set(p.isbn.replace(/[^0-9]/g, ""), p)
   }
 
   // ── Classify rows ──────────────────────────────────────────────────────────
-  const toCreate:  ParsedRow[] = []
-  const toUpdate:  ParsedRow[] = []
-  const toSkip:    ParsedRow[] = []   // new EANs discarded by mode constraints
+  const toCreate: ParsedRow[] = []
+  const toUpdate: ParsedRow[] = []
+  const toSkip: ParsedRow[] = [] // new EANs discarded by mode constraints
   const newDetectedEans: string[] = []
 
   for (const row of uniqueRows) {
@@ -162,7 +166,7 @@ export async function POST(
     } else {
       newDetectedEans.push(row.ean!)
       if (catalogMode === "update_only") {
-        toSkip.push(row)   // detected but not created
+        toSkip.push(row) // detected but not created
       } else {
         // create_only or create_and_update
         toCreate.push(row)
@@ -173,19 +177,24 @@ export async function POST(
   // ── Preview mode: return stats without touching DB ─────────────────────────
   if (previewOnly) {
     return NextResponse.json({
-      ok:              true,
-      preview:         true,
-      total_rows:      totalRows,
-      valid_ean:       validEan,
+      ok: true,
+      preview: true,
+      total_rows: totalRows,
+      valid_ean: validEan,
       skipped_invalid: skippedInvalid,
-      existing:        toUpdate.length + (catalogMode === "create_only" ? toSkip.filter(r => eanToProduct.has(r.ean!)).length : 0),
-      to_create:       toCreate.length,
-      to_update:       toUpdate.length,
-      to_skip:         toSkip.length,
-      new_detected:    newDetectedEans.length,
-      new_detected_eans: newDetectedEans.slice(0, 20),   // muestra hasta 20 en preview
-      sample_rows:     uniqueRows.slice(0, 5).map(r => ({
-        ean: r.ean, title: r.title, author: r.author, publisher: r.publisher, price: r.price,
+      existing:
+        toUpdate.length + (catalogMode === "create_only" ? toSkip.filter((r) => eanToProduct.has(r.ean!)).length : 0),
+      to_create: toCreate.length,
+      to_update: toUpdate.length,
+      to_skip: toSkip.length,
+      new_detected: newDetectedEans.length,
+      new_detected_eans: newDetectedEans.slice(0, 20), // muestra hasta 20 en preview
+      sample_rows: uniqueRows.slice(0, 5).map((r) => ({
+        ean: r.ean,
+        title: r.title,
+        author: r.author,
+        publisher: r.publisher,
+        price: r.price,
       })),
     })
   }
@@ -196,18 +205,18 @@ export async function POST(
   const { data: runRow } = await supabase
     .from("supplier_import_runs")
     .insert({
-      supplier_id:        catalog.supplier_id,
-      catalog_id:         catalogId,
-      feed_kind:          "catalog",
-      catalog_mode:       catalogMode,
-      overwrite_mode:     overwriteMode,
-      warehouse_id:       warehouseId,
-      total_rows:         totalRows,
-      valid_ean:          validEan,
+      supplier_id: catalog.supplier_id,
+      catalog_id: catalogId,
+      feed_kind: "catalog",
+      catalog_mode: catalogMode,
+      overwrite_mode: overwriteMode,
+      warehouse_id: warehouseId,
+      total_rows: totalRows,
+      valid_ean: validEan,
       new_detected_count: newDetectedEans.length,
-      new_detected_eans:  newDetectedEans.slice(0, 500),
-      status:             "running",
-      started_at:         new Date().toISOString(),
+      new_detected_eans: newDetectedEans.slice(0, 500),
+      status: "running",
+      started_at: new Date().toISOString(),
     })
     .select("id")
     .single()
@@ -215,24 +224,24 @@ export async function POST(
 
   let createdCount = 0
   let updatedCount = 0
-  let errorCount   = 0
+  let errorCount = 0
 
   // ── CREATE new products ────────────────────────────────────────────────────
   if (toCreate.length > 0) {
-    const newProducts = toCreate.map(r => ({
-      ean:         r.ean,
-      isbn:        r.isbn,
-      sku:         r.sku ?? (r.ean ? `EAN-${r.ean}` : null),
-      title:       r.title ?? "Sin título",
-      author:      r.author,
-      brand:       r.publisher,
-      language:    r.language,
-      pages:       r.pages,
-      binding:     r.binding,
-      category:    r.category,
-      price:       r.price,
-      stock:       0,
-      source:      ["supplier_catalog"],
+    const newProducts = toCreate.map((r) => ({
+      ean: r.ean,
+      isbn: r.isbn,
+      sku: r.sku ?? (r.ean ? `EAN-${r.ean}` : null),
+      title: r.title ?? "Sin título",
+      author: r.author,
+      brand: r.publisher,
+      language: r.language,
+      pages: r.pages,
+      binding: r.binding,
+      category: r.category,
+      price: r.price,
+      stock: 0,
+      source: ["supplier_catalog"],
     }))
 
     const CHUNK = 200
@@ -241,8 +250,11 @@ export async function POST(
         .from("products")
         .insert(newProducts.slice(i, i + CHUNK))
         .select("id")
-      if (insErr) { errorCount += newProducts.slice(i, i + CHUNK).length }
-      else { createdCount += inserted?.length ?? 0 }
+      if (insErr) {
+        errorCount += newProducts.slice(i, i + CHUNK).length
+      } else {
+        createdCount += inserted?.length ?? 0
+      }
     }
   }
 
@@ -265,15 +277,15 @@ export async function POST(
         return false
       }
 
-      if (shouldWrite("title",    row.title))     patch.title     = row.title
-      if (shouldWrite("author",   row.author))    patch.author    = row.author
-      if (shouldWrite("brand",    row.publisher)) patch.brand     = row.publisher
-      if (shouldWrite("language", row.language))  patch.language  = row.language
-      if (shouldWrite("pages",    row.pages))     patch.pages     = row.pages
-      if (shouldWrite("binding",  row.binding))   patch.binding   = row.binding
-      if (shouldWrite("category", row.category))  patch.category  = row.category
-      if (shouldWrite("price",    row.price))     patch.price     = row.price
-      if (row.isbn && shouldWrite("isbn", row.isbn)) patch.isbn   = row.isbn
+      if (shouldWrite("title", row.title)) patch.title = row.title
+      if (shouldWrite("author", row.author)) patch.author = row.author
+      if (shouldWrite("brand", row.publisher)) patch.brand = row.publisher
+      if (shouldWrite("language", row.language)) patch.language = row.language
+      if (shouldWrite("pages", row.pages)) patch.pages = row.pages
+      if (shouldWrite("binding", row.binding)) patch.binding = row.binding
+      if (shouldWrite("category", row.category)) patch.category = row.category
+      if (shouldWrite("price", row.price)) patch.price = row.price
+      if (row.isbn && shouldWrite("isbn", row.isbn)) patch.isbn = row.isbn
 
       if (Object.keys(patch).length > 0) {
         patches.push({ id: existing.id, patch })
@@ -285,9 +297,7 @@ export async function POST(
     for (let i = 0; i < patches.length; i += PARALLEL) {
       const batch = patches.slice(i, i + PARALLEL)
       const results = await Promise.allSettled(
-        batch.map(({ id, patch }) =>
-          supabase.from("products").update(patch).eq("id", id)
-        )
+        batch.map(({ id, patch }) => supabase.from("products").update(patch).eq("id", id)),
       )
       for (const res of results) {
         if (res.status === "fulfilled" && !res.value.error) updatedCount++
@@ -297,25 +307,25 @@ export async function POST(
   }
 
   // ── Upsert supplier_catalog_items ─────────────────────────────────────────
-  const itemsToInsert = uniqueRows.map(row => {
+  const itemsToInsert = uniqueRows.map((row) => {
     const existing = eanToProduct.get(row.ean!)
     return {
-      catalog_id:     catalogId,
-      supplier_id:    catalog.supplier_id,
-      product_id:     existing?.id ?? null,
-      warehouse_id:   warehouseId,
-      supplier_ean:   row.ean,
-      supplier_isbn:  row.isbn,
-      supplier_sku:   row.sku,
-      title:          row.title ?? "",
-      author:         row.author,
-      publisher:      row.publisher,
+      catalog_id: catalogId,
+      supplier_id: catalog.supplier_id,
+      product_id: existing?.id ?? null,
+      warehouse_id: warehouseId,
+      supplier_ean: row.ean,
+      supplier_isbn: row.isbn,
+      supplier_sku: row.sku,
+      title: row.title ?? "",
+      author: row.author,
+      publisher: row.publisher,
       price_original: row.price,
       stock_quantity: row.stock,
-      matched_by:     existing ? "ean" : null,
-      matched_at:     existing ? new Date().toISOString() : null,
+      matched_by: existing ? "ean" : null,
+      matched_at: existing ? new Date().toISOString() : null,
       match_confidence: existing ? 1.0 : null,
-      raw_data:       row.raw,
+      raw_data: row.raw,
     }
   })
 
@@ -327,33 +337,39 @@ export async function POST(
   // ── Finalize ───────────────────────────────────────────────────────────────
   const skippedCount = toSkip.length + skippedInvalid
 
-  await supabase.from("supplier_catalogs").update({
-    import_status: "completed",
-    imported_at:   new Date().toISOString(),
-    total_items:   totalRows,
-    matched_items: toUpdate.length + createdCount,
-  }).eq("id", catalogId)
+  await supabase
+    .from("supplier_catalogs")
+    .update({
+      import_status: "completed",
+      imported_at: new Date().toISOString(),
+      total_items: totalRows,
+      matched_items: toUpdate.length + createdCount,
+    })
+    .eq("id", catalogId)
 
   if (runId) {
-    await supabase.from("supplier_import_runs").update({
-      status:        "completed",
-      finished_at:   new Date().toISOString(),
-      created_count: createdCount,
-      updated_count: updatedCount,
-      skipped_count: skippedCount,
-      error_count:   errorCount,
-    }).eq("id", runId)
+    await supabase
+      .from("supplier_import_runs")
+      .update({
+        status: "completed",
+        finished_at: new Date().toISOString(),
+        created_count: createdCount,
+        updated_count: updatedCount,
+        skipped_count: skippedCount,
+        error_count: errorCount,
+      })
+      .eq("id", runId)
   }
 
   return NextResponse.json({
-    ok:            true,
-    total_rows:    totalRows,
-    valid_ean:     validEan,
-    created:       createdCount,
-    updated:       updatedCount,
-    skipped:       skippedCount,
-    errors:        errorCount,
-    new_detected:  newDetectedEans.length,
-    run_id:        runId,
+    ok: true,
+    total_rows: totalRows,
+    valid_ean: validEan,
+    created: createdCount,
+    updated: updatedCount,
+    skipped: skippedCount,
+    errors: errorCount,
+    new_detected: newDetectedEans.length,
+    run_id: runId,
   })
 }

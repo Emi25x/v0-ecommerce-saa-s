@@ -24,7 +24,7 @@ export function fmtPercent(num?: number | null, decimals: number = 1): string {
 export function fmtDate(dateValue?: string | Date | null): string {
   if (!dateValue) return "—"
   try {
-    const date = typeof dateValue === 'string' ? new Date(dateValue) : dateValue
+    const date = typeof dateValue === "string" ? new Date(dateValue) : dateValue
     if (isNaN(date.getTime())) return "—"
     return date.toLocaleString()
   } catch {

@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/supabase/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createClient } from "@/lib/db/server"
+import { createAdminClient } from "@/lib/db/admin"
 
 /**
  * GET /api/cs/ml-questions
@@ -13,12 +13,15 @@ import { createAdminClient } from "@/lib/supabase/admin"
  */
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
   if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const { searchParams } = new URL(request.url)
   const accountId = searchParams.get("account_id") || undefined
-  const doSync    = searchParams.get("sync") === "1"
+  const doSync = searchParams.get("sync") === "1"
 
   const adminSupabase = createAdminClient()
 
@@ -31,7 +34,8 @@ export async function GET(request: NextRequest) {
 
   const { data: accounts, error: accError } = await accQuery
   if (accError) return NextResponse.json({ error: accError.message }, { status: 500 })
-  if (!accounts?.length) return NextResponse.json({ conversations: [], synced: 0, errors: ["No hay cuentas ML conectadas"] })
+  if (!accounts?.length)
+    return NextResponse.json({ conversations: [], synced: 0, errors: ["No hay cuentas ML conectadas"] })
 
   let synced = 0
   const syncErrors: string[] = []
@@ -46,7 +50,7 @@ export async function GET(request: NextRequest) {
         // Fetch unanswered questions from ML API
         const qRes = await fetch(
           `https://api.mercadolibre.com/questions/search?seller_id=${acc.ml_user_id}&status=UNANSWERED&limit=50`,
-          { headers: { Authorization: `Bearer ${token}` } }
+          { headers: { Authorization: `Bearer ${token}` } },
         )
 
         if (!qRes.ok) {
@@ -68,17 +72,17 @@ export async function GET(request: NextRequest) {
             .from("cs_conversations")
             .upsert(
               {
-                user_id:        user.id,
-                channel:        "ml_question",
-                external_id:    extId,
-                ml_account_id:  acc.id,
-                customer_name:  q.from?.nickname ?? `Comprador ${q.from?.id ?? ""}`,
-                customer_id:    String(q.from?.id ?? ""),
-                subject:        q.text,
-                status:         q.status === "UNANSWERED" ? "pending_reply" : "answered",
+                user_id: user.id,
+                channel: "ml_question",
+                external_id: extId,
+                ml_account_id: acc.id,
+                customer_name: q.from?.nickname ?? `Comprador ${q.from?.id ?? ""}`,
+                customer_id: String(q.from?.id ?? ""),
+                subject: q.text,
+                status: q.status === "UNANSWERED" ? "pending_reply" : "answered",
                 last_message_at: q.date_created ?? new Date().toISOString(),
               },
-              { onConflict: "channel,external_id,user_id" }
+              { onConflict: "channel,external_id,user_id" },
             )
             .select("id")
             .single()
@@ -89,18 +93,18 @@ export async function GET(request: NextRequest) {
               .upsert(
                 {
                   conversation_id: conv.id,
-                  user_id:         user.id,
-                  direction:       "inbound",
-                  author_type:     "customer",
-                  author_name:     q.from?.nickname ?? "Comprador",
-                  content:         q.text,
-                  content_type:    "text",
-                  external_id:     `q_${extId}`,
-                  created_at:      q.date_created ?? new Date().toISOString(),
+                  user_id: user.id,
+                  direction: "inbound",
+                  author_type: "customer",
+                  author_name: q.from?.nickname ?? "Comprador",
+                  content: q.text,
+                  content_type: "text",
+                  external_id: `q_${extId}`,
+                  created_at: q.date_created ?? new Date().toISOString(),
                 },
-                { onConflict: "conversation_id,external_id" }
+                { onConflict: "conversation_id,external_id" },
               )
-              .catch(() => {})
+              .then(() => {})
           }
           synced++
         }
