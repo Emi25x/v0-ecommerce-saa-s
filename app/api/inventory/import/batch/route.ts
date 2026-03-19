@@ -7,6 +7,7 @@ import { normalizeEan } from "@/domains/inventory/ean-utils"
 import { normalizeHeader, detectDelimiter } from "@/lib/import/csv-helpers"
 import { inflateRawSync } from "node:zlib"
 import { startRun } from "@/lib/process-runs"
+import { BatchImportSchema } from "@/lib/validation/schemas"
 
 export const maxDuration = 300
 
@@ -29,17 +30,23 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now()
 
   try {
-    const body = await request.json()
-    const { sourceId, offset = 0, mode = "upsert", historyId = null, batch_size = BATCH_SIZE_INITIAL } = body
-
-    if (!sourceId) {
-      return NextResponse.json({ error: "sourceId es requerido" }, { status: 400 })
+    let rawBody: unknown
+    try {
+      rawBody = await request.json()
+    } catch {
+      return NextResponse.json({ ok: false, error: { code: "bad_request", detail: "Invalid JSON body" } }, { status: 400 })
     }
 
-    const effectiveBatchSize = Math.min(
-      BATCH_SIZE_MAX,
-      Math.max(BATCH_SIZE_MIN, Number(batch_size) || BATCH_SIZE_INITIAL),
-    )
+    const validated = BatchImportSchema.safeParse(rawBody)
+    if (!validated.success) {
+      return NextResponse.json(
+        { ok: false, error: { code: "validation_error", detail: validated.error.issues } },
+        { status: 422 },
+      )
+    }
+
+    const { sourceId, offset, mode, historyId, batch_size } = validated.data
+    const effectiveBatchSize = batch_size
 
     const supabase = await createClient()
 

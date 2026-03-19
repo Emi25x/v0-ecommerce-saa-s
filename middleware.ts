@@ -7,24 +7,40 @@ import { type NextRequest, NextResponse } from "next/server"
  * The `config.matcher` below excludes static assets (_next/static, _next/image, favicon, images).
  * This function only runs for app routes and API routes.
  *
- * Policy:
- *  - Public routes:       login, auth callbacks
- *  - Unauthenticated API: cron jobs (secured by Vercel infra), supplier imports,
- *                         OAuth callbacks, external webhooks
- *  - Everything else:     requires valid Supabase session
+ * ── Route Access Policy ─────────────────────────────────────────────────────
+ *
+ * | Category          | Prefix / Path                    | Auth Mechanism              |
+ * |-------------------|----------------------------------|-----------------------------|
+ * | Public pages      | /login, /auth/*                  | None (login flow)           |
+ * | Cron jobs         | /api/cron/*                      | requireCron() — CRON_SECRET |
+ * | Supplier imports  | /api/azeta/*, /api/arnoia/*      | requireCron() — CRON_SECRET |
+ * | Inventory imports | /api/inventory/import/*           | requireCron() — CRON_SECRET |
+ * | Inventory sources | /api/inventory/sources/*          | requireCron() — CRON_SECRET |
+ * | ML webhooks       | /api/mercadolibre/webhooks/*      | Payload user_id validation  |
+ * | Generic webhooks  | /api/webhooks/*                   | Per-handler validation      |
+ * | Shopify OAuth     | /api/shopify/oauth/callback       | OAuth state param           |
+ * | Auth callbacks    | /api/auth/*                       | OAuth flow                  |
+ * | All other routes  | *                                | Supabase user session       |
+ *
+ * IMPORTANT: Middleware bypass does NOT mean "no auth". Each bypassed route
+ * uses its own handler-level auth (requireCron, signature checks, etc).
+ * Middleware bypass only skips Supabase session refresh for routes that
+ * don't need or can't have a user session.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 
 const PUBLIC_PATHS = ["/login", "/auth/callback", "/auth/error"] as const
 
 const UNAUTHENTICATED_API_PREFIXES = [
-  "/api/auth/",
-  "/api/cron/",
-  "/api/azeta/",
-  "/api/arnoia/",
-  "/api/inventory/import/",
-  "/api/inventory/sources/",
-  "/api/webhooks/",
-  "/api/shopify/oauth/callback",
+  "/api/auth/",                       // OAuth callbacks
+  "/api/cron/",                       // Cron jobs — secured by requireCron()
+  "/api/azeta/",                      // Supplier imports — secured by requireCron()
+  "/api/arnoia/",                     // Supplier imports — secured by requireCron()
+  "/api/inventory/import/",           // Batch imports — secured by requireCron()
+  "/api/inventory/sources/",          // Source config — secured by requireCron()
+  "/api/webhooks/",                   // Generic webhooks — per-handler auth
+  "/api/mercadolibre/webhooks/",      // ML webhooks — payload user_id validation
+  "/api/shopify/oauth/callback",      // Shopify OAuth — state param validation
 ] as const
 
 export async function middleware(request: NextRequest) {

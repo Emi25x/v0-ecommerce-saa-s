@@ -1,10 +1,11 @@
 /**
  * Request parsing and validation for Import Pro endpoints.
  *
- * Extracts, validates, and normalizes input from HTTP requests.
+ * Uses Zod schemas for strict input validation.
  * Returns typed domain objects or throws ValidationError.
  */
 
+import { ImportRunSchema, AccountIdBodySchema, AccountIdQuerySchema } from "@/lib/validation/schemas"
 import { ValidationError } from "../domain/errors"
 import type { ImportRunInput } from "../domain/types"
 import { ML_MULTIGET_MAX_IDS } from "../domain/types"
@@ -13,29 +14,22 @@ import { ML_MULTIGET_MAX_IDS } from "../domain/types"
  * Parses and validates the POST body for /api/ml/import-pro/run
  */
 export function parseRunRequest(body: unknown): ImportRunInput {
-  if (!body || typeof body !== "object") {
-    throw new ValidationError("Request body is required")
+  const result = ImportRunSchema.safeParse(body)
+  if (!result.success) {
+    const first = result.error.issues[0]
+    throw new ValidationError(
+      first?.message ?? "Invalid request body",
+      first?.path?.join("."),
+    )
   }
-
-  const b = body as Record<string, unknown>
-
-  const accountId = b.account_id
-  if (!accountId || typeof accountId !== "string") {
-    throw new ValidationError("account_id is required", "account_id")
-  }
-
-  const maxSeconds = typeof b.max_seconds === "number" ? b.max_seconds : 12
-  const detailBatch = Math.min(
-    ML_MULTIGET_MAX_IDS,
-    Math.max(1, typeof b.detail_batch === "number" ? b.detail_batch : ML_MULTIGET_MAX_IDS),
-  )
-  const concurrency = typeof b.concurrency === "number" ? b.concurrency : 2
 
   return {
-    account_id: accountId,
-    max_seconds: maxSeconds,
-    detail_batch: detailBatch,
-    concurrency,
+    account_id: result.data.account_id,
+    max_seconds: result.data.max_seconds,
+    detail_batch: result.data.detail_batch
+      ? Math.min(ML_MULTIGET_MAX_IDS, result.data.detail_batch)
+      : undefined,
+    concurrency: result.data.concurrency,
   }
 }
 
@@ -43,26 +37,21 @@ export function parseRunRequest(body: unknown): ImportRunInput {
  * Parses account_id from query string (for GET endpoints like /status)
  */
 export function parseAccountIdFromQuery(searchParams: URLSearchParams): string {
-  const accountId = searchParams.get("account_id")
-  if (!accountId) {
+  const raw = Object.fromEntries(searchParams.entries())
+  const result = AccountIdQuerySchema.safeParse(raw)
+  if (!result.success) {
     throw new ValidationError("account_id query parameter is required", "account_id")
   }
-  return accountId
+  return result.data.account_id
 }
 
 /**
  * Parses account_id from POST body (for /reset)
  */
 export function parseAccountIdFromBody(body: unknown): string {
-  if (!body || typeof body !== "object") {
-    throw new ValidationError("Request body is required")
-  }
-
-  const b = body as Record<string, unknown>
-  const accountId = b.account_id
-  if (!accountId || typeof accountId !== "string") {
+  const result = AccountIdBodySchema.safeParse(body)
+  if (!result.success) {
     throw new ValidationError("account_id is required", "account_id")
   }
-
-  return accountId
+  return result.data.account_id
 }

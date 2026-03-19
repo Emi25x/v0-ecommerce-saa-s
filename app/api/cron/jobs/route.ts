@@ -4,18 +4,17 @@
  *   1. calculate_ml_publish_priorities — recalculates all product scores
  *   2. update_industry_news            — fetches RSS feeds & detects adaptations
  */
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
+import { requireCron } from "@/lib/auth/require-auth"
 import { calculateMlPriorities } from "@/domains/mercadolibre/priorities"
 import { fetchRadarNews } from "@/domains/radar/fetch-news"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 120
 
-export async function GET(req: Request) {
-  const secret = req.headers.get("Authorization")?.replace("Bearer ", "")
-  if (secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
+export async function GET(req: NextRequest) {
+  const auth = await requireCron(req)
+  if (auth.error) return auth.response
 
   const results: Record<string, unknown> = {}
 

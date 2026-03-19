@@ -7,26 +7,22 @@
  * Body: { store_id, ean, dry_run?: boolean }
  */
 
-import { createClient } from "@/lib/db/server"
 import { NextRequest, NextResponse } from "next/server"
+import { requireUser } from "@/lib/auth/require-auth"
+import { parseBody } from "@/lib/validation/parse-body"
+import { ShopifyPushProductSchema } from "@/lib/validation/schemas"
 import { pushProductToShopify } from "@/domains/shopify/push-product"
 
 export async function POST(req: NextRequest) {
+  const auth = await requireUser()
+  if (auth.error) return auth.response
+
+  const parsed = await parseBody(req, ShopifyPushProductSchema)
+  if (!parsed.ok) return parsed.response
+
   try {
-    const supabase = await createClient()
-    const {
-      data: { user },
-      error: authErr,
-    } = await supabase.auth.getUser()
-    if (authErr || !user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 })
-
-    const body = await req.json()
-    const { store_id, ean, dry_run = false } = body
-
-    if (!store_id || !ean)
-      return NextResponse.json({ ok: false, error: "store_id y ean son requeridos" }, { status: 400 })
-
-    const result = await pushProductToShopify(supabase, store_id, ean, user.id, dry_run)
+    const { store_id, ean, dry_run } = parsed.data
+    const result = await pushProductToShopify(auth.supabase, store_id, ean, auth.user.id, dry_run)
 
     if (!result.ok) {
       const status = result.error?.includes("no encontr") ? 404 : 500
@@ -34,8 +30,12 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json(result)
-  } catch (err: any) {
+  } catch (err) {
     console.error("[push-product]", err)
-    return NextResponse.json({ ok: false, error: err.message }, { status: 500 })
+    const message = err instanceof Error ? err.message : "Unknown error"
+    return NextResponse.json(
+      { ok: false, error: { code: "internal_error", detail: message } },
+      { status: 500 },
+    )
   }
 }
