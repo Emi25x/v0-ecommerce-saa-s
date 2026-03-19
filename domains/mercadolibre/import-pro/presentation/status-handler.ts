@@ -4,11 +4,14 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/db/admin"
+import { createLogger, generateRequestId } from "@/lib/observability/logger"
 import { createReadOnlyOrchestrator } from "../application/factory"
 import { parseAccountIdFromQuery } from "../application/request-parser"
 import { ImportDomainError } from "../domain/errors"
 
 export async function handleStatus(request: NextRequest): Promise<NextResponse> {
+  const log = createLogger({ requestId: generateRequestId(), process: "import-pro.status" })
+
   try {
     const { searchParams } = new URL(request.url)
     const accountId = parseAccountIdFromQuery(searchParams)
@@ -23,8 +26,8 @@ export async function handleStatus(request: NextRequest): Promise<NextResponse> 
       return NextResponse.json(error.toJSON(), { status: error.httpStatus })
     }
 
+    log.error("status_failed", error)
     const message = error instanceof Error ? error.message : "Unknown error"
-    console.error("[IMPORT-PRO] Status error:", message)
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }
