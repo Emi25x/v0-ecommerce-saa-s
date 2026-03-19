@@ -145,7 +145,7 @@ export function useOrders() {
       setOrders(ordersWithAccount)
       setPaging(data.paging)
     } catch (error: any) {
-      console.error("[v0] Error fetching orders:", error)
+      console.error("Error fetching orders:", error)
       setError(error.message || "Failed to fetch orders")
     } finally {
       setLoading(false)
@@ -159,7 +159,7 @@ export function useOrders() {
       const response = await fetch(`/api/mercadolibre/orders?account_id=${selectedAccount}`)
       if (!response.ok) {
         const errorText = await response.text()
-        console.error("[v0] Orders API error in effect:", response.status, errorText)
+        console.error("Orders API error in effect:", response.status, errorText)
         throw new Error(`Failed to fetch orders: ${response.statusText}`)
       }
 
@@ -196,17 +196,17 @@ export function useOrders() {
 
   const fetchMlAccounts = async () => {
     try {
-      console.log("[v0] Fetching ML accounts from DB (no ML API calls)...")
+      console.log("Fetching ML accounts from DB (no ML API calls)...")
       const response = await fetch("/api/mercadolibre/accounts")
 
       if (!response.ok) {
-        console.warn("[v0] Failed to fetch accounts, will use empty list")
+        console.warn("Failed to fetch accounts, will use empty list")
         setMlAccounts({})
         return
       }
 
       const data = await response.json()
-      console.log("[v0] ML accounts response:", data)
+      console.log("ML accounts response:", data)
 
       const accountsRecord: Record<string, MlAccount> = {}
       data.accounts?.forEach((account: any) => {
@@ -218,7 +218,7 @@ export function useOrders() {
               const parsed = JSON.parse(stored)
               browserPreference = parsed.label || parsed.value
             } catch (e) {
-              console.error("[v0] Failed to parse browser preference:", e)
+              console.error("Failed to parse browser preference:", e)
             }
           }
         }
@@ -230,10 +230,10 @@ export function useOrders() {
         }
       })
 
-      console.log("[v0] ML accounts indexed by ml_user_id:", accountsRecord)
+      console.log("ML accounts indexed by ml_user_id:", accountsRecord)
       setMlAccounts(accountsRecord)
     } catch (error) {
-      console.error("[v0] Failed to fetch ML accounts:", error)
+      console.error("Failed to fetch ML accounts:", error)
       setMlAccounts({})
     }
   }
@@ -365,10 +365,10 @@ export function useOrders() {
                 })),
               )
             } else {
-              console.error(`[v0] Error loading SKU for ${itemId}: ${response.status}`)
+              console.error(`Error loading SKU for ${itemId}: ${response.status}`)
             }
           } catch (error) {
-            console.error(`[v0] Error loading SKU for ${itemId}:`, error)
+            console.error(`Error loading SKU for ${itemId}:`, error)
           } finally {
             setLoadingSkus((prev) => {
               const newSet = new Set(prev)
@@ -420,10 +420,10 @@ export function useOrders() {
                 ),
               )
             } else {
-              console.error(`[v0] Error loading shipment status for order ${order.id}: ${response.status}`)
+              console.error(`Error loading shipment status for order ${order.id}: ${response.status}`)
             }
           } catch (error) {
-            console.error(`[v0] Error loading shipment status for order ${order.id}:`, error)
+            console.error(`Error loading shipment status for order ${order.id}:`, error)
           } finally {
             setLoadingShipmentStatuses((prev) => {
               const newSet = new Set(prev)

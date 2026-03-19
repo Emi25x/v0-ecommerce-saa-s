@@ -98,7 +98,7 @@ export function useInventory() {
     setLoading(true)
     setErrorMessage(null)
     console.log(
-      "[v0] Cargando productos - p\u00e1gina:",
+      "Cargando productos - p\u00e1gina:",
       currentPage,
       "ordenar por:",
       sortBy,
@@ -113,11 +113,11 @@ export function useInventory() {
         `/api/inventory/products?page=${currentPage}&limit=${PRODUCTS_PER_PAGE}&sortBy=${sortBy}&sortOrder=${sortOrder}${searchParam}`,
       )
 
-      console.log("[v0] Respuesta recibida:", response.status, response.statusText)
+      console.log("Respuesta recibida:", response.status, response.statusText)
 
       if (response.ok) {
         const data = await response.json()
-        console.log("[v0] Datos recibidos:", {
+        console.log("Datos recibidos:", {
           productos: data.products?.length || 0,
           total: data.total,
           página: data.page,
@@ -125,7 +125,7 @@ export function useInventory() {
         })
 
         if (data.products && data.products.length > 0) {
-          console.log("[v0] Primer producto:", data.products[0])
+          console.log("Primer producto:", data.products[0])
         }
 
         setProducts(data.products || [])
@@ -137,7 +137,7 @@ export function useInventory() {
         }
       } else {
         const errorData = await response.json()
-        console.error("[v0] Error al cargar productos:", errorData)
+        console.error("Error al cargar productos:", errorData)
         if (errorData.timeout) {
           setErrorMessage(
             "La b\u00fasqueda tard\u00f3 demasiado tiempo. Intenta buscar por SKU/ISBN/EAN exacto o un t\u00e9rmino m\u00e1s espec\u00edfico.",
@@ -155,7 +155,7 @@ export function useInventory() {
         })
       }
     } catch (error: any) {
-      console.error("[v0] Error en fetch:", error)
+      console.error("Error en fetch:", error)
       setErrorMessage(`Error de conexi\u00f3n: ${error.message}`)
       toast({
         title: "Error",
@@ -168,19 +168,19 @@ export function useInventory() {
   }, [currentPage, sortBy, sortOrder, debouncedSearch])
 
   const loadImportSources = async () => {
-    console.log("[v0] Cargando fuentes de importaci\u00f3n...")
+    console.log("Cargando fuentes de importaci\u00f3n...")
     try {
       const response = await fetch("/api/import-sources")
-      console.log("[v0] Respuesta fuentes:", response.status, response.statusText)
+      console.log("Respuesta fuentes:", response.status, response.statusText)
 
       if (response.ok) {
         const data = await response.json()
-        console.log("[v0] Fuentes recibidas:", data)
-        console.log("[v0] N\u00famero de fuentes:", Array.isArray(data) ? data.length : 0)
+        console.log("Fuentes recibidas:", data)
+        console.log("N\u00famero de fuentes:", Array.isArray(data) ? data.length : 0)
         setImportSources(Array.isArray(data) ? data : [])
       } else {
         const errorData = await response.json()
-        console.error("[v0] Error al cargar fuentes:", errorData)
+        console.error("Error al cargar fuentes:", errorData)
         toast({
           title: "Error",
           description: `No se pudieron cargar las fuentes de importaci\u00f3n: ${errorData.error || response.statusText}`,
@@ -188,7 +188,7 @@ export function useInventory() {
         })
       }
     } catch (error) {
-      console.error("[v0] Error en fetch fuentes:", error)
+      console.error("Error en fetch fuentes:", error)
       toast({
         title: "Error",
         description: "Error al cargar fuentes de importaci\u00f3n",
@@ -217,11 +217,11 @@ export function useInventory() {
   }
 
   const handleImportFromSource = async () => {
-    console.log("[v0] handleImportFromSource iniciado")
-    console.log("[v0] selectedSource:", selectedSource)
+    console.log("handleImportFromSource iniciado")
+    console.log("selectedSource:", selectedSource)
 
     if (!selectedSource) {
-      console.log("[v0] Error: No hay fuente seleccionada")
+      console.log("Error: No hay fuente seleccionada")
       toast({
         title: "Error",
         description: "Por favor selects una fuente de importaci\u00f3n",
@@ -230,7 +230,7 @@ export function useInventory() {
       return
     }
 
-    console.log("[v0] Iniciando importaci\u00f3n directa...")
+    console.log("Iniciando importaci\u00f3n directa...")
     setImporting(true)
     setShowImportDialog(false)
 
@@ -253,8 +253,8 @@ export function useInventory() {
         },
       }
 
-      console.log("[v0] Payload de importaci\u00f3n:", importPayload)
-      console.log("[v0] Llamando a /api/inventory/import/csv")
+      console.log("Payload de importaci\u00f3n:", importPayload)
+      console.log("Llamando a /api/inventory/import/csv")
 
       setTimeout(() => {
         setImportProgress({
@@ -270,11 +270,11 @@ export function useInventory() {
         body: JSON.stringify(importPayload),
       })
 
-      console.log("[v0] Respuesta importaci\u00f3n:", importResponse.status, importResponse.statusText)
+      console.log("Respuesta importaci\u00f3n:", importResponse.status, importResponse.statusText)
 
       if (!importResponse.ok) {
         const errorData = await importResponse.json()
-        console.error("[v0] Error en importaci\u00f3n:", errorData)
+        console.error("Error en importaci\u00f3n:", errorData)
         throw new Error(errorData.error || "Error al importar productos")
       }
 
@@ -285,7 +285,7 @@ export function useInventory() {
       })
 
       const result = await importResponse.json()
-      console.log("[v0] Resultado de importaci\u00f3n:", result)
+      console.log("Resultado de importaci\u00f3n:", result)
 
       setImportProgress({
         stage: "finalizing",
@@ -308,15 +308,15 @@ export function useInventory() {
 
       loadProducts()
     } catch (error: any) {
-      console.error("[v0] Error en importaci\u00f3n:", error)
-      console.error("[v0] Stack trace:", error.stack)
+      console.error("Error en importaci\u00f3n:", error)
+      console.error("Stack trace:", error.stack)
       toast({
         title: "Error",
         description: error.message,
         variant: "destructive",
       })
     } finally {
-      console.log("[v0] Finalizando importaci\u00f3n, limpiando estados")
+      console.log("Finalizando importaci\u00f3n, limpiando estados")
       setImporting(false)
       setImportProgress({
         stage: "",
@@ -455,7 +455,7 @@ export function useInventory() {
       if (response.ok) {
         const result = await response.json()
         setVerificationResult(result)
-        console.log("[v0] Resultado de verificaci\u00f3n:", result)
+        console.log("Resultado de verificaci\u00f3n:", result)
 
         toast({
           title: result.found ? "Producto encontrado" : "Producto no encontrado",
@@ -466,7 +466,7 @@ export function useInventory() {
         throw new Error("Error al verificar SKU")
       }
     } catch (error: any) {
-      console.error("[v0] Error verificando SKU:", error)
+      console.error("Error verificando SKU:", error)
       toast({
         title: "Error",
         description: error.message,

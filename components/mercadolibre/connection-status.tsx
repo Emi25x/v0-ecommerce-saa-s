@@ -48,7 +48,7 @@ export function MLConnectionStatus({ accountId, onRefresh, refreshing = false }:
         setStatus({ connected: false, loading: false })
       }
     } catch (error) {
-      console.error("[v0] Error checking connection status:", error)
+      console.error("Error checking connection status:", error)
       setStatus({ connected: false, loading: false })
     }
   }

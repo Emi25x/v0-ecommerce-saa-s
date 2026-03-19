@@ -107,7 +107,7 @@ export function ImportDialog({
                     className="w-full mt-1 p-2 border rounded-md bg-background text-foreground"
                     value={scheduleTimezone}
                     onChange={(e) => {
-                      console.log("[v0] Cambiando zona horaria a:", e.target.value)
+                      console.log("Cambiando zona horaria a:", e.target.value)
                       onScheduleTimezoneChange(e.target.value)
                     }}
                   >
@@ -128,7 +128,7 @@ export function ImportDialog({
                     type="time"
                     value={scheduleTime}
                     onChange={(e) => {
-                      console.log("[v0] Cambiando hora a:", e.target.value)
+                      console.log("Cambiando hora a:", e.target.value)
                       onScheduleTimeChange(e.target.value)
                     }}
                     className="mt-1"
@@ -136,8 +136,8 @@ export function ImportDialog({
                   <p className="text-xs text-muted-foreground mt-1">Hora en formato 24h (ej: 14:30 para 2:30 PM)</p>
                 </div>
 
-                {console.log("[v0] scheduleFrequency actual:", scheduleFrequency)}
-                {console.log("[v0] \u00bfDeber\u00eda mostrar selector de d\u00eda?:", scheduleFrequency === "weekly")}
+                {console.log("scheduleFrequency actual:", scheduleFrequency)}
+                {console.log("\u00bfDeber\u00eda mostrar selector de d\u00eda?:", scheduleFrequency === "weekly")}
 
                 {scheduleFrequency === "weekly" && (
                   <div>
@@ -146,7 +146,7 @@ export function ImportDialog({
                       className="w-full mt-1 p-2 border rounded-md bg-background text-foreground"
                       value={scheduleDayOfWeek}
                       onChange={(e) => {
-                        console.log("[v0] Cambiando d\u00eda de la semana a:", e.target.value)
+                        console.log("Cambiando d\u00eda de la semana a:", e.target.value)
                         onScheduleDayOfWeekChange(Number(e.target.value))
                       }}
                     >

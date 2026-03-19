@@ -17,7 +17,7 @@ export function UserDisplay() {
         setUser(user)
       })
       .catch((error) => {
-        console.error("[v0] UserDisplay: Error getting user", error)
+        console.error("UserDisplay: Error getting user", error)
       })
 
     // Escuchar cambios de autenticación

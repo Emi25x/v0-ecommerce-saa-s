@@ -82,7 +82,7 @@ export function useCompetition() {
   }, [currentPage, selectedAccount, sortBy])
 
   const loadProducts = async () => {
-    console.log("[v0] loadProducts called")
+    console.log("loadProducts called")
     setLoading(true)
     try {
       const offset = (currentPage - 1) * 50
@@ -104,14 +104,14 @@ export function useCompetition() {
       if (filters.sub_status && filters.sub_status !== "all") params.append("sub_status", filters.sub_status)
 
       const url = `/api/ml/items?${params.toString()}`
-      console.log("[v0] Fetching from:", url)
+      console.log("Fetching from:", url)
 
       const mlResponse = await fetch(url)
-      console.log("[v0] Response status:", mlResponse.status)
+      console.log("Response status:", mlResponse.status)
 
       if (mlResponse.ok) {
         const mlData = await mlResponse.json()
-        console.log("[v0] Received data:", mlData)
+        console.log("Received data:", mlData)
 
         if (mlData.paging) {
           setMlPaging(mlData.paging)
@@ -150,13 +150,13 @@ export function useCompetition() {
           })
         }
 
-        console.log("[v0] Setting", formattedMLProducts.length, "products")
+        console.log("Setting", formattedMLProducts.length, "products")
         setProducts(formattedMLProducts)
       } else {
-        console.error("[v0] Failed to fetch products:", mlResponse.status)
+        console.error("Failed to fetch products:", mlResponse.status)
       }
     } catch (error) {
-      console.error("[v0] Failed to load products:", error)
+      console.error("Failed to load products:", error)
     }
     setLoading(false)
   }
@@ -402,7 +402,7 @@ export function useCompetition() {
         requestBody.title = editForm.title
       }
 
-      console.log("[v0] Saving product changes:", requestBody)
+      console.log("Saving product changes:", requestBody)
 
       const res = await fetch("/api/ml/items/update", {
         method: "PUT",

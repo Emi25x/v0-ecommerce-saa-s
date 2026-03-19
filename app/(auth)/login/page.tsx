@@ -31,7 +31,7 @@ export default function Page() {
       })
       if (error) {
         // Log del error completo para debugging
-        console.error("[v0] Supabase auth error:", {
+        console.error("Supabase auth error:", {
           message: error.message,
           name: error.name,
           status: error.status,
@@ -49,7 +49,7 @@ export default function Page() {
       router.refresh()
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Error al iniciar sesión"
-      console.error("[v0] Login error:", errorMessage)
+      console.error("Login error:", errorMessage)
       setError(errorMessage)
     } finally {
       setIsLoading(false)

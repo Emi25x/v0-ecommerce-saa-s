@@ -152,7 +152,7 @@ export function useImportSources() {
         .order("started_at", { ascending: false })
 
       if (historyError) {
-        console.log("[v0] No se pudo cargar el historial:", historyError.message)
+        console.log("No se pudo cargar el historial:", historyError.message)
       }
 
       const uniqueSourcesMap = new Map()
@@ -172,7 +172,7 @@ export function useImportSources() {
       setSources(sourcesWithSchedules)
       return sourcesWithSchedules
     } catch (error) {
-      console.error("[v0] Error loading sources:", error)
+      console.error("Error loading sources:", error)
       toast({
         title: "Error",
         description: "No se pudieron cargar las fuentes de importación",
@@ -399,7 +399,7 @@ export function useImportSources() {
                 }
               }
             } catch (error) {
-              console.error("[v0] Error al cargar fuente de respaldo:", backupSource.name, error)
+              console.error("Error al cargar fuente de respaldo:", backupSource.name, error)
             }
           }
         }
@@ -609,7 +609,7 @@ export function useImportSources() {
 
         await loadSources()
       } catch (error: any) {
-        console.error("[v0] Error en importación:", error)
+        console.error("Error en importación:", error)
         setImportProgress((prev) => ({ ...prev, status: "error" }))
 
         if (historyId) {
@@ -683,7 +683,7 @@ export function useImportSources() {
         return cleaned
       })
     } catch (error) {
-      console.error("[v0] Error checking running imports:", error)
+      console.error("Error checking running imports:", error)
     }
   }
 

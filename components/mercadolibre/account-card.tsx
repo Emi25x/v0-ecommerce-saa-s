@@ -112,7 +112,7 @@ export function MLAccountCard({
         onUpdate()
       }
     } catch (error) {
-      console.error("[v0] Error saving sync preferences:", error)
+      console.error("Error saving sync preferences:", error)
     } finally {
       setIsSavingSync(false)
     }
@@ -195,7 +195,7 @@ export function MLAccountCard({
         onUpdate()
       }
     } catch (error) {
-      console.error("[v0] Error updating nickname:", error)
+      console.error("Error updating nickname:", error)
     }
   }
 
@@ -214,10 +214,10 @@ export function MLAccountCard({
         }),
       )
 
-      console.log("[v0] Browser preference saved to localStorage:", finalBrowserPreference)
+      console.log("Browser preference saved to localStorage:", finalBrowserPreference)
       alert("Navegador preferido guardado correctamente")
     } catch (error) {
-      console.error("[v0] Error saving browser preference:", error)
+      console.error("Error saving browser preference:", error)
       alert("Error al guardar el navegador preferido")
     } finally {
       setIsSavingBrowser(false)
@@ -239,7 +239,7 @@ export function MLAccountCard({
         onDelete()
       }
     } catch (error) {
-      console.error("[v0] Error deleting account:", error)
+      console.error("Error deleting account:", error)
     } finally {
       setIsDeleting(false)
     }

@@ -183,7 +183,7 @@ export function SyncStatusCard() {
           .catch(console.error)
       })
     } catch (error: any) {
-      console.error("[v0] Error advancing import:", error)
+      console.error("Error advancing import:", error)
       setAdvanceResult(`Error: ${error.message}`)
       setTimeout(() => setAdvanceResult(null), 5000)
     } finally {
@@ -223,7 +223,7 @@ export function SyncStatusCard() {
 
           if (!statusResponse.ok) {
             const errorData = await statusResponse.json()
-            console.error("[v0] Error fetching import status:", errorData)
+            console.error("Error fetching import status:", errorData)
 
             if (statusResponse.status === 404) {
               // Job no encontrado, mostrar error y detener monitoreo
@@ -256,11 +256,11 @@ export function SyncStatusCard() {
             fetchAccounts() // Actualizar estadísticas
           }
         } catch (error) {
-          console.error("[v0] Error monitoring import:", error)
+          console.error("Error monitoring import:", error)
         }
       }, 3000)
     } catch (error: any) {
-      console.error("[v0] Error in batch import:", error)
+      console.error("Error in batch import:", error)
       alert("Error: " + error.message)
       setBatchImporting(null)
     }

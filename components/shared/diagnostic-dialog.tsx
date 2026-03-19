@@ -25,7 +25,7 @@ export function DiagnosticDialog({ open, onOpenChange, integrationName, onRunDia
       const diagnosticResults = await onRunDiagnostics()
       setResults(diagnosticResults)
     } catch (error) {
-      console.error("[v0] Error ejecutando diagnósticos:", error)
+      console.error("Error ejecutando diagnósticos:", error)
     } finally {
       setRunning(false)
     }

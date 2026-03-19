@@ -37,7 +37,7 @@ export function WebhookStatusCard() {
       const data = await response.json()
       setQueueCount(data.count || 0)
     } catch (error) {
-      console.error("[v0] Error fetching queue:", error)
+      console.error("Error fetching queue:", error)
       setError("No se pudo cargar la cola de webhooks")
     } finally {
       setLoading(false)
@@ -79,7 +79,7 @@ export function WebhookStatusCard() {
         throw new Error(data.error || "Error al procesar notificaciones")
       }
     } catch (error) {
-      console.error("[v0] Error processing queue:", error)
+      console.error("Error processing queue:", error)
       const errorMessage = error instanceof Error ? error.message : "Error desconocido"
       setError(errorMessage)
     } finally {

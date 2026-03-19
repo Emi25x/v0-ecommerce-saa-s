@@ -33,7 +33,7 @@ export function LibralConfigDialog({ open, onOpenChange, onSuccess }: LibralConf
     const cleanUsername = username.trim().replace(/^["']|["']$/g, "")
     const cleanPassword = password.trim().replace(/^["']|["']$/g, "")
 
-    console.log("[v0] Libral Config - Attempting to save credentials for user:", cleanUsername)
+    console.log("Libral Config - Attempting to save credentials for user:", cleanUsername)
 
     try {
       // Save credentials
@@ -48,21 +48,21 @@ export function LibralConfigDialog({ open, onOpenChange, onSuccess }: LibralConf
 
       if (!saveResponse.ok) {
         const errorData = await saveResponse.json()
-        console.error("[v0] Libral Config - Failed to save credentials:", errorData)
+        console.error("Libral Config - Failed to save credentials:", errorData)
         throw new Error(errorData.error || "Failed to save credentials")
       }
 
-      console.log("[v0] Libral Config - Credentials saved, testing connection...")
+      console.log("Libral Config - Credentials saved, testing connection...")
 
       // Test connection
       const testResponse = await fetch("/api/libral/test-connection")
       const testData = await testResponse.json()
 
-      console.log("[v0] Libral Config - Test response:", testData)
+      console.log("Libral Config - Test response:", testData)
 
       if (testData.connected) {
         setSuccess(true)
-        console.log("[v0] Libral Config - Connection successful, installing as import source...")
+        console.log("Libral Config - Connection successful, installing as import source...")
         // Auto-install as import source
         await fetch("/api/setup/libral", { method: "POST" })
         setTimeout(() => {
@@ -73,7 +73,7 @@ export function LibralConfigDialog({ open, onOpenChange, onSuccess }: LibralConf
         setError(testData.error || "Failed to connect to Libral")
       }
     } catch (err) {
-      console.error("[v0] Libral Config - Error:", err)
+      console.error("Libral Config - Error:", err)
       setError(err instanceof Error ? err.message : "Failed to configure Libral")
     } finally {
       setTesting(false)
