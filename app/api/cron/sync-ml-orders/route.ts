@@ -1,7 +1,9 @@
+import { type NextRequest } from "next/server"
 import { createClient } from "@/lib/db/server"
 import { executeSyncOrdersBatch } from "@/domains/mercadolibre/sync/orders"
 import { NextResponse } from "next/server"
 import { startRun } from "@/lib/process-runs"
+import { requireCron } from "@/lib/auth/require-auth"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300 // 5 minutos
@@ -9,16 +11,11 @@ export const maxDuration = 300 // 5 minutos
 const MAX_ORDERS_PER_ACCOUNT = 500
 const PAGE_SIZE = 50
 
-export async function GET(request: Request) {
-  try {
-    const authHeader = request.headers.get("authorization")
-    if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      const isVercelCron = request.headers.get("x-vercel-cron") === "true"
-      if (!isVercelCron && process.env.NODE_ENV === "production") {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-      }
-    }
+export async function GET(request: NextRequest) {
+  const cronAuth = await requireCron(request)
+  if (cronAuth.error) return cronAuth.response
 
+  try {
     const supabase = await createClient()
 
     const { data: accounts, error: accountsError } = await supabase.from("ml_accounts").select("id, nickname")

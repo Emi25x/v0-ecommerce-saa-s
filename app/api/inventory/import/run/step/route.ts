@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { requireCron } from "@/lib/auth/require-auth"
 import { createClient } from "@/lib/db/server"
 import Papa from "papaparse"
 
@@ -30,6 +31,8 @@ function normalizeHeader(header: string): string {
  * Procesa UN chunk de filas desde Storage (resumible, anti-timeout)
  */
 export async function POST(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
   console.log("[v0][RUN/STEP] ========== VERSION 2024-DELIMITER-FIX ==========")
 
   try {

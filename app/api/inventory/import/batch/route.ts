@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { requireCron } from "@/lib/auth/require-auth"
 import { createClient } from "@/lib/db/server"
 import Papa from "papaparse"
 import { fetchWithAuth } from "@/lib/http/fetch-with-auth"
@@ -23,6 +24,8 @@ function isTimeoutError(msg: string): boolean {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
   const startTime = Date.now()
 
   try {

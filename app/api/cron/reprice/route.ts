@@ -20,6 +20,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { getValidAccessToken } from "@/lib/mercadolibre"
+import { requireCron } from "@/lib/auth/require-auth"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300 // 5 min — procesar ítems en serie sin timeout
@@ -101,11 +102,8 @@ function calcReprice(
 // ── Route handler ─────────────────────────────────────────────────────────────
 
 export async function GET(req: NextRequest) {
-  // Auth: solo Vercel Cron o llamada interna con CRON_SECRET
-  const auth = req.headers.get("authorization")
-  if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
+  const auth = await requireCron(req)
+  if (auth.error) return auth.response
 
   const supabase = getSupabase()
   const startedAt = Date.now()

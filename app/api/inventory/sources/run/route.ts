@@ -1,13 +1,17 @@
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
 import { runLibralStockImport } from "@/domains/suppliers/libral/stock-import"
 import { executeBatchImport } from "@/lib/import/batch-import"
+import { requireCron } from "@/lib/auth/require-auth"
 
 /**
  * POST /api/inventory/sources/run
  * Ejecuta una importación para una fuente específica usando su UUID
  */
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
+
   try {
     const body = await request.json()
     const { source_id, mode = "update" } = body

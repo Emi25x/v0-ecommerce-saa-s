@@ -1,11 +1,16 @@
+import { type NextRequest } from "next/server"
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
 import { sendDailySalesEmail } from "@/domains/radar/daily-sales"
+import { requireCron } from "@/lib/auth/require-auth"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
+
   try {
     console.log("[v0] Cron: Ejecutando reporte diario de ventas")
 

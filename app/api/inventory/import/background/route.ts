@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { requireCron } from "@/lib/auth/require-auth"
 import { createClient } from "@/lib/db/server"
 import Papa from "papaparse"
 import { mergeStockBySource } from "@/domains/inventory/stock-helpers"
@@ -18,6 +19,8 @@ const getColumnValue = (row: Record<string, any>, columnName: string): any => {
 }
 
 export async function POST(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
   try {
     const { sourceId, fileUrl, mode = "update" } = await request.json()
 
@@ -282,6 +285,8 @@ async function processImportInBackground(
 
 // GET para verificar el estado de una importación
 export async function GET(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
   const importId = request.nextUrl.searchParams.get("importId")
 
   if (!importId) {

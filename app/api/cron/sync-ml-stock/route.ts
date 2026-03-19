@@ -1,24 +1,19 @@
+import { type NextRequest } from "next/server"
 import { createClient } from "@/lib/db/server"
 import { executeSyncStockBatch } from "@/domains/mercadolibre/sync/stock"
 import { getBestIdentifier } from "@/domains/mercadolibre/publications/identifier-extractor"
 import { NextResponse } from "next/server"
 import { startRun } from "@/lib/process-runs"
+import { requireCron } from "@/lib/auth/require-auth"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300 // 5 minutos
 
-export async function GET(request: Request) {
-  try {
-    // En Vercel, los crons están protegidos por defecto
-    const authHeader = request.headers.get("authorization")
-    if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      // Solo verificar si CRON_SECRET está configurado
-      const isVercelCron = request.headers.get("x-vercel-cron") === "true"
-      if (!isVercelCron && process.env.NODE_ENV === "production") {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-      }
-    }
+export async function GET(request: NextRequest) {
+  const cronAuth = await requireCron(request)
+  if (cronAuth.error) return cronAuth.response
 
+  try {
     const supabase = await createClient()
 
     // Obtener todas las cuentas ML con auto_sync_stock habilitado

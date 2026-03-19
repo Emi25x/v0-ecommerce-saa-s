@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { requireCron } from "@/lib/auth/require-auth"
 import { createClient } from "@/lib/db/server"
 
 /**
@@ -6,6 +7,8 @@ import { createClient } from "@/lib/db/server"
  * Retorna estado actual del run con contrato estable
  */
 export async function GET(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
   try {
     const supabase = await createClient()
     const { searchParams } = new URL(request.url)

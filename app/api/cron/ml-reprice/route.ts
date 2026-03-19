@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { getValidAccessToken } from "@/lib/mercadolibre"
+import { requireCron } from "@/lib/auth/require-auth"
 import {
   calcReprice,
   persistRepriceState,
@@ -29,10 +30,8 @@ function delay(ms: number) {
 }
 
 export async function GET(req: NextRequest) {
-  const auth = req.headers.get("authorization")
-  if (process.env.CRON_SECRET && auth !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
+  const auth = await requireCron(req)
+  if (auth.error) return auth.response
 
   const supabase = sb()
   const startedAt = Date.now()

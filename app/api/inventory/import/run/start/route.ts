@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { requireCron } from "@/lib/auth/require-auth"
 import { createClient } from "@/lib/db/server"
 import { fetchWithAuth } from "@/lib/http/fetch-with-auth"
 import { inflateRawSync } from "node:zlib"
@@ -15,6 +16,8 @@ export const maxDuration = 300 // 5 minutos para descargas grandes
  * 4. Retorna inmediatamente (sanity check se hace en primer step)
  */
 export async function POST(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
   console.log("[v0][RUN/START] ========== VERSION 2024-ZIP-FIX ==========")
   const startTime = Date.now()
 

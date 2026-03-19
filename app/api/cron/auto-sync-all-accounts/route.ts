@@ -1,6 +1,8 @@
+import { type NextRequest } from "next/server"
 import { NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/db/admin"
 import { executeAutoSyncAccount } from "@/domains/mercadolibre/sync/auto-sync"
+import { requireCron } from "@/lib/auth/require-auth"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -46,11 +48,9 @@ async function syncAllAccounts() {
   }
 }
 
-export async function GET(request: Request) {
-  const authHeader = request.headers.get("authorization")
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
+export async function GET(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
 
   try {
     const result = await syncAllAccounts()
@@ -60,7 +60,10 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST() {
+export async function POST(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
+
   try {
     const result = await syncAllAccounts()
     return NextResponse.json(result)

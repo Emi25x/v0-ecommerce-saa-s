@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/db/server"
 import { type NextRequest, NextResponse } from "next/server"
+import { requireCron } from "@/lib/auth/require-auth"
 
 console.log("[v0] ==================== CSV MODULE LOADED ====================")
 
@@ -67,6 +68,8 @@ const STANDARD_FIELDS = [
 const NUMERIC_FIELDS = ["price", "stock"]
 
 export async function POST(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
   console.log("[v0] ==================== CSV POST CALLED ====================")
   console.log("[v0] Timestamp:", new Date().toISOString())
   console.log("[v0] Request URL:", request.url)

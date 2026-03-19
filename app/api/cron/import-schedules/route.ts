@@ -1,3 +1,4 @@
+import { type NextRequest } from "next/server"
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
 import { executeFullImport } from "@/lib/import/batch-import"
@@ -5,6 +6,7 @@ import { runCatalogImport } from "@/domains/suppliers/azeta/catalog-import"
 import { runAzetaStockUpdate } from "@/domains/suppliers/azeta/stock-import"
 import { runLibralStockImport } from "@/domains/suppliers/libral/stock-import"
 import { runArnoiaStockImport } from "@/domains/suppliers/arnoia/stock-import"
+import { requireCron } from "@/lib/auth/require-auth"
 // TODO: Implementar sync ML como función directa en lugar de fetch
 // import { syncStockWithML } from "@/lib/ml/sync-stock"
 
@@ -20,19 +22,11 @@ import { runArnoiaStockImport } from "@/domains/suppliers/arnoia/stock-import"
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const cronAuth = await requireCron(request)
+  if (cronAuth.error) return cronAuth.response
+
   try {
-    // Verificar CRON_SECRET solo si está configurado
-    // En Vercel, los crons están protegidos por defecto (solo Vercel puede invocarlos)
-    const authHeader = request.headers.get("authorization")
-    const cronSecret = process.env.CRON_SECRET
-
-    // Solo verificar si CRON_SECRET está configurado Y la petición viene con auth header
-    if (cronSecret && authHeader && authHeader !== `Bearer ${cronSecret}`) {
-      console.log("[v0] Cron job no autorizado - secret incorrecto")
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 })
-    }
-
     console.log("[v0] Ejecutando cron job de importaciones programadas")
 
     const supabase = await createClient()

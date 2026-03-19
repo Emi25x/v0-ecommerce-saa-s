@@ -1,6 +1,8 @@
+import { type NextRequest } from "next/server"
 import { createClient } from "@/lib/db/server"
 import { NextResponse } from "next/server"
 import { executeSingleTick } from "@/domains/mercadolibre/import/orchestrator"
+import { requireCron } from "@/lib/auth/require-auth"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -9,7 +11,10 @@ export const maxDuration = 60
  * POST /api/cron/ml-import-tick
  * Vercel Cron: advances the ML import process automatically.
  */
-export async function POST() {
+export async function POST(request: NextRequest) {
+  const auth = await requireCron(request)
+  if (auth.error) return auth.response
+
   console.log("[CRON TICK] ========== ML IMPORT TICK ==========")
   const ranAt = new Date().toISOString()
 
