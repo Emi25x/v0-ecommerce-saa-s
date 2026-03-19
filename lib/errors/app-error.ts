@@ -37,18 +37,16 @@ export class ForbiddenError extends AppError {
 
 export class NotFoundError extends AppError {
   constructor(resource: string, id?: string) {
-    super(
-      id ? `${resource} '${id}' not found` : `${resource} not found`,
-      "NOT_FOUND",
-      404,
-      { resource, id },
-    )
+    super(id ? `${resource} '${id}' not found` : `${resource} not found`, "NOT_FOUND", 404, { resource, id })
     this.name = "NotFoundError"
   }
 }
 
 export class RateLimitError extends AppError {
-  constructor(message: string = "Rate limit exceeded", public readonly retryAfterMs?: number) {
+  constructor(
+    message: string = "Rate limit exceeded",
+    public readonly retryAfterMs?: number,
+  ) {
     super(message, "RATE_LIMIT", 429, { retryAfterMs })
     this.name = "RateLimitError"
   }

@@ -273,9 +273,7 @@ export function CompetitionTable({
                             <div className="space-y-1">
                               <div className="flex items-center gap-1">
                                 <span className="text-xl">🏆</span>
-                                <span className="font-medium text-gray-900">
-                                  {product.competition.winner.nickname}
-                                </span>
+                                <span className="font-medium text-gray-900">{product.competition.winner.nickname}</span>
                               </div>
                               {product.competition.winner.advantages &&
                                 product.competition.winner.advantages.length > 0 && (
@@ -301,10 +299,13 @@ export function CompetitionTable({
                         <TableCell>
                           {priceTrackings[product.id] ? (
                             <div className="space-y-1">
-                              <Badge className={priceTrackings[product.id].enabled
-                                ? "bg-green-100 text-green-800 border-green-300"
-                                : "bg-gray-100 text-gray-600 border-gray-300"
-                              }>
+                              <Badge
+                                className={
+                                  priceTrackings[product.id].enabled
+                                    ? "bg-green-100 text-green-800 border-green-300"
+                                    : "bg-gray-100 text-gray-600 border-gray-300"
+                                }
+                              >
                                 {priceTrackings[product.id].enabled ? "✓ Activo" : "Pausado"}
                               </Badge>
                               <div className="text-xs text-muted-foreground">
@@ -370,9 +371,8 @@ export function CompetitionTable({
                                   </h4>
                                   <div className="space-y-3 text-sm">
                                     <p className="text-red-700">
-                                      Tu publicación está penalizada y no puede competir en el catálogo. Esto
-                                      significa que no aparecerá en la página del producto y tendrás menos
-                                      visibilidad.
+                                      Tu publicación está penalizada y no puede competir en el catálogo. Esto significa
+                                      que no aparecerá en la página del producto y tendrás menos visibilidad.
                                     </p>
 
                                     <div className="bg-white p-4 rounded border border-red-200">
@@ -390,9 +390,7 @@ export function CompetitionTable({
                                     </div>
 
                                     <div className="bg-white p-4 rounded border border-red-200">
-                                      <p className="font-semibold text-red-800 mb-2">
-                                        Cómo resolver la penalización:
-                                      </p>
+                                      <p className="font-semibold text-red-800 mb-2">Cómo resolver la penalización:</p>
                                       <ol className="list-decimal list-inside space-y-2 text-gray-700">
                                         <li>
                                           <strong>Mejora las fotos:</strong> Usa imágenes de alta calidad, con fondo
@@ -415,8 +413,8 @@ export function CompetitionTable({
                                           resuélvelos lo antes posible
                                         </li>
                                         <li>
-                                          <strong>Contacta soporte:</strong> Si después de hacer mejoras la
-                                          penalización persiste, contacta al soporte de MercadoLibre
+                                          <strong>Contacta soporte:</strong> Si después de hacer mejoras la penalización
+                                          persiste, contacta al soporte de MercadoLibre
                                         </li>
                                       </ol>
                                     </div>
@@ -448,8 +446,8 @@ export function CompetitionTable({
                                     </div>
 
                                     <p className="text-xs text-red-600 italic">
-                                      Nota: Las penalizaciones pueden tardar varios días en resolverse después de
-                                      hacer las correcciones necesarias.
+                                      Nota: Las penalizaciones pueden tardar varios días en resolverse después de hacer
+                                      las correcciones necesarias.
                                     </p>
                                   </div>
                                 </div>
@@ -488,9 +486,7 @@ export function CompetitionTable({
                                             style={{ width: product.competition.visit_share }}
                                           />
                                         </div>
-                                        <span className="text-sm font-semibold">
-                                          {product.competition.visit_share}
-                                        </span>
+                                        <span className="text-sm font-semibold">{product.competition.visit_share}</span>
                                       </div>
                                     </div>
                                   </div>
@@ -675,10 +671,7 @@ export function CompetitionTable({
                                           {product.competition.boosts
                                             .filter((boost) => boost.status === "active")
                                             .map((boost, idx) => (
-                                              <Badge
-                                                key={idx}
-                                                className="bg-green-100 text-green-800 border-green-300"
-                                              >
+                                              <Badge key={idx} className="bg-green-100 text-green-800 border-green-300">
                                                 {getBoostIcon(boost.type)} {getBoostText(boost.type)}
                                               </Badge>
                                             ))}

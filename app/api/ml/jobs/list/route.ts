@@ -3,12 +3,12 @@ import { NextRequest, NextResponse } from "next/server"
 import { protectAPI } from "@/lib/auth/protect-api"
 
 export async function GET(request: NextRequest) {
-  const authError = await protectAPI()
-  if (authError) return authError
+  const authCheck = await protectAPI()
+  if (authCheck.error) return authCheck.response
 
   const { searchParams } = request.nextUrl
   const account_id = searchParams.get("account_id")
-  const limit      = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "20")))
+  const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "20")))
 
   const supabase = await createClient()
 

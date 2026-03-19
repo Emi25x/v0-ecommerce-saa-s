@@ -2,29 +2,10 @@
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-import {
-  RefreshCw,
-  Search,
-  Scale,
-  Tag,
-  ScanLine,
-  Layers,
-} from "lucide-react"
-import {
-  COLOR_MAP,
-} from "@/components/mercadolibre/publications/types"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { RefreshCw, Search, Scale, Tag, ScanLine, Layers } from "lucide-react"
+import { COLOR_MAP } from "@/components/mercadolibre/publications/types"
 import type { UseMlPublicationsReturn } from "@/hooks/use-ml-publications"
 
 interface PublicationFiltersProps {
@@ -34,20 +15,28 @@ interface PublicationFiltersProps {
 export function PublicationFilters({ hook }: PublicationFiltersProps) {
   const {
     accounts,
-    accountId, setAccountId,
-    statusFilter, setStatusFilter,
-    search, setSearch,
-    sinProducto, setSinProducto,
-    soloElegibles, setSoloElegibles,
-    sinStock, setSinStock,
-    stockFirst, setStockFirst,
+    accountId,
+    setAccountId,
+    statusFilter,
+    setStatusFilter,
+    search,
+    setSearch,
+    sinProducto,
+    setSinProducto,
+    soloElegibles,
+    setSoloElegibles,
+    sinStock,
+    setSinStock,
+    stockFirst,
+    setStockFirst,
     syncingML,
     loading,
     counts,
     countsLoading,
     weightSync,
     skuBackfill,
-    showDuplicates, setShowDuplicates,
+    showDuplicates,
+    setShowDuplicates,
     loadingDuplicates,
     duplicateGroups,
     setPage,
@@ -64,9 +53,7 @@ export function PublicationFilters({ hook }: PublicationFiltersProps) {
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-2">
-          <h1 className="text-2xl font-bold tracking-tight">
-            Publicaciones (Mercado Libre)
-          </h1>
+          <h1 className="text-2xl font-bold tracking-tight">Publicaciones (Mercado Libre)</h1>
 
           {/* Status count badges */}
           <div className="flex flex-wrap gap-2">
@@ -80,42 +67,68 @@ export function PublicationFilters({ hook }: PublicationFiltersProps) {
                   label="Total"
                   value={counts.total}
                   active={statusFilter === "all" && !sinProducto}
-                  onClick={() => { setStatusFilter("all"); setSinProducto(false); setPage(0); }}
+                  onClick={() => {
+                    setStatusFilter("all")
+                    setSinProducto(false)
+                    setPage(0)
+                  }}
                 />
                 <BadgeCount
                   label="Activas"
                   value={counts.active}
                   color="green"
                   active={statusFilter === "active"}
-                  onClick={() => { setStatusFilter("active"); setSinProducto(false); setPage(0); }}
+                  onClick={() => {
+                    setStatusFilter("active")
+                    setSinProducto(false)
+                    setPage(0)
+                  }}
                 />
                 <BadgeCount
                   label="Pausadas"
                   value={counts.paused}
                   color="yellow"
                   active={statusFilter === "paused"}
-                  onClick={() => { setStatusFilter("paused"); setSinProducto(false); setPage(0); }}
+                  onClick={() => {
+                    setStatusFilter("paused")
+                    setSinProducto(false)
+                    setPage(0)
+                  }}
                 />
                 <BadgeCount
                   label="Cerradas"
                   value={counts.closed}
                   color="zinc"
                   active={statusFilter === "closed"}
-                  onClick={() => { setStatusFilter("closed"); setSinProducto(false); setPage(0); }}
+                  onClick={() => {
+                    setStatusFilter("closed")
+                    setSinProducto(false)
+                    setPage(0)
+                  }}
                 />
                 <BadgeCount
                   label="Sin producto"
                   value={counts.sin_producto}
                   color="orange"
                   active={sinProducto}
-                  onClick={() => { setSinProducto(p => !p); setSinStock(false); setStatusFilter("all"); setPage(0); }}
+                  onClick={() => {
+                    setSinProducto((p) => !p)
+                    setSinStock(false)
+                    setStatusFilter("all")
+                    setPage(0)
+                  }}
                 />
                 <BadgeCount
                   label="Sin stock"
                   value={counts.sin_stock}
                   color="red"
                   active={sinStock}
-                  onClick={() => { setSinStock(s => !s); setSinProducto(false); setStatusFilter("all"); setPage(0); }}
+                  onClick={() => {
+                    setSinStock((s) => !s)
+                    setSinProducto(false)
+                    setStatusFilter("all")
+                    setPage(0)
+                  }}
                 />
                 {counts.eligible_catalog != null && (
                   <BadgeCount
@@ -123,12 +136,18 @@ export function PublicationFilters({ hook }: PublicationFiltersProps) {
                     value={counts.eligible_catalog}
                     color="emerald"
                     active={soloElegibles}
-                    onClick={() => { setSoloElegibles(s => !s); setSinStock(false); setSinProducto(false); setStatusFilter("all"); setPage(0); }}
+                    onClick={() => {
+                      setSoloElegibles((s) => !s)
+                      setSinStock(false)
+                      setSinProducto(false)
+                      setStatusFilter("all")
+                      setPage(0)
+                    }}
                   />
                 )}
                 {accountId !== "all" && (
                   <button
-                    onClick={() => showDuplicates ? setShowDuplicates(false) : loadDuplicates()}
+                    onClick={() => (showDuplicates ? setShowDuplicates(false) : loadDuplicates())}
                     className={`
                       inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium
                       transition-colors cursor-pointer
@@ -137,7 +156,11 @@ export function PublicationFilters({ hook }: PublicationFiltersProps) {
                     `}
                   >
                     <Layers className="h-3 w-3" />
-                    {loadingDuplicates ? "Buscando..." : showDuplicates ? `Duplicados ${duplicateGroups.length}` : "Duplicados"}
+                    {loadingDuplicates
+                      ? "Buscando..."
+                      : showDuplicates
+                        ? `Duplicados ${duplicateGroups.length}`
+                        : "Duplicados"}
                   </button>
                 )}
               </>
@@ -151,7 +174,10 @@ export function PublicationFilters({ hook }: PublicationFiltersProps) {
             <span className="text-xs text-muted-foreground">
               <span className="text-green-400 font-medium">{weightSync.result.updated}</span> actualizados
               {weightSync.result.missing > 0 && (
-                <> · <span className="text-yellow-400">{weightSync.result.missing}</span> sin peso</>
+                <>
+                  {" "}
+                  · <span className="text-yellow-400">{weightSync.result.missing}</span> sin peso
+                </>
               )}
             </span>
           )}
@@ -161,7 +187,10 @@ export function PublicationFilters({ hook }: PublicationFiltersProps) {
             <span className="text-xs text-muted-foreground">
               <span className="text-green-400 font-medium">{skuBackfill.result.updated}</span> SKU cargados
               {skuBackfill.result.skipped > 0 && (
-                <> · <span className="text-yellow-400">{skuBackfill.result.skipped}</span> sin SKU</>
+                <>
+                  {" "}
+                  · <span className="text-yellow-400">{skuBackfill.result.skipped}</span> sin SKU
+                </>
               )}
             </span>
           )}
@@ -215,7 +244,7 @@ export function PublicationFilters({ hook }: PublicationFiltersProps) {
                 disabled={loading || countsLoading}
                 className="bg-transparent"
               >
-                <RefreshCw className={`h-4 w-4 mr-2 ${(loading || countsLoading) ? "animate-spin" : ""}`} />
+                <RefreshCw className={`h-4 w-4 mr-2 ${loading || countsLoading ? "animate-spin" : ""}`} />
                 Refrescar
               </Button>
             </TooltipTrigger>
@@ -224,12 +253,7 @@ export function PublicationFilters({ hook }: PublicationFiltersProps) {
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={syncWithML}
-                disabled={syncingML || accountId === "all"}
-              >
+              <Button variant="default" size="sm" onClick={syncWithML} disabled={syncingML || accountId === "all"}>
                 <ScanLine className={`h-4 w-4 mr-2 ${syncingML ? "animate-spin" : ""}`} />
                 {syncingML ? "Sincronizando..." : "Sincronizar con ML"}
               </Button>
@@ -245,18 +269,25 @@ export function PublicationFilters({ hook }: PublicationFiltersProps) {
 
       {/* ── Filtros ─────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-3 items-end">
-
         {/* Cuenta */}
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">Cuenta</label>
-          <Select value={accountId} onValueChange={v => { setAccountId(v); setPage(0) }}>
+          <Select
+            value={accountId}
+            onValueChange={(v) => {
+              setAccountId(v)
+              setPage(0)
+            }}
+          >
             <SelectTrigger className="w-48 h-9 bg-transparent">
               <SelectValue placeholder="Todas las cuentas" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todas las cuentas</SelectItem>
-              {accounts.map(a => (
-                <SelectItem key={a.id} value={a.id}>{a.nickname}</SelectItem>
+              {accounts.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.nickname}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -265,7 +296,13 @@ export function PublicationFilters({ hook }: PublicationFiltersProps) {
         {/* Estado */}
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">Estado</label>
-          <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(0) }}>
+          <Select
+            value={statusFilter}
+            onValueChange={(v) => {
+              setStatusFilter(v)
+              setPage(0)
+            }}
+          >
             <SelectTrigger className="w-36 h-9 bg-transparent">
               <SelectValue placeholder="Todos" />
             </SelectTrigger>
@@ -285,8 +322,8 @@ export function PublicationFilters({ hook }: PublicationFiltersProps) {
           <div className="flex gap-2">
             <Input
               value={search}
-              onChange={e => setSearch(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handleSearch()}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
               placeholder="Titulo o Item ID..."
               className="h-9 bg-transparent"
             />
@@ -302,7 +339,10 @@ export function PublicationFilters({ hook }: PublicationFiltersProps) {
             <input
               type="checkbox"
               checked={sinProducto}
-              onChange={e => { setSinProducto(e.target.checked); setPage(0) }}
+              onChange={(e) => {
+                setSinProducto(e.target.checked)
+                setPage(0)
+              }}
               className="accent-primary"
             />
             Sin producto
@@ -311,7 +351,10 @@ export function PublicationFilters({ hook }: PublicationFiltersProps) {
             <input
               type="checkbox"
               checked={soloElegibles}
-              onChange={e => { setSoloElegibles(e.target.checked); setPage(0) }}
+              onChange={(e) => {
+                setSoloElegibles(e.target.checked)
+                setPage(0)
+              }}
               className="accent-primary"
             />
             Solo elegibles catalogo
@@ -320,7 +363,10 @@ export function PublicationFilters({ hook }: PublicationFiltersProps) {
             <input
               type="checkbox"
               checked={sinStock}
-              onChange={e => { setSinStock(e.target.checked); setPage(0) }}
+              onChange={(e) => {
+                setSinStock(e.target.checked)
+                setPage(0)
+              }}
               className="accent-primary"
             />
             Sin stock
@@ -329,7 +375,10 @@ export function PublicationFilters({ hook }: PublicationFiltersProps) {
             <input
               type="checkbox"
               checked={stockFirst}
-              onChange={e => { setStockFirst(e.target.checked); setPage(0) }}
+              onChange={(e) => {
+                setStockFirst(e.target.checked)
+                setPage(0)
+              }}
               className="accent-primary"
             />
             Stock primero

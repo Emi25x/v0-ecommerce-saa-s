@@ -2,7 +2,7 @@ import { createClient } from "@/lib/db/server"
 import { executeSyncOrdersBatch } from "@/domains/mercadolibre/sync/orders"
 import { NextRequest, NextResponse } from "next/server"
 
-export const dynamic    = "force-dynamic"
+export const dynamic = "force-dynamic"
 export const maxDuration = 60
 
 /**

@@ -146,8 +146,8 @@ export function CompetitionFilters({
               </Select>
               {filters.competition_status !== "all" && (
                 <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded border border-amber-200">
-                  ℹ️ Este filtro solo muestra productos que ya han sido analizados. Usa el botón &quot;Analizar&quot; para obtener
-                  datos de competencia.
+                  ℹ️ Este filtro solo muestra productos que ya han sido analizados. Usa el botón &quot;Analizar&quot;
+                  para obtener datos de competencia.
                 </p>
               )}
             </div>

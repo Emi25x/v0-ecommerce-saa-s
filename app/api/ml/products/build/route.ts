@@ -13,14 +13,10 @@ export async function POST(request: NextRequest) {
   if (authCheck.error) return authCheck.response
 
   const startTime = Date.now()
-  
+
   try {
     const body = await request.json()
-    const {
-      account_id,
-      max_seconds = 10,
-      batch_size = 100,
-    } = body
+    const { account_id, max_seconds = 10, batch_size = 100 } = body
 
     if (!account_id) {
       return NextResponse.json({ error: "account_id required" }, { status: 400 })
@@ -75,10 +71,7 @@ export async function POST(request: NextRequest) {
 
       if (!publications || publications.length === 0) {
         console.log(`[PRODUCT-BUILDER] No more publications to process`)
-        await supabase
-          .from("product_builder_progress")
-          .update({ status: "done" })
-          .eq("account_id", account_id)
+        await supabase.from("product_builder_progress").update({ status: "done" }).eq("account_id", account_id)
         break
       }
 
@@ -89,41 +82,23 @@ export async function POST(request: NextRequest) {
         let existingProductId = null
 
         if (pub.sku) {
-          const { data } = await supabase
-            .from("products")
-            .select("id")
-            .eq("sku", pub.sku)
-            .limit(1)
-            .maybeSingle()
+          const { data } = await supabase.from("products").select("id").eq("sku", pub.sku).limit(1).maybeSingle()
           if (data) existingProductId = data.id
         }
 
         if (!existingProductId && pub.isbn) {
-          const { data } = await supabase
-            .from("products")
-            .select("id")
-            .eq("isbn", pub.isbn)
-            .limit(1)
-            .maybeSingle()
+          const { data } = await supabase.from("products").select("id").eq("isbn", pub.isbn).limit(1).maybeSingle()
           if (data) existingProductId = data.id
         }
 
         if (!existingProductId && pub.ean) {
-          const { data } = await supabase
-            .from("products")
-            .select("id")
-            .eq("ean", pub.ean)
-            .limit(1)
-            .maybeSingle()
+          const { data } = await supabase.from("products").select("id").eq("ean", pub.ean).limit(1).maybeSingle()
           if (data) existingProductId = data.id
         }
 
         if (existingProductId) {
           // Producto existe - vincular
-          await supabase
-            .from("ml_publications")
-            .update({ product_id: existingProductId })
-            .eq("id", pub.id)
+          await supabase.from("ml_publications").update({ product_id: existingProductId }).eq("id", pub.id)
           updated++
         } else {
           // Producto NO existe - crear nuevo
@@ -141,17 +116,14 @@ export async function POST(request: NextRequest) {
               ml_status: pub.status,
               ml_permalink: pub.permalink,
               ml_account_id: account_id,
-              source: ['mercadolibre'],
+              source: ["mercadolibre"],
             })
             .select("id")
             .single()
 
           if (!createError && newProduct) {
             // Vincular publicación con nuevo producto
-            await supabase
-              .from("ml_publications")
-              .update({ product_id: newProduct.id })
-              .eq("id", pub.id)
+            await supabase.from("ml_publications").update({ product_id: newProduct.id }).eq("id", pub.id)
             created++
           } else {
             console.error(`[PRODUCT-BUILDER] Error creating product:`, createError)
@@ -165,9 +137,9 @@ export async function POST(request: NextRequest) {
       await supabase
         .from("product_builder_progress")
         .update({
-          publications_processed: supabase.rpc('increment', { x: processed }),
-          products_created: supabase.rpc('increment', { x: created }),
-          products_updated: supabase.rpc('increment', { x: updated }),
+          publications_processed: supabase.rpc("increment", { x: processed }),
+          products_created: supabase.rpc("increment", { x: created }),
+          products_updated: supabase.rpc("increment", { x: updated }),
         })
         .eq("account_id", account_id)
 
@@ -178,10 +150,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Marcar como idle al finalizar
-    await supabase
-      .from("product_builder_progress")
-      .update({ status: "idle" })
-      .eq("account_id", account_id)
+    await supabase.from("product_builder_progress").update({ status: "idle" }).eq("account_id", account_id)
 
     return NextResponse.json({
       ok: true,

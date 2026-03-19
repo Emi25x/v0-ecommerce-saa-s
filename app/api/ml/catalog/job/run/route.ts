@@ -28,7 +28,10 @@ export async function POST(req: NextRequest) {
 
   // Marcar como running si estaba idle
   if (job.status === "idle") {
-    await supabase.from("ml_catalog_jobs").update({ status: "running", started_at: new Date().toISOString() }).eq("id", job_id)
+    await supabase
+      .from("ml_catalog_jobs")
+      .update({ status: "running", started_at: new Date().toISOString() })
+      .eq("id", job_id)
   }
 
   const account = job.ml_accounts
@@ -46,10 +49,13 @@ export async function POST(req: NextRequest) {
   if (pendingErr) return NextResponse.json({ error: pendingErr.message }, { status: 500 })
   if (!pendingItems || pendingItems.length === 0) {
     // No quedan pendientes — marcar completado
-    await supabase.from("ml_catalog_jobs").update({
-      status: "completed",
-      finished_at: new Date().toISOString(),
-    }).eq("id", job_id)
+    await supabase
+      .from("ml_catalog_jobs")
+      .update({
+        status: "completed",
+        finished_at: new Date().toISOString(),
+      })
+      .eq("id", job_id)
     return NextResponse.json({ ok: true, done: true, processed: 0 })
   }
 
@@ -66,20 +72,31 @@ export async function POST(req: NextRequest) {
 
       // Seguridad: no procesar sin catalog_product_id
       if (!item.catalog_product_id) {
-        await supabase.from("ml_catalog_job_items").update({
+        await supabase
+          .from("ml_catalog_job_items")
+          .update({
+            status: "failed",
+            error: "Sin catalog_product_id — skip seguro",
+          })
+          .eq("id", item.id)
+        batchResults.push({
+          id: item.id,
+          old_item_id: item.old_item_id,
           status: "failed",
-          error: "Sin catalog_product_id — skip seguro",
-        }).eq("id", item.id)
-        batchResults.push({ id: item.id, old_item_id: item.old_item_id, status: "failed", error: "Sin catalog_product_id" })
+          error: "Sin catalog_product_id",
+        })
         continue
       }
 
       // Dry run — no tocar ML, marcar como skipped con nota
       if (job.mode === "dry_run") {
-        await supabase.from("ml_catalog_job_items").update({
-          status: "skipped",
-          error: "dry_run: no ejecutado",
-        }).eq("id", item.id)
+        await supabase
+          .from("ml_catalog_job_items")
+          .update({
+            status: "skipped",
+            error: "dry_run: no ejecutado",
+          })
+          .eq("id", item.id)
         batchResults.push({ id: item.id, old_item_id: item.old_item_id, status: "skipped", action: "dry_run" })
         continue
       }
@@ -88,14 +105,17 @@ export async function POST(req: NextRequest) {
       const oldItemData = await mlFetchJson(
         `https://api.mercadolibre.com/items/${item.old_item_id}`,
         { accessToken },
-        { account_id: job.account_id, op_name: `get_old_item_${item.old_item_id}` }
+        { account_id: job.account_id, op_name: `get_old_item_${item.old_item_id}` },
       )
 
       if (isMlFetchError(oldItemData)) {
-        await supabase.from("ml_catalog_job_items").update({
-          status: "failed",
-          error: `Error obteniendo item original: ${oldItemData.body_text?.slice(0, 200)}`,
-        }).eq("id", item.id)
+        await supabase
+          .from("ml_catalog_job_items")
+          .update({
+            status: "failed",
+            error: `Error obteniendo item original: ${oldItemData.body_text?.slice(0, 200)}`,
+          })
+          .eq("id", item.id)
         batchResults.push({ id: item.id, status: "failed" })
         continue
       }
@@ -115,14 +135,17 @@ export async function POST(req: NextRequest) {
       const newItem = await mlFetchJson(
         "https://api.mercadolibre.com/items",
         { accessToken, method: "POST", body: newItemPayload },
-        { account_id: job.account_id, op_name: `create_catalog_item_${item.old_item_id}` }
+        { account_id: job.account_id, op_name: `create_catalog_item_${item.old_item_id}` },
       )
 
       if (isMlFetchError(newItem)) {
-        await supabase.from("ml_catalog_job_items").update({
-          status: "failed",
-          error: newItem.body_text?.slice(0, 500) || "Error creando item",
-        }).eq("id", item.id)
+        await supabase
+          .from("ml_catalog_job_items")
+          .update({
+            status: "failed",
+            error: newItem.body_text?.slice(0, 500) || "Error creando item",
+          })
+          .eq("id", item.id)
         batchResults.push({ id: item.id, status: "failed", error: newItem.body_text?.slice(0, 200) })
         continue
       }
@@ -132,24 +155,29 @@ export async function POST(req: NextRequest) {
       await mlFetchJson(
         `https://api.mercadolibre.com/items/${item.old_item_id}`,
         { accessToken, method: "PUT", body: { status: "paused" } },
-        { account_id: job.account_id, op_name: `pause_old_item_${item.old_item_id}` }
+        { account_id: job.account_id, op_name: `pause_old_item_${item.old_item_id}` },
       )
 
-      await supabase.from("ml_catalog_job_items").update({
-        status: "ok",
-        new_item_id: newItemId,
-      }).eq("id", item.id)
+      await supabase
+        .from("ml_catalog_job_items")
+        .update({
+          status: "ok",
+          new_item_id: newItemId,
+        })
+        .eq("id", item.id)
 
       batchResults.push({ id: item.id, old_item_id: item.old_item_id, new_item_id: newItemId, status: "ok" })
 
       // Pausa para rate limit
       await new Promise((r) => setTimeout(r, 300))
-
     } catch (err: any) {
-      await supabase.from("ml_catalog_job_items").update({
-        status: "failed",
-        error: err.message?.slice(0, 500),
-      }).eq("id", item.id)
+      await supabase
+        .from("ml_catalog_job_items")
+        .update({
+          status: "failed",
+          error: err.message?.slice(0, 500),
+        })
+        .eq("id", item.id)
       batchResults.push({ id: item.id, status: "failed", error: err.message })
     }
   }
@@ -158,7 +186,8 @@ export async function POST(req: NextRequest) {
   const doneCount = batchResults.filter((r) => r.status === "ok" || r.status === "skipped").length
   const failedCount = batchResults.filter((r) => r.status === "failed").length
 
-  await supabase.from("ml_catalog_jobs")
+  await supabase
+    .from("ml_catalog_jobs")
     .update({
       processed: job.processed + batchResults.length,
       success: job.success + doneCount,
@@ -176,10 +205,13 @@ export async function POST(req: NextRequest) {
   const done = (remainingCount ?? 0) === 0
 
   if (done) {
-    await supabase.from("ml_catalog_jobs").update({
-      status: "completed",
-      finished_at: new Date().toISOString(),
-    }).eq("id", job_id)
+    await supabase
+      .from("ml_catalog_jobs")
+      .update({
+        status: "completed",
+        finished_at: new Date().toISOString(),
+      })
+      .eq("id", job_id)
   }
 
   return NextResponse.json({

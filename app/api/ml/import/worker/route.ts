@@ -23,14 +23,23 @@ export async function POST(request: Request) {
     const result = await executeWorkerBatch(supabase, { job_id, batch_size })
 
     if (result.error && !result.success) {
-      const status = result.error === "Job not found" ? 404
-        : result.error === "Error claiming items" ? 500
-        : result.error === "Rate limit" ? 429
-        : 500
+      const status =
+        result.error === "Job not found"
+          ? 404
+          : result.error === "Error claiming items"
+            ? 500
+            : result.error === "Rate limit"
+              ? 429
+              : 500
       return NextResponse.json(result, { status })
     }
 
-    console.log("[v0] Worker completed:", { processed: result.processed, failed: result.failed, linked: result.linked, unmatched: result.unmatched })
+    console.log("[v0] Worker completed:", {
+      processed: result.processed,
+      failed: result.failed,
+      linked: result.linked,
+      unmatched: result.unmatched,
+    })
     return NextResponse.json(result)
   } catch (error: any) {
     console.error("[v0] Error in worker:", error)

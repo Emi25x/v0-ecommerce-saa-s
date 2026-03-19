@@ -49,7 +49,11 @@ export function MLAccountCard({
   account,
   onUpdate,
   onDelete,
-}: { account: MLAccount; onUpdate: () => void; onDelete: () => void }) {
+}: {
+  account: MLAccount
+  onUpdate: () => void
+  onDelete: () => void
+}) {
   const [isEditingNickname, setIsEditingNickname] = useState(false)
   const [nickname, setNickname] = useState(account.nickname || account.ml_user_id)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -99,9 +103,9 @@ export function MLAccountCard({
       const response = await fetch(`/api/mercadolibre/accounts/${account.id}/sync-preferences`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           auto_sync_stock: autoSyncStock,
-          auto_sync_new_listings: autoSyncNewListings
+          auto_sync_new_listings: autoSyncNewListings,
         }),
       })
       if (response.ok) {
@@ -357,7 +361,7 @@ export function MLAccountCard({
         {/* Configuración de Sincronización Automática */}
         <div className="space-y-3 p-3 bg-muted/50 rounded-lg">
           <Label className="text-sm font-medium">Sincronización Automática</Label>
-          
+
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
               <Label className="text-sm">Actualizar stock en ML</Label>
@@ -370,7 +374,7 @@ export function MLAccountCard({
               className="h-4 w-4"
             />
           </div>
-          
+
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
               <Label className="text-sm">Publicar productos nuevos</Label>
@@ -383,25 +387,22 @@ export function MLAccountCard({
               className="h-4 w-4"
             />
           </div>
-          
-          <Button 
-            onClick={handleSaveSyncPreferences} 
-            disabled={isSavingSync} 
-            size="sm"
-            className="w-full"
-          >
+
+          <Button onClick={handleSaveSyncPreferences} disabled={isSavingSync} size="sm" className="w-full">
             {isSavingSync ? "Guardando..." : "Guardar preferencias"}
           </Button>
-          
+
           {/* Estado de última sincronización */}
           <div className="pt-2 border-t border-border space-y-1">
             <div className="flex justify-between text-xs">
               <span className="text-muted-foreground">Último sync stock:</span>
               <span>
-                {account.last_stock_sync_at 
-                  ? new Date(account.last_stock_sync_at).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })
-                  : "Nunca"
-                }
+                {account.last_stock_sync_at
+                  ? new Date(account.last_stock_sync_at).toLocaleString("es-AR", {
+                      dateStyle: "short",
+                      timeStyle: "short",
+                    })
+                  : "Nunca"}
               </span>
             </div>
             {account.stock_sync_count !== undefined && account.stock_sync_count > 0 && (
@@ -411,10 +412,10 @@ export function MLAccountCard({
               </div>
             )}
           </div>
-          
-          <Button 
-            onClick={handleSyncStockNow} 
-            disabled={isSyncingStock || !isConnected} 
+
+          <Button
+            onClick={handleSyncStockNow}
+            disabled={isSyncingStock || !isConnected}
             variant="outline"
             size="sm"
             className="w-full bg-transparent"
@@ -481,49 +482,40 @@ export function MLAccountCard({
             </DialogContent>
           </Dialog>
 
-{!isConnected && (
-  <Button variant="default" asChild className="flex-1">
-  <a href={`/api/mercadolibre/auth?account_id=${account.id}`}>
-    {account.tokenExpired ? "Reconectar" : "Conectar"}
-  </a>
-  </Button>
-  )}
-  
-  {isConnected && (
-    <Button 
-      variant="outline" 
-      size="sm" 
-      onClick={handleSync} 
-      disabled={isSyncing}
-      className="bg-transparent"
-    >
-      <RefreshCw className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
-      <span className="ml-1">{isSyncing ? "Sincronizando..." : "Sincronizar"}</span>
-    </Button>
-  )}
-  
-  <Button variant="destructive" size="icon" onClick={handleDelete} disabled={isDeleting}>
+          {!isConnected && (
+            <Button variant="default" asChild className="flex-1">
+              <a href={`/api/mercadolibre/auth?account_id=${account.id}`}>
+                {account.tokenExpired ? "Reconectar" : "Conectar"}
+              </a>
+            </Button>
+          )}
+
+          {isConnected && (
+            <Button variant="outline" size="sm" onClick={handleSync} disabled={isSyncing} className="bg-transparent">
+              <RefreshCw className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
+              <span className="ml-1">{isSyncing ? "Sincronizando..." : "Sincronizar"}</span>
+            </Button>
+          )}
+
+          <Button variant="destructive" size="icon" onClick={handleDelete} disabled={isDeleting}>
             <Trash className="h-4 w-4" />
           </Button>
         </div>
 
-{account.tokenExpired && (
-  <Alert variant="destructive">
-  <AlertDescription className="text-xs">
-    El token ha expirado. Haz clic en Reconectar para renovar la conexion.
-  </AlertDescription>
-  </Alert>
-  )}
-  
-  {lastSyncResult && (
-    <Alert variant={lastSyncResult.success ? "default" : "destructive"}>
-      <AlertDescription className="text-xs">
-        {lastSyncResult.message}
-      </AlertDescription>
-    </Alert>
-  )}
-  
-  </CardContent>
+        {account.tokenExpired && (
+          <Alert variant="destructive">
+            <AlertDescription className="text-xs">
+              El token ha expirado. Haz clic en Reconectar para renovar la conexion.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {lastSyncResult && (
+          <Alert variant={lastSyncResult.success ? "default" : "destructive"}>
+            <AlertDescription className="text-xs">{lastSyncResult.message}</AlertDescription>
+          </Alert>
+        )}
+      </CardContent>
     </Card>
   )
 }

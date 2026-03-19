@@ -8,7 +8,10 @@
  */
 export function normalize(str: string): string {
   if (!str) return ""
-  return str.replace(/[-\s.]/g, "").trim().toUpperCase()
+  return str
+    .replace(/[-\s.]/g, "")
+    .trim()
+    .toUpperCase()
 }
 
 /**
@@ -179,12 +182,7 @@ export async function findProductByIdentifiers(
 ): Promise<{ product_id: string | null; matched_by: string | null }> {
   // 1. Buscar por ISBN (prioridad más alta para libros)
   if (identifiers.isbn) {
-    const { data } = await supabase
-      .from("products")
-      .select("id")
-      .eq("isbn", identifiers.isbn)
-      .limit(1)
-      .maybeSingle()
+    const { data } = await supabase.from("products").select("id").eq("isbn", identifiers.isbn).limit(1).maybeSingle()
 
     if (data) return { product_id: data.id, matched_by: "isbn" }
 
@@ -206,7 +204,12 @@ export async function findProductByIdentifiers(
     if (data) return { product_id: data.id, matched_by: "ean" }
 
     // También buscar en SKU
-    const { data: bySku } = await supabase.from("products").select("id").eq("sku", identifiers.ean).limit(1).maybeSingle()
+    const { data: bySku } = await supabase
+      .from("products")
+      .select("id")
+      .eq("sku", identifiers.ean)
+      .limit(1)
+      .maybeSingle()
 
     if (bySku) return { product_id: bySku.id, matched_by: "ean_as_sku" }
   }

@@ -16,18 +16,8 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import {
-  RefreshCw,
-  Eye,
-  AlertCircle,
-  Check,
-} from "lucide-react"
-import type {
-  Order,
-  MlBrowserModal,
-  ConfirmMarkReceived,
-  ReturnDetails,
-} from "@/components/orders/types"
+import { RefreshCw, Eye, AlertCircle, Check } from "lucide-react"
+import type { Order, MlBrowserModal, ConfirmMarkReceived, ReturnDetails } from "@/components/orders/types"
 import { getReturnStatusLabel, getReturnMoneyStatusLabel } from "@/components/orders/types"
 
 const MLLogo = ({ className }: { className?: string }) => (
@@ -278,7 +268,10 @@ export function OrderDialogs({
       </Dialog>
 
       {/* ML Browser Modal */}
-      <Dialog open={!!(mlBrowserModal && mlBrowserModal.open)} onOpenChange={(open) => !open && setMlBrowserModal(null)}>
+      <Dialog
+        open={!!(mlBrowserModal && mlBrowserModal.open)}
+        onOpenChange={(open) => !open && setMlBrowserModal(null)}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">

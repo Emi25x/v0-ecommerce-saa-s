@@ -20,7 +20,8 @@ export async function GET(request: Request) {
     // Query base: publicaciones sin product_id (sin vincular)
     let query = supabase
       .from("ml_publications")
-      .select(`
+      .select(
+        `
         id,
         account_id,
         ml_item_id,
@@ -30,7 +31,9 @@ export async function GET(request: Request) {
         current_stock,
         created_at,
         updated_at
-      `, { count: 'exact' })
+      `,
+        { count: "exact" },
+      )
       .is("product_id", null)
       .order("updated_at", { ascending: false })
       .range(offset, offset + pageSize - 1)
@@ -49,31 +52,31 @@ export async function GET(request: Request) {
 
     if (error) {
       console.error("[v0] Error fetching unmatched publications:", error)
-      return NextResponse.json({ 
-        error: error.message,
-        items: [],
-        pagination: {
-          page: 1,
-          pageSize: 50,
-          total: 0,
-          totalPages: 0
-        }
-      }, { status: 500 })
+      return NextResponse.json(
+        {
+          error: error.message,
+          items: [],
+          pagination: {
+            page: 1,
+            pageSize: 50,
+            total: 0,
+            totalPages: 0,
+          },
+        },
+        { status: 500 },
+      )
     }
 
     // Fetch account nicknames separately
-    const accountIds = [...new Set((items || []).map(item => item.account_id))]
-    const { data: accountsData } = await supabase
-      .from("ml_accounts")
-      .select("id, nickname")
-      .in("id", accountIds)
+    const accountIds = [...new Set((items || []).map((item) => item.account_id))]
+    const { data: accountsData } = await supabase.from("ml_accounts").select("id, nickname").in("id", accountIds)
 
-    const accountsMap = new Map((accountsData || []).map(acc => [acc.id, acc.nickname]))
+    const accountsMap = new Map((accountsData || []).map((acc) => [acc.id, acc.nickname]))
 
     // Formatear items con nickname de la cuenta
-    const formattedItems = (items || []).map(item => ({
+    const formattedItems = (items || []).map((item) => ({
       ...item,
-      account_nickname: accountsMap.get(item.account_id) || "Unknown"
+      account_nickname: accountsMap.get(item.account_id) || "Unknown",
     }))
 
     return NextResponse.json({
@@ -82,20 +85,23 @@ export async function GET(request: Request) {
         page,
         pageSize,
         total: count || 0,
-        totalPages: Math.ceil((count || 0) / pageSize)
-      }
+        totalPages: Math.ceil((count || 0) / pageSize),
+      },
     })
   } catch (error: any) {
     console.error("[v0] Unmatched publications error:", error)
-    return NextResponse.json({ 
-      error: error.message,
-      items: [],
-      pagination: {
-        page: 1,
-        pageSize: 50,
-        total: 0,
-        totalPages: 0
-      }
-    }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: error.message,
+        items: [],
+        pagination: {
+          page: 1,
+          pageSize: 50,
+          total: 0,
+          totalPages: 0,
+        },
+      },
+      { status: 500 },
+    )
   }
 }

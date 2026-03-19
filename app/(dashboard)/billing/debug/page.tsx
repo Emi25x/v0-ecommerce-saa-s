@@ -4,10 +4,10 @@ import { useState } from "react"
 // Página de diagnóstico temporal para ver exactamente qué devuelve ML en cada paso
 // Acceder en /billing/debug
 export default function BillingDebugPage() {
-  const [orderId,    setOrderId]    = useState("")
-  const [accountId,  setAccountId]  = useState("")
-  const [result,     setResult]     = useState<any>(null)
-  const [loading,    setLoading]    = useState(false)
+  const [orderId, setOrderId] = useState("")
+  const [accountId, setAccountId] = useState("")
+  const [result, setResult] = useState<any>(null)
+  const [loading, setLoading] = useState(false)
 
   async function run() {
     setLoading(true)
@@ -26,7 +26,9 @@ export default function BillingDebugPage() {
   function statusBadge(status: number | null | undefined) {
     if (!status) return null
     return (
-      <span className={`ml-2 text-xs px-2 py-0.5 rounded ${status === 200 ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
+      <span
+        className={`ml-2 text-xs px-2 py-0.5 rounded ${status === 200 ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}
+      >
         HTTP {status}
       </span>
     )
@@ -44,13 +46,13 @@ export default function BillingDebugPage() {
           className="border rounded px-3 py-2 bg-background flex-1"
           placeholder="Account ID (UUID)"
           value={accountId}
-          onChange={e => setAccountId(e.target.value)}
+          onChange={(e) => setAccountId(e.target.value)}
         />
         <input
           className="border rounded px-3 py-2 bg-background flex-1"
           placeholder="Order ID (ej: 2000015173612194)"
           value={orderId}
-          onChange={e => setOrderId(e.target.value)}
+          onChange={(e) => setOrderId(e.target.value)}
         />
         <button
           className="bg-primary text-primary-foreground px-4 py-2 rounded"
@@ -76,7 +78,8 @@ export default function BillingDebugPage() {
             </h2>
             {result.order_content_missing === "buyer" && (
               <p className="text-orange-400 text-xs mb-2">
-                ⚠ ML retornó respuesta parcial — el buyer está incompleto. Esto puede causar que el DNI no esté disponible.
+                ⚠ ML retornó respuesta parcial — el buyer está incompleto. Esto puede causar que el DNI no esté
+                disponible.
               </p>
             )}
             <p className="text-muted-foreground text-xs mb-1">buyer object (debe tener billing_info.id):</p>
@@ -88,19 +91,27 @@ export default function BillingDebugPage() {
           {/* billing_info.id extraído */}
           <section className="border rounded p-4">
             <h2 className="font-bold mb-2">billing_info.id extraído</h2>
-            {result.billing_info_id
-              ? <span className="bg-green-500/20 text-green-400 px-2 py-1 rounded">{result.billing_info_id}</span>
-              : <span className="bg-red-500/20 text-red-400 px-2 py-1 rounded">NO encontrado — el comprador no tiene billing_info.id</span>
-            }
+            {result.billing_info_id ? (
+              <span className="bg-green-500/20 text-green-400 px-2 py-1 rounded">{result.billing_info_id}</span>
+            ) : (
+              <span className="bg-red-500/20 text-red-400 px-2 py-1 rounded">
+                NO encontrado — el comprador no tiene billing_info.id
+              </span>
+            )}
           </section>
 
           {/* buyer.identification directo en la orden */}
           <section className="border rounded p-4">
             <h2 className="font-bold mb-2">buyer.identification (directo en la orden)</h2>
-            {result.buyer_identification
-              ? <pre className="bg-muted p-3 rounded overflow-auto text-xs">{JSON.stringify(result.buyer_identification, null, 2)}</pre>
-              : <span className="bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded">null — buyer no tiene identification en la orden</span>
-            }
+            {result.buyer_identification ? (
+              <pre className="bg-muted p-3 rounded overflow-auto text-xs">
+                {JSON.stringify(result.buyer_identification, null, 2)}
+              </pre>
+            ) : (
+              <span className="bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded">
+                null — buyer no tiene identification en la orden
+              </span>
+            )}
           </section>
 
           {/* Paso 2A: GET /orders/billing-info/MLA/{billing_info_id} */}
@@ -127,9 +138,7 @@ export default function BillingDebugPage() {
               <span className="ml-1 text-xs text-muted-foreground">(x-version: 2)</span>
               {statusBadge(result.billing_b_v2_status)}
             </h2>
-            <p className="text-muted-foreground text-xs mb-1">
-              V2: buyer.billing_info.identification → DNI/CUIT
-            </p>
+            <p className="text-muted-foreground text-xs mb-1">V2: buyer.billing_info.identification → DNI/CUIT</p>
             <pre className="bg-muted p-3 rounded overflow-auto text-xs">
               {result.billing_b_v2_data !== null && result.billing_b_v2_data !== undefined
                 ? JSON.stringify(result.billing_b_v2_data, null, 2)

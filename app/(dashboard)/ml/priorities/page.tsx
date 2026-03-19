@@ -2,18 +2,21 @@
 
 import { useEffect, useState, useCallback } from "react"
 import {
-  RefreshCw, Play, Loader2, TrendingUp, AlertCircle,
-  BookOpen, ChevronUp, ChevronDown, ExternalLink,
+  RefreshCw,
+  Play,
+  Loader2,
+  TrendingUp,
+  AlertCircle,
+  BookOpen,
+  ChevronUp,
+  ChevronDown,
+  ExternalLink,
 } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select"
-import {
-  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
-} from "@/components/ui/tooltip"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 // ── Types ─────────────────────────────────────────────────────────────────
 interface Priority {
@@ -34,41 +37,49 @@ interface Priority {
   stock_total: number
   updated_at: string
   products: {
-    id: string; title: string; author: string | null; isbn: string | null
-    ean: string | null; sku: string | null; stock: number; cost_price: number | null
-    price: number | null; image_url: string | null; category: string | null
+    id: string
+    title: string
+    author: string | null
+    isbn: string | null
+    ean: string | null
+    sku: string | null
+    stock: number
+    cost_price: number | null
+    price: number | null
+    image_url: string | null
+    category: string | null
   } | null
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────
 const LEVEL_COLOR: Record<string, string> = {
   critical: "bg-red-500/15 text-red-400 border-red-500/25",
-  high:     "bg-orange-500/15 text-orange-400 border-orange-500/25",
-  medium:   "bg-amber-500/15 text-amber-400 border-amber-500/25",
-  low:      "bg-muted text-muted-foreground border-border",
+  high: "bg-orange-500/15 text-orange-400 border-orange-500/25",
+  medium: "bg-amber-500/15 text-amber-400 border-amber-500/25",
+  low: "bg-muted text-muted-foreground border-border",
 }
 const LEVEL_DOT: Record<string, string> = {
   critical: "bg-red-500",
-  high:     "bg-orange-500",
-  medium:   "bg-amber-500",
-  low:      "bg-muted-foreground",
+  high: "bg-orange-500",
+  medium: "bg-amber-500",
+  low: "bg-muted-foreground",
 }
 const ACTION_LABEL: Record<string, { label: string; color: string }> = {
-  crear_publicacion:   { label: "Crear publicación",  color: "text-emerald-400" },
-  reactivar_publicacion: { label: "Reactivar",         color: "text-blue-400" },
-  mejorar_publicacion:  { label: "Mejorar",            color: "text-sky-400" },
-  comprar_stock:        { label: "Comprar stock",      color: "text-amber-400" },
-  no_priorizar:         { label: "No priorizar",       color: "text-muted-foreground" },
+  crear_publicacion: { label: "Crear publicación", color: "text-emerald-400" },
+  reactivar_publicacion: { label: "Reactivar", color: "text-blue-400" },
+  mejorar_publicacion: { label: "Mejorar", color: "text-sky-400" },
+  comprar_stock: { label: "Comprar stock", color: "text-amber-400" },
+  no_priorizar: { label: "No priorizar", color: "text-muted-foreground" },
 }
 
-function ScoreBar({ label, value, max = 30, color }: {
-  label: string; value: number; max?: number; color: string
-}) {
+function ScoreBar({ label, value, max = 30, color }: { label: string; value: number; max?: number; color: string }) {
   return (
     <div className="space-y-0.5">
       <div className="flex justify-between text-[10px]">
         <span className="text-muted-foreground">{label}</span>
-        <span className="font-mono tabular-nums">{value}/{max}</span>
+        <span className="font-mono tabular-nums">
+          {value}/{max}
+        </span>
       </div>
       <div className="h-1 bg-muted rounded-full overflow-hidden">
         <div className={`h-full rounded-full ${color}`} style={{ width: `${(value / max) * 100}%` }} />
@@ -78,85 +89,123 @@ function ScoreBar({ label, value, max = 30, color }: {
 }
 
 export default function PrioritiesPage() {
-  const [rows, setRows]               = useState<Priority[]>([])
-  const [total, setTotal]             = useState(0)
-  const [loading, setLoading]         = useState(true)
+  const [rows, setRows] = useState<Priority[]>([])
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(true)
   const [calculating, setCalculating] = useState(false)
-  const [q, setQ]                     = useState("")
+  const [q, setQ] = useState("")
   const [levelFilter, setLevelFilter] = useState("")
   const [actionFilter, setActionFilter] = useState("")
-  const [sortField, setSortField]     = useState<"score" | "stock" | "title">("score")
-  const [sortDir, setSortDir]         = useState<"asc" | "desc">("desc")
-  const [expandedId, setExpandedId]   = useState<string | null>(null)
-  const [calcResult, setCalcResult]   = useState<{ processed: number; total: number } | null>(null)
+  const [sortField, setSortField] = useState<"score" | "stock" | "title">("score")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [calcResult, setCalcResult] = useState<{ processed: number; total: number } | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams({ limit: "300" })
-      if (q)            params.set("q", q)
-      if (levelFilter)  params.set("priority_level", levelFilter)
+      if (q) params.set("q", q)
+      if (levelFilter) params.set("priority_level", levelFilter)
       if (actionFilter) params.set("recommended_action", actionFilter)
-      const res  = await fetch(`/api/ml/priorities?${params}`)
+      const res = await fetch(`/api/ml/priorities?${params}`)
       const data = await res.json()
-      if (data.ok) { setRows(data.rows ?? []); setTotal(data.total ?? 0) }
-    } finally { setLoading(false) }
+      if (data.ok) {
+        setRows(data.rows ?? [])
+        setTotal(data.total ?? 0)
+      }
+    } finally {
+      setLoading(false)
+    }
   }, [q, levelFilter, actionFilter])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+  }, [load])
 
   const handleCalculate = async () => {
     setCalculating(true)
     setCalcResult(null)
     try {
-      const res  = await fetch("/api/ml/priorities/calculate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) })
+      const res = await fetch("/api/ml/priorities/calculate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })
       const data = await res.json()
-      if (data.ok) { setCalcResult({ processed: data.processed, total: data.total }); await load() }
-    } finally { setCalculating(false) }
+      if (data.ok) {
+        setCalcResult({ processed: data.processed, total: data.total })
+        await load()
+      }
+    } finally {
+      setCalculating(false)
+    }
   }
 
   // Client-side sort
   const sorted = [...rows].sort((a, b) => {
-    let va: number | string = 0, vb: number | string = 0
-    if (sortField === "score") { va = a.publish_priority_score; vb = b.publish_priority_score }
-    if (sortField === "stock") { va = a.stock_total; vb = b.stock_total }
-    if (sortField === "title") { va = a.products?.title ?? ""; vb = b.products?.title ?? "" }
-    if (typeof va === "string") return sortDir === "asc" ? va.localeCompare(vb as string) : (vb as string).localeCompare(va)
+    let va: number | string = 0,
+      vb: number | string = 0
+    if (sortField === "score") {
+      va = a.publish_priority_score
+      vb = b.publish_priority_score
+    }
+    if (sortField === "stock") {
+      va = a.stock_total
+      vb = b.stock_total
+    }
+    if (sortField === "title") {
+      va = a.products?.title ?? ""
+      vb = b.products?.title ?? ""
+    }
+    if (typeof va === "string")
+      return sortDir === "asc" ? va.localeCompare(vb as string) : (vb as string).localeCompare(va)
     return sortDir === "asc" ? (va as number) - (vb as number) : (vb as number) - (va as number)
   })
 
   const SortBtn = ({ field, label }: { field: typeof sortField; label: string }) => (
     <button
-      onClick={() => { if (sortField === field) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortField(field); setSortDir("desc") } }}
+      onClick={() => {
+        if (sortField === field) setSortDir((d) => (d === "asc" ? "desc" : "asc"))
+        else {
+          setSortField(field)
+          setSortDir("desc")
+        }
+      }}
       className="flex items-center gap-1 hover:text-foreground transition-colors"
     >
       {label}
-      {sortField === field
-        ? sortDir === "desc" ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />
-        : <ChevronDown className="h-3 w-3 opacity-30" />
-      }
+      {sortField === field ? (
+        sortDir === "desc" ? (
+          <ChevronDown className="h-3 w-3" />
+        ) : (
+          <ChevronUp className="h-3 w-3" />
+        )
+      ) : (
+        <ChevronDown className="h-3 w-3 opacity-30" />
+      )}
     </button>
   )
 
   // Summary counts
   const counts = {
-    critical: rows.filter(r => r.priority_level === "critical").length,
-    high:     rows.filter(r => r.priority_level === "high").length,
-    medium:   rows.filter(r => r.priority_level === "medium").length,
-    low:      rows.filter(r => r.priority_level === "low").length,
-    radar:    rows.filter(r => r.score_radar_boost > 0).length,
+    critical: rows.filter((r) => r.priority_level === "critical").length,
+    high: rows.filter((r) => r.priority_level === "high").length,
+    medium: rows.filter((r) => r.priority_level === "medium").length,
+    low: rows.filter((r) => r.priority_level === "low").length,
+    radar: rows.filter((r) => r.score_radar_boost > 0).length,
   }
 
   return (
     <TooltipProvider>
       <div className="p-6 space-y-5 max-w-7xl mx-auto">
-
         {/* Header */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">ML Publish Priorities</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Score de prioridad para publicar en Mercado Libre, calculado por demanda, competencia, stock y rentabilidad.
+              Score de prioridad para publicar en Mercado Libre, calculado por demanda, competencia, stock y
+              rentabilidad.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -166,13 +215,22 @@ export default function PrioritiesPage() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button size="sm" onClick={handleCalculate} disabled={calculating}>
-                  {calculating
-                    ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Calculando...</>
-                    : <><Play className="h-4 w-4 mr-2" />Recalcular scores</>
-                  }
+                  {calculating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Calculando...
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4 mr-2" />
+                      Recalcular scores
+                    </>
+                  )}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Analiza todos los productos y recalcula su score de prioridad de publicación.</TooltipContent>
+              <TooltipContent>
+                Analiza todos los productos y recalcula su score de prioridad de publicación.
+              </TooltipContent>
             </Tooltip>
           </div>
         </div>
@@ -182,8 +240,8 @@ export default function PrioritiesPage() {
           <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-2.5 flex items-center gap-3 text-sm">
             <TrendingUp className="h-4 w-4 text-emerald-400 flex-shrink-0" />
             <span>
-              Recalculados <span className="font-semibold text-emerald-400">{calcResult.processed.toLocaleString("es-AR")}</span>
-              {" "}de{" "}
+              Recalculados{" "}
+              <span className="font-semibold text-emerald-400">{calcResult.processed.toLocaleString("es-AR")}</span> de{" "}
               <span className="font-semibold">{calcResult.total.toLocaleString("es-AR")}</span> productos.
             </span>
           </div>
@@ -193,13 +251,13 @@ export default function PrioritiesPage() {
         <div className="flex gap-2 flex-wrap">
           {[
             { level: "critical", count: counts.critical, label: "Crítica" },
-            { level: "high",     count: counts.high,     label: "Alta" },
-            { level: "medium",   count: counts.medium,   label: "Media" },
-            { level: "low",      count: counts.low,      label: "Baja" },
-          ].map(c => (
+            { level: "high", count: counts.high, label: "Alta" },
+            { level: "medium", count: counts.medium, label: "Media" },
+            { level: "low", count: counts.low, label: "Baja" },
+          ].map((c) => (
             <button
               key={c.level}
-              onClick={() => setLevelFilter(l => l === c.level ? "" : c.level)}
+              onClick={() => setLevelFilter((l) => (l === c.level ? "" : c.level))}
               className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
                 levelFilter === c.level
                   ? LEVEL_COLOR[c.level]
@@ -214,7 +272,9 @@ export default function PrioritiesPage() {
               {counts.radar} con boost Radar
             </span>
           )}
-          <span className="ml-auto text-xs text-muted-foreground self-center">{total.toLocaleString("es-AR")} total</span>
+          <span className="ml-auto text-xs text-muted-foreground self-center">
+            {total.toLocaleString("es-AR")} total
+          </span>
         </div>
 
         {/* Filters */}
@@ -223,14 +283,18 @@ export default function PrioritiesPage() {
             className="h-8 text-sm w-64"
             placeholder="Buscar por título, ISBN, autor..."
             value={q}
-            onChange={e => setQ(e.target.value)}
+            onChange={(e) => setQ(e.target.value)}
           />
-          <Select value={actionFilter || "all"} onValueChange={v => setActionFilter(v === "all" ? "" : v)}>
-            <SelectTrigger className="h-8 text-sm w-48"><SelectValue placeholder="Acción sugerida" /></SelectTrigger>
+          <Select value={actionFilter || "all"} onValueChange={(v) => setActionFilter(v === "all" ? "" : v)}>
+            <SelectTrigger className="h-8 text-sm w-48">
+              <SelectValue placeholder="Acción sugerida" />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todas las acciones</SelectItem>
               {Object.entries(ACTION_LABEL).map(([k, v]) => (
-                <SelectItem key={k} value={k}>{v.label}</SelectItem>
+                <SelectItem key={k} value={k}>
+                  {v.label}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -313,9 +377,13 @@ export default function PrioritiesPage() {
                             <div className="h-1.5 w-16 bg-muted rounded-full overflow-hidden">
                               <div
                                 className={`h-full rounded-full ${
-                                  row.publish_priority_score >= 80 ? "bg-red-500" :
-                                  row.publish_priority_score >= 60 ? "bg-orange-500" :
-                                  row.publish_priority_score >= 35 ? "bg-amber-500" : "bg-muted-foreground/40"
+                                  row.publish_priority_score >= 80
+                                    ? "bg-red-500"
+                                    : row.publish_priority_score >= 60
+                                      ? "bg-orange-500"
+                                      : row.publish_priority_score >= 35
+                                        ? "bg-amber-500"
+                                        : "bg-muted-foreground/40"
                                 }`}
                                 style={{ width: `${row.publish_priority_score}%` }}
                               />
@@ -326,11 +394,15 @@ export default function PrioritiesPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${LEVEL_COLOR[row.priority_level]}`}>
+                          <span
+                            className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${LEVEL_COLOR[row.priority_level]}`}
+                          >
                             {row.priority_level}
                           </span>
                         </td>
-                        <td className={`px-4 py-3 text-right font-mono text-xs tabular-nums ${row.stock_total === 0 ? "text-red-400" : row.stock_total < 5 ? "text-amber-400" : ""}`}>
+                        <td
+                          className={`px-4 py-3 text-right font-mono text-xs tabular-nums ${row.stock_total === 0 ? "text-red-400" : row.stock_total < 5 ? "text-amber-400" : ""}`}
+                        >
                           {row.stock_total}
                         </td>
                         <td className="px-4 py-3 text-right font-mono text-xs tabular-nums text-muted-foreground">
@@ -356,38 +428,78 @@ export default function PrioritiesPage() {
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                               {/* Score breakdown */}
                               <div className="space-y-2">
-                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Desglose del score</p>
-                                <ScoreBar label="Demanda"       value={row.score_demand}       max={30} color="bg-blue-500" />
-                                <ScoreBar label="Competencia"   value={row.score_competition}  max={20} color="bg-purple-500" />
-                                <ScoreBar label="Stock"         value={row.score_stock}        max={25} color="bg-emerald-500" />
-                                <ScoreBar label="Rentabilidad"  value={row.score_profitability} max={15} color="bg-amber-500" />
+                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                                  Desglose del score
+                                </p>
+                                <ScoreBar label="Demanda" value={row.score_demand} max={30} color="bg-blue-500" />
+                                <ScoreBar
+                                  label="Competencia"
+                                  value={row.score_competition}
+                                  max={20}
+                                  color="bg-purple-500"
+                                />
+                                <ScoreBar label="Stock" value={row.score_stock} max={25} color="bg-emerald-500" />
+                                <ScoreBar
+                                  label="Rentabilidad"
+                                  value={row.score_profitability}
+                                  max={15}
+                                  color="bg-amber-500"
+                                />
                                 {row.score_radar_boost > 0 && (
-                                  <ScoreBar label="Radar boost"  value={row.score_radar_boost}  max={10} color="bg-rose-500" />
+                                  <ScoreBar
+                                    label="Radar boost"
+                                    value={row.score_radar_boost}
+                                    max={10}
+                                    color="bg-rose-500"
+                                  />
                                 )}
                                 <div className="pt-1 border-t border-border flex justify-between text-xs">
                                   <span className="text-muted-foreground">Total</span>
-                                  <span className="font-bold">{Number(row.publish_priority_score).toFixed(0)} / 100</span>
+                                  <span className="font-bold">
+                                    {Number(row.publish_priority_score).toFixed(0)} / 100
+                                  </span>
                                 </div>
                               </div>
 
                               {/* Product info */}
                               {product && (
                                 <div className="space-y-1.5 text-xs">
-                                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Producto</p>
-                                  {product.isbn  && <div><span className="text-muted-foreground">ISBN: </span>{product.isbn}</div>}
-                                  {product.ean   && <div><span className="text-muted-foreground">EAN: </span>{product.ean}</div>}
-                                  {product.category && <div><span className="text-muted-foreground">Categoría: </span>{product.category}</div>}
+                                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                                    Producto
+                                  </p>
+                                  {product.isbn && (
+                                    <div>
+                                      <span className="text-muted-foreground">ISBN: </span>
+                                      {product.isbn}
+                                    </div>
+                                  )}
+                                  {product.ean && (
+                                    <div>
+                                      <span className="text-muted-foreground">EAN: </span>
+                                      {product.ean}
+                                    </div>
+                                  )}
+                                  {product.category && (
+                                    <div>
+                                      <span className="text-muted-foreground">Categoría: </span>
+                                      {product.category}
+                                    </div>
+                                  )}
                                   {product.cost_price != null && product.price != null && (
                                     <div>
                                       <span className="text-muted-foreground">Margen: </span>
-                                      <span className={`font-semibold ${
-                                        (product.price - product.cost_price) / product.price >= 0.3
-                                          ? "text-emerald-400" : "text-amber-400"
-                                      }`}>
+                                      <span
+                                        className={`font-semibold ${
+                                          (product.price - product.cost_price) / product.price >= 0.3
+                                            ? "text-emerald-400"
+                                            : "text-amber-400"
+                                        }`}
+                                      >
                                         {(((product.price - product.cost_price) / product.price) * 100).toFixed(1)}%
                                       </span>
                                       <span className="text-muted-foreground ml-1">
-                                        (${product.cost_price.toLocaleString("es-AR")} → ${product.price.toLocaleString("es-AR")})
+                                        (${product.cost_price.toLocaleString("es-AR")} → $
+                                        {product.price.toLocaleString("es-AR")})
                                       </span>
                                     </div>
                                   )}
@@ -396,10 +508,14 @@ export default function PrioritiesPage() {
 
                               {/* Action guidance */}
                               <div className="space-y-2 text-xs">
-                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Guía</p>
+                                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                                  Guía
+                                </p>
                                 <div className={`rounded-md border p-3 ${LEVEL_COLOR[row.priority_level]}`}>
                                   <p className="font-semibold mb-1">{action?.label}</p>
-                                  <p className="text-muted-foreground">{row.reason_summary ?? "Sin información adicional."}</p>
+                                  <p className="text-muted-foreground">
+                                    {row.reason_summary ?? "Sin información adicional."}
+                                  </p>
                                 </div>
                                 {row.has_inactive_listing && (
                                   <div className="flex items-center gap-2 text-amber-400">

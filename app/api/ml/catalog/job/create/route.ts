@@ -46,9 +46,7 @@ export async function POST(req: NextRequest) {
     status: "pending",
   }))
 
-  const { error: itemsErr } = await supabase
-    .from("ml_catalog_job_items")
-    .insert(itemsToInsert)
+  const { error: itemsErr } = await supabase.from("ml_catalog_job_items").insert(itemsToInsert)
 
   if (itemsErr) {
     // Limpiar job si falló la inserción de items

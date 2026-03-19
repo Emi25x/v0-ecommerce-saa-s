@@ -21,18 +21,17 @@ export async function POST(request: NextRequest) {
     const report = await generateDailySalesReport({ date })
     const targetDate = date || new Date().toISOString().split("T")[0]
 
-    return new NextResponse(report.buffer, {
+    return new NextResponse(report.buffer as unknown as BodyInit, {
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="ventas-${targetDate}.xlsx"`
-      }
+        "Content-Disposition": `attachment; filename="ventas-${targetDate}.xlsx"`,
+      },
     })
-
   } catch (error) {
     console.error("[v0] Error generando reporte:", error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Error generando reporte" },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }

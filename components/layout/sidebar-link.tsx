@@ -23,8 +23,7 @@ export function SidebarLink({
   badgeColor = "bg-blue-500",
 }: SidebarLinkProps) {
   const pathname = usePathname()
-  const isActive =
-    match === "exact" ? pathname === href : pathname?.startsWith(href)
+  const isActive = match === "exact" ? pathname === href : pathname?.startsWith(href)
 
   return (
     <Link

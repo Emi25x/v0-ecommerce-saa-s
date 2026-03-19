@@ -13,8 +13,7 @@ async function syncAllAccounts() {
   const supabase = createAdminClient()
   console.log("[CRON] Starting auto-sync for all accounts...")
 
-  const { data: accounts, error } = await supabase
-    .from("ml_accounts").select("id, nickname")
+  const { data: accounts, error } = await supabase.from("ml_accounts").select("id, nickname")
 
   if (error || !accounts) {
     throw new Error("Error fetching ML accounts")
@@ -30,7 +29,11 @@ async function syncAllAccounts() {
       results.push({ account: account.nickname, status: result.success ? "completed" : "error", ...result })
     } catch (err) {
       console.error(`[CRON] Error syncing ${account.nickname}:`, err)
-      results.push({ account: account.nickname, status: "error", error: err instanceof Error ? err.message : "Unknown" })
+      results.push({
+        account: account.nickname,
+        status: "error",
+        error: err instanceof Error ? err.message : "Unknown",
+      })
     }
   }
 

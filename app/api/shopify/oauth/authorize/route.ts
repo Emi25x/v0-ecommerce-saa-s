@@ -13,12 +13,17 @@ import { getAppOrigin } from "@/lib/env/config"
  */
 
 const DEFAULT_SCOPES = [
-  "read_products", "write_products",
-  "read_orders", "write_orders",
-  "read_inventory", "write_inventory",
+  "read_products",
+  "write_products",
+  "read_orders",
+  "write_orders",
+  "read_inventory",
+  "write_inventory",
   "read_locations",
-  "read_fulfillments", "write_fulfillments",
-  "read_shipping", "write_shipping",
+  "read_fulfillments",
+  "write_fulfillments",
+  "read_shipping",
+  "write_shipping",
 ].join(",")
 
 export async function GET(request: NextRequest) {
@@ -29,17 +34,16 @@ export async function GET(request: NextRequest) {
   const scopes = searchParams.get("scopes") || DEFAULT_SCOPES
 
   if (!shopDomain || !apiKey || !apiSecret) {
-    return NextResponse.json(
-      { error: "shop_domain, api_key y api_secret son requeridos" },
-      { status: 400 },
-    )
+    return NextResponse.json({ error: "shop_domain, api_key y api_secret son requeridos" }, { status: 400 })
   }
 
   // Verify user is authenticated
   let userId: string
   try {
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
     if (!user) {
       return NextResponse.json({ error: "Unauthorized — iniciá sesión primero" }, { status: 401 })
     }

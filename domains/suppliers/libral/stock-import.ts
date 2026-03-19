@@ -28,9 +28,7 @@ export interface LibralImportResult {
   error?: string
 }
 
-export async function runLibralStockImport(
-  sourceKey = "libral"
-): Promise<LibralImportResult> {
+export async function runLibralStockImport(sourceKey = "libral"): Promise<LibralImportResult> {
   const start = Date.now()
   const supabase = createAdminClient()
 
@@ -91,7 +89,9 @@ export async function runLibralStockImport(
     page++
 
     if (page === 1) {
-      console.log(`[LIBRAL-IMPORT] Total en Libral: ${result.totalCount ?? "?"}, páginas estimadas: ${Math.ceil((result.totalCount ?? 0) / PAGE_SIZE)}`)
+      console.log(
+        `[LIBRAL-IMPORT] Total en Libral: ${result.totalCount ?? "?"}, páginas estimadas: ${Math.ceil((result.totalCount ?? 0) / PAGE_SIZE)}`,
+      )
     }
   }
 
@@ -106,10 +106,7 @@ export async function runLibralStockImport(
     const chunk = eanArray.slice(i, i + UPSERT_CHUNK)
 
     // Fetch existing stock_by_source for this chunk
-    const { data: existing } = await supabase
-      .from("products")
-      .select("id, ean, stock_by_source")
-      .in("ean", chunk)
+    const { data: existing } = await supabase.from("products").select("id, ean, stock_by_source").in("ean", chunk)
 
     if (!existing || existing.length === 0) continue
 
@@ -119,9 +116,7 @@ export async function runLibralStockImport(
       return { id: p.id, stock, stock_by_source }
     })
 
-    const { error: upsertErr } = await supabase
-      .from("products")
-      .upsert(updates, { onConflict: "id" })
+    const { error: upsertErr } = await supabase.from("products").upsert(updates, { onConflict: "id" })
 
     if (upsertErr) {
       console.error(`[LIBRAL-IMPORT] Upsert error chunk ${i}:`, upsertErr.message)

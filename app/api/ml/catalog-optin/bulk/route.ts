@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/db/admin"
 const BATCH = 50
-const RESOLVE_DELAY = 150  // ms entre resoluciones
-const OPTIN_DELAY   = 300  // ms entre optins
+const RESOLVE_DELAY = 150 // ms entre resoluciones
+const OPTIN_DELAY = 300 // ms entre optins
 
 export async function POST(req: NextRequest) {
   const supabase = createAdminClient()
@@ -18,7 +18,10 @@ export async function POST(req: NextRequest) {
   if (!account) return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
 
   const startTime = Date.now()
-  let ok_count = 0, failed_count = 0, no_match_count = 0, no_ean_count = 0
+  let ok_count = 0,
+    failed_count = 0,
+    no_match_count = 0,
+    no_ean_count = 0
   let offset = 0
 
   while (true) {
@@ -35,7 +38,10 @@ export async function POST(req: NextRequest) {
 
     for (const pub of pubs) {
       const rawEan = pub.gtin || pub.ean || pub.isbn
-      if (!rawEan) { no_ean_count++; continue }
+      if (!rawEan) {
+        no_ean_count++
+        continue
+      }
 
       // Normalizar notación científica
       let ean = String(rawEan).trim()
@@ -49,7 +55,7 @@ export async function POST(req: NextRequest) {
       let catalog_product_id: string | null = null
 
       try {
-        const searchRes = await fetch(searchUrl, { headers: { "Accept": "application/json" } })
+        const searchRes = await fetch(searchUrl, { headers: { Accept: "application/json" } })
         if (searchRes.ok) {
           const searchData = await searchRes.json()
           const results: any[] = searchData.results ?? []
@@ -57,25 +63,39 @@ export async function POST(req: NextRequest) {
             catalog_product_id = results[0].id
           }
           // Ambiguo (>1) o not_found (0) → skip
-          if (results.length !== 1) { no_match_count++; await delay(RESOLVE_DELAY); continue }
+          if (results.length !== 1) {
+            no_match_count++
+            await delay(RESOLVE_DELAY)
+            continue
+          }
         } else {
-          no_match_count++; await delay(RESOLVE_DELAY); continue
+          no_match_count++
+          await delay(RESOLVE_DELAY)
+          continue
         }
       } catch {
-        no_match_count++; await delay(RESOLVE_DELAY); continue
+        no_match_count++
+        await delay(RESOLVE_DELAY)
+        continue
       }
 
       await delay(RESOLVE_DELAY)
-      if (!catalog_product_id) { no_match_count++; continue }
+      if (!catalog_product_id) {
+        no_match_count++
+        continue
+      }
 
-      if (dry_run) { ok_count++; continue }
+      if (dry_run) {
+        ok_count++
+        continue
+      }
 
       // Optin
       try {
         const optinRes = await fetch("https://api.mercadolibre.com/items/catalog_listings", {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${account.access_token}`,
+            Authorization: `Bearer ${account.access_token}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ item_id: pub.ml_item_id, catalog_product_id }),
@@ -85,15 +105,18 @@ export async function POST(req: NextRequest) {
         if (optinRes.ok) {
           ok_count++
           if (optinBody.id) {
-            await supabase.from("ml_listings").upsert({
-              account_id,
-              ml_id: optinBody.id,
-              catalog_listing: true,
-              catalog_product_id,
-              status: optinBody.status ?? "active",
-              price: optinBody.price ?? null,
-              updated_at: new Date().toISOString(),
-            }, { onConflict: "ml_id" })
+            await supabase.from("ml_listings").upsert(
+              {
+                account_id,
+                ml_id: optinBody.id,
+                catalog_listing: true,
+                catalog_product_id,
+                status: optinBody.status ?? "active",
+                price: optinBody.price ?? null,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: "ml_id" },
+            )
           }
         } else {
           failed_count++
@@ -112,9 +135,13 @@ export async function POST(req: NextRequest) {
   }
 
   const elapsed_seconds = parseFloat(((Date.now() - startTime) / 1000).toFixed(1))
-  console.log(`[CATALOG-OPTIN-BULK] done dry_run=${dry_run} ok=${ok_count} failed=${failed_count} no_match=${no_match_count} elapsed=${elapsed_seconds}s`)
+  console.log(
+    `[CATALOG-OPTIN-BULK] done dry_run=${dry_run} ok=${ok_count} failed=${failed_count} no_match=${no_match_count} elapsed=${elapsed_seconds}s`,
+  )
 
   return NextResponse.json({ ok: true, ok_count, failed_count, no_match_count, no_ean_count, elapsed_seconds, dry_run })
 }
 
-function delay(ms: number) { return new Promise(r => setTimeout(r, ms)) }
+function delay(ms: number) {
+  return new Promise((r) => setTimeout(r, ms))
+}

@@ -350,9 +350,11 @@ export async function sendLibralOrder(token: string, order: LibralOrder): Promis
 /**
  * Get orders from Libral (placeholder - needs actual endpoint)
  */
-export async function getLibralOrders(filters?: { estado?: string; fechaDesde?: string; fechaHasta?: string }): Promise<
-  LibralOrder[]
-> {
+export async function getLibralOrders(filters?: {
+  estado?: string
+  fechaDesde?: string
+  fechaHasta?: string
+}): Promise<LibralOrder[]> {
   // TODO: Implement when endpoint is available in documentation
   console.log("[v0] Libral Orders - Fetching orders with filters:", filters)
   console.log("[v0] Libral Orders - Waiting for API endpoint documentation")

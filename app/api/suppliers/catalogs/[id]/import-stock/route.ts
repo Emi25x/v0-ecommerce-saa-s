@@ -25,13 +25,11 @@ function normalizeEan(val: any): string | null {
  *
  * Body: { preview?: boolean, warehouse_id?: string }
  */
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const supabase  = createAdminClient()
-  const catalogId = params.id
-  const body      = await request.json()
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const supabase = createAdminClient()
+  const catalogId = id
+  const body = await request.json()
 
   const previewOnly = body.preview === true
   const warehouseId: string | null = body.warehouse_id ?? null
@@ -70,17 +68,20 @@ export async function POST(
   if (looksLikeHeader) startRow = 1
 
   // Parse EAN + stock
-  const stockMap = new Map<string, number>()  // EAN → qty
+  const stockMap = new Map<string, number>() // EAN → qty
   let totalRows = 0
-  let validEan  = 0
-  let invalid   = 0
+  let validEan = 0
+  let invalid = 0
 
   for (let i = startRow; i < rawRows.length; i++) {
     const row = rawRows[i]
     totalRows++
     const ean = normalizeEan(row?.[0])
     const qty = parseInt(String(row?.[1] ?? "0").replace(/[^0-9]/g, "")) || 0
-    if (!ean) { invalid++; continue }
+    if (!ean) {
+      invalid++
+      continue
+    }
     validEan++
     // Last occurrence wins for duplicate EANs in same file
     stockMap.set(ean, qty)
@@ -97,16 +98,16 @@ export async function POST(
     const currentMap = new Map<string, number>()
     for (const s of currentStock ?? []) currentMap.set(s.ean, s.quantity)
 
-    const toZero = [...currentMap.keys()].filter(ean => !stockMap.has(ean)).length
+    const toZero = [...currentMap.keys()].filter((ean) => !stockMap.has(ean)).length
     const sample = [...stockMap.entries()].slice(0, 5).map(([ean, qty]) => ({ ean, qty }))
 
     return NextResponse.json({
-      ok:            true,
-      preview:       true,
-      total_rows:    totalRows,
-      valid_ean:     validEan,
+      ok: true,
+      preview: true,
+      total_rows: totalRows,
+      valid_ean: validEan,
       skipped_invalid: invalid,
-      unique_eans:   stockMap.size,
+      unique_eans: stockMap.size,
       set_zero_count: toZero,
       sample,
     })
@@ -115,29 +116,26 @@ export async function POST(
   // ── Apply snapshot ─────────────────────────────────────────────────────────
 
   // 1. Fetch all current EANs for this supplier to compute zeros
-  const { data: existingRows } = await supabase
-    .from("supplier_stock")
-    .select("ean")
-    .eq("supplier_id", supplierId)
+  const { data: existingRows } = await supabase.from("supplier_stock").select("ean").eq("supplier_id", supplierId)
 
-  const existingEans = new Set((existingRows ?? []).map(r => r.ean))
+  const existingEans = new Set((existingRows ?? []).map((r) => r.ean))
 
   // Create run log
-  const setZeroCount = [...existingEans].filter(ean => !stockMap.has(ean)).length
+  const setZeroCount = [...existingEans].filter((ean) => !stockMap.has(ean)).length
 
   const { data: runRow } = await supabase
     .from("supplier_import_runs")
     .insert({
-      supplier_id:         supplierId,
-      catalog_id:          catalogId,
-      feed_kind:           "stock",
-      warehouse_id:        warehouseId,
-      total_rows:          totalRows,
-      valid_ean:           validEan,
-      skipped_count:       invalid,
+      supplier_id: supplierId,
+      catalog_id: catalogId,
+      feed_kind: "stock",
+      warehouse_id: warehouseId,
+      total_rows: totalRows,
+      valid_ean: validEan,
+      skipped_count: invalid,
       set_zero_stock_count: setZeroCount,
-      status:              "running",
-      started_at:          new Date().toISOString(),
+      status: "running",
+      started_at: new Date().toISOString(),
     })
     .select("id")
     .single()
@@ -145,23 +143,21 @@ export async function POST(
 
   // 2. Upsert all EANs from this file
   const upsertRows = [...stockMap.entries()].map(([ean, quantity]) => ({
-    supplier_id:  supplierId,
+    supplier_id: supplierId,
     warehouse_id: warehouseId,
     ean,
     quantity,
-    run_id:       runId,
-    updated_at:   new Date().toISOString(),
+    run_id: runId,
+    updated_at: new Date().toISOString(),
   }))
 
   const CHUNK = 500
   for (let i = 0; i < upsertRows.length; i += CHUNK) {
-    await supabase
-      .from("supplier_stock")
-      .upsert(upsertRows.slice(i, i + CHUNK), { onConflict: "supplier_id,ean" })
+    await supabase.from("supplier_stock").upsert(upsertRows.slice(i, i + CHUNK), { onConflict: "supplier_id,ean" })
   }
 
   // 3. Zero out EANs not present in this snapshot
-  const eansToZero = [...existingEans].filter(ean => !stockMap.has(ean))
+  const eansToZero = [...existingEans].filter((ean) => !stockMap.has(ean))
   if (eansToZero.length > 0) {
     for (let i = 0; i < eansToZero.length; i += CHUNK) {
       await supabase
@@ -174,9 +170,7 @@ export async function POST(
 
   // 4. Propagate stock to products.stock_by_source + products.stock
   // Use supplier code as the source_key bucket (lowercase, alphanumeric only)
-  const sourceKey = ((catalog.supplier as any)?.code ?? supplierId)
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "_")
+  const sourceKey = ((catalog.supplier as any)?.code ?? supplierId).toLowerCase().replace(/[^a-z0-9]/g, "_")
 
   let productsUpdated = 0
 
@@ -184,10 +178,7 @@ export async function POST(
   const allEans = [...stockMap.keys()]
   for (let i = 0; i < allEans.length; i += CHUNK) {
     const chunk = allEans.slice(i, i + CHUNK)
-    const { data: prods } = await supabase
-      .from("products")
-      .select("id, ean, stock_by_source")
-      .in("ean", chunk)
+    const { data: prods } = await supabase.from("products").select("id, ean, stock_by_source").in("ean", chunk)
 
     if (!prods || prods.length === 0) continue
 
@@ -205,10 +196,7 @@ export async function POST(
   // Zero out products whose EANs were removed from this supplier's snapshot
   for (let i = 0; i < eansToZero.length; i += CHUNK) {
     const chunk = eansToZero.slice(i, i + CHUNK)
-    const { data: prods } = await supabase
-      .from("products")
-      .select("id, ean, stock_by_source")
-      .in("ean", chunk)
+    const { data: prods } = await supabase.from("products").select("id, ean, stock_by_source").in("ean", chunk)
 
     if (!prods || prods.length === 0) continue
 
@@ -223,24 +211,27 @@ export async function POST(
 
   // Finalize run log
   if (runId) {
-    await supabase.from("supplier_import_runs").update({
-      status:              "completed",
-      finished_at:         new Date().toISOString(),
-      valid_ean:           validEan,
-      set_zero_stock_count: setZeroCount,
-      updated_count:       productsUpdated,
-    }).eq("id", runId)
+    await supabase
+      .from("supplier_import_runs")
+      .update({
+        status: "completed",
+        finished_at: new Date().toISOString(),
+        valid_ean: validEan,
+        set_zero_stock_count: setZeroCount,
+        updated_count: productsUpdated,
+      })
+      .eq("id", runId)
   }
 
   return NextResponse.json({
-    ok:               true,
-    total_rows:       totalRows,
-    valid_ean:        validEan,
-    unique_eans:      stockMap.size,
-    set_zero_count:   setZeroCount,
-    skipped_invalid:  invalid,
+    ok: true,
+    total_rows: totalRows,
+    valid_ean: validEan,
+    unique_eans: stockMap.size,
+    set_zero_count: setZeroCount,
+    skipped_invalid: invalid,
     products_updated: productsUpdated,
-    source_key:       sourceKey,
-    run_id:           runId,
+    source_key: sourceKey,
+    run_id: runId,
   })
 }

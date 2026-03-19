@@ -30,7 +30,7 @@ async function getPadronTicket(config: any): Promise<{ token: string; sign: stri
   }
 
   const certPem = config.cert_pem || config.certificado_pem
-  const keyPem  = config.clave_pem || config.private_key_pem
+  const keyPem = config.clave_pem || config.private_key_pem
 
   if (!certPem || !keyPem) throw new Error("Certificado o clave privada no configurados")
 
@@ -61,12 +61,15 @@ async function getPadronTicket(config: any): Promise<{ token: string; sign: stri
 
   // Cachear
   const supabase = await createClient()
-  await supabase.from("arca_config").update({
-    padron_token:      token,
-    padron_sign:       sign,
-    padron_expires_at: expiresAt.toISOString(),
-    updated_at:        new Date().toISOString(),
-  }).eq("id", config.id)
+  await supabase
+    .from("arca_config")
+    .update({
+      padron_token: token,
+      padron_sign: sign,
+      padron_expires_at: expiresAt.toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", config.id)
 
   return { token, sign }
 }
@@ -91,7 +94,7 @@ async function callPadron(url: string, token: string, sign: string, cuitRepresen
     method: "POST",
     headers: {
       "Content-Type": "text/xml; charset=utf-8",
-      "SOAPAction":   "",
+      SOAPAction: "",
     },
     body: soapBody,
   })
@@ -109,40 +112,41 @@ async function callPadron(url: string, token: string, sign: string, cuitRepresen
 // ── Parser de la respuesta ────────────────────────────────────────────────────
 
 function parsePersona(xml: string) {
-  const get   = (tag: string) => xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`))?.[1]?.trim() ?? null
-  const getAll= (tag: string) => [...xml.matchAll(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "g"))].map(m => m[1].trim())
+  const get = (tag: string) => xml.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`))?.[1]?.trim() ?? null
+  const getAll = (tag: string) =>
+    [...xml.matchAll(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "g"))].map((m) => m[1].trim())
 
   // Datos básicos
-  const idPersona  = get("idPersona")
-  const tipoPersona= get("tipoPersona")           // "F" = física, "J" = jurídica
-  const razonSocial= get("razonSocial")
-  const nombre     = get("nombre")
-  const apellido   = get("apellido")
+  const idPersona = get("idPersona")
+  const tipoPersona = get("tipoPersona") // "F" = física, "J" = jurídica
+  const razonSocial = get("razonSocial")
+  const nombre = get("nombre")
+  const apellido = get("apellido")
 
   // Domicilio fiscal
-  const domFiscal  = xml.match(/<domicilioFiscal>([\s\S]*?)<\/domicilioFiscal>/)?.[1] ?? ""
-  const direccion  = domFiscal.match(/<direccion>([\s\S]*?)<\/direccion>/)?.[1]?.trim() ?? null
-  const localidad  = domFiscal.match(/<localidad>([\s\S]*?)<\/localidad>/)?.[1]?.trim() ?? null
-  const provincia  = domFiscal.match(/<descripcionProvincia>([\s\S]*?)<\/descripcionProvincia>/)?.[1]?.trim() ?? null
-  const cp         = domFiscal.match(/<codPostal>([\s\S]*?)<\/codPostal>/)?.[1]?.trim() ?? null
+  const domFiscal = xml.match(/<domicilioFiscal>([\s\S]*?)<\/domicilioFiscal>/)?.[1] ?? ""
+  const direccion = domFiscal.match(/<direccion>([\s\S]*?)<\/direccion>/)?.[1]?.trim() ?? null
+  const localidad = domFiscal.match(/<localidad>([\s\S]*?)<\/localidad>/)?.[1]?.trim() ?? null
+  const provincia = domFiscal.match(/<descripcionProvincia>([\s\S]*?)<\/descripcionProvincia>/)?.[1]?.trim() ?? null
+  const cp = domFiscal.match(/<codPostal>([\s\S]*?)<\/codPostal>/)?.[1]?.trim() ?? null
 
   // Impuestos activos — para inferir condición IVA
-  const impuestoNodes = [...xml.matchAll(/<impuesto>([\s\S]*?)<\/impuesto>/g)].map(m => m[1])
-  const impuestos = impuestoNodes.map(n => ({
-    id:          parseInt(n.match(/<id>([\s\S]*?)<\/id>/)?.[1] ?? "0"),
+  const impuestoNodes = [...xml.matchAll(/<impuesto>([\s\S]*?)<\/impuesto>/g)].map((m) => m[1])
+  const impuestos = impuestoNodes.map((n) => ({
+    id: parseInt(n.match(/<id>([\s\S]*?)<\/id>/)?.[1] ?? "0"),
     descripcion: n.match(/<descripcion>([\s\S]*?)<\/descripcion>/)?.[1]?.trim() ?? "",
-    estado:      n.match(/<estado>([\s\S]*?)<\/estado>/)?.[1]?.trim() ?? "",
-    periodo:     n.match(/<periodo>([\s\S]*?)<\/periodo>/)?.[1]?.trim() ?? "",
+    estado: n.match(/<estado>([\s\S]*?)<\/estado>/)?.[1]?.trim() ?? "",
+    periodo: n.match(/<periodo>([\s\S]*?)<\/periodo>/)?.[1]?.trim() ?? "",
   }))
 
   // Actividades
-  const actividadNodes = [...xml.matchAll(/<actividad>([\s\S]*?)<\/actividad>/g)].map(m => m[1])
-  const actividades = actividadNodes.map(n => ({
-    id:          n.match(/<id>([\s\S]*?)<\/id>/)?.[1]?.trim() ?? "",
+  const actividadNodes = [...xml.matchAll(/<actividad>([\s\S]*?)<\/actividad>/g)].map((m) => m[1])
+  const actividades = actividadNodes.map((n) => ({
+    id: n.match(/<id>([\s\S]*?)<\/id>/)?.[1]?.trim() ?? "",
     descripcion: n.match(/<descripcion>([\s\S]*?)<\/descripcion>/)?.[1]?.trim() ?? "",
-    orden:       n.match(/<orden>([\s\S]*?)<\/orden>/)?.[1]?.trim() ?? "",
-    desde:       n.match(/<periodo>([\s\S]*?)<\/periodo>/)?.[1]?.trim() ?? "",
-    principal:   n.match(/<orden>([\s\S]*?)<\/orden>/)?.[1]?.trim() === "1",
+    orden: n.match(/<orden>([\s\S]*?)<\/orden>/)?.[1]?.trim() ?? "",
+    desde: n.match(/<periodo>([\s\S]*?)<\/periodo>/)?.[1]?.trim() ?? "",
+    principal: n.match(/<orden>([\s\S]*?)<\/orden>/)?.[1]?.trim() === "1",
   }))
 
   // Inferir condición IVA a partir de impuestos activos
@@ -150,10 +154,10 @@ function parsePersona(xml: string) {
   // id 32 = IVA Exento
   // id 20 = Monotributo (Cat. A-K)
   // id 21 = Monotributo Social
-  const activos = impuestos.filter(i => i.estado === "ACTIVO").map(i => i.id)
+  const activos = impuestos.filter((i) => i.estado === "ACTIVO").map((i) => i.id)
   let condicionIva = "consumidor_final"
-  if (activos.includes(30))       condicionIva = "responsable_inscripto"
-  else if (activos.includes(32))  condicionIva = "exento"
+  if (activos.includes(30)) condicionIva = "responsable_inscripto"
+  else if (activos.includes(32)) condicionIva = "exento"
   else if (activos.includes(20) || activos.includes(21)) condicionIva = "monotributo"
 
   return {
@@ -185,7 +189,9 @@ export async function consultarPersona(idPersona: string): Promise<{
 }> {
   try {
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
     if (!user) return { ok: false, error: "No autenticado" }
 
     const { data: config, error: cfgErr } = await supabase
@@ -197,12 +203,12 @@ export async function consultarPersona(idPersona: string): Promise<{
     if (cfgErr || !config) return { ok: false, error: "Configuración ARCA no encontrada" }
 
     const { token, sign } = await getPadronTicket(config)
-    const url = (config.ambiente === "produccion") ? PADRON_PROD : PADRON_HOMO
+    const url = config.ambiente === "produccion" ? PADRON_PROD : PADRON_HOMO
     const xml = await callPadron(url, token, sign, config.cuit, idPersona.replace(/\D/g, ""))
 
     // Verificar error de ARCA en la respuesta
     const errorCode = xml.match(/<codigoError>([\s\S]*?)<\/codigoError>/)?.[1]
-    const errorMsg  = xml.match(/<descripcionError>([\s\S]*?)<\/descripcionError>/)?.[1]
+    const errorMsg = xml.match(/<descripcionError>([\s\S]*?)<\/descripcionError>/)?.[1]
     if (errorCode && errorCode !== "0") {
       return { ok: false, error: errorMsg || `Error código ${errorCode}` }
     }

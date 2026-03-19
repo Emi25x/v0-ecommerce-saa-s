@@ -13,11 +13,14 @@ export async function GET() {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return NextResponse.json({
-      error: "Missing Supabase credentials",
-      hasUrl: !!supabaseUrl,
-      hasServiceRole: !!serviceRoleKey
-    }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: "Missing Supabase credentials",
+        hasUrl: !!supabaseUrl,
+        hasServiceRole: !!serviceRoleKey,
+      },
+      { status: 500 },
+    )
   }
 
   try {
@@ -25,21 +28,22 @@ export async function GET() {
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
       auth: {
         autoRefreshToken: false,
-        persistSession: false
-      }
+        persistSession: false,
+      },
     })
 
     // Contar todas las cuentas
-    const { count, error: countError } = await supabase
-      .from("ml_accounts")
-      .select("*", { count: "exact", head: true })
+    const { count, error: countError } = await supabase.from("ml_accounts").select("*", { count: "exact", head: true })
 
     if (countError) {
-      return NextResponse.json({
-        error: "Count query failed",
-        details: countError.message,
-        code: countError.code
-      }, { status: 500 })
+      return NextResponse.json(
+        {
+          error: "Count query failed",
+          details: countError.message,
+          code: countError.code,
+        },
+        { status: 500 },
+      )
     }
 
     // Listar últimas 3 cuentas (sin datos sensibles)
@@ -50,24 +54,29 @@ export async function GET() {
       .limit(3)
 
     if (selectError) {
-      return NextResponse.json({
-        error: "Select query failed",
-        details: selectError.message,
-        code: selectError.code
-      }, { status: 500 })
+      return NextResponse.json(
+        {
+          error: "Select query failed",
+          details: selectError.message,
+          code: selectError.code,
+        },
+        { status: 500 },
+      )
     }
 
     return NextResponse.json({
       success: true,
       count: count || 0,
       recentAccounts: accounts || [],
-      supabaseProjectRef: new URL(supabaseUrl).hostname.split(".")[0]
+      supabaseProjectRef: new URL(supabaseUrl).hostname.split(".")[0],
     })
-
   } catch (error: any) {
-    return NextResponse.json({
-      error: "Unexpected error",
-      message: error.message
-    }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: "Unexpected error",
+        message: error.message,
+      },
+      { status: 500 },
+    )
   }
 }

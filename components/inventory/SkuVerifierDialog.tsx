@@ -83,9 +83,7 @@ export function SkuVerifierDialog({
               >
                 <p
                   className={`font-semibold ${
-                    verificationResult.found
-                      ? "text-green-800 dark:text-green-200"
-                      : "text-red-800 dark:text-red-200"
+                    verificationResult.found ? "text-green-800 dark:text-green-200" : "text-red-800 dark:text-red-200"
                   }`}
                 >
                   {verificationResult.message}
@@ -178,11 +176,7 @@ export function SkuVerifierDialog({
                             <p className="font-mono text-sm font-semibold">{product.sku}</p>
                             <p className="text-xs text-muted-foreground truncate">{product.title}</p>
                           </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => onViewProduct(product.sku)}
-                          >
+                          <Button variant="outline" size="sm" onClick={() => onViewProduct(product.sku)}>
                             Ver
                           </Button>
                         </div>

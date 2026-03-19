@@ -55,7 +55,7 @@ function PlatformCard({
   const isConnected = !!connection
 
   function handleFieldChange(key: string, value: string) {
-    setFields(prev => ({ ...prev, [key]: value }))
+    setFields((prev) => ({ ...prev, [key]: value }))
   }
 
   async function handleSave() {
@@ -121,14 +121,16 @@ function PlatformCard({
         {isConnected && !expanded && (
           <div className="space-y-3">
             <div className="flex flex-wrap gap-1">
-              {platform.capabilities.map(cap => (
+              {platform.capabilities.map((cap) => (
                 <Badge key={cap} variant="secondary" className="text-xs capitalize">
                   {cap.replace(/_/g, " ")}
                 </Badge>
               ))}
             </div>
             {connection.account_name && (
-              <p className="text-sm text-muted-foreground">Cuenta: <span className="font-medium text-foreground">{connection.account_name}</span></p>
+              <p className="text-sm text-muted-foreground">
+                Cuenta: <span className="font-medium text-foreground">{connection.account_name}</span>
+              </p>
             )}
             <p className="text-xs text-muted-foreground">Última sincronización: {timeAgo(connection.last_synced_at)}</p>
             <div className="flex gap-2">
@@ -139,7 +141,12 @@ function PlatformCard({
                 </svg>
                 Actualizar credenciales
               </Button>
-              <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={handleDisconnect}>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-destructive hover:text-destructive"
+                onClick={handleDisconnect}
+              >
                 <svg className="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
                   <line x1="12" y1="2" x2="12" y2="12" />
@@ -171,7 +178,7 @@ function PlatformCard({
                     <p className="text-sm text-muted-foreground">
                       Primero ingresa tus credenciales de la aplicación, luego autoriza con OAuth:
                     </p>
-                    {platform.fields.map(field => (
+                    {platform.fields.map((field) => (
                       <div key={field.key}>
                         <Label htmlFor={`${platform.id}-${field.key}`} className="text-sm">
                           {field.label}
@@ -182,21 +189,13 @@ function PlatformCard({
                           type={field.type}
                           placeholder={field.placeholder}
                           value={fields[field.key] ?? ""}
-                          onChange={e => handleFieldChange(field.key, e.target.value)}
+                          onChange={(e) => handleFieldChange(field.key, e.target.value)}
                           className="mt-1"
                         />
-                        {field.help && (
-                          <p className="text-xs text-muted-foreground mt-0.5">{field.help}</p>
-                        )}
+                        {field.help && <p className="text-xs text-muted-foreground mt-0.5">{field.help}</p>}
                       </div>
                     ))}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleSave}
-                      disabled={saving}
-                      className="w-full"
-                    >
+                    <Button size="sm" variant="outline" onClick={handleSave} disabled={saving} className="w-full">
                       {saving ? (
                         <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
                       ) : null}
@@ -219,7 +218,7 @@ function PlatformCard({
               </div>
             ) : (
               <div className="space-y-3">
-                {platform.fields.map(field => (
+                {platform.fields.map((field) => (
                   <div key={field.key}>
                     <Label htmlFor={`${platform.id}-${field.key}`} className="text-sm">
                       {field.label}
@@ -230,12 +229,10 @@ function PlatformCard({
                       type={field.type}
                       placeholder={field.placeholder}
                       value={fields[field.key] ?? ""}
-                      onChange={e => handleFieldChange(field.key, e.target.value)}
+                      onChange={(e) => handleFieldChange(field.key, e.target.value)}
                       className="mt-1"
                     />
-                    {field.help && (
-                      <p className="text-xs text-muted-foreground mt-0.5">{field.help}</p>
-                    )}
+                    {field.help && <p className="text-xs text-muted-foreground mt-0.5">{field.help}</p>}
                   </div>
                 ))}
                 <Button
@@ -281,7 +278,11 @@ function ConfigPageContent() {
       toast({ title: `${connected} conectado exitosamente`, description: "Las credenciales OAuth han sido guardadas." })
     }
     if (error) {
-      toast({ title: `Error al conectar ${platform ?? ""}`, description: decodeURIComponent(error), variant: "destructive" })
+      toast({
+        title: `Error al conectar ${platform ?? ""}`,
+        description: decodeURIComponent(error),
+        variant: "destructive",
+      })
     }
   }, [])
 
@@ -333,15 +334,15 @@ function ConfigPageContent() {
     setTimeout(() => setSqlCopied(false), 2000)
   }
 
-  const connectionMap = new Map(connections.map(c => [c.platform, c]))
+  const connectionMap = new Map(connections.map((c) => [c.platform, c]))
   const connectedCount = connections.length
 
   const CATEGORIES = [
-    { key: "search", platforms: PLATFORMS.filter(p => p.category === "search") },
-    { key: "ecommerce", platforms: PLATFORMS.filter(p => p.category === "ecommerce") },
-    { key: "social", platforms: PLATFORMS.filter(p => p.category === "social") },
-    { key: "email", platforms: PLATFORMS.filter(p => p.category === "email") },
-    { key: "crm", platforms: PLATFORMS.filter(p => p.category === "crm") },
+    { key: "search", platforms: PLATFORMS.filter((p) => p.category === "search") },
+    { key: "ecommerce", platforms: PLATFORMS.filter((p) => p.category === "ecommerce") },
+    { key: "social", platforms: PLATFORMS.filter((p) => p.category === "social") },
+    { key: "email", platforms: PLATFORMS.filter((p) => p.category === "email") },
+    { key: "crm", platforms: PLATFORMS.filter((p) => p.category === "crm") },
   ]
 
   return (
@@ -362,7 +363,9 @@ function ConfigPageContent() {
             <h1 className="text-2xl font-bold">Configuración de Plataformas</h1>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="secondary">{connectedCount} / {PLATFORMS.length} conectadas</Badge>
+            <Badge variant="secondary">
+              {connectedCount} / {PLATFORMS.length} conectadas
+            </Badge>
           </div>
         </div>
 
@@ -373,7 +376,13 @@ function ConfigPageContent() {
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2">
-                    <svg className="w-4 h-4 text-amber-600 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <svg
+                      className="w-4 h-4 text-amber-600 flex-shrink-0"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
                       <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
                       <line x1="12" y1="9" x2="12" y2="13" />
                       <line x1="12" y1="17" x2="12.01" y2="17" />
@@ -381,17 +390,24 @@ function ConfigPageContent() {
                     <span className="font-medium text-amber-800">Migración de Base de Datos Requerida</span>
                   </div>
                   <p className="text-sm text-amber-700 mb-3">
-                    Ejecuta este SQL en Supabase → SQL Editor para crear la tabla <code className="font-mono bg-amber-100 px-1 rounded">marketing_connections</code>:
+                    Ejecuta este SQL en Supabase → SQL Editor para crear la tabla{" "}
+                    <code className="font-mono bg-amber-100 px-1 rounded">marketing_connections</code>:
                   </p>
                   <pre className="text-xs bg-amber-100 border border-amber-200 rounded p-3 overflow-x-auto font-mono text-amber-900 whitespace-pre">
-{CREATE_TABLE_SQL}
+                    {CREATE_TABLE_SQL}
                   </pre>
                 </div>
                 <div className="flex flex-col gap-2 flex-shrink-0">
                   <Button size="sm" variant="outline" onClick={copySql} className="border-amber-300">
                     {sqlCopied ? (
                       <>
-                        <svg className="w-3 h-3 mr-1 text-green-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <svg
+                          className="w-3 h-3 mr-1 text-green-600"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
                           <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
                           <path d="M22 4 12 14.01l-3-3" />
                         </svg>
@@ -399,7 +415,13 @@ function ConfigPageContent() {
                       </>
                     ) : (
                       <>
-                        <svg className="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <svg
+                          className="w-3 h-3 mr-1"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
                           <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                         </svg>
@@ -418,11 +440,11 @@ function ConfigPageContent() {
 
         {loading ? (
           <div className="space-y-6">
-            {[1, 2, 3].map(i => (
+            {[1, 2, 3].map((i) => (
               <div key={i}>
                 <div className="h-5 w-32 bg-muted rounded mb-3 animate-pulse" />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {[1, 2].map(j => (
+                  {[1, 2].map((j) => (
                     <Card key={j}>
                       <CardContent className="pt-6">
                         <div className="h-5 w-36 bg-muted rounded mb-3 animate-pulse" />
@@ -441,11 +463,11 @@ function ConfigPageContent() {
                 <div className="flex items-center gap-2 mb-4">
                   <h2 className="text-lg font-semibold">{CATEGORY_LABELS[key]}</h2>
                   <Badge variant="secondary" className="text-xs">
-                    {platforms.filter(p => connectionMap.has(p.id)).length}/{platforms.length}
+                    {platforms.filter((p) => connectionMap.has(p.id)).length}/{platforms.length}
                   </Badge>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {platforms.map(platform => (
+                  {platforms.map((platform) => (
                     <PlatformCard
                       key={platform.id}
                       platform={platform}
@@ -466,11 +488,13 @@ function ConfigPageContent() {
 
 export default function MarketingConfigPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-background flex items-center justify-center">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      }
+    >
       <ConfigPageContent />
     </Suspense>
   )

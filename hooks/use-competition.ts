@@ -307,7 +307,9 @@ export function useCompetition() {
       const data = await res.json()
 
       if (data.success) {
-        alert(`Actualizaci\u00F3n completada:\n\u2713 Exitosos: ${data.summary.success}\n\u2717 Fallidos: ${data.summary.failed}`)
+        alert(
+          `Actualizaci\u00F3n completada:\n\u2713 Exitosos: ${data.summary.success}\n\u2717 Fallidos: ${data.summary.failed}`,
+        )
         setSelectedProducts(new Set())
         await loadProducts()
       } else {

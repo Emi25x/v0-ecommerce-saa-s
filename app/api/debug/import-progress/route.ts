@@ -18,16 +18,14 @@ export async function GET(request: NextRequest) {
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     // Buscar progress
-    let { data: progress, error } = await supabase
-      .from("ml_import_progress")
-      .select("*")
-      .eq("account_id", accountId)
-      .single()
+    const result = await supabase.from("ml_import_progress").select("*").eq("account_id", accountId).single()
+    let progress = result.data
+    const error = result.error
 
     if (error && error.code === "PGRST116") {
       // No existe, crear con defaults
       console.log(`[DEBUG-PROGRESS] Progress not found, creating with defaults`)
-      
+
       const { data: newProgress, error: insertError } = await supabase
         .from("ml_import_progress")
         .insert({

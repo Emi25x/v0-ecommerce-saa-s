@@ -2,7 +2,8 @@ import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import { type NextRequest, NextResponse } from "next/server"
 
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
     const cookieStore = await cookies()
     const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
@@ -15,7 +16,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     const body = await request.json()
     const { enabled, frequency, timezone, hour: hourNum, minute: minuteNum, dayOfWeek, dayOfMonth } = body
-    const sourceId = params.id
+    const sourceId = id
 
     console.log("[v0] POST /api/inventory/sources/[id]/schedule - Datos recibidos:", {
       sourceId,

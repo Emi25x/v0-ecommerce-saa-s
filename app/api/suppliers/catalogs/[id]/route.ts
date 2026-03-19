@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
 
-export async function GET(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
-    const catalogId = params.id
+    const catalogId = id
     const supabase = await createClient()
 
     const {
@@ -35,12 +33,10 @@ export async function GET(
   }
 }
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
-    const catalogId = params.id
+    const catalogId = id
     const body = await request.json()
     const supabase = await createClient()
 
@@ -53,15 +49,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { 
-      name, 
-      description, 
-      feed_type, 
-      url_template, 
-      auth_type, 
-      credentials,
-      column_mapping 
-    } = body
+    const { name, description, feed_type, url_template, auth_type, credentials, column_mapping } = body
 
     const updateData: any = {}
     if (name !== undefined) updateData.name = name
@@ -91,12 +79,10 @@ export async function PATCH(
   }
 }
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
-    const catalogId = params.id
+    const catalogId = id
     const supabase = await createClient()
 
     const {
@@ -108,10 +94,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const { error: deleteError } = await supabase
-      .from("supplier_catalogs")
-      .delete()
-      .eq("id", catalogId)
+    const { error: deleteError } = await supabase.from("supplier_catalogs").delete().eq("id", catalogId)
 
     if (deleteError) {
       console.error("[CATALOG-DELETE] Error:", deleteError)

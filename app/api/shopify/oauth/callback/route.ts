@@ -110,26 +110,23 @@ export async function GET(request: NextRequest) {
         .eq("id", existing.id)
     } else {
       // Insert new store
-      await supabase
-        .from("shopify_stores")
-        .insert({
-          owner_user_id: user_id,
-          shop_domain: shop,
-          name: shopName,
-          access_token: accessToken,
-          api_key,
-          api_secret,
-          is_active: true,
-        })
+      await supabase.from("shopify_stores").insert({
+        owner_user_id: user_id,
+        shop_domain: shop,
+        name: shopName,
+        access_token: accessToken,
+        api_key,
+        api_secret,
+        is_active: true,
+      })
     }
 
     // Clear OAuth cookie and redirect to success
     const response = NextResponse.redirect(
-      `${appUrl}/integrations/shopify-stores?success=${encodeURIComponent(`Tienda "${shopName}" conectada correctamente`)}`
+      `${appUrl}/integrations/shopify-stores?success=${encodeURIComponent(`Tienda "${shopName}" conectada correctamente`)}`,
     )
     response.cookies.delete("shopify_oauth")
     return response
-
   } catch (err: any) {
     console.error("[shopify-oauth-callback]", err)
     return redirectError(err.message || "Error desconocido")

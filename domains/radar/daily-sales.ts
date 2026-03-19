@@ -12,9 +12,7 @@ export interface DailySalesResult {
  * Generates the daily sales report as an Excel buffer.
  * Extracted from /api/reports/daily-sales to allow direct invocation without self-fetch.
  */
-export async function generateDailySalesReport(opts: {
-  date?: string
-}): Promise<DailySalesResult> {
+export async function generateDailySalesReport(opts: { date?: string }): Promise<DailySalesResult> {
   const supabase = await createClient()
 
   const targetDate = opts.date || new Date().toISOString().split("T")[0]
@@ -23,9 +21,7 @@ export async function generateDailySalesReport(opts: {
 
   console.log("[v0] Generando reporte de ventas para:", targetDate)
 
-  const { data: accounts } = await supabase
-    .from("ml_accounts")
-    .select("id, ml_user_id, access_token, nickname")
+  const { data: accounts } = await supabase.from("ml_accounts").select("id, ml_user_id, access_token, nickname")
 
   if (!accounts || accounts.length === 0) {
     throw new Error("No hay cuentas ML configuradas")
@@ -37,7 +33,7 @@ export async function generateDailySalesReport(opts: {
     try {
       const ordersUrl = `https://api.mercadolibre.com/orders/search?seller=${account.ml_user_id}&order.date_created.from=${startOfDay}&order.date_created.to=${endOfDay}`
       const response = await fetch(ordersUrl, {
-        headers: { Authorization: `Bearer ${account.access_token}` }
+        headers: { Authorization: `Bearer ${account.access_token}` },
       })
 
       if (response.ok) {
@@ -57,12 +53,72 @@ export async function generateDailySalesReport(opts: {
   const worksheet = workbook.addWorksheet("Ventas")
 
   const headers = [
-    "IVA", "CODIGO_PEDIDO", "", "", "", "", "", "CANTIDAD", "", "", "", "", "", "",
-    "", "", "", "", "", "", "", "EAN", "", "", "", "PRECIO_VENTA", "", "", "", "",
-    "", "", "CLIENTE_NOMBRE", "CLIENTE_IDENTIFICACION", "CLIENTE_DIRECCION",
-    "CLIENTE_POBLACION", "CLIENTE_PROVINCIA", "CLIENTE_CODIGOPOSTAL", "CLIENTE_PAIS",
-    "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
-    "", "", "", "", "", "", "CLIENTE_DIRECCIONCOMPLETA"
+    "IVA",
+    "CODIGO_PEDIDO",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "CANTIDAD",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "EAN",
+    "",
+    "",
+    "",
+    "PRECIO_VENTA",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "CLIENTE_NOMBRE",
+    "CLIENTE_IDENTIFICACION",
+    "CLIENTE_DIRECCION",
+    "CLIENTE_POBLACION",
+    "CLIENTE_PROVINCIA",
+    "CLIENTE_CODIGOPOSTAL",
+    "CLIENTE_PAIS",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "CLIENTE_DIRECCIONCOMPLETA",
   ]
 
   worksheet.addRow(headers)
@@ -73,7 +129,7 @@ export async function generateDailySalesReport(opts: {
       try {
         const shipmentUrl = `https://api.mercadolibre.com/shipments/${order.shipping.id}`
         const shipmentResponse = await fetch(shipmentUrl, {
-          headers: { Authorization: `Bearer ${accounts[0].access_token}` }
+          headers: { Authorization: `Bearer ${accounts[0].access_token}` },
         })
         if (shipmentResponse.ok) {
           shippingData = await shipmentResponse.json()
@@ -90,8 +146,8 @@ export async function generateDailySalesReport(opts: {
         const billingResponse = await fetch(billingUrl, {
           headers: {
             Authorization: `Bearer ${accounts[0].access_token}`,
-            'x-version': '2'
-          }
+            "x-version": "2",
+          },
         })
         if (billingResponse.ok) {
           billingInfo = await billingResponse.json()
@@ -108,15 +164,15 @@ export async function generateDailySalesReport(opts: {
         try {
           const itemUrl = `https://api.mercadolibre.com/items/${item.item.id}`
           const itemResponse = await fetch(itemUrl, {
-            headers: { Authorization: `Bearer ${accounts[0].access_token}` }
+            headers: { Authorization: `Bearer ${accounts[0].access_token}` },
           })
 
           if (itemResponse.ok) {
             const itemData = await itemResponse.json()
 
             if (itemData.attributes) {
-              const isbnAttr = itemData.attributes.find((attr: any) =>
-                attr.id === 'ISBN' || attr.id === 'GTIN' || attr.id === 'EAN'
+              const isbnAttr = itemData.attributes.find(
+                (attr: any) => attr.id === "ISBN" || attr.id === "GTIN" || attr.id === "EAN",
               )
               if (isbnAttr && isbnAttr.value_name) {
                 ean = isbnAttr.value_name
@@ -138,9 +194,10 @@ export async function generateDailySalesReport(opts: {
       const billingAddress = buyerBilling.address || {}
       const identification = buyerBilling.identification || {}
 
-      const finalName = buyerBilling.name && buyerBilling.last_name
-        ? `${buyerBilling.name} ${buyerBilling.last_name}`.trim()
-        : receiver.receiver_name || order.buyer?.nickname || ""
+      const finalName =
+        buyerBilling.name && buyerBilling.last_name
+          ? `${buyerBilling.name} ${buyerBilling.last_name}`.trim()
+          : receiver.receiver_name || order.buyer?.nickname || ""
       const finalDocNumber = identification.number || ""
       const finalStreetName = billingAddress.street_name || receiver.street_name || ""
       const finalStreetNumber = billingAddress.street_number || receiver.street_number || ""
@@ -161,7 +218,9 @@ export async function generateDailySalesReport(opts: {
       row[36] = finalState
       row[37] = finalZipCode
       row[38] = "AR"
-      row[61] = `${finalStreetName} ${finalStreetNumber}, ${finalCity}, ${finalState}`.trim().replace(/^,\s*|,\s*$/g, '')
+      row[61] = `${finalStreetName} ${finalStreetNumber}, ${finalCity}, ${finalState}`
+        .trim()
+        .replace(/^,\s*|,\s*$/g, "")
 
       worksheet.addRow(row)
     }
@@ -190,16 +249,16 @@ export async function sendDailySalesEmail(opts: {
 
   const report = await generateDailySalesReport({ date: opts.date })
   const targetDate = opts.date || new Date().toISOString().split("T")[0]
-  const base64Excel = report.buffer.toString('base64')
+  const base64Excel = report.buffer.toString("base64")
 
-  const emailResponse = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
+  const emailResponse = await fetch("https://api.resend.com/emails", {
+    method: "POST",
     headers: {
-      'Authorization': `Bearer ${resendApiKey}`,
-      'Content-Type': 'application/json'
+      Authorization: `Bearer ${resendApiKey}`,
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: 'Reportes <onboarding@resend.dev>',
+      from: "Reportes <onboarding@resend.dev>",
       to: opts.email_recipients,
       subject: `Reporte de Ventas - ${targetDate}`,
       html: `
@@ -207,11 +266,13 @@ export async function sendDailySalesEmail(opts: {
         <p>Adjunto encontrarás el reporte de ventas del día ${targetDate}</p>
         <p>Total de órdenes: ${report.orderCount}</p>
       `,
-      attachments: [{
-        filename: `ventas-${targetDate}.xlsx`,
-        content: base64Excel
-      }]
-    })
+      attachments: [
+        {
+          filename: `ventas-${targetDate}.xlsx`,
+          content: base64Excel,
+        },
+      ],
+    }),
   })
 
   if (!emailResponse.ok) {

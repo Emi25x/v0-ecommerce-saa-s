@@ -11,12 +11,7 @@ interface ProductFiltersProps {
   onRefresh: () => void
 }
 
-export function ProductFilters({
-  searchQuery,
-  debouncedSearch,
-  onSearchChange,
-  onRefresh,
-}: ProductFiltersProps) {
+export function ProductFilters({ searchQuery, debouncedSearch, onSearchChange, onRefresh }: ProductFiltersProps) {
   return (
     <div className="flex items-center gap-4">
       <div className="relative flex-1">

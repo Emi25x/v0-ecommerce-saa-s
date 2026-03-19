@@ -39,23 +39,25 @@ export async function executeMlSync(
 
   // 1. Sync recent orders (last 30 days)
   try {
-    const ordersResponse = await fetch(
-      `${ML_API_BASE}/orders/search?seller=${mlUserId}&sort=date_desc&limit=50`,
-      { headers: { Authorization: `Bearer ${accessToken}` } },
-    )
+    const ordersResponse = await fetch(`${ML_API_BASE}/orders/search?seller=${mlUserId}&sort=date_desc&limit=50`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
 
     if (ordersResponse.ok) {
       const ordersData = await ordersResponse.json()
       for (const order of ordersData.results || []) {
-        const { error } = await supabase.from("ml_orders_cache").upsert({
-          id: order.id.toString(),
-          account_id: accountId,
-          order_data: order,
-          status: order.status,
-          total_amount: order.total_amount,
-          buyer_nickname: order.buyer?.nickname,
-          cached_at: new Date().toISOString(),
-        }, { onConflict: "id" })
+        const { error } = await supabase.from("ml_orders_cache").upsert(
+          {
+            id: order.id.toString(),
+            account_id: accountId,
+            order_data: order,
+            status: order.status,
+            total_amount: order.total_amount,
+            buyer_nickname: order.buyer?.nickname,
+            cached_at: new Date().toISOString(),
+          },
+          { onConflict: "id" },
+        )
         if (error) results.orders.errors++
         else results.orders.synced++
       }
@@ -66,10 +68,9 @@ export async function executeMlSync(
 
   // 2. Sync active items/publications
   try {
-    const itemsResponse = await fetch(
-      `${ML_API_BASE}/users/${mlUserId}/items/search?status=active&limit=100`,
-      { headers: { Authorization: `Bearer ${accessToken}` } },
-    )
+    const itemsResponse = await fetch(`${ML_API_BASE}/users/${mlUserId}/items/search?status=active&limit=100`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
 
     if (itemsResponse.ok) {
       const itemsData = await itemsResponse.json()
@@ -77,31 +78,33 @@ export async function executeMlSync(
 
       for (let i = 0; i < itemIds.length; i += 20) {
         const batch = itemIds.slice(i, i + 20)
-        const multiGetResponse = await fetch(
-          `${ML_API_BASE}/items?ids=${batch.join(",")}`,
-          { headers: { Authorization: `Bearer ${accessToken}` } },
-        )
+        const multiGetResponse = await fetch(`${ML_API_BASE}/items?ids=${batch.join(",")}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        })
 
         if (multiGetResponse.ok) {
           const itemsDetails = await multiGetResponse.json()
           for (const itemWrapper of itemsDetails) {
             if (itemWrapper.code === 200 && itemWrapper.body) {
               const item = itemWrapper.body
-              const { error } = await supabase.from("ml_products_cache").upsert({
-                id: item.id,
-                account_id: accountId,
-                title: item.title,
-                price: item.price,
-                currency_id: item.currency_id,
-                available_quantity: item.available_quantity,
-                sold_quantity: item.sold_quantity,
-                status: item.status,
-                thumbnail: item.thumbnail,
-                permalink: item.permalink,
-                category_id: item.category_id,
-                item_data: item,
-                cached_at: new Date().toISOString(),
-              }, { onConflict: "id" })
+              const { error } = await supabase.from("ml_products_cache").upsert(
+                {
+                  id: item.id,
+                  account_id: accountId,
+                  title: item.title,
+                  price: item.price,
+                  currency_id: item.currency_id,
+                  available_quantity: item.available_quantity,
+                  sold_quantity: item.sold_quantity,
+                  status: item.status,
+                  thumbnail: item.thumbnail,
+                  permalink: item.permalink,
+                  category_id: item.category_id,
+                  item_data: item,
+                  cached_at: new Date().toISOString(),
+                },
+                { onConflict: "id" },
+              )
               if (error) results.items.errors++
               else results.items.synced++
             }
@@ -123,16 +126,19 @@ export async function executeMlSync(
     if (questionsResponse.ok) {
       const questionsData = await questionsResponse.json()
       for (const question of questionsData.questions || []) {
-        const { error } = await supabase.from("ml_questions_cache").upsert({
-          id: question.id.toString(),
-          account_id: accountId,
-          item_id: question.item_id,
-          question_text: question.text,
-          status: question.status,
-          from_user_id: question.from?.id?.toString(),
-          question_data: question,
-          cached_at: new Date().toISOString(),
-        }, { onConflict: "id" })
+        const { error } = await supabase.from("ml_questions_cache").upsert(
+          {
+            id: question.id.toString(),
+            account_id: accountId,
+            item_id: question.item_id,
+            question_text: question.text,
+            status: question.status,
+            from_user_id: question.from?.id?.toString(),
+            question_data: question,
+            cached_at: new Date().toISOString(),
+          },
+          { onConflict: "id" },
+        )
         if (error) results.questions.errors++
         else results.questions.synced++
       }
@@ -142,9 +148,12 @@ export async function executeMlSync(
   }
 
   // Update last sync timestamp
-  await supabase.from("ml_accounts").update({
-    last_sync_at: new Date().toISOString(),
-  }).eq("id", accountId)
+  await supabase
+    .from("ml_accounts")
+    .update({
+      last_sync_at: new Date().toISOString(),
+    })
+    .eq("id", accountId)
 
   return {
     success: true,

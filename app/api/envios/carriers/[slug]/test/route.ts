@@ -3,12 +3,13 @@ import { createAdminClient } from "@/lib/db/admin"
 import { createFastMailClient, FastMailConfig, FastMailCredentials } from "@/domains/shipping/carriers/fastmail"
 import { createCabifyClient, CabifyConfig, CabifyCredentials } from "@/domains/shipping/carriers/cabify"
 
-export async function POST(_req: NextRequest, { params }: { params: { slug: string } }) {
+export async function POST(_req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params
   const supabase = createAdminClient()
   const { data: carrier, error } = await supabase
     .from("carriers")
     .select("slug, config, credentials, active")
-    .eq("slug", params.slug)
+    .eq("slug", slug)
     .maybeSingle()
 
   if (error || !carrier) {
@@ -18,7 +19,7 @@ export async function POST(_req: NextRequest, { params }: { params: { slug: stri
   const creds = (carrier as any).credentials as Record<string, string> | null
 
   try {
-    if (params.slug === "fastmail") {
+    if (slug === "fastmail") {
       if (!creds?.token) {
         return NextResponse.json({
           ok: false,
@@ -27,28 +28,25 @@ export async function POST(_req: NextRequest, { params }: { params: { slug: stri
       }
       const client = createFastMailClient(
         (carrier as any).config as FastMailConfig,
-        creds as unknown as FastMailCredentials
+        creds as unknown as FastMailCredentials,
       )
       const res = await client.healthCheck()
       return NextResponse.json(res)
     }
 
-    if (params.slug === "cabify") {
+    if (slug === "cabify") {
       if (!creds?.client_id || !creds?.client_secret) {
         return NextResponse.json({
           ok: false,
           message: "Credenciales incompletas. Guardá el Client ID y el Client Secret de Cabify Logistics primero.",
         })
       }
-      const client = createCabifyClient(
-        (carrier as any).config as CabifyConfig,
-        creds as unknown as CabifyCredentials
-      )
+      const client = createCabifyClient((carrier as any).config as CabifyConfig, creds as unknown as CabifyCredentials)
       const res = await client.healthCheck()
       return NextResponse.json(res)
     }
 
-    return NextResponse.json({ ok: false, message: `Test no implementado para "${params.slug}"` })
+    return NextResponse.json({ ok: false, message: `Test no implementado para "${slug}"` })
   } catch (err: any) {
     return NextResponse.json({ ok: false, message: err.message })
   }

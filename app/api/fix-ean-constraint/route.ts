@@ -35,7 +35,7 @@ export async function GET() {
         AND indexdef ILIKE '%ean%'
       ORDER BY indexname
     `,
-  }).catch(() => ({ data: null }))
+  })
 
   // Fallback: intentar con consulta directa
   if (!idxRows) {
@@ -48,16 +48,15 @@ export async function GET() {
     if (testErr1) {
       diag.ean_unique_status = "MISSING"
       diag.upsert_test_error = testErr1.message
-      diag.explanation = "El upsert con onConflict='ean' falla porque NO existe UNIQUE constraint en ean. ESTE ES EL PROBLEMA."
+      diag.explanation =
+        "El upsert con onConflict='ean' falla porque NO existe UNIQUE constraint en ean. ESTE ES EL PROBLEMA."
     } else {
       diag.ean_unique_status = "OK"
       // Limpiar
       await supabase.from("products").delete().eq("ean", testEan)
     }
   } else {
-    const hasUnique = idxRows.some((r: any) =>
-      (r.indexdef || "").toUpperCase().includes("UNIQUE")
-    )
+    const hasUnique = idxRows.some((r: any) => (r.indexdef || "").toUpperCase().includes("UNIQUE"))
     diag.ean_indexes = idxRows
     diag.ean_unique_status = hasUnique ? "OK" : "MISSING"
     if (!hasUnique) {
@@ -78,7 +77,7 @@ export async function GET() {
         HAVING COUNT(*) > 1
       ) d
     `,
-  }).catch(() => ({ data: null }))
+  })
 
   if (dupCount && dupCount[0]) {
     diag.duplicate_ean_groups = dupCount[0].dup_groups
@@ -88,14 +87,13 @@ export async function GET() {
   }
 
   // 4. Contar total de productos
-  const { count } = await supabase
-    .from("products")
-    .select("*", { count: "exact", head: true })
+  const { count } = await supabase.from("products").select("*", { count: "exact", head: true })
   diag.total_products = count
 
-  diag.fix_instructions = diag.ean_unique_status === "MISSING"
-    ? "Ejecuta POST /api/fix-ean-constraint?apply=1 para limpiar duplicados y crear el UNIQUE index. O ejecuta scripts/050_add_ean_unique_constraint.sql manualmente en Supabase."
-    : "El UNIQUE constraint ya existe. Los imports deberían funcionar."
+  diag.fix_instructions =
+    diag.ean_unique_status === "MISSING"
+      ? "Ejecuta POST /api/fix-ean-constraint?apply=1 para limpiar duplicados y crear el UNIQUE index. O ejecuta scripts/050_add_ean_unique_constraint.sql manualmente en Supabase."
+      : "El UNIQUE constraint ya existe. Los imports deberían funcionar."
 
   return NextResponse.json(diag)
 }
@@ -104,10 +102,13 @@ export async function POST(request: NextRequest) {
   const apply = request.nextUrl.searchParams.get("apply")
 
   if (apply !== "1") {
-    return NextResponse.json({
-      error: "Agrega ?apply=1 para confirmar la operación",
-      warning: "Esto eliminará filas duplicadas por EAN (quedando la más reciente) y creará un UNIQUE index",
-    }, { status: 400 })
+    return NextResponse.json(
+      {
+        error: "Agrega ?apply=1 para confirmar la operación",
+        warning: "Esto eliminará filas duplicadas por EAN (quedando la más reciente) y creará un UNIQUE index",
+      },
+      { status: 400 },
+    )
   }
 
   const supabase = createAdminClient()
@@ -130,7 +131,10 @@ export async function POST(request: NextRequest) {
   results.push(`upsert test falló: ${testErr.message}`)
 
   // Paso 2: eliminar duplicados via SQL
-  const { data: delResult, error: delError } = await supabase.rpc("exec_sql", {
+  let delResult: any = null
+  let delError: any = null
+
+  const rpcResult = await supabase.rpc("exec_sql", {
     query: `
       DELETE FROM products
       WHERE id IN (
@@ -146,11 +150,12 @@ export async function POST(request: NextRequest) {
         WHERE rn > 1
       )
     `,
-  }).catch(async (e) => {
+  })
+
+  if (rpcResult.error) {
     // Si exec_sql no existe, intentar con approach alternativa
     results.push("exec_sql no disponible, limpiando duplicados con approach iterativa...")
 
-    // Obtener todos los EANs duplicados
     const { data: allProducts } = await supabase
       .from("products")
       .select("id, ean, updated_at")
@@ -159,36 +164,35 @@ export async function POST(request: NextRequest) {
       .order("ean")
       .order("updated_at", { ascending: false })
 
-    if (!allProducts || allProducts.length === 0) {
-      return { data: null, error: { message: "No products found" } }
-    }
+    if (allProducts && allProducts.length > 0) {
+      const seen = new Map<string, string>()
+      const toDelete: string[] = []
 
-    // Encontrar duplicados
-    const seen = new Map<string, string>() // ean -> id (el primero que vemos es el más reciente)
-    const toDelete: string[] = []
+      for (const p of allProducts) {
+        if (!p.ean) continue
+        if (seen.has(p.ean)) {
+          toDelete.push(p.id)
+        } else {
+          seen.set(p.ean, p.id)
+        }
+      }
 
-    for (const p of allProducts) {
-      if (!p.ean) continue
-      if (seen.has(p.ean)) {
-        toDelete.push(p.id)
+      if (toDelete.length > 0) {
+        for (let i = 0; i < toDelete.length; i += 500) {
+          const batch = toDelete.slice(i, i + 500)
+          await supabase.from("products").delete().in("id", batch)
+        }
+        results.push(`Eliminados ${toDelete.length} duplicados`)
       } else {
-        seen.set(p.ean, p.id)
+        results.push("No se encontraron duplicados")
       }
-    }
-
-    if (toDelete.length > 0) {
-      // Eliminar en batches
-      for (let i = 0; i < toDelete.length; i += 500) {
-        const batch = toDelete.slice(i, i + 500)
-        await supabase.from("products").delete().in("id", batch)
-      }
-      results.push(`Eliminados ${toDelete.length} duplicados`)
     } else {
-      results.push("No se encontraron duplicados")
+      delError = { message: "No products found" }
     }
-
-    return { data: null, error: null }
-  })
+  } else {
+    delResult = rpcResult.data
+    delError = rpcResult.error
+  }
 
   if (delError) {
     results.push(`Error limpiando duplicados: ${delError.message}`)
@@ -197,15 +201,18 @@ export async function POST(request: NextRequest) {
   }
 
   // Paso 3: crear UNIQUE INDEX
-  const { error: idxError } = await supabase.rpc("exec_sql", {
+  const idxResult = await supabase.rpc("exec_sql", {
     query: `CREATE UNIQUE INDEX IF NOT EXISTS products_ean_unique ON products (ean) WHERE ean IS NOT NULL AND ean != ''`,
-  }).catch(async () => {
+  })
+  const idxError = idxResult.error
+  if (idxError) {
     // Si exec_sql no existe, devolver instrucciones
     results.push("IMPORTANTE: No se pudo crear el UNIQUE INDEX automáticamente (función exec_sql no existe).")
     results.push("Ejecuta este SQL manualmente en Supabase SQL Editor:")
-    results.push("CREATE UNIQUE INDEX IF NOT EXISTS products_ean_unique ON products (ean) WHERE ean IS NOT NULL AND ean != '';")
-    return { error: null }
-  })
+    results.push(
+      "CREATE UNIQUE INDEX IF NOT EXISTS products_ean_unique ON products (ean) WHERE ean IS NOT NULL AND ean != '';",
+    )
+  }
 
   if (idxError) {
     results.push(`Error creando index: ${idxError.message}`)

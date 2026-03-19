@@ -1,55 +1,53 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Button }  from "@/components/ui/button"
-import { Badge }   from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import {
-  AlertTriangle, ExternalLink, RefreshCw, Zap, ChevronLeft, ChevronRight, CheckCircle2,
-} from "lucide-react"
+import { AlertTriangle, ExternalLink, RefreshCw, Zap, ChevronLeft, ChevronRight, CheckCircle2 } from "lucide-react"
 import Image from "next/image"
 
 // Modos de búsqueda con sus endpoints correctos de ML
 const MODES = [
   {
-    value:       "eligible",
-    label:       "Elegibles para catálogo",
+    value: "eligible",
+    label: "Elegibles para catálogo",
     description: "Publicaciones activas con competencia en catálogo — podés hacer opt-in para competir directamente",
-    color:       "text-emerald-400",
-    bg:          "bg-emerald-500/10 border-emerald-500/20",
-    badgeClass:  "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+    color: "text-emerald-400",
+    bg: "bg-emerald-500/10 border-emerald-500/20",
+    badgeClass: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
   },
   {
-    value:       "forewarning",
-    label:       "Próximas a pausarse",
+    value: "forewarning",
+    label: "Próximas a pausarse",
     description: "Publicaciones que ML detectó que deben migrar al catálogo o serán pausadas",
-    color:       "text-amber-400",
-    bg:          "bg-amber-500/10 border-amber-500/20",
-    badgeClass:  "bg-amber-500/15 text-amber-300 border-amber-500/30",
+    color: "text-amber-400",
+    bg: "bg-amber-500/10 border-amber-500/20",
+    badgeClass: "bg-amber-500/15 text-amber-300 border-amber-500/30",
   },
   {
-    value:       "under_review",
-    label:       "Bajo revisión",
+    value: "under_review",
+    label: "Bajo revisión",
     description: "Publicaciones pausadas esperando publicación de catálogo para reactivarse",
-    color:       "text-red-400",
-    bg:          "bg-red-500/10 border-red-500/20",
-    badgeClass:  "bg-red-500/15 text-red-300 border-red-500/30",
+    color: "text-red-400",
+    bg: "bg-red-500/10 border-red-500/20",
+    badgeClass: "bg-red-500/15 text-red-300 border-red-500/30",
   },
 ]
 
 interface ListingItem {
-  id:                 string
-  title:              string
-  price:              number
-  status:             string
-  sub_status:         string | null
-  health:             string | null
-  thumbnail:          string | null
+  id: string
+  title: string
+  price: number
+  status: string
+  sub_status: string | null
+  health: string | null
+  thumbnail: string | null
   catalog_product_id: string | null
-  catalog_listing:    boolean
-  listing_type_id:    string
-  tags:               string[]
-  permalink:          string | null
+  catalog_listing: boolean
+  listing_type_id: string
+  tags: string[]
+  permalink: string | null
 }
 
 type OptinState = "idle" | "loading" | "done" | "error"
@@ -58,23 +56,23 @@ const fmt = (n: number) =>
   new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n)
 
 export default function MLPublicacionesPage() {
-  const [accounts,      setAccounts]      = useState<{ id: string; nickname: string }[]>([])
+  const [accounts, setAccounts] = useState<{ id: string; nickname: string }[]>([])
   const [activeAccount, setActiveAccount] = useState("")
-  const [activeMode,    setActiveMode]    = useState(MODES[0].value)
-  const [items,         setItems]         = useState<ListingItem[]>([])
-  const [total,         setTotal]         = useState(0)
-  const [offset,        setOffset]        = useState(0)
-  const [loading,       setLoading]       = useState(false)
-  const [error,         setError]         = useState<string | null>(null)
-  const [optinStates,   setOptinStates]   = useState<Record<string, OptinState>>({})
+  const [activeMode, setActiveMode] = useState(MODES[0].value)
+  const [items, setItems] = useState<ListingItem[]>([])
+  const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [optinStates, setOptinStates] = useState<Record<string, OptinState>>({})
   const [optinMessages, setOptinMessages] = useState<Record<string, string>>({})
 
   const LIMIT = 20
 
   useEffect(() => {
     fetch("/api/ml/accounts")
-      .then(r => r.json())
-      .then(d => {
+      .then((r) => r.json())
+      .then((d) => {
         if (d.accounts?.length) {
           setAccounts(d.accounts)
           setActiveAccount(d.accounts[0].id)
@@ -88,8 +86,8 @@ export default function MLPublicacionesPage() {
     setLoading(true)
     setError(null)
     try {
-      const url  = `/api/mercadolibre/listings-health?account_id=${activeAccount}&mode=${activeMode}&limit=${LIMIT}&offset=${offset}`
-      const res  = await fetch(url)
+      const url = `/api/mercadolibre/listings-health?account_id=${activeAccount}&mode=${activeMode}&limit=${LIMIT}&offset=${offset}`
+      const res = await fetch(url)
       const data = await res.json()
       if (!res.ok || !data.ok) {
         setError(data.error || "Error al cargar publicaciones")
@@ -124,38 +122,35 @@ export default function MLPublicacionesPage() {
   }
 
   const handleOptin = async (item: ListingItem) => {
-    setOptinStates(s => ({ ...s, [item.id]: "loading" }))
+    setOptinStates((s) => ({ ...s, [item.id]: "loading" }))
     try {
-      const res  = await fetch("/api/mercadolibre/catalog-optin", {
-        method:  "POST",
+      const res = await fetch("/api/mercadolibre/catalog-optin", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ item_id: item.id, account_id: activeAccount }),
+        body: JSON.stringify({ item_id: item.id, account_id: activeAccount }),
       })
       const data = await res.json()
       if (res.ok && data.ok) {
-        setOptinStates(s  => ({ ...s,  [item.id]: "done" }))
-        setOptinMessages(m => ({ ...m, [item.id]: "Opt-in solicitado. ML revisará la publicación." }))
+        setOptinStates((s) => ({ ...s, [item.id]: "done" }))
+        setOptinMessages((m) => ({ ...m, [item.id]: "Opt-in solicitado. ML revisará la publicación." }))
         setTimeout(() => loadItems(), 2500)
       } else {
-        setOptinStates(s  => ({ ...s,  [item.id]: "error" }))
-        const msg = data.status
-          ? `No elegible (${data.status}): ${data.error}`
-          : (data.error || "Error al hacer opt-in")
-        setOptinMessages(m => ({ ...m, [item.id]: msg }))
+        setOptinStates((s) => ({ ...s, [item.id]: "error" }))
+        const msg = data.status ? `No elegible (${data.status}): ${data.error}` : data.error || "Error al hacer opt-in"
+        setOptinMessages((m) => ({ ...m, [item.id]: msg }))
       }
     } catch {
-      setOptinStates(s  => ({ ...s,  [item.id]: "error" }))
-      setOptinMessages(m => ({ ...m, [item.id]: "Error de red" }))
+      setOptinStates((s) => ({ ...s, [item.id]: "error" }))
+      setOptinMessages((m) => ({ ...m, [item.id]: "Error de red" }))
     }
   }
 
-  const currentMode = MODES.find(m => m.value === activeMode) || MODES[0]
-  const totalPages  = Math.ceil(total / LIMIT)
+  const currentMode = MODES.find((m) => m.value === activeMode) || MODES[0]
+  const totalPages = Math.ceil(total / LIMIT)
   const currentPage = Math.floor(offset / LIMIT) + 1
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
-
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Publicaciones con alertas</h1>
@@ -172,15 +167,17 @@ export default function MLPublicacionesPage() {
               <SelectValue placeholder="Cuenta ML" />
             </SelectTrigger>
             <SelectContent>
-              {accounts.map(a => (
-                <SelectItem key={a.id} value={a.id}>{a.nickname}</SelectItem>
+              {accounts.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.nickname}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
         )}
 
         <div className="flex gap-2">
-          {MODES.map(m => (
+          {MODES.map((m) => (
             <button
               key={m.value}
               onClick={() => handleModeChange(m.value)}
@@ -212,9 +209,7 @@ export default function MLPublicacionesPage() {
 
       {/* Error */}
       {error && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-          {error}
-        </div>
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">{error}</div>
       )}
 
       {/* Conteo */}
@@ -222,7 +217,9 @@ export default function MLPublicacionesPage() {
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>{total.toLocaleString("es-AR")} publicaciones encontradas</span>
           {total > LIMIT && (
-            <span>Página {currentPage} de {totalPages}</span>
+            <span>
+              Página {currentPage} de {totalPages}
+            </span>
           )}
         </div>
       )}
@@ -246,21 +243,19 @@ export default function MLPublicacionesPage() {
         </div>
       ) : (
         <div className="space-y-2">
-          {items.map(item => {
-            const state = optinStates[item.id]  || "idle"
-            const msg   = optinMessages[item.id] || ""
+          {items.map((item) => {
+            const state = optinStates[item.id] || "idle"
+            const msg = optinMessages[item.id] || ""
             return (
-              <div
-                key={item.id}
-                className="flex items-center gap-4 rounded-xl border border-border bg-card px-4 py-3"
-              >
+              <div key={item.id} className="flex items-center gap-4 rounded-xl border border-border bg-card px-4 py-3">
                 {/* Thumbnail */}
                 <div className="w-14 h-14 rounded-lg overflow-hidden bg-muted shrink-0 flex items-center justify-center">
                   {item.thumbnail ? (
                     <Image
                       src={item.thumbnail.replace("http://", "https://")}
                       alt={item.title}
-                      width={56} height={56}
+                      width={56}
+                      height={56}
                       className="object-cover w-full h-full"
                       unoptimized
                     />
@@ -275,9 +270,7 @@ export default function MLPublicacionesPage() {
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
                     <span className="text-xs font-mono text-muted-foreground">{item.id}</span>
                     <span className="text-sm font-semibold">{fmt(item.price)}</span>
-                    <Badge className={`text-[10px] px-1.5 py-0 ${currentMode.badgeClass}`}>
-                      {currentMode.label}
-                    </Badge>
+                    <Badge className={`text-[10px] px-1.5 py-0 ${currentMode.badgeClass}`}>{currentMode.label}</Badge>
                     {item.catalog_listing && (
                       <Badge className="text-[10px] px-1.5 py-0 bg-green-500/15 text-green-400 border-green-500/30">
                         Ya en catálogo
@@ -290,9 +283,7 @@ export default function MLPublicacionesPage() {
                     )}
                   </div>
                   {msg && (
-                    <p className={`text-xs mt-1 ${state === "error" ? "text-red-400" : "text-green-400"}`}>
-                      {msg}
-                    </p>
+                    <p className={`text-xs mt-1 ${state === "error" ? "text-red-400" : "text-green-400"}`}>{msg}</p>
                   )}
                 </div>
 
@@ -337,7 +328,8 @@ export default function MLPublicacionesPage() {
       {total > LIMIT && !loading && (
         <div className="flex items-center justify-center gap-2 pt-2">
           <Button
-            variant="outline" size="sm"
+            variant="outline"
+            size="sm"
             disabled={offset === 0}
             onClick={() => setOffset(Math.max(0, offset - LIMIT))}
           >
@@ -347,7 +339,8 @@ export default function MLPublicacionesPage() {
             {currentPage} / {totalPages}
           </span>
           <Button
-            variant="outline" size="sm"
+            variant="outline"
+            size="sm"
             disabled={offset + LIMIT >= total}
             onClick={() => setOffset(offset + LIMIT)}
           >

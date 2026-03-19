@@ -1,12 +1,6 @@
 "use client"
 
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { RefreshCw, Database, Package, Upload, CheckCircle2 } from "lucide-react"
 import type { ImportProgress } from "@/components/inventory/types"
 

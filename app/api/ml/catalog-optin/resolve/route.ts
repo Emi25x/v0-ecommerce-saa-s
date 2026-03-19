@@ -13,12 +13,12 @@ export async function POST(req: NextRequest) {
 
   if (!account) return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
 
-  const authHeaders = { "Authorization": `Bearer ${account.access_token}` }
+  const authHeaders = { Authorization: `Bearer ${account.access_token}` }
   const siteId = account.site_id ?? "MLA"
 
   const searchRes = await fetch(
     `https://api.mercadolibre.com/products/search?status=active&site_id=${siteId}&product_identifier=${encodeURIComponent(ean)}`,
-    { headers: authHeaders }
+    { headers: authHeaders },
   )
 
   if (!searchRes.ok) {

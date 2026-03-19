@@ -21,12 +21,12 @@ export function buildAuthenticatedUrl(source: SourceAuth): string {
 
   if (source.auth_type === "query_params" && source.credentials?.params) {
     const url = new URL(baseUrl)
-    
+
     // Agregar cada parámetro a la URL
     Object.entries(source.credentials.params).forEach(([key, value]) => {
       url.searchParams.set(key, value)
     })
-    
+
     return url.toString()
   }
 
@@ -65,9 +65,9 @@ export async function fetchWithAuth(source: SourceAuth): Promise<Response> {
   console.log(`[v0][FETCH-AUTH] Headers:`, JSON.stringify(headers))
 
   const response = await fetch(url, { headers })
-  
+
   console.log(`[v0][FETCH-AUTH] Response status: ${response.status} ${response.statusText}`)
   console.log(`[v0][FETCH-AUTH] Response headers:`, JSON.stringify(Object.fromEntries(response.headers.entries())))
-  
+
   return response
 }

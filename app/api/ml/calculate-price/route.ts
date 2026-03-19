@@ -9,12 +9,7 @@ async function calculatePrice(params: {
   listing_type_id?: string
   exchange_rate?: number
 }) {
-  const {
-    cost_price_eur,
-    margin_percent = 20,
-    listing_type_id = "gold_special",
-    exchange_rate,
-  } = params
+  const { cost_price_eur, margin_percent = 20, listing_type_id = "gold_special", exchange_rate } = params
 
   // Obtener tipo de cambio EUR -> ARS (Euro BILLETES vendedor BNA)
   let rate = exchange_rate
@@ -35,11 +30,7 @@ async function calculatePrice(params: {
 
   // Obtener comisiones de ML
   const supabase = await createClient()
-  const { data: account } = await supabase
-    .from("ml_accounts")
-    .select("id, ml_user_id")
-    .limit(1)
-    .single()
+  const { data: account } = await supabase.from("ml_accounts").select("id, ml_user_id").limit(1).single()
 
   let mlFeePercent = 0.13
   let mlFixedFee = 0
@@ -49,11 +40,11 @@ async function calculatePrice(params: {
     try {
       accessToken = await getValidAccessToken(account.id)
 
-      const estimatedPrice = Math.round(cost_price_eur * rate * (1 + margin_percent / 100) / 0.87)
+      const estimatedPrice = Math.round((cost_price_eur * rate * (1 + margin_percent / 100)) / 0.87)
 
       const feesResponse = await fetch(
         `https://api.mercadolibre.com/sites/MLA/listing_prices?price=${estimatedPrice}&listing_type_id=${listing_type_id}`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
+        { headers: { Authorization: `Bearer ${accessToken}` } },
       )
 
       if (feesResponse.ok) {
@@ -101,8 +92,8 @@ async function calculatePrice(params: {
   if (currentPrice >= 33000 && accessToken) {
     try {
       const shippingResponse = await fetch(
-        `https://api.mercadolibre.com/users/${account?.ml_user_id || 'me'}/shipping_options/free?price=${Math.round(currentPrice)}&listing_type_id=${listing_type_id}&category_id=MLA3025`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
+        `https://api.mercadolibre.com/users/${account?.ml_user_id || "me"}/shipping_options/free?price=${Math.round(currentPrice)}&listing_type_id=${listing_type_id}&category_id=MLA3025`,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
       )
       if (shippingResponse.ok) {
         const shippingData = await shippingResponse.json()
@@ -143,9 +134,9 @@ async function calculatePrice(params: {
         total_costs: Math.round(mlCommission + mlFixedFee + shippingCost),
         net_received: Math.round(netReceived),
         actual_margin_percent: Math.round(actualMargin * 10) / 10,
-        profit_ars: Math.round(netReceived - costInArs)
-      }
-    }
+        profit_ars: Math.round(netReceived - costInArs),
+      },
+    },
   }
 }
 
@@ -160,7 +151,6 @@ export async function POST(request: Request) {
 
     const result = await calculatePrice({ cost_price_eur, margin_percent, listing_type_id, exchange_rate })
     return NextResponse.json(result)
-
   } catch (error) {
     console.error("[v0] Error calculando precio:", error)
     return NextResponse.json({ error: "Error interno" }, { status: 500 })
@@ -180,7 +170,7 @@ export async function GET(request: Request) {
     }
 
     const supabase = await createClient()
-    
+
     // Buscar producto por EAN
     const { data: product } = await supabase
       .from("products")
@@ -203,7 +193,7 @@ export async function GET(request: Request) {
     const result = await calculatePrice({
       cost_price_eur: costPrice,
       margin_percent: margin,
-      listing_type_id: listing_type
+      listing_type_id: listing_type,
     })
 
     return NextResponse.json({
@@ -211,10 +201,9 @@ export async function GET(request: Request) {
       product: {
         ean: product.ean,
         title: product.title,
-        cost_price_eur: costPrice
-      }
+        cost_price_eur: costPrice,
+      },
     })
-
   } catch (error) {
     console.error("[v0] Error:", error)
     return NextResponse.json({ error: "Error interno" }, { status: 500 })

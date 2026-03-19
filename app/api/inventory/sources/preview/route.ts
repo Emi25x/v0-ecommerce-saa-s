@@ -8,7 +8,7 @@ export const maxDuration = 30
  * GET /api/inventory/sources/preview?source_id=xxx
  * o
  * GET /api/inventory/sources/preview?url=xxx
- * 
+ *
  * Descarga los primeros KB del CSV y detecta headers automáticamente
  */
 export async function GET(request: NextRequest) {
@@ -20,10 +20,13 @@ export async function GET(request: NextRequest) {
   const directUrl = searchParams.get("url")
 
   if (!sourceId && !directUrl) {
-    return NextResponse.json({
-      ok: false,
-      error: "Se requiere source_id o url"
-    }, { status: 400 })
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Se requiere source_id o url",
+      },
+      { status: 400 },
+    )
   }
 
   try {
@@ -41,10 +44,13 @@ export async function GET(request: NextRequest) {
         .single()
 
       if (error || !source) {
-        return NextResponse.json({
-          ok: false,
-          error: "Fuente no encontrada"
-        }, { status: 404 })
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "Fuente no encontrada",
+          },
+          { status: 404 },
+        )
       }
 
       urlToFetch = source.url_template
@@ -53,26 +59,29 @@ export async function GET(request: NextRequest) {
     }
 
     if (!urlToFetch) {
-      return NextResponse.json({
-        ok: false,
-        error: "URL no especificada"
-      }, { status: 400 })
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "URL no especificada",
+        },
+        { status: 400 },
+      )
     }
 
     // Construir headers de autenticación
     const headers: HeadersInit = {
-      'User-Agent': 'Ecommerce-Manager/1.0'
+      "User-Agent": "Ecommerce-Manager/1.0",
     }
 
     if (authType === "basic_auth" && credentials?.username && credentials?.password) {
-      const auth = Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')
-      headers['Authorization'] = `Basic ${auth}`
+      const auth = Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64")
+      headers["Authorization"] = `Basic ${auth}`
     } else if (authType === "bearer_token" && credentials?.token) {
-      headers['Authorization'] = `Bearer ${credentials.token}`
+      headers["Authorization"] = `Bearer ${credentials.token}`
     } else if (authType === "query_params" && credentials?.type === "query_params" && credentials?.params) {
       // Agregar query params a la URL desde el nuevo formato
       const url = new URL(urlToFetch)
-      Object.keys(credentials.params).forEach(key => {
+      Object.keys(credentials.params).forEach((key) => {
         url.searchParams.set(key, credentials.params[key])
       })
       urlToFetch = url.toString()
@@ -84,42 +93,45 @@ export async function GET(request: NextRequest) {
 
     // Intentar primero con Range header para limitar descarga
     let response = await fetch(urlToFetch, {
-      method: 'GET',
+      method: "GET",
       headers: {
         ...headers,
-        'Accept': 'text/csv, text/plain, application/csv, */*',
-        'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
-        'Cache-Control': 'no-cache',
-        'Range': 'bytes=0-102400' // Primeros 100KB
+        Accept: "text/csv, text/plain, application/csv, */*",
+        "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+        "Cache-Control": "no-cache",
+        Range: "bytes=0-102400", // Primeros 100KB
       },
-      signal: AbortSignal.timeout(15000) // Timeout 15s
+      signal: AbortSignal.timeout(15000), // Timeout 15s
     })
 
     // Si falla con Range (403/416), reintentar sin Range header
     if (!response.ok && (response.status === 403 || response.status === 416)) {
       console.log(`[v0] Range request failed (${response.status}), retrying without Range header`)
       response = await fetch(urlToFetch, {
-        method: 'GET',
+        method: "GET",
         headers: {
           ...headers,
-          'Accept': 'text/csv, text/plain, application/csv, */*',
-          'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
-          'Cache-Control': 'no-cache'
+          Accept: "text/csv, text/plain, application/csv, */*",
+          "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+          "Cache-Control": "no-cache",
         },
-        signal: AbortSignal.timeout(20000) // Timeout más largo sin Range
+        signal: AbortSignal.timeout(20000), // Timeout más largo sin Range
       })
     }
 
     if (!response.ok) {
       console.error(`[v0] Fetch failed with status ${response.status}`)
-      return NextResponse.json({
-        ok: false,
-        error: `Error al descargar CSV: ${response.statusText} (${response.status})`
-      }, { status: response.status })
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Error al descargar CSV: ${response.statusText} (${response.status})`,
+        },
+        { status: response.status },
+      )
     }
 
     // Leer el contenido pero limitar a los primeros 200KB para evitar timeouts
-    let csvText = ''
+    let csvText = ""
     const reader = response.body?.getReader()
     const decoder = new TextDecoder()
     let bytesRead = 0
@@ -129,10 +141,10 @@ export async function GET(request: NextRequest) {
       while (bytesRead < maxBytes) {
         const { done, value } = await reader.read()
         if (done) break
-        
+
         csvText += decoder.decode(value, { stream: true })
         bytesRead += value.length
-        
+
         // Si ya tenemos suficientes líneas, podemos parar
         const lineCount = (csvText.match(/\n/g) || []).length
         if (lineCount >= 100) break
@@ -142,13 +154,19 @@ export async function GET(request: NextRequest) {
       csvText = await response.text()
     }
 
-    const lines = csvText.split('\n').filter(l => l.trim()).slice(0, 50) // Primeras 50 líneas
+    const lines = csvText
+      .split("\n")
+      .filter((l) => l.trim())
+      .slice(0, 50) // Primeras 50 líneas
 
     if (lines.length === 0) {
-      return NextResponse.json({
-        ok: false,
-        error: "CSV vacío o formato inválido"
-      }, { status: 400 })
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "CSV vacío o formato inválido",
+        },
+        { status: 400 },
+      )
     }
 
     // Detectar delimitador: contar ocurrencias de ,;|\t en primera línea
@@ -158,23 +176,23 @@ export async function GET(request: NextRequest) {
     const pipeCount = (firstLine.match(/\|/g) || []).length
     const tabCount = (firstLine.match(/\t/g) || []).length
 
-    let detectedDelimiter = ','
-    const counts = { ',': commaCount, ';': semicolonCount, '|': pipeCount, '\t': tabCount }
+    let detectedDelimiter = ","
+    const counts = { ",": commaCount, ";": semicolonCount, "|": pipeCount, "\t": tabCount }
     const maxCount = Math.max(commaCount, semicolonCount, pipeCount, tabCount)
-    
+
     if (maxCount > 0) {
-      detectedDelimiter = Object.keys(counts).find(k => counts[k as keyof typeof counts] === maxCount) || ','
+      detectedDelimiter = Object.keys(counts).find((k) => counts[k as keyof typeof counts] === maxCount) || ","
     }
 
     // Parsear header (primera línea)
-    const headers_csv = firstLine.split(detectedDelimiter).map(h => h.trim().replace(/^["']|["']$/g, ''))
+    const headers_csv = firstLine.split(detectedDelimiter).map((h) => h.trim().replace(/^["']|["']$/g, ""))
 
     // Parsear sample rows (2-6 líneas)
-    const sampleRows = lines.slice(1, 6).map(line => {
-      const values = line.split(detectedDelimiter).map(v => v.trim().replace(/^["']|["']$/g, ''))
+    const sampleRows = lines.slice(1, 6).map((line) => {
+      const values = line.split(detectedDelimiter).map((v) => v.trim().replace(/^["']|["']$/g, ""))
       const row: any = {}
       headers_csv.forEach((h, i) => {
-        row[h] = values[i] || ''
+        row[h] = values[i] || ""
       })
       return row
     })
@@ -184,14 +202,16 @@ export async function GET(request: NextRequest) {
       detected_delimiter: detectedDelimiter,
       headers: headers_csv,
       sample_rows: sampleRows,
-      total_lines_preview: lines.length
+      total_lines_preview: lines.length,
     })
-
   } catch (error: any) {
     console.error("[v0] Error previewing CSV:", error)
-    return NextResponse.json({
-      ok: false,
-      error: error.message || "Error al procesar CSV"
-    }, { status: 500 })
+    return NextResponse.json(
+      {
+        ok: false,
+        error: error.message || "Error al procesar CSV",
+      },
+      { status: 500 },
+    )
   }
 }

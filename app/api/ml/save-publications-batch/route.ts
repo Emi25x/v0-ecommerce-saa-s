@@ -17,12 +17,8 @@ export async function POST(request: Request) {
         // Buscar producto por SKU/EAN
         let product_id = null
         if (pub.SELLER_SKU) {
-          const { data: product } = await supabase
-            .from("products")
-            .select("id")
-            .eq("ean", pub.SELLER_SKU)
-            .maybeSingle()
-          
+          const { data: product } = await supabase.from("products").select("id").eq("ean", pub.SELLER_SKU).maybeSingle()
+
           if (product) {
             product_id = product.id
             linked++
@@ -45,19 +41,14 @@ export async function POST(request: Request) {
           current_stock: pub.available_quantity || 0,
           status: pub.status,
           permalink: pub.permalink,
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
         }
 
         if (existing) {
-          await supabase
-            .from("ml_publications")
-            .update(pubData)
-            .eq("id", existing.id)
+          await supabase.from("ml_publications").update(pubData).eq("id", existing.id)
           updated++
         } else {
-          await supabase
-            .from("ml_publications")
-            .insert(pubData)
+          await supabase.from("ml_publications").insert(pubData)
           saved++
         }
       } catch (error) {
@@ -70,14 +61,10 @@ export async function POST(request: Request) {
       saved,
       updated,
       linked,
-      total: publications.length
+      total: publications.length,
     })
-
   } catch (error) {
     console.error("[v0] Error en save-publications-batch:", error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Error desconocido" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Error desconocido" }, { status: 500 })
   }
 }

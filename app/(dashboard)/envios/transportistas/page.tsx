@@ -19,7 +19,7 @@ interface Carrier {
 
 export default function TransportistasPage() {
   const [carriers, setCarriers] = useState<Carrier[]>([])
-  const [loading, setLoading]   = useState(true)
+  const [loading, setLoading] = useState(true)
 
   async function load() {
     setLoading(true)
@@ -40,7 +40,9 @@ export default function TransportistasPage() {
     load()
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+  }, [])
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -58,7 +60,7 @@ export default function TransportistasPage() {
         <p className="text-sm text-muted-foreground">Cargando…</p>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {carriers.map(carrier => (
+          {carriers.map((carrier) => (
             <Card key={carrier.id} className={carrier.active ? "" : "opacity-60"}>
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between gap-2">
@@ -70,15 +72,11 @@ export default function TransportistasPage() {
                     {carrier.active ? "Activo" : "Inactivo"}
                   </Badge>
                 </div>
-                {carrier.description && (
-                  <CardDescription className="text-xs">{carrier.description}</CardDescription>
-                )}
+                {carrier.description && <CardDescription className="text-xs">{carrier.description}</CardDescription>}
               </CardHeader>
               <CardContent className="flex flex-col gap-2">
                 {carrier.config?.base_url && (
-                  <p className="text-xs text-muted-foreground font-mono truncate">
-                    {carrier.config.base_url}
-                  </p>
+                  <p className="text-xs text-muted-foreground font-mono truncate">{carrier.config.base_url}</p>
                 )}
                 <div className="flex gap-2 pt-1">
                   <Button size="sm" variant="outline" className="flex-1" asChild>
@@ -94,9 +92,15 @@ export default function TransportistasPage() {
                     onClick={() => toggleActive(carrier)}
                   >
                     {carrier.active ? (
-                      <><XCircle className="mr-1.5 h-3.5 w-3.5" />Desactivar</>
+                      <>
+                        <XCircle className="mr-1.5 h-3.5 w-3.5" />
+                        Desactivar
+                      </>
                     ) : (
-                      <><CheckCircle className="mr-1.5 h-3.5 w-3.5" />Activar</>
+                      <>
+                        <CheckCircle className="mr-1.5 h-3.5 w-3.5" />
+                        Activar
+                      </>
                     )}
                   </Button>
                 </div>
@@ -121,10 +125,9 @@ export default function TransportistasPage() {
               <CardHeader>
                 <CardDescription className="text-sm">
                   No hay transportistas en la base de datos. Ejecutá las migraciones{" "}
-                  <code className="font-mono text-xs bg-muted px-1 rounded">20260312_create_carriers.sql</code>{" "}
-                  y{" "}
-                  <code className="font-mono text-xs bg-muted px-1 rounded">20260313_add_cabify_carrier.sql</code>{" "}
-                  en Supabase SQL Editor.
+                  <code className="font-mono text-xs bg-muted px-1 rounded">20260312_create_carriers.sql</code> y{" "}
+                  <code className="font-mono text-xs bg-muted px-1 rounded">20260313_add_cabify_carrier.sql</code> en
+                  Supabase SQL Editor.
                 </CardDescription>
               </CardHeader>
             </Card>

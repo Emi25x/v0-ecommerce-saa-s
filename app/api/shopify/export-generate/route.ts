@@ -13,10 +13,13 @@ import { NextRequest, NextResponse } from "next/server"
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
-    const body = await request.json() as {
+    const body = (await request.json()) as {
       store_id: string
       eans: string[]
       warehouse_id?: string
@@ -44,27 +47,23 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
 
     const columns = resolveColumns(tpl?.template_columns_json as string[] | null)
-    const defaults: Record<string, string> =
-      (tpl?.defaults_json as Record<string, string> | null) ?? {}
+    const defaults: Record<string, string> = (tpl?.defaults_json as Record<string, string> | null) ?? {}
 
     // 3. Load products by EAN or ISBN
     const { data: productsRaw, error: prodError } = await supabase
       .from("products")
       .select(
         "id, title, description, brand, sku, ean, isbn, price, cost_price, stock, " +
-        "canonical_weight_g, image_url, category, custom_fields, " +
-        "height, width, thickness, pages, author, language, binding, " +
-        "ibic_subjects, edition_date, year_edition, subject, course, condition"
+          "canonical_weight_g, image_url, category, custom_fields, " +
+          "height, width, thickness, pages, author, language, binding, " +
+          "ibic_subjects, edition_date, year_edition, subject, course, condition",
       )
       .or(eans.map((e) => `ean.eq.${e},isbn.eq.${e}`).join(","))
     const products = productsRaw as any[] | null
 
     if (prodError) return NextResponse.json({ error: prodError.message }, { status: 500 })
     if (!products?.length) {
-      return NextResponse.json(
-        { error: "No se encontraron productos para los EANs ingresados" },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: "No se encontraron productos para los EANs ingresados" }, { status: 404 })
     }
 
     // 4. Load best stock per product from supplier_catalog_items

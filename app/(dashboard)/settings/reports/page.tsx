@@ -42,8 +42,8 @@ export default function ReportsSettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...settings,
-          email_recipients: emails
-        })
+          email_recipients: emails,
+        }),
       })
       alert("Configuración guardada")
     } catch (error) {
@@ -62,8 +62,8 @@ export default function ReportsSettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           date: selectedDate,
-          send_email: false
-        })
+          send_email: false,
+        }),
       })
 
       if (res.ok) {
@@ -93,12 +93,12 @@ export default function ReportsSettingsPage() {
         body: JSON.stringify({
           date: selectedDate,
           send_email: true,
-          email_recipients: emails
-        })
+          email_recipients: emails,
+        }),
       })
-      
+
       const data = await res.json()
-      
+
       if (res.ok) {
         alert("Reporte enviado por email correctamente")
       } else {
@@ -125,7 +125,7 @@ export default function ReportsSettingsPage() {
   }
 
   const removeEmail = (email: string) => {
-    setEmails(emails.filter(e => e !== email))
+    setEmails(emails.filter((e) => e !== email))
   }
 
   if (loading) {
@@ -136,17 +136,13 @@ export default function ReportsSettingsPage() {
     <div className="p-8 space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Configuración de Reportes</h1>
-        <p className="text-muted-foreground">
-          Configura el envío automático de reportes diarios de ventas
-        </p>
+        <p className="text-muted-foreground">Configura el envío automático de reportes diarios de ventas</p>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Reporte Diario de Ventas</CardTitle>
-          <CardDescription>
-            Configura el envío automático de ventas en formato Excel
-          </CardDescription>
+          <CardDescription>Configura el envío automático de ventas en formato Excel</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex items-center justify-between">
@@ -197,9 +193,7 @@ export default function ReportsSettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Generar Reporte Manual</CardTitle>
-          <CardDescription>
-            Genera y descarga el reporte de ventas de un día específico
-          </CardDescription>
+          <CardDescription>Genera y descarga el reporte de ventas de un día específico</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">

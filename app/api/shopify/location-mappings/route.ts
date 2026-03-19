@@ -15,8 +15,8 @@ import { NextRequest, NextResponse } from "next/server"
 
 export async function GET(req: NextRequest) {
   try {
-    const supabase  = await createClient()
-    const store_id  = req.nextUrl.searchParams.get("store_id")
+    const supabase = await createClient()
+    const store_id = req.nextUrl.searchParams.get("store_id")
     if (!store_id) return NextResponse.json({ ok: false, error: "store_id requerido" }, { status: 400 })
 
     const { data, error } = await supabase
@@ -49,10 +49,10 @@ export async function POST(req: NextRequest) {
         .filter((m: any) => m.warehouse_id && m.shopify_location_id)
         .map((m: any) => ({
           store_id,
-          warehouse_id:        m.warehouse_id,
+          warehouse_id: m.warehouse_id,
           shopify_location_id: String(m.shopify_location_id),
-          location_name:       m.location_name ?? null,
-          updated_at:          new Date().toISOString(),
+          location_name: m.location_name ?? null,
+          updated_at: new Date().toISOString(),
         }))
 
       if (rows.length) {

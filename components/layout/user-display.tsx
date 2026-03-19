@@ -1,9 +1,9 @@
-'use client'
+"use client"
 
-import { useEffect, useState } from 'react'
-import { createClient } from '@/lib/db/client'
-import { User } from '@supabase/supabase-js'
-import { User as UserIcon } from 'lucide-react'
+import { useEffect, useState } from "react"
+import { createClient } from "@/lib/db/client"
+import { User } from "@supabase/supabase-js"
+import { User as UserIcon } from "lucide-react"
 
 export function UserDisplay() {
   const [user, setUser] = useState<User | null>(null)
@@ -11,16 +11,19 @@ export function UserDisplay() {
 
   useEffect(() => {
     // Obtener usuario actual con manejo de errores
-    supabase.auth.getUser()
+    supabase.auth
+      .getUser()
       .then(({ data: { user } }) => {
         setUser(user)
       })
       .catch((error) => {
-        console.error('[v0] UserDisplay: Error getting user', error)
+        console.error("[v0] UserDisplay: Error getting user", error)
       })
 
     // Escuchar cambios de autenticación
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_, session) => {
       setUser(session?.user ?? null)
     })
 

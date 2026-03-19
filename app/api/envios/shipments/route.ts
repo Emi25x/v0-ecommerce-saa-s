@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/db/admin"
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
-  const limit  = Math.min(parseInt(searchParams.get("limit")  ?? "20"), 200)
+  const limit = Math.min(parseInt(searchParams.get("limit") ?? "20"), 200)
   const offset = parseInt(searchParams.get("offset") ?? "0")
   const status = searchParams.get("status")
   const carrier = searchParams.get("carrier")
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1)
 
-  if (status)  q = (q as any).eq("status", status)
+  if (status) q = (q as any).eq("status", status)
   if (carrier) q = (q as any).eq("carrier_slug", carrier)
 
   const { data, error, count } = await (q as any)
@@ -30,21 +30,21 @@ export async function POST(req: NextRequest) {
   const { data, error } = await supabase
     .from("shipments")
     .insert({
-      carrier_id:      body.carrier_id ?? null,
-      carrier_slug:    body.carrier_slug,
-      external_id:     body.external_id ?? null,
+      carrier_id: body.carrier_id ?? null,
+      carrier_slug: body.carrier_slug,
+      external_id: body.external_id ?? null,
       tracking_number: body.tracking_number ?? null,
-      status:          body.status ?? "pending",
-      origin:          body.origin ?? null,
-      destination:     body.destination ?? null,
-      items:           body.items ?? null,
-      weight_g:        body.weight_g ?? null,
-      dimensions:      body.dimensions ?? null,
-      declared_value:  body.declared_value ?? null,
-      cost:            body.cost ?? null,
-      label_url:       body.label_url ?? null,
-      tracking_url:    body.tracking_url ?? null,
-      metadata:        body.metadata ?? {},
+      status: body.status ?? "pending",
+      origin: body.origin ?? null,
+      destination: body.destination ?? null,
+      items: body.items ?? null,
+      weight_g: body.weight_g ?? null,
+      dimensions: body.dimensions ?? null,
+      declared_value: body.declared_value ?? null,
+      cost: body.cost ?? null,
+      label_url: body.label_url ?? null,
+      tracking_url: body.tracking_url ?? null,
+      metadata: body.metadata ?? {},
     })
     .select()
     .single()

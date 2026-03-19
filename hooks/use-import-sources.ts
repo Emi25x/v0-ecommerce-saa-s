@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation"
 import { createBrowserClient } from "@supabase/ssr"
 import { toast } from "@/hooks/use-toast"
 import Papa from "papaparse"
-import type { SourceWithSchedule, ImportProgressState, INITIAL_IMPORT_PROGRESS } from "@/components/inventory/sources/types"
+import type {
+  SourceWithSchedule,
+  ImportProgressState,
+  INITIAL_IMPORT_PROGRESS,
+} from "@/components/inventory/sources/types"
 
 function detectSeparator(text: string): string {
   const lines = text.split("\n")
@@ -218,7 +222,10 @@ export function useImportSources() {
         })
         const result = await res.json()
         if (!res.ok) throw new Error(result.error || `Error ${res.status}`)
-        toast({ title: "Config restaurada", description: `${result.restored} fuentes actualizadas: ${result.names.join(", ")}` })
+        toast({
+          title: "Config restaurada",
+          description: `${result.restored} fuentes actualizadas: ${result.names.join(", ")}`,
+        })
         loadSources()
       } catch (e: any) {
         toast({ title: "Error al restaurar", description: e.message, variant: "destructive" })
@@ -253,8 +260,18 @@ export function useImportSources() {
         setShowProgressDialog(true)
         const now = new Date()
         setImportProgress({
-          total: 0, processed: 0, imported: 0, updated: 0, failed: 0, skipped: 0,
-          status: "running", startTime: now, lastUpdate: now, speed: 0, errors: [], csvInfo: null,
+          total: 0,
+          processed: 0,
+          imported: 0,
+          updated: 0,
+          failed: 0,
+          skipped: 0,
+          status: "running",
+          startTime: now,
+          lastUpdate: now,
+          speed: 0,
+          errors: [],
+          csvInfo: null,
         })
 
         if (!source.url_template) {
@@ -538,7 +555,8 @@ export function useImportSources() {
           }
 
           const nowBatch = new Date()
-          const elapsedSeconds = (nowBatch.getTime() - (importProgress.startTime?.getTime() || nowBatch.getTime())) / 1000
+          const elapsedSeconds =
+            (nowBatch.getTime() - (importProgress.startTime?.getTime() || nowBatch.getTime())) / 1000
           const speed = elapsedSeconds > 0 ? (i + batch.length) / elapsedSeconds : 0
 
           setImportProgress((prev) => ({
@@ -554,7 +572,8 @@ export function useImportSources() {
           }))
         }
 
-        const finalStatus = importProgress.status === "cancelled" ? "cancelled" : totalFailed > 0 ? "completed_with_errors" : "completed"
+        const finalStatus =
+          importProgress.status === "cancelled" ? "cancelled" : totalFailed > 0 ? "completed_with_errors" : "completed"
 
         const updateData: any = {
           status: finalStatus,
@@ -743,10 +762,16 @@ export function useImportSources() {
       const response = await fetch("/api/cron/import-schedules")
       const data = await response.json()
       if (data.processed && data.processed.length > 0) {
-        toast({ title: "Cron ejecutado", description: `Se procesaron ${data.processed.length} importaciones programadas` })
+        toast({
+          title: "Cron ejecutado",
+          description: `Se procesaron ${data.processed.length} importaciones programadas`,
+        })
         loadSources()
       } else {
-        toast({ title: "Sin tareas pendientes", description: data.message || "No hay importaciones programadas para ejecutar ahora" })
+        toast({
+          title: "Sin tareas pendientes",
+          description: data.message || "No hay importaciones programadas para ejecutar ahora",
+        })
       }
     } catch (error: any) {
       toast({ title: "Error al ejecutar cron", description: error.message, variant: "destructive" })
@@ -757,7 +782,11 @@ export function useImportSources() {
 
   const handleResetDatabase = async () => {
     if (resetConfirmText !== "ELIMINAR TODO") {
-      toast({ title: "Confirmación incorrecta", description: 'Debes escribir exactamente "ELIMINAR TODO" para confirmar', variant: "destructive" })
+      toast({
+        title: "Confirmación incorrecta",
+        description: 'Debes escribir exactamente "ELIMINAR TODO" para confirmar',
+        variant: "destructive",
+      })
       return
     }
     setResetLoading(true)
@@ -785,13 +814,21 @@ export function useImportSources() {
       const data = await response.json()
 
       if (data.error && data.instructions) {
-        toast({ title: "Configuración requerida", description: data.instructions, variant: "destructive", duration: 10000 })
+        toast({
+          title: "Configuración requerida",
+          description: data.instructions,
+          variant: "destructive",
+          duration: 10000,
+        })
         setAnalysisResult({ ...data, needsSQLSetup: true })
       } else if (data.method === "sample_analysis") {
         toast({ title: "Análisis completado (muestra)", description: `Análisis basado en muestra. ${data.note}` })
         setAnalysisResult(data)
       } else {
-        toast({ title: "Análisis completado", description: `Se encontraron ${data.totalDuplicateSKUs} SKUs duplicados en ${data.totalProducts} productos` })
+        toast({
+          title: "Análisis completado",
+          description: `Se encontraron ${data.totalDuplicateSKUs} SKUs duplicados en ${data.totalProducts} productos`,
+        })
         setAnalysisResult(data)
       }
     } catch (error: any) {
@@ -808,11 +845,11 @@ export function useImportSources() {
     }
     const confirmClean = window.confirm(
       `¿Estás seguro de que deseas eliminar productos duplicados?\n\n` +
-      `• SKUs duplicados: ${analysisResult.totalDuplicateSKUs}\n` +
-      `• Se mantendrá el producto más antiguo de cada SKU\n` +
-      `• Esta acción puede tomar algunos minutos\n` +
-      `• Esta acción NO se puede deshacer\n\n` +
-      `¿Deseas continuar?`,
+        `• SKUs duplicados: ${analysisResult.totalDuplicateSKUs}\n` +
+        `• Se mantendrá el producto más antiguo de cada SKU\n` +
+        `• Esta acción puede tomar algunos minutos\n` +
+        `• Esta acción NO se puede deshacer\n\n` +
+        `¿Deseas continuar?`,
     )
     if (!confirmClean) return
 
@@ -825,12 +862,25 @@ export function useImportSources() {
       const result = await response.json()
 
       if (result.error && result.instructions) {
-        toast({ title: "Configuración requerida", description: result.instructions, variant: "destructive", duration: 10000 })
+        toast({
+          title: "Configuración requerida",
+          description: result.instructions,
+          variant: "destructive",
+          duration: 10000,
+        })
       } else if (result.success) {
-        toast({ title: "Limpieza completada exitosamente", description: `Se eliminaron ${result.deletedCount} productos duplicados.` })
-        setTimeout(() => { handleAnalyzeDuplicates() }, 1000)
+        toast({
+          title: "Limpieza completada exitosamente",
+          description: `Se eliminaron ${result.deletedCount} productos duplicados.`,
+        })
+        setTimeout(() => {
+          handleAnalyzeDuplicates()
+        }, 1000)
       } else {
-        toast({ title: "Limpieza completada con advertencias", description: `Se eliminaron ${result.deletedCount || 0} productos duplicados.` })
+        toast({
+          title: "Limpieza completada con advertencias",
+          description: `Se eliminaron ${result.deletedCount || 0} productos duplicados.`,
+        })
       }
     } catch (error: any) {
       toast({ title: "Error al limpiar", description: error.message, variant: "destructive" })
@@ -848,7 +898,12 @@ export function useImportSources() {
       let hasUpdates = false
       for (const [sourceId] of backgroundImports.entries()) {
         if (sourceToImport?.id === sourceId) {
-          if (importProgress.total > 0 || importProgress.processed > 0 || importProgress.imported > 0 || importProgress.updated > 0) {
+          if (
+            importProgress.total > 0 ||
+            importProgress.processed > 0 ||
+            importProgress.imported > 0 ||
+            importProgress.updated > 0
+          ) {
             updatedImports.set(sourceId, { ...importProgress })
             hasUpdates = true
           }
@@ -863,7 +918,13 @@ export function useImportSources() {
   }, [])
 
   useEffect(() => {
-    if (sourceToImport?.id && (importProgress.status === "running" || importProgress.processed > 0 || importProgress.imported > 0 || importProgress.updated > 0)) {
+    if (
+      sourceToImport?.id &&
+      (importProgress.status === "running" ||
+        importProgress.processed > 0 ||
+        importProgress.imported > 0 ||
+        importProgress.updated > 0)
+    ) {
       setBackgroundImports((prev) => {
         const updated = new Map(prev)
         updated.set(sourceToImport.id, { ...importProgress })

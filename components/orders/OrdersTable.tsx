@@ -86,7 +86,7 @@ const availabilityBadgeConfig: Record<
   "Acordar la entrega": { variant: "outline", className: "bg-orange-100 text-orange-900 border-orange-300" },
   "Problema de entrega": { variant: "destructive", className: "bg-red-100 text-red-900 border-red-300" },
   "Con reclamo": { variant: "destructive", className: "bg-red-100 text-red-900 border-red-300" },
-  "Devolucion": { variant: "destructive", className: "bg-pink-100 text-pink-900 border-pink-300" },
+  Devolucion: { variant: "destructive", className: "bg-pink-100 text-pink-900 border-pink-300" },
   Cancelado: { variant: "secondary", className: "bg-gray-100 text-gray-900 border-gray-300" },
   "Pendiente de pago": { variant: "outline", className: "bg-amber-100 text-amber-900 border-amber-300" },
   Pendiente: { variant: "outline" },
@@ -369,11 +369,7 @@ export function OrdersTable({
               direction={sortConfig.direction}
               onSortChange={handleSortChange}
             />
-            <ColumnSelector
-              columns={visibleColumns}
-              onColumnsChange={setVisibleColumns}
-              storageKey="orders-columns"
-            />
+            <ColumnSelector columns={visibleColumns} onColumnsChange={setVisibleColumns} storageKey="orders-columns" />
           </div>
         </div>
       </CardHeader>
@@ -425,9 +421,7 @@ export function OrdersTable({
                           variant="ghost"
                           size="sm"
                           className="-ml-3 h-8"
-                          onClick={() =>
-                            handleSortChange("order", sortConfig.direction === "asc" ? "desc" : "asc")
-                          }
+                          onClick={() => handleSortChange("order", sortConfig.direction === "asc" ? "desc" : "asc")}
                         >
                           Orden
                           {renderSortIcon("order")}
@@ -440,22 +434,16 @@ export function OrdersTable({
                           variant="ghost"
                           size="sm"
                           className="-ml-3 h-8"
-                          onClick={() =>
-                            handleSortChange("customer", sortConfig.direction === "asc" ? "desc" : "asc")
-                          }
+                          onClick={() => handleSortChange("customer", sortConfig.direction === "asc" ? "desc" : "asc")}
                         >
                           Cliente
                           {renderSortIcon("customer")}
                         </Button>
                       </TableHead>
                     )}
-                    {visibleColumns.find((c) => c.id === "products")?.enabled && (
-                      <TableHead>Productos</TableHead>
-                    )}
+                    {visibleColumns.find((c) => c.id === "products")?.enabled && <TableHead>Productos</TableHead>}
                     {visibleColumns.find((c) => c.id === "sku")?.enabled && <TableHead>SKU</TableHead>}
-                    {visibleColumns.find((c) => c.id === "availability")?.enabled && (
-                      <TableHead>Estado</TableHead>
-                    )}
+                    {visibleColumns.find((c) => c.id === "availability")?.enabled && <TableHead>Estado</TableHead>}
                     {visibleColumns.find((c) => c.id === "items")?.enabled && <TableHead>Items</TableHead>}
                     {visibleColumns.find((c) => c.id === "total")?.enabled && (
                       <TableHead>
@@ -463,9 +451,7 @@ export function OrdersTable({
                           variant="ghost"
                           size="sm"
                           className="-ml-3 h-8"
-                          onClick={() =>
-                            handleSortChange("total", sortConfig.direction === "asc" ? "desc" : "asc")
-                          }
+                          onClick={() => handleSortChange("total", sortConfig.direction === "asc" ? "desc" : "asc")}
                         >
                           Total
                           {renderSortIcon("total")}
@@ -478,9 +464,7 @@ export function OrdersTable({
                           variant="ghost"
                           size="sm"
                           className="-ml-3 h-8"
-                          onClick={() =>
-                            handleSortChange("status", sortConfig.direction === "asc" ? "desc" : "asc")
-                          }
+                          onClick={() => handleSortChange("status", sortConfig.direction === "asc" ? "desc" : "asc")}
                         >
                           Estado / Pago
                           {renderSortIcon("status")}
@@ -493,9 +477,7 @@ export function OrdersTable({
                           variant="ghost"
                           size="sm"
                           className="-ml-3 h-8"
-                          onClick={() =>
-                            handleSortChange("date", sortConfig.direction === "asc" ? "desc" : "asc")
-                          }
+                          onClick={() => handleSortChange("date", sortConfig.direction === "asc" ? "desc" : "asc")}
                         >
                           Fecha
                           {renderSortIcon("date")}
@@ -540,9 +522,7 @@ export function OrdersTable({
                               </div>
                               {order.pack_id && (
                                 <div className="flex items-center gap-1.5">
-                                  <div className="text-xs text-muted-foreground font-mono">
-                                    ML: {order.pack_id}
-                                  </div>
+                                  <div className="text-xs text-muted-foreground font-mono">ML: {order.pack_id}</div>
                                   <Button
                                     variant="ghost"
                                     size="icon"
@@ -576,9 +556,7 @@ export function OrdersTable({
                                   key={idx}
                                   className="rounded-lg border border-border/50 bg-muted/30 p-2.5 text-sm shadow-sm hover:shadow-md transition-shadow"
                                 >
-                                  <div className="truncate font-medium text-foreground">
-                                    {item.item.title}
-                                  </div>
+                                  <div className="truncate font-medium text-foreground">{item.item.title}</div>
                                   <div className="mt-1 text-xs text-muted-foreground">
                                     Cantidad: <span className="font-semibold">{item.quantity}</span>
                                   </div>
@@ -656,14 +634,11 @@ export function OrdersTable({
                                   status === "Acordar la entrega" &&
                                     "border-purple-500 bg-purple-500/10 text-purple-700",
                                   status === "En camino" && "border-blue-500 bg-blue-500/10 text-blue-700",
-                                  status === "Listo para enviar" &&
-                                    "border-cyan-500 bg-cyan-500/10 text-cyan-700",
-                                  status === "Etiqueta impresa" &&
-                                    "border-teal-500 bg-teal-500/10 text-teal-700",
+                                  status === "Listo para enviar" && "border-cyan-500 bg-cyan-500/10 text-cyan-700",
+                                  status === "Etiqueta impresa" && "border-teal-500 bg-teal-500/10 text-teal-700",
                                   status === "En punto de retiro" &&
                                     "border-indigo-500 bg-indigo-500/10 text-indigo-700",
-                                  status === "Pendiente" &&
-                                    "border-yellow-500 bg-yellow-500/10 text-yellow-700",
+                                  status === "Pendiente" && "border-yellow-500 bg-yellow-500/10 text-yellow-700",
                                   status === "Demorado" && "border-red-600 bg-red-600/10 text-red-800",
                                   status === "Con reclamo" && "border-pink-500 bg-pink-500/10 text-pink-700",
                                   status === "Devolucion" && "border-pink-500 bg-pink-500/10 text-pink-700",
@@ -702,9 +677,7 @@ export function OrdersTable({
                                     <Clock className="mr-1 h-3 w-3" />
                                     Esperando
                                     {days !== null && (
-                                      <span className="ml-1 font-semibold">
-                                        {days <= 0 ? "!Vencido!" : `${days}d`}
-                                      </span>
+                                      <span className="ml-1 font-semibold">{days <= 0 ? "!Vencido!" : `${days}d`}</span>
                                     )}
                                   </Badge>
                                 )}

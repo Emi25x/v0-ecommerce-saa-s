@@ -3,16 +3,22 @@
 import { useEffect, useState, useCallback, useRef } from "react"
 import Link from "next/link"
 import {
-  PackageX, TrendingUp, Copy, Check, ExternalLink,
-  ArrowUpDown, RefreshCw, ChevronLeft, Search, X,
+  PackageX,
+  TrendingUp,
+  Copy,
+  Check,
+  ExternalLink,
+  ArrowUpDown,
+  RefreshCw,
+  ChevronLeft,
+  Search,
+  X,
 } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface ReorderBook {
   id: string
@@ -36,68 +42,66 @@ interface MLAccount {
 }
 
 const STATUS_LABEL: Record<string, string> = {
-  active:       "Activa",
-  paused:       "Pausada",
+  active: "Activa",
+  paused: "Pausada",
   under_review: "En revisión",
-  inactive:     "Inactiva",
+  inactive: "Inactiva",
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  active:       "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
-  paused:       "bg-orange-500/15 text-orange-400 border-orange-500/30",
+  active: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+  paused: "bg-orange-500/15 text-orange-400 border-orange-500/30",
   under_review: "bg-amber-500/15 text-amber-400 border-amber-500/30",
-  inactive:     "bg-muted text-muted-foreground",
+  inactive: "bg-muted text-muted-foreground",
 }
 
 const LIMIT = 30
 
 export default function VolverAPedirPage() {
-  const [books, setBooks]           = useState<ReorderBook[]>([])
-  const [total, setTotal]           = useState(0)
-  const [loading, setLoading]       = useState(true)
-  const [page, setPage]             = useState(0)
-  const [sort, setSort]             = useState<"sold" | "editorial">("sold")
-  const [search, setSearch]         = useState("")
-  const [inputVal, setInputVal]     = useState("")
-  const [accountId, setAccountId]   = useState<string>("all")
-  const [accounts, setAccounts]     = useState<MLAccount[]>([])
-  const [copiedId, setCopiedId]     = useState<string | null>(null)
-  const searchTimer                 = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [books, setBooks] = useState<ReorderBook[]>([])
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(0)
+  const [sort, setSort] = useState<"sold" | "editorial">("sold")
+  const [search, setSearch] = useState("")
+  const [inputVal, setInputVal] = useState("")
+  const [accountId, setAccountId] = useState<string>("all")
+  const [accounts, setAccounts] = useState<MLAccount[]>([])
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Load accounts for selector
   useEffect(() => {
     fetch("/api/ml/accounts")
-      .then(r => r.json())
-      .then(d => setAccounts(d.accounts ?? []))
+      .then((r) => r.json())
+      .then((d) => setAccounts(d.accounts ?? []))
       .catch(() => {})
   }, [])
 
-  const load = useCallback(async (
-    currentSort: string,
-    currentSearch: string,
-    currentPage: number,
-    currentAccount: string,
-  ) => {
-    setLoading(true)
-    try {
-      const params = new URLSearchParams({
-        sort:   currentSort,
-        limit:  String(LIMIT),
-        offset: String(currentPage * LIMIT),
-      })
-      if (currentSearch) params.set("search", currentSearch)
-      if (currentAccount !== "all") params.set("account_id", currentAccount)
+  const load = useCallback(
+    async (currentSort: string, currentSearch: string, currentPage: number, currentAccount: string) => {
+      setLoading(true)
+      try {
+        const params = new URLSearchParams({
+          sort: currentSort,
+          limit: String(LIMIT),
+          offset: String(currentPage * LIMIT),
+        })
+        if (currentSearch) params.set("search", currentSearch)
+        if (currentAccount !== "all") params.set("account_id", currentAccount)
 
-      const res  = await fetch(`/api/radar/reorder?${params}`)
-      const data = await res.json()
-      if (data.ok) {
-        setBooks(data.rows ?? [])
-        setTotal(data.total ?? 0)
+        const res = await fetch(`/api/radar/reorder?${params}`)
+        const data = await res.json()
+        if (data.ok) {
+          setBooks(data.rows ?? [])
+          setTotal(data.total ?? 0)
+        }
+      } finally {
+        setLoading(false)
       }
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    },
+    [],
+  )
 
   useEffect(() => {
     load(sort, search, page, accountId)
@@ -156,12 +160,7 @@ export default function VolverAPedirPage() {
             Publicaciones pausadas o con stock cero — ordenadas por ventas
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => load(sort, search, page, accountId)}
-          disabled={loading}
-        >
+        <Button variant="outline" size="sm" onClick={() => load(sort, search, page, accountId)} disabled={loading}>
           <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
           Actualizar
         </Button>
@@ -175,12 +174,16 @@ export default function VolverAPedirPage() {
           <Input
             placeholder="Título, SKU o ISBN…"
             value={inputVal}
-            onChange={e => handleInput(e.target.value)}
+            onChange={(e) => handleInput(e.target.value)}
             className="h-8 text-sm pl-8 w-56"
           />
           {inputVal && (
             <button
-              onClick={() => { setInputVal(""); setSearch(""); setPage(0) }}
+              onClick={() => {
+                setInputVal("")
+                setSearch("")
+                setPage(0)
+              }}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
             >
               <X className="h-3.5 w-3.5" />
@@ -195,7 +198,7 @@ export default function VolverAPedirPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todas las cuentas</SelectItem>
-            {accounts.map(a => (
+            {accounts.map((a) => (
               <SelectItem key={a.id} value={a.id}>
                 {a.nickname ?? a.ml_user_id ?? a.id}
               </SelectItem>
@@ -253,7 +256,7 @@ export default function VolverAPedirPage() {
           </div>
         ) : (
           <div className="divide-y divide-border">
-            {books.map(book => (
+            {books.map((book) => (
               <div
                 key={book.id}
                 className="grid grid-cols-[1fr_auto] md:grid-cols-[1fr_160px_130px_90px_80px_72px] gap-4 items-center px-4 py-3 hover:bg-muted/10 transition-colors"
@@ -268,7 +271,9 @@ export default function VolverAPedirPage() {
                     {book.sku && (
                       <span className="md:hidden text-[10px] font-mono text-muted-foreground/70">SKU: {book.sku}</span>
                     )}
-                    <span className={`md:hidden text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${STATUS_COLOR[book.status] ?? STATUS_COLOR.inactive}`}>
+                    <span
+                      className={`md:hidden text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${STATUS_COLOR[book.status] ?? STATUS_COLOR.inactive}`}
+                    >
                       {STATUS_LABEL[book.status] ?? book.status}
                     </span>
                   </div>
@@ -286,7 +291,9 @@ export default function VolverAPedirPage() {
 
                 {/* Estado (desktop) */}
                 <div className="hidden md:flex justify-center">
-                  <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${STATUS_COLOR[book.status] ?? STATUS_COLOR.inactive}`}>
+                  <span
+                    className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${STATUS_COLOR[book.status] ?? STATUS_COLOR.inactive}`}
+                  >
                     {STATUS_LABEL[book.status] ?? book.status}
                   </span>
                 </div>
@@ -322,9 +329,11 @@ export default function VolverAPedirPage() {
                     className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
                     title={`Copiar SKU: ${book.sku ?? book.isbn ?? book.ml_item_id}`}
                   >
-                    {copiedId === book.id
-                      ? <Check className="h-3.5 w-3.5 text-emerald-400" />
-                      : <Copy className="h-3.5 w-3.5" />}
+                    {copiedId === book.id ? (
+                      <Check className="h-3.5 w-3.5 text-emerald-400" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
                   </button>
                 </div>
               </div>
@@ -340,16 +349,20 @@ export default function VolverAPedirPage() {
             </span>
             <div className="flex gap-2">
               <Button
-                size="sm" variant="outline" className="h-7 text-xs"
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
                 disabled={page === 0 || loading}
-                onClick={() => setPage(p => p - 1)}
+                onClick={() => setPage((p) => p - 1)}
               >
                 Anterior
               </Button>
               <Button
-                size="sm" variant="outline" className="h-7 text-xs"
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
                 disabled={page >= totalPages - 1 || loading}
-                onClick={() => setPage(p => p + 1)}
+                onClick={() => setPage((p) => p + 1)}
               >
                 Siguiente
               </Button>

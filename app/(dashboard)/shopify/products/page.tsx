@@ -5,26 +5,9 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -126,34 +109,33 @@ export default function ShopifyProductsPage() {
     fetch("/api/shopify/stores")
       .then((r) => r.json())
       .then((d) => {
-        const list: ShopifyStore[] = Array.isArray(d) ? d : d.stores ?? d.data ?? []
+        const list: ShopifyStore[] = Array.isArray(d) ? d : (d.stores ?? d.data ?? [])
         setStores(list)
         if (list.length > 0) setStoreId(list[0].id)
       })
       .catch(() => {})
   }, [])
 
-  const fetchProducts = useCallback(
-    async (sid: string, pageInfo?: string, q?: string) => {
-      if (!sid) return
-      setLoading(true)
-      try {
-        const qs = new URLSearchParams({ store_id: sid, limit: "50", status: "active" })
-        if (pageInfo) qs.set("page_info", pageInfo)
-        if (q) qs.set("query", q)
-        const res = await fetch(`/api/shopify/products?${qs}`)
-        const data = await res.json()
-        if (!res.ok) return
-        setProducts(data.products ?? [])
-        setTotalCount(data.total_count ?? null)
-        setNextPageInfo(data.pagination?.next_page_info ?? null)
-        setPrevPageInfo(data.pagination?.prev_page_info ?? null)
-        setIsSearch(data.is_search ?? false)
-      } catch {}
-      finally { setLoading(false) }
-    },
-    []
-  )
+  const fetchProducts = useCallback(async (sid: string, pageInfo?: string, q?: string) => {
+    if (!sid) return
+    setLoading(true)
+    try {
+      const qs = new URLSearchParams({ store_id: sid, limit: "50", status: "active" })
+      if (pageInfo) qs.set("page_info", pageInfo)
+      if (q) qs.set("query", q)
+      const res = await fetch(`/api/shopify/products?${qs}`)
+      const data = await res.json()
+      if (!res.ok) return
+      setProducts(data.products ?? [])
+      setTotalCount(data.total_count ?? null)
+      setNextPageInfo(data.pagination?.next_page_info ?? null)
+      setPrevPageInfo(data.pagination?.prev_page_info ?? null)
+      setIsSearch(data.is_search ?? false)
+    } catch {
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     if (storeId) {
@@ -229,13 +211,21 @@ export default function ShopifyProductsPage() {
       {/* Filters */}
       <div className="flex gap-3">
         {stores.length > 1 && (
-          <Select value={storeId} onValueChange={(v) => { setStoreId(v); setPageStack([]) }}>
+          <Select
+            value={storeId}
+            onValueChange={(v) => {
+              setStoreId(v)
+              setPageStack([])
+            }}
+          >
             <SelectTrigger className="w-52">
               <SelectValue placeholder="Seleccionar tienda" />
             </SelectTrigger>
             <SelectContent>
               {stores.map((s) => (
-                <SelectItem key={s.id} value={s.id}>{s.name || s.shop_domain}</SelectItem>
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name || s.shop_domain}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -250,11 +240,7 @@ export default function ShopifyProductsPage() {
           />
         </div>
         {currentStore && (
-          <a
-            href={`https://${currentStore.shop_domain}/admin/products`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
+          <a href={`https://${currentStore.shop_domain}/admin/products`} target="_blank" rel="noopener noreferrer">
             <Button variant="outline" size="sm" className="gap-2">
               <ExternalLink className="h-4 w-4" />
               Ver en Shopify
@@ -309,11 +295,7 @@ export default function ShopifyProductsPage() {
                       <td className="px-4 py-3">
                         {product.image?.src ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={product.image.src}
-                            alt={product.title}
-                            className="h-10 w-10 rounded object-cover"
-                          />
+                          <img src={product.image.src} alt={product.title} className="h-10 w-10 rounded object-cover" />
                         ) : (
                           <div className="h-10 w-10 rounded bg-muted flex items-center justify-center">
                             <Package className="h-4 w-4 text-muted-foreground" />
@@ -329,33 +311,35 @@ export default function ShopifyProductsPage() {
                         </p>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">
-                        {variant?.sku && (
-                          <p className="font-mono text-xs">{variant.sku}</p>
-                        )}
+                        {variant?.sku && <p className="font-mono text-xs">{variant.sku}</p>}
                         {variant?.barcode && (
                           <p className="font-mono text-xs text-muted-foreground/60">{variant.barcode}</p>
                         )}
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums">
-                        {variant?.price ? `$${Number(variant.price).toLocaleString("es-AR", { minimumFractionDigits: 2 })}` : "—"}
+                        {variant?.price
+                          ? `$${Number(variant.price).toLocaleString("es-AR", { minimumFractionDigits: 2 })}`
+                          : "—"}
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums">
-                        <span className={
-                          totalStock === 0
-                            ? "text-muted-foreground"
-                            : totalStock <= 3
-                            ? "text-amber-600 dark:text-amber-400 font-semibold"
-                            : "font-semibold"
-                        }>
+                        <span
+                          className={
+                            totalStock === 0
+                              ? "text-muted-foreground"
+                              : totalStock <= 3
+                                ? "text-amber-600 dark:text-amber-400 font-semibold"
+                                : "font-semibold"
+                          }
+                        >
                           {totalStock.toLocaleString("es-AR")}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-center">
                         <Badge
                           variant="outline"
-                          className={isActive
-                            ? "text-green-700 border-green-300 dark:text-green-400"
-                            : "text-muted-foreground"}
+                          className={
+                            isActive ? "text-green-700 border-green-300 dark:text-green-400" : "text-muted-foreground"
+                          }
                         >
                           {isActive ? "Activo" : product.status}
                         </Badge>
@@ -402,24 +386,12 @@ export default function ShopifyProductsPage() {
         {/* Pagination */}
         {!isSearch && (nextPageInfo || pageStack.length > 0) && (
           <div className="flex items-center justify-between px-4 py-3 border-t bg-muted/20 text-sm text-muted-foreground">
-            <span>
-              {isSearch ? `${products.length} resultados` : `Página ${pageStack.length + 1}`}
-            </span>
+            <span>{isSearch ? `${products.length} resultados` : `Página ${pageStack.length + 1}`}</span>
             <div className="flex gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                disabled={pageStack.length === 0}
-                onClick={handlePrev}
-              >
+              <Button variant="ghost" size="icon" disabled={pageStack.length === 0} onClick={handlePrev}>
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                disabled={!nextPageInfo}
-                onClick={handleNext}
-              >
+              <Button variant="ghost" size="icon" disabled={!nextPageInfo} onClick={handleNext}>
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
@@ -428,11 +400,7 @@ export default function ShopifyProductsPage() {
       </div>
 
       {/* Product Detail Sheet */}
-      <ProductDetailSheet
-        product={detailProduct}
-        store={currentStore ?? null}
-        onClose={() => setDetailProduct(null)}
-      />
+      <ProductDetailSheet product={detailProduct} store={currentStore ?? null} onClose={() => setDetailProduct(null)} />
 
       {/* Add Product Dialog */}
       {showAddDialog && (
@@ -473,7 +441,10 @@ function ProductDetailSheet({
   const [loadingMeta, setLoadingMeta] = useState(false)
 
   useEffect(() => {
-    if (!product || !store) { setMetafields([]); return }
+    if (!product || !store) {
+      setMetafields([])
+      return
+    }
     setLoadingMeta(true)
     fetch(`/api/shopify/product-metafields?store_id=${store.id}&product_id=${product.id}`)
       .then((r) => r.json())
@@ -486,11 +457,16 @@ function ProductDetailSheet({
 
   const totalStock = product.variants?.reduce((s, v) => s + (v.inventory_quantity ?? 0), 0) ?? 0
   const isActive = product.status === "active"
-  const tags = product.tags ? product.tags.split(",").map((t) => t.trim()).filter(Boolean) : []
+  const tags = product.tags
+    ? product.tags
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean)
+    : []
 
   // Metafields agrupados: primero los del namespace "custom", luego el resto
   const customMfs = metafields.filter((m) => m.namespace === "custom")
-  const otherMfs  = metafields.filter((m) => m.namespace !== "custom")
+  const otherMfs = metafields.filter((m) => m.namespace !== "custom")
 
   const LABEL_MAP: Record<string, string> = {
     autor: "Autor",
@@ -516,12 +492,15 @@ function ProductDetailSheet({
   }
 
   return (
-    <Sheet open={!!product} onOpenChange={(open) => { if (!open) onClose() }}>
+    <Sheet
+      open={!!product}
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    >
       <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
         <SheetHeader className="pb-4">
-          <SheetTitle className="text-base font-semibold line-clamp-2 pr-4">
-            {product.title}
-          </SheetTitle>
+          <SheetTitle className="text-base font-semibold line-clamp-2 pr-4">{product.title}</SheetTitle>
         </SheetHeader>
 
         <div className="space-y-5">
@@ -542,36 +521,28 @@ function ProductDetailSheet({
             <InfoRow label="Estado">
               <Badge
                 variant="outline"
-                className={isActive
-                  ? "text-green-700 border-green-300 dark:text-green-400"
-                  : "text-muted-foreground"}
+                className={isActive ? "text-green-700 border-green-300 dark:text-green-400" : "text-muted-foreground"}
               >
                 {isActive ? "Activo" : product.status}
               </Badge>
             </InfoRow>
             <InfoRow label="Stock total">
-              <span className={
-                totalStock === 0
-                  ? "text-muted-foreground"
-                  : totalStock <= 3
-                  ? "text-amber-600 font-semibold"
-                  : "font-semibold"
-              }>
+              <span
+                className={
+                  totalStock === 0
+                    ? "text-muted-foreground"
+                    : totalStock <= 3
+                      ? "text-amber-600 font-semibold"
+                      : "font-semibold"
+                }
+              >
                 {totalStock.toLocaleString("es-AR")} unid.
               </span>
             </InfoRow>
-            {product.vendor && (
-              <InfoRow label="Proveedor">{product.vendor}</InfoRow>
-            )}
-            {product.product_type && (
-              <InfoRow label="Tipo">{product.product_type}</InfoRow>
-            )}
-            <InfoRow label="Creado">
-              {new Date(product.created_at).toLocaleDateString("es-AR")}
-            </InfoRow>
-            <InfoRow label="Actualizado">
-              {new Date(product.updated_at).toLocaleDateString("es-AR")}
-            </InfoRow>
+            {product.vendor && <InfoRow label="Proveedor">{product.vendor}</InfoRow>}
+            {product.product_type && <InfoRow label="Tipo">{product.product_type}</InfoRow>}
+            <InfoRow label="Creado">{new Date(product.created_at).toLocaleDateString("es-AR")}</InfoRow>
+            <InfoRow label="Actualizado">{new Date(product.updated_at).toLocaleDateString("es-AR")}</InfoRow>
           </div>
 
           {/* Tags */}
@@ -612,13 +583,15 @@ function ProductDetailSheet({
                         {v.price ? `$${Number(v.price).toLocaleString("es-AR", { minimumFractionDigits: 2 })}` : "—"}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">
-                        <span className={
-                          (v.inventory_quantity ?? 0) === 0
-                            ? "text-muted-foreground"
-                            : (v.inventory_quantity ?? 0) <= 3
-                            ? "text-amber-600 font-semibold"
-                            : "font-semibold"
-                        }>
+                        <span
+                          className={
+                            (v.inventory_quantity ?? 0) === 0
+                              ? "text-muted-foreground"
+                              : (v.inventory_quantity ?? 0) <= 3
+                                ? "text-amber-600 font-semibold"
+                                : "font-semibold"
+                          }
+                        >
                           {(v.inventory_quantity ?? 0).toLocaleString("es-AR")}
                         </span>
                       </td>
@@ -648,7 +621,9 @@ function ProductDetailSheet({
               <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-sm rounded-md border p-3 bg-muted/10">
                 {otherMfs.map((mf) => (
                   <div key={mf.id}>
-                    <p className="text-xs text-muted-foreground">{mf.namespace}.{mf.key}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {mf.namespace}.{mf.key}
+                    </p>
                     <p className="font-medium break-words">{mf.value || "—"}</p>
                   </div>
                 ))}
@@ -746,7 +721,7 @@ function AddProductDialog({
         })
         // Verificar si ya está publicado en esta tienda
         const checkRes = await fetch(
-          `/api/shopify/product-check?store_id=${encodeURIComponent(selectedStore)}&product_id=${encodeURIComponent(found.id)}`
+          `/api/shopify/product-check?store_id=${encodeURIComponent(selectedStore)}&product_id=${encodeURIComponent(found.id)}`,
         )
         const checkData = await checkRes.json()
         if (checkData.exists && checkData.link) {
@@ -755,8 +730,8 @@ function AddProductDialog({
       } else {
         setForm((f) => ({ ...f, ean: q }))
       }
-    } catch {}
-    finally {
+    } catch {
+    } finally {
       setLookupLoading(false)
       setLookupDone(true)
     }
@@ -789,7 +764,12 @@ function AddProductDialog({
   const canPublish = localProduct !== null && form.ean.trim() !== ""
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+    >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Agregar producto a Shopify</DialogTitle>
@@ -806,7 +786,9 @@ function AddProductDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {stores.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>{s.name || s.shop_domain}</SelectItem>
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name || s.shop_domain}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -824,11 +806,7 @@ function AddProductDialog({
                 onKeyDown={(e) => e.key === "Enter" && handleLookup()}
                 className="flex-1"
               />
-              <Button
-                variant="outline"
-                onClick={handleLookup}
-                disabled={lookupLoading || !lookupInput.trim()}
-              >
+              <Button variant="outline" onClick={handleLookup} disabled={lookupLoading || !lookupInput.trim()}>
                 {lookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
               </Button>
             </div>
@@ -837,7 +815,8 @@ function AddProductDialog({
           {/* Lookup result */}
           {lookupDone && !localProduct && (
             <p className="text-sm text-amber-600 dark:text-amber-400">
-              No se encontró el producto en el catálogo local. Solo se puede publicar en Shopify si el producto existe en la base de datos.
+              No se encontró el producto en el catálogo local. Solo se puede publicar en Shopify si el producto existe
+              en la base de datos.
             </p>
           )}
 
@@ -933,7 +912,11 @@ function AddProductDialog({
 
               {localProduct && (
                 <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground pt-1 border-t">
-                  {localProduct.isbn && <span>ISBN: <span className="font-mono">{localProduct.isbn}</span></span>}
+                  {localProduct.isbn && (
+                    <span>
+                      ISBN: <span className="font-mono">{localProduct.isbn}</span>
+                    </span>
+                  )}
                   {localProduct.language && <span>Idioma: {localProduct.language}</span>}
                   {localProduct.stock != null && <span>Stock local: {localProduct.stock.toLocaleString("es-AR")}</span>}
                   {localProduct.pages && <span>Páginas: {localProduct.pages}</span>}
@@ -941,7 +924,10 @@ function AddProductDialog({
                   {localProduct.year_edition && <span>Año: {localProduct.year_edition}</span>}
                   {localProduct.category && <span>Categoría: {localProduct.category}</span>}
                   {(localProduct.height || localProduct.width || localProduct.thickness) && (
-                    <span>Dim: {[localProduct.height, localProduct.thickness, localProduct.width].filter(Boolean).join(" × ")} cm</span>
+                    <span>
+                      Dim:{" "}
+                      {[localProduct.height, localProduct.thickness, localProduct.width].filter(Boolean).join(" × ")} cm
+                    </span>
                   )}
                   {localProduct.canonical_weight_g && <span>Peso: {localProduct.canonical_weight_g}g</span>}
                   {localProduct.description && (
@@ -954,7 +940,9 @@ function AddProductDialog({
 
           {/* Publish result */}
           {publishResult && (
-            <p className={`text-sm ${publishResult.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+            <p
+              className={`text-sm ${publishResult.ok ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+            >
               {publishResult.message}
             </p>
           )}
@@ -964,16 +952,8 @@ function AddProductDialog({
           <Button variant="ghost" onClick={onClose} disabled={publishing}>
             Cancelar
           </Button>
-          <Button
-            onClick={handlePublish}
-            disabled={!canPublish || publishing}
-            className="gap-2"
-          >
-            {publishing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
+          <Button onClick={handlePublish} disabled={!canPublish || publishing} className="gap-2">
+            {publishing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             Publicar en Shopify
           </Button>
         </DialogFooter>

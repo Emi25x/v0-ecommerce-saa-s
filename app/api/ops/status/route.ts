@@ -24,8 +24,7 @@ export async function GET(request: NextRequest) {
           .select("source_key")
           .eq("name", provider.name)
           .single()
-        const sourceKey = srcRow?.source_key
-          || provider.name.toLowerCase().replace(/[^a-z0-9]/g, "_")
+        const sourceKey = srcRow?.source_key || provider.name.toLowerCase().replace(/[^a-z0-9]/g, "_")
 
         // Contar productos que tienen stock_by_source->sourceKey definido
         // Usamos filter en stock_by_source JSONB
@@ -60,13 +59,11 @@ export async function GET(request: NextRequest) {
           products_count: productsCount || 0,
           stock_total: stockTotal,
         }
-      })
+      }),
     )
 
     // 3. Estadísticas generales del sistema
-    const { count: totalProducts } = await supabase
-      .from("products")
-      .select("*", { count: "exact", head: true })
+    const { count: totalProducts } = await supabase.from("products").select("*", { count: "exact", head: true })
 
     const { count: withStock } = await supabase
       .from("products")
@@ -117,22 +114,18 @@ export async function GET(request: NextRequest) {
         total_products: totalProducts || 0,
         with_stock: withStock || 0,
         without_ean: withoutEan || 0,
-        pending_publish: pendingPublish || 0
+        pending_publish: pendingPublish || 0,
       },
       ml_stats: {
         total_published: totalPublished || 0,
         active_listings: activeListings || 0,
         paused_listings: pausedListings || 0,
         sold_count: soldCount,
-        visits_30d: 0 // Placeholder: requiere integración con API de ML
-      }
+        visits_30d: 0, // Placeholder: requiere integración con API de ML
+      },
     })
-
   } catch (error: any) {
     console.error("[v0] Ops status error:", error)
-    return NextResponse.json(
-      { error: error.message || "Failed to fetch ops status" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error.message || "Failed to fetch ops status" }, { status: 500 })
   }
 }

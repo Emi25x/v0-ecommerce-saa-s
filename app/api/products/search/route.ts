@@ -18,9 +18,12 @@ export async function GET(request: Request) {
     const limit = Math.min(requestedLimit, 50)
 
     if (!q || q.trim().length < 2) {
-      return NextResponse.json({
-        error: "Query must be at least 2 characters",
-      }, { status: 400 })
+      return NextResponse.json(
+        {
+          error: "Query must be at least 2 characters",
+        },
+        { status: 400 },
+      )
     }
 
     const supabase = await createClient()

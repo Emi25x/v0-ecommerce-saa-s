@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
         } catch (refreshError) {
           // If refresh fails, return account as expired
           console.error("[v0] Failed to refresh token for account", account.nickname, ":", refreshError)
-          
+
           const expiresAt = new Date(account.token_expires_at)
           const now = new Date()
           const isExpired = expiresAt <= now
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
             connected: false,
           }
         }
-      })
+      }),
     )
 
     console.log("[v0] Returning", accountsWithStatus.length, "accounts with status")

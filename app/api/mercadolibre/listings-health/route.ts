@@ -11,11 +11,11 @@ import { createClient } from "@/lib/db/server"
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase  = await createClient()
+    const supabase = await createClient()
     const accountId = request.nextUrl.searchParams.get("account_id") || ""
-    const mode      = request.nextUrl.searchParams.get("mode") || "forewarning"
-    const offset    = Number(request.nextUrl.searchParams.get("offset") || "0")
-    const limit     = Math.min(Number(request.nextUrl.searchParams.get("limit") || "50"), 50)
+    const mode = request.nextUrl.searchParams.get("mode") || "forewarning"
+    const offset = Number(request.nextUrl.searchParams.get("offset") || "0")
+    const limit = Math.min(Number(request.nextUrl.searchParams.get("limit") || "50"), 50)
 
     if (!accountId) return NextResponse.json({ error: "account_id requerido" }, { status: 400 })
 
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
 
     if (!mlAccount) return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
 
-    const token    = mlAccount.access_token
+    const token = mlAccount.access_token
     const sellerId = mlAccount.ml_user_id
 
     let itemIds: string[] = []
@@ -49,14 +49,13 @@ export async function GET(request: NextRequest) {
         }
         const data2 = await res2.json()
         itemIds = data2.results || []
-        total   = data2.paging?.total || itemIds.length
+        total = data2.paging?.total || itemIds.length
       } else {
         const data = await res.json()
         // catalog-forewarning puede devolver array directo o { results: [...] }
-        itemIds = Array.isArray(data) ? data : (data.results || [])
-        total   = data.paging?.total || itemIds.length
+        itemIds = Array.isArray(data) ? data : data.results || []
+        total = data.paging?.total || itemIds.length
       }
-
     } else if (mode === "eligible") {
       // Publicaciones activas elegibles para optin al catálogo.
       // Equivalente al filtro del panel ML: task=BUYBOX_STATUS_COMPETING_MARKETPLACE
@@ -70,8 +69,7 @@ export async function GET(request: NextRequest) {
       }
       const data = await res.json()
       itemIds = data.results || []
-      total   = data.paging?.total || itemIds.length
-
+      total = data.paging?.total || itemIds.length
     } else if (mode === "under_review") {
       // Publicaciones bajo revisión esperando publicación en catálogo.
       // Equivalente al filtro: task=UNDER_REVIEW_WAITING_FOR_PATCH_MARKETPLACE
@@ -84,8 +82,7 @@ export async function GET(request: NextRequest) {
       }
       const data = await res.json()
       itemIds = data.results || []
-      total   = data.paging?.total || itemIds.length
-
+      total = data.paging?.total || itemIds.length
     } else {
       return NextResponse.json({ error: "mode inválido. Usar: forewarning | eligible | under_review" }, { status: 400 })
     }
@@ -99,37 +96,38 @@ export async function GET(request: NextRequest) {
     for (let i = 0; i < itemIds.length; i += 20) chunks.push(itemIds.slice(i, i + 20))
 
     const allItems: any[] = []
-    await Promise.all(chunks.map(async (chunk) => {
-      const detailRes = await fetch(
-        `https://api.mercadolibre.com/items?ids=${chunk.join(",")}&attributes=id,title,price,status,health,thumbnail,category_id,catalog_product_id,catalog_listing,permalink,listing_type_id,tags,sub_status`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
-      if (detailRes.ok) {
-        const details = await detailRes.json()
-        for (const d of details) {
-          if (d.code === 200 && d.body) allItems.push(d.body)
+    await Promise.all(
+      chunks.map(async (chunk) => {
+        const detailRes = await fetch(
+          `https://api.mercadolibre.com/items?ids=${chunk.join(",")}&attributes=id,title,price,status,health,thumbnail,category_id,catalog_product_id,catalog_listing,permalink,listing_type_id,tags,sub_status`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        )
+        if (detailRes.ok) {
+          const details = await detailRes.json()
+          for (const d of details) {
+            if (d.code === 200 && d.body) allItems.push(d.body)
+          }
         }
-      }
-    }))
+      }),
+    )
 
     const items = allItems.map((item) => ({
-      id:                 item.id,
-      title:              item.title,
-      price:              item.price,
-      status:             item.status,
-      sub_status:         item.sub_status || null,
-      health:             item.health,
-      thumbnail:          item.thumbnail,
-      category_id:        item.category_id,
+      id: item.id,
+      title: item.title,
+      price: item.price,
+      status: item.status,
+      sub_status: item.sub_status || null,
+      health: item.health,
+      thumbnail: item.thumbnail,
+      category_id: item.category_id,
       catalog_product_id: item.catalog_product_id || null,
-      catalog_listing:    item.catalog_listing     || false,
-      listing_type_id:    item.listing_type_id,
-      tags:               item.tags                || [],
-      permalink:          item.permalink,
+      catalog_listing: item.catalog_listing || false,
+      listing_type_id: item.listing_type_id,
+      tags: item.tags || [],
+      permalink: item.permalink,
     }))
 
     return NextResponse.json({ ok: true, items, total })
-
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

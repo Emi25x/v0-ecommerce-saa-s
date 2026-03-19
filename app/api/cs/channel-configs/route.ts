@@ -8,7 +8,10 @@ import { createClient } from "@/lib/db/server"
  */
 export async function GET() {
   const supabase = await createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
   if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const { data, error } = await supabase
@@ -28,7 +31,10 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
   if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const body = await request.json().catch(() => null)
@@ -46,7 +52,7 @@ export async function POST(request: NextRequest) {
         is_active: body.is_active ?? false,
         config: body.config ?? {},
       },
-      { onConflict: "user_id,channel,name" }
+      { onConflict: "user_id,channel,name" },
     )
     .select("id, channel, name, is_active, created_at, updated_at")
     .single()

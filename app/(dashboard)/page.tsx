@@ -26,7 +26,7 @@ export default function DashboardPage() {
         }
 
         const json = await res.json()
-        const accounts = Array.isArray(json) ? json : json.accounts ?? json.data ?? []
+        const accounts = Array.isArray(json) ? json : (json.accounts ?? json.data ?? [])
         setMlAccounts(accounts.filter((acc: any) => acc.connected))
 
         // Auto-select first connected account
@@ -122,9 +122,7 @@ export default function DashboardPage() {
               <p className="text-sm text-muted-foreground">Cargando cuentas...</p>
             ) : mlAccounts.length === 0 ? (
               <div className="text-center py-8">
-                <p className="text-sm text-muted-foreground mb-4">
-                  No hay cuentas de MercadoLibre conectadas
-                </p>
+                <p className="text-sm text-muted-foreground mb-4">No hay cuentas de MercadoLibre conectadas</p>
                 <Button asChild>
                   <Link href="/settings/accounts">Conectar cuenta</Link>
                 </Button>
@@ -132,10 +130,7 @@ export default function DashboardPage() {
             ) : (
               <div className="space-y-2">
                 {mlAccounts.map((account) => (
-                  <div
-                    key={account.id}
-                    className="flex items-center justify-between p-3 border rounded-lg"
-                  >
+                  <div key={account.id} className="flex items-center justify-between p-3 border rounded-lg">
                     <div>
                       <p className="font-medium">{account.nickname}</p>
                       <p className="text-sm text-muted-foreground">ML User: {account.ml_user_id}</p>
@@ -190,9 +185,7 @@ export default function DashboardPage() {
                       </div>
                       <div>
                         <p className="text-sm text-muted-foreground">Vinculadas</p>
-                        <p className="text-2xl font-bold text-green-600">
-                          {statsData.matched_publications || 0}
-                        </p>
+                        <p className="text-2xl font-bold text-green-600">{statsData.matched_publications || 0}</p>
                       </div>
                     </div>
                   )}

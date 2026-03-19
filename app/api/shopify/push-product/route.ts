@@ -7,16 +7,18 @@
  * Body: { store_id, ean, dry_run?: boolean }
  */
 
-import { createClient }  from "@/lib/db/server"
+import { createClient } from "@/lib/db/server"
 import { NextRequest, NextResponse } from "next/server"
 import { pushProductToShopify } from "@/domains/shopify/push-product"
 
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient()
-    const { data: { user }, error: authErr } = await supabase.auth.getUser()
-    if (authErr || !user)
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 })
+    const {
+      data: { user },
+      error: authErr,
+    } = await supabase.auth.getUser()
+    if (authErr || !user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 })
 
     const body = await req.json()
     const { store_id, ean, dry_run = false } = body

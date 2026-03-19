@@ -4,7 +4,16 @@ import { useState, useEffect, useCallback } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { RefreshCw, Loader2, AlertTriangle, TrendingUp, TrendingDown, Star, ExternalLink, CheckCircle2 } from "lucide-react"
+import {
+  RefreshCw,
+  Loader2,
+  AlertTriangle,
+  TrendingUp,
+  TrendingDown,
+  Star,
+  ExternalLink,
+  CheckCircle2,
+} from "lucide-react"
 
 type Action = {
   type: "zona_33k" | "overpriced" | "underpriced" | "opportunity"
@@ -117,7 +126,10 @@ export default function DailyActionsPage() {
       body: JSON.stringify({ account_id: selectedAccountId }),
     })
     const data = await res.json()
-    setRefreshLog((prev) => [...prev, `${new Date().toLocaleTimeString("es-AR")} — Cancelados ${data.cancelled ?? 0} job(s) activos`])
+    setRefreshLog((prev) => [
+      ...prev,
+      `${new Date().toLocaleTimeString("es-AR")} — Cancelados ${data.cancelled ?? 0} job(s) activos`,
+    ])
     setRefreshing(false)
   }
 
@@ -126,7 +138,8 @@ export default function DailyActionsPage() {
     setRefreshing(true)
     setRefreshLog([])
 
-    const log = (msg: string) => setRefreshLog((prev) => [...prev, `${new Date().toLocaleTimeString("es-AR")} — ${msg}`])
+    const log = (msg: string) =>
+      setRefreshLog((prev) => [...prev, `${new Date().toLocaleTimeString("es-AR")} — ${msg}`])
 
     try {
       // Paso 1: Cancelar jobs viejos colgados y crear job nuevo
@@ -181,18 +194,24 @@ export default function DailyActionsPage() {
         const cursor = runData.cursor ?? 0
         const pct = total > 0 ? Math.min(99, Math.round((cursor / total) * 100)) : 0
 
-        log(`Batch ${batchNum}: +${runData.scanned} escaneados, +${runData.skipped_cached} en cache, +${runData.skipped_invalid} inválidos, +${runData.errors} errores | ${cursor.toLocaleString("es-AR")}/${total.toLocaleString("es-AR")} (${pct}%)`)
+        log(
+          `Batch ${batchNum}: +${runData.scanned} escaneados, +${runData.skipped_cached} en cache, +${runData.skipped_invalid} inválidos, +${runData.errors} errores | ${cursor.toLocaleString("es-AR")}/${total.toLocaleString("es-AR")} (${pct}%)`,
+        )
 
         // Si el primer batch tiene 0 escaneados y errores altos, abortar y avisar
         if (batchNum === 1 && accScanned === 0 && accErrors > 50) {
-          log(`ADVERTENCIA: primer batch con 0 escaneados y ${accErrors} errores. Abortando — revisar conectividad con ML API.`)
+          log(
+            `ADVERTENCIA: primer batch con 0 escaneados y ${accErrors} errores. Abortando — revisar conectividad con ML API.`,
+          )
           break
         }
 
-        if (!done) await new Promise(r => setTimeout(r, 300))
+        if (!done) await new Promise((r) => setTimeout(r, 300))
       }
 
-      log(`Scan completado: ${accScanned.toLocaleString("es-AR")} EANs escaneados en ${batchNum} batches, ${accErrors} errores`)
+      log(
+        `Scan completado: ${accScanned.toLocaleString("es-AR")} EANs escaneados en ${batchNum} batches, ${accErrors} errores`,
+      )
 
       // Paso 3: Buscar oportunidades
       log("Buscando nuevas oportunidades...")
@@ -245,7 +264,9 @@ export default function DailyActionsPage() {
               className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground"
             >
               {accounts.map((a) => (
-                <option key={a.id} value={a.id}>{a.nickname}</option>
+                <option key={a.id} value={a.id}>
+                  {a.nickname}
+                </option>
               ))}
             </select>
           )}
@@ -265,11 +286,41 @@ export default function DailyActionsPage() {
       {summary && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
           {[
-            { key: "zona_33k", label: "Zona 33k", count: summary.zona_33k, color: "text-red-400", bg: "bg-red-500/10 border-red-500/20" },
-            { key: "overpriced", label: "Overpriced", count: summary.overpriced, color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/20" },
-            { key: "underpriced", label: "Pueden subir", count: summary.underpriced, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
-            { key: "opportunity", label: "Oportunidades", count: summary.opportunities, color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20" },
-            { key: "snapshot", label: "Con snapshot", count: summary.has_snapshot_today, color: "text-zinc-400", bg: "bg-zinc-500/10 border-zinc-500/20" },
+            {
+              key: "zona_33k",
+              label: "Zona 33k",
+              count: summary.zona_33k,
+              color: "text-red-400",
+              bg: "bg-red-500/10 border-red-500/20",
+            },
+            {
+              key: "overpriced",
+              label: "Overpriced",
+              count: summary.overpriced,
+              color: "text-amber-400",
+              bg: "bg-amber-500/10 border-amber-500/20",
+            },
+            {
+              key: "underpriced",
+              label: "Pueden subir",
+              count: summary.underpriced,
+              color: "text-emerald-400",
+              bg: "bg-emerald-500/10 border-emerald-500/20",
+            },
+            {
+              key: "opportunity",
+              label: "Oportunidades",
+              count: summary.opportunities,
+              color: "text-blue-400",
+              bg: "bg-blue-500/10 border-blue-500/20",
+            },
+            {
+              key: "snapshot",
+              label: "Con snapshot",
+              count: summary.has_snapshot_today,
+              color: "text-zinc-400",
+              bg: "bg-zinc-500/10 border-zinc-500/20",
+            },
           ].map((c) => (
             <button
               key={c.key}
@@ -289,7 +340,10 @@ export default function DailyActionsPage() {
         <Card className="bg-zinc-900/50 border-zinc-800 p-4">
           <div className="text-xs font-mono space-y-1">
             {refreshLog.map((line, i) => (
-              <div key={i} className={`${line.includes("Error") ? "text-red-400" : line.includes("Listo") ? "text-emerald-400" : "text-zinc-400"}`}>
+              <div
+                key={i}
+                className={`${line.includes("Error") ? "text-red-400" : line.includes("Listo") ? "text-emerald-400" : "text-zinc-400"}`}
+              >
                 {line}
               </div>
             ))}
@@ -308,7 +362,7 @@ export default function DailyActionsPage() {
           <CheckCircle2 className="h-10 w-10 opacity-20" />
           <p className="text-sm">
             {(actions?.length ?? 0) === 0
-              ? "No hay acciones — hace clic en \"Refrescar datos\" para escanear el mercado"
+              ? 'No hay acciones — hace clic en "Refrescar datos" para escanear el mercado'
               : "No hay acciones de este tipo"}
           </p>
         </Card>
@@ -326,19 +380,27 @@ export default function DailyActionsPage() {
             const cfg = TYPE_CONFIG[action.type]
             const Icon = cfg.icon
             return (
-              <div key={`${action.ean}-${i}`} className={`flex items-center gap-4 rounded-lg px-4 py-3 ${cfg.rowClass}`}>
-                <Icon className={`h-4 w-4 shrink-0 ${
-                  action.type === "zona_33k" ? "text-red-400" :
-                  action.type === "overpriced" ? "text-amber-400" :
-                  action.type === "underpriced" ? "text-emerald-400" :
-                  "text-blue-400"
-                }`} />
+              <div
+                key={`${action.ean}-${i}`}
+                className={`flex items-center gap-4 rounded-lg px-4 py-3 ${cfg.rowClass}`}
+              >
+                <Icon
+                  className={`h-4 w-4 shrink-0 ${
+                    action.type === "zona_33k"
+                      ? "text-red-400"
+                      : action.type === "overpriced"
+                        ? "text-amber-400"
+                        : action.type === "underpriced"
+                          ? "text-emerald-400"
+                          : "text-blue-400"
+                  }`}
+                />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <Badge variant="outline" className={`text-xs shrink-0 ${cfg.badgeClass}`}>{cfg.label}</Badge>
-                    <span className="text-sm font-medium text-foreground truncate">
-                      {action.title || action.ean}
-                    </span>
+                    <Badge variant="outline" className={`text-xs shrink-0 ${cfg.badgeClass}`}>
+                      {cfg.label}
+                    </Badge>
+                    <span className="text-sm font-medium text-foreground truncate">{action.title || action.ean}</span>
                     <span className="text-xs text-muted-foreground font-mono shrink-0">{action.ean}</span>
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5">{action.detail}</p>

@@ -16,11 +16,11 @@ export async function createClient() {
   }
 
   // Limpiar URL si incluye rutas REST o Auth
-  if (supabaseUrl.includes('/rest/v1')) {
-    supabaseUrl = supabaseUrl.split('/rest/v1')[0]
+  if (supabaseUrl.includes("/rest/v1")) {
+    supabaseUrl = supabaseUrl.split("/rest/v1")[0]
   }
-  if (supabaseUrl.includes('/auth/v1')) {
-    supabaseUrl = supabaseUrl.split('/auth/v1')[0]
+  if (supabaseUrl.includes("/auth/v1")) {
+    supabaseUrl = supabaseUrl.split("/auth/v1")[0]
   }
 
   const cookieStore = await cookies()

@@ -29,9 +29,12 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     console.error("[v0] Error fatal en auto-sync:", error)
-    return NextResponse.json({
-      error: error instanceof Error ? error.message : "Error desconocido",
-      fatal: true,
-    }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : "Error desconocido",
+        fatal: true,
+      },
+      { status: 500 },
+    )
   }
 }

@@ -2,10 +2,13 @@
 
 const TIKTOK_API_BASE = "https://business-api.tiktok.com/open_api/v1.3"
 
-export async function getTikTokCampaigns(credentials: Record<string, any>, options: {
-  startDate: string
-  endDate: string
-}) {
+export async function getTikTokCampaigns(
+  credentials: Record<string, any>,
+  options: {
+    startDate: string
+    endDate: string
+  },
+) {
   const res = await fetch(`${TIKTOK_API_BASE}/campaign/get/`, {
     method: "POST",
     headers: {
@@ -24,10 +27,13 @@ export async function getTikTokCampaigns(credentials: Record<string, any>, optio
   return data.data?.list ?? []
 }
 
-export async function getTikTokReport(credentials: Record<string, any>, options: {
-  startDate: string
-  endDate: string
-}) {
+export async function getTikTokReport(
+  credentials: Record<string, any>,
+  options: {
+    startDate: string
+    endDate: string
+  },
+) {
   const res = await fetch(`${TIKTOK_API_BASE}/report/integrated/get/`, {
     method: "POST",
     headers: {
@@ -39,9 +45,19 @@ export async function getTikTokReport(credentials: Record<string, any>, options:
       report_type: "BASIC",
       data_level: "AUCTION_CAMPAIGN",
       dimensions: ["campaign_id", "stat_time_day"],
-      metrics: ["spend", "impressions", "clicks", "ctr", "cpc", "reach",
-                "conversion", "cost_per_conversion", "conversion_rate",
-                "real_time_conversion", "real_time_cost_per_conversion"],
+      metrics: [
+        "spend",
+        "impressions",
+        "clicks",
+        "ctr",
+        "cpc",
+        "reach",
+        "conversion",
+        "cost_per_conversion",
+        "conversion_rate",
+        "real_time_conversion",
+        "real_time_cost_per_conversion",
+      ],
       start_date: options.startDate,
       end_date: options.endDate,
       page: 1,

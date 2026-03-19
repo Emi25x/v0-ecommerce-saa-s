@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/db/admin"
-import { normalizeEanForCatalog, resolveCatalogProductId, optinItemToCatalog } from "@/domains/mercadolibre/catalog-optin"
+import {
+  normalizeEanForCatalog,
+  resolveCatalogProductId,
+  optinItemToCatalog,
+} from "@/domains/mercadolibre/catalog-optin"
 const BATCH = 20
 const RESOLVE_DELAY = 200
-const OPTIN_DELAY   = 300
+const OPTIN_DELAY = 300
 
 export async function POST(req: NextRequest) {
   const supabase = createAdminClient()
@@ -41,15 +45,30 @@ export async function POST(req: NextRequest) {
     .order("created_at", { ascending: false })
 
   if (!pubs || pubs.length === 0) {
-    return NextResponse.json({ ok: true, done: true, offset, total: totalCount ?? 0, ok_count: 0, failed_count: 0, no_match_count: 0, no_ean_count: 0 })
+    return NextResponse.json({
+      ok: true,
+      done: true,
+      offset,
+      total: totalCount ?? 0,
+      ok_count: 0,
+      failed_count: 0,
+      no_match_count: 0,
+      no_ean_count: 0,
+    })
   }
 
-  let ok_count = 0, failed_count = 0, no_match_count = 0, no_ean_count = 0
+  let ok_count = 0,
+    failed_count = 0,
+    no_match_count = 0,
+    no_ean_count = 0
   let firstErrorLogged = false
 
   for (const pub of pubs) {
     const rawEan = pub.gtin || pub.ean || pub.isbn
-    if (!rawEan) { no_ean_count++; continue }
+    if (!rawEan) {
+      no_ean_count++
+      continue
+    }
 
     const ean = normalizeEanForCatalog(String(rawEan))
 
@@ -68,7 +87,10 @@ export async function POST(req: NextRequest) {
 
     await delay(RESOLVE_DELAY)
 
-    if (dry_run) { ok_count++; continue }
+    if (dry_run) {
+      ok_count++
+      continue
+    }
 
     // Optin al catálogo
     const optinResult = await optinItemToCatalog({
@@ -80,15 +102,18 @@ export async function POST(req: NextRequest) {
     if (optinResult.ok) {
       ok_count++
       if (optinResult.data?.id) {
-        await supabase.from("ml_listings").upsert({
-          account_id,
-          ml_id: optinResult.data.id,
-          catalog_listing: true,
-          catalog_product_id,
-          status: optinResult.data.status ?? "active",
-          price: optinResult.data.price ?? null,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: "ml_id" })
+        await supabase.from("ml_listings").upsert(
+          {
+            account_id,
+            ml_id: optinResult.data.id,
+            catalog_listing: true,
+            catalog_product_id,
+            status: optinResult.data.status ?? "active",
+            price: optinResult.data.price ?? null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "ml_id" },
+        )
       }
     } else {
       failed_count++
@@ -118,4 +143,6 @@ export async function POST(req: NextRequest) {
   })
 }
 
-function delay(ms: number) { return new Promise(r => setTimeout(r, ms)) }
+function delay(ms: number) {
+  return new Promise((r) => setTimeout(r, ms))
+}

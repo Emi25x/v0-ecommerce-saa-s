@@ -1,10 +1,7 @@
 import { createClient } from "@/lib/db/server"
 import { NextResponse } from "next/server"
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
     const supabase = await createClient()
@@ -17,7 +14,7 @@ export async function PATCH(
       .update({
         auto_sync_stock,
         auto_sync_new_listings,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
       })
       .eq("id", id)
 
@@ -28,9 +25,6 @@ export async function PATCH(
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("Error updating sync preferences:", error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Error interno" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Error interno" }, { status: 500 })
   }
 }

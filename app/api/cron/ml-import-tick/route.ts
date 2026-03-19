@@ -22,7 +22,15 @@ export async function POST() {
       return NextResponse.json({ ok: true, ranAt, message: "No active jobs" })
     }
 
-    console.log("[CRON TICK] Job", result.job_id, result.action, "| offset:", result.offset_before, "→", result.offset_after)
+    console.log(
+      "[CRON TICK] Job",
+      result.job_id,
+      result.action,
+      "| offset:",
+      result.offset_before,
+      "→",
+      result.offset_after,
+    )
 
     return NextResponse.json({
       ok: true,

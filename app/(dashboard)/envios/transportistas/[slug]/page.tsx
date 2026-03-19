@@ -12,10 +12,10 @@ import { Truck, Save, TestTube, ArrowLeft, CheckCircle, XCircle, RefreshCw, MapP
 
 interface FastMailSucursal {
   codigo_sucursal: string
-  descripcion:     string
-  localidad?:      string
-  provincia?:      string
-  cp?:             number | string
+  descripcion: string
+  localidad?: string
+  provincia?: string
+  cp?: number | string
 }
 
 interface Carrier {
@@ -30,31 +30,31 @@ interface Carrier {
 
 export default function CarrierConfigPage() {
   const params = useParams()
-  const slug   = params?.slug as string
+  const slug = params?.slug as string
 
-  const [carrier, setCarrier]         = useState<Carrier | null>(null)
-  const [loading, setLoading]         = useState(true)
-  const [saving, setSaving]           = useState(false)
-  const [testing, setTesting]         = useState(false)
-  const [testResult, setTestResult]   = useState<{ ok: boolean; message: string } | null>(null)
-  const [saved, setSaved]             = useState(false)
+  const [carrier, setCarrier] = useState<Carrier | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [saved, setSaved] = useState(false)
 
   // Campos del formulario
-  const [token, setToken]             = useState("")
-  const [user, setUser]               = useState("")
-  const [password, setPassword]       = useState("")
-  const [cabifyClientId, setCabifyClientId]         = useState("")
+  const [token, setToken] = useState("")
+  const [user, setUser] = useState("")
+  const [password, setPassword] = useState("")
+  const [cabifyClientId, setCabifyClientId] = useState("")
   const [cabifyClientSecret, setCabifyClientSecret] = useState("")
-  const [baseUrl, setBaseUrl]         = useState("")
+  const [baseUrl, setBaseUrl] = useState("")
 
   // FastMail: sucursales
-  const [sucursales, setSucursales]             = useState<FastMailSucursal[]>([])
+  const [sucursales, setSucursales] = useState<FastMailSucursal[]>([])
   const [sucursalesLoading, setSucursalesLoading] = useState(false)
-  const [sucursalesError, setSucursalesError]   = useState<string | null>(null)
+  const [sucursalesError, setSucursalesError] = useState<string | null>(null)
   const [selectedSucursal, setSelectedSucursal] = useState("")
 
-  const isCabify    = slug === "cabify"
-  const isFastmail  = slug === "fastmail"
+  const isCabify = slug === "cabify"
+  const isFastmail = slug === "fastmail"
 
   async function load() {
     setLoading(true)
@@ -95,14 +95,14 @@ export default function CarrierConfigPage() {
       config: newConfig,
     }
     if (isCabify) {
-      if (cabifyClientId)     body.credentials_client_id     = cabifyClientId
+      if (cabifyClientId) body.credentials_client_id = cabifyClientId
       if (cabifyClientSecret) body.credentials_client_secret = cabifyClientSecret
     } else if (isFastmail) {
-      if (token)    body.credentials_token    = token
-      if (user)     body.credentials_user     = user
+      if (token) body.credentials_token = token
+      if (user) body.credentials_user = user
       if (password) body.credentials_password = password
     } else {
-      if (user)     body.credentials_user     = user
+      if (user) body.credentials_user = user
       if (password) body.credentials_password = password
     }
 
@@ -133,7 +133,9 @@ export default function CarrierConfigPage() {
     setTesting(false)
   }
 
-  useEffect(() => { load() }, [slug])
+  useEffect(() => {
+    load()
+  }, [slug])
 
   useEffect(() => {
     if (isFastmail && carrier?.active) {
@@ -148,20 +150,18 @@ export default function CarrierConfigPage() {
     <div className="flex flex-col gap-6 p-6 max-w-2xl">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="sm" asChild>
-          <Link href="/envios/transportistas"><ArrowLeft className="h-4 w-4" /></Link>
+          <Link href="/envios/transportistas">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
         </Button>
         <div className="flex items-center gap-2">
           <Truck className="h-5 w-5" />
           <h1 className="text-2xl font-bold">{carrier.name}</h1>
-          <Badge variant={carrier.active ? "default" : "secondary"}>
-            {carrier.active ? "Activo" : "Inactivo"}
-          </Badge>
+          <Badge variant={carrier.active ? "default" : "secondary"}>{carrier.active ? "Activo" : "Inactivo"}</Badge>
         </div>
       </div>
 
-      {carrier.description && (
-        <p className="text-sm text-muted-foreground">{carrier.description}</p>
-      )}
+      {carrier.description && <p className="text-sm text-muted-foreground">{carrier.description}</p>}
 
       {/* Configuración de conexión */}
       <Card>
@@ -177,7 +177,7 @@ export default function CarrierConfigPage() {
             <Input
               id="base_url"
               value={baseUrl}
-              onChange={e => setBaseUrl(e.target.value)}
+              onChange={(e) => setBaseUrl(e.target.value)}
               placeholder="https://epresislv.fastmail.com.ar"
             />
           </div>
@@ -188,7 +188,7 @@ export default function CarrierConfigPage() {
                 <Input
                   id="cabify_client_id"
                   value={cabifyClientId}
-                  onChange={e => setCabifyClientId(e.target.value)}
+                  onChange={(e) => setCabifyClientId(e.target.value)}
                   placeholder="ej: a9a5f86f-cee1-4682-be5b-c328403e1508"
                   autoComplete="off"
                 />
@@ -199,14 +199,13 @@ export default function CarrierConfigPage() {
                   id="cabify_client_secret"
                   type="password"
                   value={cabifyClientSecret}
-                  onChange={e => setCabifyClientSecret(e.target.value)}
+                  onChange={(e) => setCabifyClientSecret(e.target.value)}
                   placeholder="••••••••••••••••"
                   autoComplete="new-password"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Generá las claves en Cabify Logistics → Configuración → API.
-                  La autenticación usa OAuth 2.0 — el Client Secret solo se muestra una vez al generarlo.
-                  Dejá en blanco los campos que no querés modificar.
+                  Generá las claves en Cabify Logistics → Configuración → API. La autenticación usa OAuth 2.0 — el
+                  Client Secret solo se muestra una vez al generarlo. Dejá en blanco los campos que no querés modificar.
                 </p>
               </div>
             </>
@@ -218,13 +217,12 @@ export default function CarrierConfigPage() {
                   id="api_token"
                   type="password"
                   value={token}
-                  onChange={e => setToken(e.target.value)}
+                  onChange={(e) => setToken(e.target.value)}
                   placeholder="••••••••••••••••••••••••••••••••"
                   autoComplete="new-password"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Generalo en Fast Mail → Configuración → API → Generar claves.
-                  Dejá en blanco para no modificarlo.
+                  Generalo en Fast Mail → Configuración → API → Generar claves. Dejá en blanco para no modificarlo.
                 </p>
               </div>
               <div className="flex flex-col gap-1.5">
@@ -232,7 +230,7 @@ export default function CarrierConfigPage() {
                 <Input
                   id="user"
                   value={user}
-                  onChange={e => setUser(e.target.value)}
+                  onChange={(e) => setUser(e.target.value)}
                   placeholder="LIBROIDE"
                   autoComplete="off"
                 />
@@ -243,13 +241,13 @@ export default function CarrierConfigPage() {
                   id="password"
                   type="password"
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   autoComplete="new-password"
                 />
                 <p className="text-xs text-muted-foreground">
-                  El token API tiene prioridad. Usuario/contraseña solo se usa como alternativa.
-                  Dejá en blanco los campos que no querés modificar.
+                  El token API tiene prioridad. Usuario/contraseña solo se usa como alternativa. Dejá en blanco los
+                  campos que no querés modificar.
                 </p>
               </div>
             </>
@@ -260,7 +258,7 @@ export default function CarrierConfigPage() {
                 <Input
                   id="user"
                   value={user}
-                  onChange={e => setUser(e.target.value)}
+                  onChange={(e) => setUser(e.target.value)}
                   placeholder="Usuario de API"
                   autoComplete="off"
                 />
@@ -271,7 +269,7 @@ export default function CarrierConfigPage() {
                   id="password"
                   type="password"
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   autoComplete="new-password"
                 />
@@ -294,11 +292,10 @@ export default function CarrierConfigPage() {
           </div>
 
           {testResult && (
-            <div className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ${testResult.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
-              {testResult.ok
-                ? <CheckCircle className="h-4 w-4 shrink-0" />
-                : <XCircle className="h-4 w-4 shrink-0" />
-              }
+            <div
+              className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ${testResult.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}
+            >
+              {testResult.ok ? <CheckCircle className="h-4 w-4 shrink-0" /> : <XCircle className="h-4 w-4 shrink-0" />}
               {testResult.message}
             </div>
           )}
@@ -319,21 +316,14 @@ export default function CarrierConfigPage() {
                   Seleccioná la sucursal activa. Se usa en cotizaciones y generación de guías.
                 </CardDescription>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={loadSucursales}
-                disabled={sucursalesLoading}
-              >
+              <Button variant="outline" size="sm" onClick={loadSucursales} disabled={sucursalesLoading}>
                 <RefreshCw className={`h-4 w-4 mr-1.5 ${sucursalesLoading ? "animate-spin" : ""}`} />
                 {sucursalesLoading ? "Cargando…" : "Actualizar"}
               </Button>
             </div>
           </CardHeader>
           <CardContent>
-            {sucursalesError && (
-              <p className="text-sm text-red-600 mb-3">{sucursalesError}</p>
-            )}
+            {sucursalesError && <p className="text-sm text-red-600 mb-3">{sucursalesError}</p>}
             {!sucursalesLoading && sucursales.length === 0 && !sucursalesError && (
               <p className="text-sm text-muted-foreground">
                 No se encontraron sucursales. Verificá que el token API sea correcto y hacé clic en Actualizar.
@@ -341,7 +331,7 @@ export default function CarrierConfigPage() {
             )}
             {sucursales.length > 0 && (
               <div className="flex flex-col gap-2">
-                {sucursales.map(s => (
+                {sucursales.map((s) => (
                   <label
                     key={s.codigo_sucursal}
                     className={`flex items-start gap-3 rounded-md border p-3 cursor-pointer transition-colors ${

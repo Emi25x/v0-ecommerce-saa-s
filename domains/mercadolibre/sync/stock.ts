@@ -14,7 +14,10 @@ function extractSku(item: any): string | null {
 
   if (!sku && Array.isArray(item.variations)) {
     for (const v of item.variations) {
-      if (v.seller_custom_field) { sku = v.seller_custom_field; break }
+      if (v.seller_custom_field) {
+        sku = v.seller_custom_field
+        break
+      }
     }
   }
 
@@ -62,18 +65,29 @@ export interface SyncStockResult {
  * Execute one batch of stock sync.
  * Uses getValidAccessToken() instead of self-fetch for token refresh.
  */
-export async function executeSyncStockBatch(
-  supabase: any,
-  params: SyncStockParams,
-): Promise<SyncStockResult> {
+export async function executeSyncStockBatch(supabase: any, params: SyncStockParams): Promise<SyncStockResult> {
   const { account_id, limit = 200, offset = 0 } = params
 
   // Get account
   const { data: account, error: accountError } = await supabase
-    .from("ml_accounts").select("*").eq("id", account_id).single()
+    .from("ml_accounts")
+    .select("*")
+    .eq("id", account_id)
+    .single()
 
   if (accountError || !account) {
-    return { success: false, processed: 0, linked: 0, no_ean: 0, no_product_match: 0, errors: 0, total_in_ml: 0, has_more: false, next_offset: 0, error: "Account not found" }
+    return {
+      success: false,
+      processed: 0,
+      linked: 0,
+      no_ean: 0,
+      no_product_match: 0,
+      errors: 0,
+      total_in_ml: 0,
+      has_more: false,
+      next_offset: 0,
+      error: "Account not found",
+    }
   }
 
   // Get valid token (auto-refreshes if expired)
@@ -81,7 +95,18 @@ export async function executeSyncStockBatch(
   try {
     accessToken = await getValidAccessToken(account_id)
   } catch (e: any) {
-    return { success: false, processed: 0, linked: 0, no_ean: 0, no_product_match: 0, errors: 0, total_in_ml: 0, has_more: false, next_offset: 0, error: `Token refresh failed: ${e.message}` }
+    return {
+      success: false,
+      processed: 0,
+      linked: 0,
+      no_ean: 0,
+      no_product_match: 0,
+      errors: 0,
+      total_in_ml: 0,
+      has_more: false,
+      next_offset: 0,
+      error: `Token refresh failed: ${e.message}`,
+    }
   }
 
   // Step 1: Get active item IDs from ML
@@ -92,11 +117,34 @@ export async function executeSyncStockBatch(
 
   const searchText = await searchResponse.text()
   if (searchText.includes("Too Many") || searchResponse.status === 429) {
-    return { success: false, processed: 0, linked: 0, no_ean: 0, no_product_match: 0, errors: 0, total_in_ml: 0, has_more: false, next_offset: 0, rate_limited: true, message: "ML rate limit reached. Wait 1 hour." }
+    return {
+      success: false,
+      processed: 0,
+      linked: 0,
+      no_ean: 0,
+      no_product_match: 0,
+      errors: 0,
+      total_in_ml: 0,
+      has_more: false,
+      next_offset: 0,
+      rate_limited: true,
+      message: "ML rate limit reached. Wait 1 hour.",
+    }
   }
 
   if (!searchResponse.ok) {
-    return { success: false, processed: 0, linked: 0, no_ean: 0, no_product_match: 0, errors: 0, total_in_ml: 0, has_more: false, next_offset: 0, error: "Error fetching items from ML" }
+    return {
+      success: false,
+      processed: 0,
+      linked: 0,
+      no_ean: 0,
+      no_product_match: 0,
+      errors: 0,
+      total_in_ml: 0,
+      has_more: false,
+      next_offset: 0,
+      error: "Error fetching items from ML",
+    }
   }
 
   const searchData = JSON.parse(searchText)
@@ -104,13 +152,28 @@ export async function executeSyncStockBatch(
   const totalInML = searchData.paging?.total || 0
 
   if (itemIds.length === 0) {
-    return { success: true, processed: 0, linked: 0, no_ean: 0, no_product_match: 0, errors: 0, total_in_ml: totalInML, has_more: false, next_offset: offset + limit, message: "No items to process" }
+    return {
+      success: true,
+      processed: 0,
+      linked: 0,
+      no_ean: 0,
+      no_product_match: 0,
+      errors: 0,
+      total_in_ml: totalInML,
+      has_more: false,
+      next_offset: offset + limit,
+      message: "No items to process",
+    }
   }
 
   // Update total publications count
   await supabase.from("ml_accounts").update({ total_ml_publications: totalInML }).eq("id", account_id)
 
-  let linked = 0, noEan = 0, noProductMatch = 0, errors = 0, updated = 0
+  let linked = 0,
+    noEan = 0,
+    noProductMatch = 0,
+    errors = 0,
+    updated = 0
 
   // Step 2: Fetch details in batches of 20
   for (let i = 0; i < itemIds.length; i += 20) {
@@ -125,21 +188,33 @@ export async function executeSyncStockBatch(
     const detailsText = await detailsResponse.text()
     if (detailsText.includes("Too Many") || detailsResponse.status === 429) {
       return {
-        success: true, rate_limited: true,
+        success: true,
+        rate_limited: true,
         message: "Rate limit hit. Progress saved.",
-        processed: i, linked, no_ean: noEan, no_product_match: noProductMatch,
-        errors, total_in_ml: totalInML,
-        has_more: true, next_offset: offset + i,
+        processed: i,
+        linked,
+        no_ean: noEan,
+        no_product_match: noProductMatch,
+        errors,
+        total_in_ml: totalInML,
+        has_more: true,
+        next_offset: offset + i,
       }
     }
 
-    if (!detailsResponse.ok) { errors += batchIds.length; continue }
+    if (!detailsResponse.ok) {
+      errors += batchIds.length
+      continue
+    }
 
     const items = JSON.parse(detailsText)
 
     // Step 3: For each item, extract SKU/EAN and match
     for (const itemWrapper of items) {
-      if (itemWrapper.code !== 200 || !itemWrapper.body) { errors++; continue }
+      if (itemWrapper.code !== 200 || !itemWrapper.body) {
+        errors++
+        continue
+      }
 
       const item = itemWrapper.body
       const sku = extractSku(item)
@@ -150,61 +225,87 @@ export async function executeSyncStockBatch(
       if (!ean) {
         noEan++
         try {
-          await supabase.from("ml_publications").upsert({
-            account_id: account.id, ml_item_id: item.id,
-            sku: sku ?? null, price: item.price,
-            current_stock: item.available_quantity,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: "account_id,ml_item_id" })
-        } catch { /* best-effort */ }
+          await supabase.from("ml_publications").upsert(
+            {
+              account_id: account.id,
+              ml_item_id: item.id,
+              sku: sku ?? null,
+              price: item.price,
+              current_stock: item.available_quantity,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "account_id,ml_item_id" },
+          )
+        } catch {
+          /* best-effort */
+        }
         continue
       }
 
       // Match to product
-      const { data: product } = await supabase
-        .from("products").select("id, stock, title").eq("ean", ean).maybeSingle()
+      const { data: product } = await supabase.from("products").select("id, stock, title").eq("ean", ean).maybeSingle()
 
       if (!product) {
         noProductMatch++
         try {
-          await supabase.from("ml_publications").upsert({
-            account_id: account.id, ml_item_id: item.id,
-            sku: sku ?? null, price: item.price,
-            current_stock: item.available_quantity,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: "account_id,ml_item_id" })
-        } catch (e) { errors++ }
+          await supabase.from("ml_publications").upsert(
+            {
+              account_id: account.id,
+              ml_item_id: item.id,
+              sku: sku ?? null,
+              price: item.price,
+              current_stock: item.available_quantity,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "account_id,ml_item_id" },
+          )
+        } catch (e) {
+          errors++
+        }
         continue
       }
 
       // Save/update with link
       try {
         const { data: existingPub } = await supabase
-          .from("ml_publications").select("id, product_id")
-          .eq("ml_item_id", item.id).maybeSingle()
+          .from("ml_publications")
+          .select("id, product_id")
+          .eq("ml_item_id", item.id)
+          .maybeSingle()
 
         if (existingPub && !existingPub.product_id) linked++
         else if (!existingPub) linked++
 
-        await supabase.from("ml_publications").upsert({
-          account_id: account.id, ml_item_id: item.id,
-          product_id: product.id, sku: sku ?? null,
-          price: item.price, current_stock: item.available_quantity,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: "account_id,ml_item_id" })
+        await supabase.from("ml_publications").upsert(
+          {
+            account_id: account.id,
+            ml_item_id: item.id,
+            product_id: product.id,
+            sku: sku ?? null,
+            price: item.price,
+            current_stock: item.available_quantity,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "account_id,ml_item_id" },
+        )
 
         updated++
-      } catch (e) { errors++ }
+      } catch (e) {
+        errors++
+      }
     }
 
     // Delay between batches
-    await new Promise(resolve => setTimeout(resolve, 300))
+    await new Promise((resolve) => setTimeout(resolve, 300))
   }
 
   // Update account sync timestamp
-  await supabase.from("ml_accounts").update({
-    last_stock_sync_at: new Date().toISOString(),
-  }).eq("id", account_id)
+  await supabase
+    .from("ml_accounts")
+    .update({
+      last_stock_sync_at: new Date().toISOString(),
+    })
+    .eq("id", account_id)
 
   return {
     success: true,

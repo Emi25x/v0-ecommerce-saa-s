@@ -15,10 +15,7 @@ const defaults: Required<RetryOptions> = {
   shouldRetry: () => true,
 }
 
-export async function withRetry<T>(
-  fn: () => Promise<T>,
-  opts?: RetryOptions,
-): Promise<T> {
+export async function withRetry<T>(fn: () => Promise<T>, opts?: RetryOptions): Promise<T> {
   const { retries, backoffMs, maxBackoffMs, shouldRetry } = { ...defaults, ...opts }
   let lastError: unknown
 

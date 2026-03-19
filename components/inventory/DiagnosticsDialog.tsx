@@ -2,13 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { CheckCircle2, XCircle, AlertCircle, Clock } from "lucide-react"
 import type { DiagnosticsData } from "@/components/inventory/types"
 
@@ -34,12 +28,7 @@ function getStatusIcon(status: string) {
   }
 }
 
-export function DiagnosticsDialog({
-  open,
-  onOpenChange,
-  loading,
-  diagnosticsData,
-}: DiagnosticsDialogProps) {
+export function DiagnosticsDialog({ open, onOpenChange, loading, diagnosticsData }: DiagnosticsDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
@@ -77,9 +66,7 @@ export function DiagnosticsDialog({
                     <div key={schedule.id} className="border rounded-lg p-3 bg-muted/30">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
-                          <div className="font-medium">
-                            {schedule.import_sources?.name || "Fuente desconocida"}
-                          </div>
+                          <div className="font-medium">{schedule.import_sources?.name || "Fuente desconocida"}</div>
                           <div className="text-sm text-muted-foreground mt-1">
                             Frecuencia: {schedule.frequency === "daily" && "Diaria"}
                             {schedule.frequency === "weekly" && "Semanal"}
@@ -89,9 +76,7 @@ export function DiagnosticsDialog({
                           </div>
                           <div className="text-sm text-muted-foreground">
                             Pr&oacute;xima ejecuci&oacute;n:{" "}
-                            {schedule.next_run_at
-                              ? new Date(schedule.next_run_at).toLocaleString()
-                              : "No programada"}
+                            {schedule.next_run_at ? new Date(schedule.next_run_at).toLocaleString() : "No programada"}
                           </div>
                           {schedule.last_run_at && (
                             <div className="text-sm text-muted-foreground">
@@ -124,29 +109,25 @@ export function DiagnosticsDialog({
                           </div>
                         </div>
                         <div className="flex gap-4 mt-1 text-sm">
-                          <span className="text-green-600 dark:text-green-400">
-                            +{item.products_imported} nuevos
-                          </span>
+                          <span className="text-green-600 dark:text-green-400">+{item.products_imported} nuevos</span>
                           <span className="text-blue-600 dark:text-blue-400">
                             ~{item.products_updated} actualizados
                           </span>
                           {item.products_failed > 0 && (
                             <span className="text-red-600 dark:text-red-400">
-                              {"\u2715"}{item.products_failed} errores
+                              {"\u2715"}
+                              {item.products_failed} errores
                             </span>
                           )}
                         </div>
                         {item.error_message && (
-                          <div className="text-xs text-red-600 dark:text-red-400 mt-1">
-                            Error: {item.error_message}
-                          </div>
+                          <div className="text-xs text-red-600 dark:text-red-400 mt-1">Error: {item.error_message}</div>
                         )}
                         {item.completed_at && (
                           <div className="text-xs text-muted-foreground mt-1">
                             Duraci&oacute;n:{" "}
                             {Math.round(
-                              (new Date(item.completed_at).getTime() - new Date(item.started_at).getTime()) /
-                                1000,
+                              (new Date(item.completed_at).getTime() - new Date(item.started_at).getTime()) / 1000,
                             )}
                             s
                           </div>
@@ -166,9 +147,7 @@ export function DiagnosticsDialog({
                     <div key={product.id} className="border rounded p-2">
                       <p className="font-mono text-xs">{product.sku}</p>
                       <p className="truncate">{product.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(product.created_at).toLocaleString()}
-                      </p>
+                      <p className="text-xs text-muted-foreground">{new Date(product.created_at).toLocaleString()}</p>
                     </div>
                   ))}
                 </div>

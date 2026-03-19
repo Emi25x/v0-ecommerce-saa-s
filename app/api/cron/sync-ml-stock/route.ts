@@ -38,19 +38,21 @@ export async function GET(request: Request) {
 
     const run = await startRun(supabase, "ml_sync_stock", "ML Sync Stock (cron)")
     const results = []
-    let totalLinked = 0, totalProcessed = 0, totalErrors = 0
+    let totalLinked = 0,
+      totalProcessed = 0,
+      totalErrors = 0
 
     for (const account of accounts) {
       try {
         // 1. Primero vincular publicaciones sin product_id
         const linkResult = await linkPublicationsToProducts(supabase, account)
-        
+
         // 2. Luego sincronizar stock (llamada directa, sin self-fetch)
         const syncResult = await executeSyncStockBatch(supabase, {
           account_id: account.id,
           limit: 200,
         })
-        
+
         totalLinked += syncResult.linked ?? 0
         totalProcessed += syncResult.processed ?? 0
         totalErrors += syncResult.errors ?? 0
@@ -58,14 +60,14 @@ export async function GET(request: Request) {
         results.push({
           account: account.nickname,
           linked: linkResult,
-          sync: syncResult
+          sync: syncResult,
         })
       } catch (error) {
         totalErrors++
         console.error(`Error processing account ${account.nickname}:`, error)
         results.push({
           account: account.nickname,
-          error: error instanceof Error ? error.message : "Unknown error"
+          error: error instanceof Error ? error.message : "Unknown error",
         })
       }
     }
@@ -80,22 +82,18 @@ export async function GET(request: Request) {
     return NextResponse.json({
       success: true,
       processed: accounts.length,
-      results
+      results,
     })
-
   } catch (error) {
     console.error("Error in sync-ml-stock cron:", error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 })
   }
 }
 
 // Función para vincular publicaciones con productos por EAN
 async function linkPublicationsToProducts(
   supabase: any,
-  account: { id: string; nickname: string; access_token: string; ml_user_id: string }
+  account: { id: string; nickname: string; access_token: string; ml_user_id: string },
 ) {
   // Obtener publicaciones sin product_id
   const { data: unlinkedPubs, error: pubsError } = await supabase
@@ -121,7 +119,7 @@ async function linkPublicationsToProducts(
       // Obtener detalles de ML
       const response = await fetch(
         `https://api.mercadolibre.com/items?ids=${itemIds}&attributes=id,seller_sku,seller_custom_field,attributes`,
-        { headers: { Authorization: `Bearer ${account.access_token}` } }
+        { headers: { Authorization: `Bearer ${account.access_token}` } },
       )
 
       if (!response.ok) continue
@@ -140,11 +138,7 @@ async function linkPublicationsToProducts(
         if (!ean) continue
 
         // Buscar producto por EAN
-        const { data: product } = await supabase
-          .from("products")
-          .select("id")
-          .eq("ean", ean)
-          .maybeSingle()
+        const { data: product } = await supabase.from("products").select("id").eq("ean", ean).maybeSingle()
 
         if (product) {
           // Vincular publicación con producto
@@ -162,8 +156,7 @@ async function linkPublicationsToProducts(
       }
 
       // Delay entre lotes
-      await new Promise(resolve => setTimeout(resolve, 200))
-
+      await new Promise((resolve) => setTimeout(resolve, 200))
     } catch (error) {
       console.error("Error processing batch:", error)
       errors++
@@ -173,6 +166,6 @@ async function linkPublicationsToProducts(
   return {
     unlinked: unlinkedPubs.length,
     linked,
-    errors
+    errors,
   }
 }

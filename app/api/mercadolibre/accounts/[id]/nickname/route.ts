@@ -1,7 +1,8 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
 
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
     const { nickname } = await request.json()
 
@@ -10,7 +11,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     }
 
     const supabase = await createClient()
-    const { error } = await supabase.from("ml_accounts").update({ nickname }).eq("id", params.id)
+    const { error } = await supabase.from("ml_accounts").update({ nickname }).eq("id", id)
 
     if (error) {
       console.error("[v0] Error updating nickname:", error)

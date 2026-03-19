@@ -18,13 +18,22 @@ export async function GET(request: NextRequest) {
 
     if (search && search.trim().length < 3 && search.trim().length > 0) {
       return NextResponse.json(
-        { products: [], page: 1, limit, total: 0, totalPages: 1, message: "La búsqueda requiere al menos 3 caracteres" },
-        { status: 200 }
+        {
+          products: [],
+          page: 1,
+          limit,
+          total: 0,
+          totalPages: 1,
+          message: "La búsqueda requiere al menos 3 caracteres",
+        },
+        { status: 200 },
       )
     }
 
-    const FULL_SELECT = "id, sku, title, ean, isbn, price, stock, source, created_at, updated_at, image_url, author, brand, language, pages, binding, category, description, year_edition, height, width, thickness, canonical_weight_g, cost_price, custom_fields"
-    const SAFE_SELECT = "id, sku, title, ean, price, stock, source, created_at, updated_at, image_url, brand, category, description, custom_fields"
+    const FULL_SELECT =
+      "id, sku, title, ean, isbn, price, stock, source, created_at, updated_at, image_url, author, brand, language, pages, binding, category, description, year_edition, height, width, thickness, canonical_weight_g, cost_price, custom_fields"
+    const SAFE_SELECT =
+      "id, sku, title, ean, price, stock, source, created_at, updated_at, image_url, brand, category, description, custom_fields"
     const countType = search ? "exact" : "estimated"
 
     function buildQuery(selectCols: string) {
@@ -73,7 +82,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const normalizedProducts = products?.map((product) => {
+    const normalizedProducts = products?.map((product: any) => {
       const sourceIds = Array.isArray(product.source) ? product.source : product.source ? [product.source] : []
 
       const sourceNames = sourceIds

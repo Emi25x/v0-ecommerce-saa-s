@@ -28,10 +28,9 @@ export async function POST(request: NextRequest) {
     const accessToken = await getValidAccessToken(account.ml_user_id)
 
     // Obtener datos completos de la publicación de ML
-    const itemResponse = await fetch(
-      `${ML_API_BASE}/items/${item_id}?include_attributes=all`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    )
+    const itemResponse = await fetch(`${ML_API_BASE}/items/${item_id}?include_attributes=all`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
 
     if (!itemResponse.ok) {
       return NextResponse.json({ error: "Error al obtener publicación de ML" }, { status: 400 })
@@ -42,10 +41,9 @@ export async function POST(request: NextRequest) {
     // Obtener descripción
     let description = ""
     try {
-      const descResponse = await fetch(
-        `${ML_API_BASE}/items/${item_id}/description`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      )
+      const descResponse = await fetch(`${ML_API_BASE}/items/${item_id}/description`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
       if (descResponse.ok) {
         const descData = await descResponse.json()
         description = descData.plain_text || descData.text || ""
@@ -56,11 +54,11 @@ export async function POST(request: NextRequest) {
 
     // Buscar el EAN/ISBN en los atributos de ML
     let ean = mlItem.seller_custom_field // El SKU en ML es el EAN
-    
+
     // También buscar en atributos
     if (!ean && mlItem.attributes) {
       const eanAttr = mlItem.attributes.find(
-        (attr: any) => attr.id === "GTIN" || attr.id === "ISBN" || attr.id === "EAN" || attr.id === "SELLER_SKU"
+        (attr: any) => attr.id === "GTIN" || attr.id === "ISBN" || attr.id === "EAN" || attr.id === "SELLER_SKU",
       )
       if (eanAttr) {
         ean = eanAttr.value_name || eanAttr.value_id
@@ -70,12 +68,8 @@ export async function POST(request: NextRequest) {
     // Buscar producto en el catálogo de Arnoia por EAN
     let catalogProduct = null
     if (ean) {
-      const { data: product } = await supabase
-        .from("products")
-        .select("*")
-        .eq("ean", ean)
-        .single()
-      
+      const { data: product } = await supabase.from("products").select("*").eq("ean", ean).single()
+
       catalogProduct = product
     }
 
@@ -93,7 +87,7 @@ export async function POST(request: NextRequest) {
 
     // Generar mapeo sugerido entre campos del catálogo y atributos de ML
     const suggestedMapping: Record<string, string> = {}
-    
+
     if (catalogProduct) {
       // Mapeos comunes para libros
       if (catalogProduct.author) suggestedMapping["AUTHOR"] = "author"
@@ -108,13 +102,11 @@ export async function POST(request: NextRequest) {
 
     // Generar plantilla sugerida
     const suggestedTemplate = {
-      title_template: catalogProduct 
-        ? "{title} - {author}" 
-        : mlItem.title,
+      title_template: catalogProduct ? "{title} - {author}" : mlItem.title,
       listing_type_id: mlItem.listing_type_id,
       condition: mlItem.condition,
       currency_id: mlItem.currency_id,
-      price_formula: catalogProduct?.cost_price 
+      price_formula: catalogProduct?.cost_price
         ? `cost_price * ${(mlItem.price / catalogProduct.cost_price).toFixed(2)}`
         : `price * 1.0`,
       shipping_mode: mlItem.shipping?.mode || "me2",
@@ -154,9 +146,6 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error("[v0] Error analyzing listing:", error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Error interno" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Error interno" }, { status: 500 })
   }
 }

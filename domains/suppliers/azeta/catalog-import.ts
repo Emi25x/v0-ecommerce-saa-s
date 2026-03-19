@@ -15,41 +15,41 @@ import { createAdminClient } from "@/lib/db/admin"
 import { normalizeEan } from "@/domains/inventory/ean-utils"
 
 // URL de fallback — solo si no está configurado en import_sources
-const AZETA_TOTAL_URL =
-  "https://www.azetadistribuciones.es/servicios_web/csv.php?user=680899&password=badajoz24"
+const AZETA_TOTAL_URL = "https://www.azetadistribuciones.es/servicios_web/csv.php?user=680899&password=badajoz24"
 
 // Headers para que el servidor de Azeta no bloquee la petición
 const FETCH_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  "Accept": "*/*",
-  "Connection": "keep-alive",
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  Accept: "*/*",
+  Connection: "keep-alive",
 }
 
 // Cantidad de productos por batch de upsert (balance entre memoria y round-trips a DB)
 const BATCH_SIZE = 1000
 
 export interface CatalogImportResult {
-  success:          boolean
-  created?:         number
-  updated?:         number
-  errors?:          number
-  total_rows?:      number
+  success: boolean
+  created?: number
+  updated?: number
+  errors?: number
+  total_rows?: number
   elapsed_seconds?: number
-  error?:           string
+  error?: string
 }
 
 export type CatalogImportProgress = {
-  created:   number
-  updated:   number
-  errors:    number
+  created: number
+  updated: number
+  errors: number
   processed: number
-  message?:  string
+  message?: string
   last_error?: string
 }
 
 export async function runCatalogImport(
   opts?: { source_id?: string; source_name?: string },
-  onProgress?: (p: CatalogImportProgress) => void
+  onProgress?: (p: CatalogImportProgress) => void,
 ): Promise<CatalogImportResult> {
   const startTime = Date.now()
   console.log("[AZETA][RUN] === Inicio importacion catalogo ===")
@@ -60,9 +60,9 @@ export async function runCatalogImport(
   // Resolver fuente desde import_sources
   {
     let q = supabase.from("import_sources").select("url_template, name")
-    if (opts?.source_id)        q = (q as any).eq("id", opts.source_id)
+    if (opts?.source_id) q = (q as any).eq("id", opts.source_id)
     else if (opts?.source_name) q = (q as any).ilike("name", opts.source_name)
-    else                        q = (q as any).ilike("name", "azeta%total%")
+    else q = (q as any).ilike("name", "azeta%total%")
     const { data: src } = await (q as any).limit(1).maybeSingle()
     if (src?.url_template) {
       url = src.url_template
@@ -75,10 +75,15 @@ export async function runCatalogImport(
   try {
     console.log(`[AZETA][FETCH] GET ${url}`)
     const res = await fetch(url, { method: "GET", headers: FETCH_HEADERS })
-    console.log(`[AZETA][FETCH] status=${res.status} content-type=${res.headers.get("content-type")} content-length=${res.headers.get("content-length")}`)
+    console.log(
+      `[AZETA][FETCH] status=${res.status} content-type=${res.headers.get("content-type")} content-length=${res.headers.get("content-length")}`,
+    )
 
     if (!res.ok) {
-      const preview = await res.text().then(t => t.slice(0, 300)).catch(() => "")
+      const preview = await res
+        .text()
+        .then((t) => t.slice(0, 300))
+        .catch(() => "")
       const isHtml = preview.toLowerCase().includes("<html")
       return {
         success: false,
@@ -129,26 +134,49 @@ export async function runCatalogImport(
     // ── Estado del parser CSV ────────────────────────────────────────────────
     let discarded = 0
     let headerProcessed = false
-    let hasHeader       = false
-    let delimiter       = "|"
+    let hasHeader = false
+    let delimiter = "|"
     let colIdx = {
-      ean: 0, titulo: -1, autor: -1, editorial: -1,
-      pvp: -1, idioma: -1, sinopsis: -1, url: -1, ano: -1, codigo: -1,
+      ean: 0,
+      titulo: -1,
+      autor: -1,
+      editorial: -1,
+      pvp: -1,
+      idioma: -1,
+      sinopsis: -1,
+      url: -1,
+      ano: -1,
+      codigo: -1,
     }
 
     // ── Batch streaming: buffer pequeño + flush a DB durante el streaming ────
     // Esto evita el OOM que ocurría al acumular 600K+ productos en productMap.
     // Peak de RAM: solo BATCH_SIZE productos (≈1MB) en lugar de 600K (≈600MB+).
     let batchBuffer: any[] = []
-    let created = 0, updated = 0, errors = 0, totalProcessed = 0
+    let created = 0,
+      updated = 0,
+      errors = 0,
+      totalProcessed = 0
     let lastErrorMsg = ""
 
     // Columnas que SEGURO existen en la tabla products (del schema base + migraciones conocidas).
     // Si la primera inserción falla por columnas inexistentes, usamos solo estas.
     const SAFE_COLUMNS = new Set([
-      "sku", "ean", "title", "description", "price", "stock", "image_url",
-      "condition", "brand", "category", "source", "custom_fields",
-      "stock_by_source", "stock_total", "internal_code",
+      "sku",
+      "ean",
+      "title",
+      "description",
+      "price",
+      "stock",
+      "image_url",
+      "condition",
+      "brand",
+      "category",
+      "source",
+      "custom_fields",
+      "stock_by_source",
+      "stock_total",
+      "internal_code",
     ])
     let useOnlySafeColumns = false
 
@@ -177,11 +205,10 @@ export async function runCatalogImport(
       // Lookup SKUs existentes para preservarlos (evita romper UNIQUE constraint en sku)
       const eans = batch.map((p: any) => p.ean)
       const eanToSku = new Map<string, string>()
-      const { data: existing } = await supabase
-        .from("products")
-        .select("ean, sku")
-        .in("ean", eans)
-      ;(existing || []).forEach((r: any) => { if (r.ean) eanToSku.set(r.ean, r.sku) })
+      const { data: existing } = await supabase.from("products").select("ean, sku").in("ean", eans)
+      ;(existing || []).forEach((r: any) => {
+        if (r.ean) eanToSku.set(r.ean, r.sku)
+      })
 
       const batchWithSku = batch.map((p: any) => {
         const isNew = !eanToSku.has(p.ean)
@@ -193,9 +220,7 @@ export async function runCatalogImport(
         }
       })
 
-      let { error: upsertErr } = await supabase
-        .from("products")
-        .upsert(batchWithSku, { onConflict: "ean" })
+      let { error: upsertErr } = await supabase.from("products").upsert(batchWithSku, { onConflict: "ean" })
 
       // Si falla y no estamos en modo safe, reintentar con solo columnas seguras
       if (upsertErr && !useOnlySafeColumns) {
@@ -205,9 +230,7 @@ export async function runCatalogImport(
         lastErrorMsg = `Columnas extra no existen en DB, usando custom_fields: ${upsertErr.message}`
 
         const safeBatch = batchWithSku.map(toSafeProduct)
-        const retry = await supabase
-          .from("products")
-          .upsert(safeBatch, { onConflict: "ean" })
+        const retry = await supabase.from("products").upsert(safeBatch, { onConflict: "ean" })
         upsertErr = retry.error
       }
 
@@ -223,7 +246,9 @@ export async function runCatalogImport(
       }
       totalProcessed += batch.length
       if (totalProcessed % 10000 < BATCH_SIZE) {
-        console.log(`[AZETA][PROGRESS] ${totalProcessed} procesados (creados=${created} actualizados=${updated} errores=${errors})`)
+        console.log(
+          `[AZETA][PROGRESS] ${totalProcessed} procesados (creados=${created} actualizados=${updated} errores=${errors})`,
+        )
       }
       // Emitir progreso al caller (SSE) — incluir último error para que la UI lo muestre
       onProgress?.({ created, updated, errors, processed: totalProcessed, last_error: lastErrorMsg || undefined })
@@ -236,25 +261,25 @@ export async function runCatalogImport(
       if (!headerProcessed) {
         // Auto-detección de delimitador a partir de la primera línea
         const pipeCount = (line.match(/\|/g) || []).length
-        const semiCount = (line.match(/;/g)  || []).length
+        const semiCount = (line.match(/;/g) || []).length
         delimiter = pipeCount >= semiCount ? "|" : ";"
 
-        const rawHeaders = line.split(delimiter).map(h => h.trim().replace(/['"]/g, "").toLowerCase())
+        const rawHeaders = line.split(delimiter).map((h) => h.trim().replace(/['"]/g, "").toLowerCase())
         const firstColNumeric = /^[0-9eE.+\-]+$/.test(rawHeaders[0])
 
         if (!firstColNumeric) {
           hasHeader = true
           colIdx = {
-            ean:       rawHeaders.findIndex(h => ["ean", "isbn", "gtin"].includes(h)),
-            titulo:    rawHeaders.findIndex(h => ["titulo", "title"].includes(h)),
-            autor:     rawHeaders.findIndex(h => ["autor", "author"].includes(h)),
-            editorial: rawHeaders.findIndex(h => ["editorial", "publisher"].includes(h)),
-            pvp:       rawHeaders.findIndex(h => ["pvp", "precio", "precio_sin_iva", "precio s/iva"].includes(h)),
-            idioma:    rawHeaders.findIndex(h => ["idioma", "language"].includes(h)),
-            sinopsis:  rawHeaders.findIndex(h => h.includes("sinopsis") || h === "descripcion"),
-            url:       rawHeaders.findIndex(h => ["url", "imagen", "portada"].includes(h)),
-            ano:       rawHeaders.findIndex(h => h.includes("ano_edicion") || h.includes("year")),
-            codigo:    rawHeaders.findIndex(h => h === "codigo_interno"),
+            ean: rawHeaders.findIndex((h) => ["ean", "isbn", "gtin"].includes(h)),
+            titulo: rawHeaders.findIndex((h) => ["titulo", "title"].includes(h)),
+            autor: rawHeaders.findIndex((h) => ["autor", "author"].includes(h)),
+            editorial: rawHeaders.findIndex((h) => ["editorial", "publisher"].includes(h)),
+            pvp: rawHeaders.findIndex((h) => ["pvp", "precio", "precio_sin_iva", "precio s/iva"].includes(h)),
+            idioma: rawHeaders.findIndex((h) => ["idioma", "language"].includes(h)),
+            sinopsis: rawHeaders.findIndex((h) => h.includes("sinopsis") || h === "descripcion"),
+            url: rawHeaders.findIndex((h) => ["url", "imagen", "portada"].includes(h)),
+            ano: rawHeaders.findIndex((h) => h.includes("ano_edicion") || h.includes("year")),
+            codigo: rawHeaders.findIndex((h) => h === "codigo_interno"),
           }
         }
         headerProcessed = true
@@ -266,25 +291,31 @@ export async function runCatalogImport(
       const eanCol = colIdx.ean >= 0 ? colIdx.ean : 0
       if (cols.length <= eanCol) return
       const ean = normalizeEan(cols[eanCol]?.replace(/['"]/g, "").trim())
-      if (!ean || ean.length !== 13) { discarded++; return }
-      const col = (ci: number) => ci >= 0 && cols[ci] ? cols[ci].replace(/['"]/g, "").trim() || null : null
-      const priceStr  = col(colIdx.pvp)
-      const pvpRaw    = priceStr ? parseFloat(priceStr.replace(",", ".")) || null : null
-      const costPrice = pvpRaw != null
-        ? (discountRate != null ? Math.round(pvpRaw * (1 - discountRate) * 10000) / 10000 : pvpRaw)
-        : null
+      if (!ean || ean.length !== 13) {
+        discarded++
+        return
+      }
+      const col = (ci: number) => (ci >= 0 && cols[ci] ? cols[ci].replace(/['"]/g, "").trim() || null : null)
+      const priceStr = col(colIdx.pvp)
+      const pvpRaw = priceStr ? parseFloat(priceStr.replace(",", ".")) || null : null
+      const costPrice =
+        pvpRaw != null
+          ? discountRate != null
+            ? Math.round(pvpRaw * (1 - discountRate) * 10000) / 10000
+            : pvpRaw
+          : null
       batchBuffer.push({
         sku: ean, // placeholder — reemplazado por SKU existente en flushBatch
         ean,
-        title:         col(colIdx.titulo),
-        author:        col(colIdx.autor),
-        brand:         col(colIdx.editorial),
+        title: col(colIdx.titulo),
+        author: col(colIdx.autor),
+        brand: col(colIdx.editorial),
         pvp_editorial: pvpRaw,
-        cost_price:    costPrice,
-        language:      col(colIdx.idioma),
-        description:   col(colIdx.sinopsis),
-        image_url:     col(colIdx.url),
-        year_edition:  col(colIdx.ano),
+        cost_price: costPrice,
+        language: col(colIdx.idioma),
+        description: col(colIdx.sinopsis),
+        image_url: col(colIdx.url),
+        year_edition: col(colIdx.ano),
         internal_code: col(colIdx.codigo),
       })
     }
@@ -293,14 +324,14 @@ export async function runCatalogImport(
     // fflate Unzip streaming para ZIP, TextDecoder incremental para CSV plano.
     // flushBatch() se llama tras cada chunk para mantener batchBuffer pequeño.
 
-    const decoder  = new TextDecoder("latin1")
+    const decoder = new TextDecoder("latin1")
     let lineBuffer = ""
 
     function processChunk(bytes: Uint8Array, final: boolean) {
       const chunk = decoder.decode(bytes, { stream: !final })
-      const text  = lineBuffer + chunk
+      const text = lineBuffer + chunk
       const parts = text.split(/\r?\n/)
-      lineBuffer  = final ? "" : (parts.pop() ?? "")
+      lineBuffer = final ? "" : (parts.pop() ?? "")
       for (const line of parts) processLine(line)
     }
 
@@ -318,7 +349,10 @@ export async function runCatalogImport(
           csvFound = true
           console.log(`[AZETA][ZIP] Streaming "${file.name}"`)
           file.ondata = (err, data, isFinal) => {
-            if (err) { fflateError = err; return }
+            if (err) {
+              fflateError = err
+              return
+            }
             processChunk(data, isFinal)
           }
           file.start()
@@ -338,7 +372,9 @@ export async function runCatalogImport(
         if (done) {
           // Señalizar fin al unzipper (el CSV ya debería estar completo — fflate
           // detecta el fin de cada entrada por su tamaño comprimido almacenado)
-          try { unzipper.push(new Uint8Array(0), true) } catch {}
+          try {
+            unzipper.push(new Uint8Array(0), true)
+          } catch {}
           break
         }
 
@@ -352,7 +388,6 @@ export async function runCatalogImport(
       }
 
       if (!csvFound) throw new Error("No se encontró archivo CSV/TXT dentro del ZIP de Azeta")
-
     } else {
       // CSV sin comprimir — streaming directo
       processChunk(firstChunk!, false)
@@ -374,10 +409,18 @@ export async function runCatalogImport(
       return { success: false, error: "Columna EAN no encontrada en el CSV" }
     }
 
-    const elapsed = ((Date.now() - startTime) / 1000)
-    console.log(`[AZETA] Completado: creados=${created} actualizados=${updated} errores=${errors} descartados=${discarded} en ${elapsed.toFixed(1)}s`)
-    return { success: true, created, updated, errors, total_rows: totalProcessed, elapsed_seconds: parseFloat(elapsed.toFixed(1)) }
-
+    const elapsed = (Date.now() - startTime) / 1000
+    console.log(
+      `[AZETA] Completado: creados=${created} actualizados=${updated} errores=${errors} descartados=${discarded} en ${elapsed.toFixed(1)}s`,
+    )
+    return {
+      success: true,
+      created,
+      updated,
+      errors,
+      total_rows: totalProcessed,
+      elapsed_seconds: parseFloat(elapsed.toFixed(1)),
+    }
   } catch (err: any) {
     console.error("[AZETA][RUN] Error fatal:", err.message)
     return { success: false, error: err.message }

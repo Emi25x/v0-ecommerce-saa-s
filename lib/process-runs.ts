@@ -61,11 +61,7 @@ export async function startRun(
 
   const runId: string = data.id
 
-  const finish = async (
-    status: "completed" | "failed",
-    counters?: Partial<RunCounters>,
-    errorMessage?: string,
-  ) => {
+  const finish = async (status: "completed" | "failed", counters?: Partial<RunCounters>, errorMessage?: string) => {
     const finishedAt = new Date()
     const durationMs = finishedAt.getTime() - startedAt.getTime()
 

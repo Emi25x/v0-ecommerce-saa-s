@@ -19,11 +19,11 @@ export async function GET(request: NextRequest) {
     // Call ML /users/me to test token
     const meUrl = "https://api.mercadolibre.com/users/me"
     console.log(`[ML-DEBUG-ME] Calling ${meUrl}`)
-    
+
     const response = await fetch(meUrl, {
-      headers: { 
+      headers: {
         Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
       },
     })
 
@@ -32,13 +32,16 @@ export async function GET(request: NextRequest) {
     if (!response.ok) {
       const errText = await response.text()
       console.error(`[ML-DEBUG-ME] Error - Status: ${response.status}, Body: ${errText}`)
-      
-      return NextResponse.json({
-        ok: false,
-        status: response.status,
-        body: errText,
-        message: "ML API returned error"
-      }, { status: response.status })
+
+      return NextResponse.json(
+        {
+          ok: false,
+          status: response.status,
+          body: errText,
+          message: "ML API returned error",
+        },
+        { status: response.status },
+      )
     }
 
     const data = await response.json()
@@ -47,14 +50,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       user: data,
-      message: "Token is valid"
+      message: "Token is valid",
     })
-
   } catch (error: any) {
     console.error("[ML-DEBUG-ME] Error:", error)
-    return NextResponse.json({ 
-      ok: false,
-      error: error.message 
-    }, { status: 500 })
+    return NextResponse.json(
+      {
+        ok: false,
+        error: error.message,
+      },
+      { status: 500 },
+    )
   }
 }

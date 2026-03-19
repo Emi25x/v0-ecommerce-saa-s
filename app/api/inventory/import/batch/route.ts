@@ -15,9 +15,11 @@ const BATCH_SIZE_MAX = 1000
 const UPSERT_CHUNK = 100 // filas por upsert call dentro de cada batch
 
 function isTimeoutError(msg: string): boolean {
-  return msg.toLowerCase().includes("statement timeout") ||
+  return (
+    msg.toLowerCase().includes("statement timeout") ||
     msg.toLowerCase().includes("canceling statement") ||
     msg.toLowerCase().includes("query_timeout")
+  )
 }
 
 export async function POST(request: NextRequest) {
@@ -25,19 +27,16 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const {
-      sourceId,
-      offset = 0,
-      mode = "upsert",
-      historyId = null,
-      batch_size = BATCH_SIZE_INITIAL,
-    } = body
+    const { sourceId, offset = 0, mode = "upsert", historyId = null, batch_size = BATCH_SIZE_INITIAL } = body
 
     if (!sourceId) {
       return NextResponse.json({ error: "sourceId es requerido" }, { status: 400 })
     }
 
-    const effectiveBatchSize = Math.min(BATCH_SIZE_MAX, Math.max(BATCH_SIZE_MIN, Number(batch_size) || BATCH_SIZE_INITIAL))
+    const effectiveBatchSize = Math.min(
+      BATCH_SIZE_MAX,
+      Math.max(BATCH_SIZE_MIN, Number(batch_size) || BATCH_SIZE_INITIAL),
+    )
 
     const supabase = await createClient()
 
@@ -62,17 +61,20 @@ export async function POST(request: NextRequest) {
     const fileResponse = await fetchWithAuth({
       url_template: source.url_template,
       auth_type: source.auth_type,
-      credentials: source.credentials
+      credentials: source.credentials,
     })
 
     if (!fileResponse.ok) {
-      return NextResponse.json({
-        error: `Error ${fileResponse.status}: ${fileResponse.statusText}`
-      }, { status: fileResponse.status })
+      return NextResponse.json(
+        {
+          error: `Error ${fileResponse.status}: ${fileResponse.statusText}`,
+        },
+        { status: fileResponse.status },
+      )
     }
 
     const fileBuffer = Buffer.from(await fileResponse.arrayBuffer())
-    const isZip = fileBuffer.length >= 4 && fileBuffer[0] === 0x50 && fileBuffer[1] === 0x4B
+    const isZip = fileBuffer.length >= 4 && fileBuffer[0] === 0x50 && fileBuffer[1] === 0x4b
 
     let csvText: string = ""
 
@@ -121,9 +123,11 @@ export async function POST(request: NextRequest) {
     const headers = parsed.meta.fields || []
     const headersNormalized = headers.map(normalizeHeader)
     const headerMap = new Map<string, string>()
-    headers.forEach((orig, idx) => { headerMap.set(orig, headersNormalized[idx]) })
+    headers.forEach((orig, idx) => {
+      headerMap.set(orig, headersNormalized[idx])
+    })
 
-    const allRows = (parsed.data as Array<Record<string, any>>).map(row => {
+    const allRows = (parsed.data as Array<Record<string, any>>).map((row) => {
       const normalized: Record<string, string> = {}
       Object.entries(row).forEach(([key, value]) => {
         normalized[headerMap.get(key) || normalizeHeader(key)] = value as string
@@ -134,10 +138,12 @@ export async function POST(request: NextRequest) {
     const totalRows = allRows.length
     const batchRows = allRows.slice(offset, offset + effectiveBatchSize)
     const rows_seen = batchRows.length
-    const done = rows_seen === 0 || (offset + rows_seen >= totalRows)
+    const done = rows_seen === 0 || offset + rows_seen >= totalRows
 
     if (offset === 0) {
-      console.log(`[BATCH] source="${source.name}" delimiter="${delimiter}" totalRows=${totalRows} batchSize=${effectiveBatchSize}`)
+      console.log(
+        `[BATCH] source="${source.name}" delimiter="${delimiter}" totalRows=${totalRows} batchSize=${effectiveBatchSize}`,
+      )
       console.log(`[BATCH] headers: ${headersNormalized.slice(0, 10).join(", ")}`)
     }
 
@@ -146,8 +152,7 @@ export async function POST(request: NextRequest) {
     let missing_ean = 0
     let invalid_ean = 0
 
-    const isStockImport = source.name.toLowerCase().includes("stock")
-      || source.feed_type === "stock_price"
+    const isStockImport = source.name.toLowerCase().includes("stock") || source.feed_type === "stock_price"
 
     // column_mapping values may be original-case column names; normalize them for lookup
     const cm: Record<string, string> = {}
@@ -170,17 +175,21 @@ export async function POST(request: NextRequest) {
     // Detect if this source provides two separate price columns (EUR + ARS)
     // Triggered when column_mapping has "price_ars" key,
     // or when the CSV contains the known Libral Argentina column.
-    const hasTwoPrices = !!cm["price_ars"]
-      || headersNormalized.includes("pesos_argentinos")
+    const hasTwoPrices = !!cm["price_ars"] || headersNormalized.includes("pesos_argentinos")
 
     for (const row of batchRows) {
-      const eanRaw = row[col("ean", "ean") ?? "ean"]
-        || row["ean13"] || row["gtin"] || row["codigo_de_barras"]
+      const eanRaw = row[col("ean", "ean") ?? "ean"] || row["ean13"] || row["gtin"] || row["codigo_de_barras"]
       const isbnRaw = row[col("isbn", "isbn") ?? "isbn"] || row["isbn13"]
       const ean = normalizeEan(eanRaw || isbnRaw)
 
-      if (!ean) { missing_ean++; continue }
-      if (ean.length !== 13) { invalid_ean++; continue }
+      if (!ean) {
+        missing_ean++
+        continue
+      }
+      if (ean.length !== 13) {
+        invalid_ean++
+        continue
+      }
 
       const stockKey = col("stock", "stock", "cantidad")
       const stockRaw = (stockKey ? row[stockKey] : null) || row["stock"] || row["cantidad"] || null
@@ -192,21 +201,45 @@ export async function POST(request: NextRequest) {
       let price: number | null = null
       let price_ars: number | null = null
       if (hasTwoPrices) {
-        const eurKey = cm["price"]     || "precio_euros"
+        const eurKey = cm["price"] || "precio_euros"
         const arsKey = cm["price_ars"] || "pesos_argentinos"
         const eurRaw = row[eurKey] ?? null
         const arsRaw = row[arsKey] ?? null
-        price     = eurRaw ? parseFloat(String(eurRaw).replace(",", ".").replace(/[^\d.]/g, "")) || null : null
-        price_ars = arsRaw ? parseFloat(String(arsRaw).replace(",", ".").replace(/[^\d.]/g, "")) || null : null
+        price = eurRaw
+          ? parseFloat(
+              String(eurRaw)
+                .replace(",", ".")
+                .replace(/[^\d.]/g, ""),
+            ) || null
+          : null
+        price_ars = arsRaw
+          ? parseFloat(
+              String(arsRaw)
+                .replace(",", ".")
+                .replace(/[^\d.]/g, ""),
+            ) || null
+          : null
       } else {
         const priceKey = col("price", "pvp", "precio_sin_iva", "precio", "price")
-        const priceRaw = (priceKey ? row[priceKey] : null)
-          || row["pvp"] || row["precio_sin_iva"] || row["precio"] || row["price"] || null
-        cost_price = priceRaw ? parseFloat(String(priceRaw).replace(",", ".").replace(/[^\d.]/g, "")) || null : null
+        const priceRaw =
+          (priceKey ? row[priceKey] : null) ||
+          row["pvp"] ||
+          row["precio_sin_iva"] ||
+          row["precio"] ||
+          row["price"] ||
+          null
+        cost_price = priceRaw
+          ? parseFloat(
+              String(priceRaw)
+                .replace(",", ".")
+                .replace(/[^\d.]/g, ""),
+            ) || null
+          : null
       }
 
-      const descKey = cm["description"] || Object.keys(row).find(k => k.includes("sinopsis"))
-      const yearKey = cm["year_edition"] || Object.keys(row).find(k => k.includes("ano_edicion") || k.includes("ano_edici"))
+      const descKey = cm["description"] || Object.keys(row).find((k) => k.includes("sinopsis"))
+      const yearKey =
+        cm["year_edition"] || Object.keys(row).find((k) => k.includes("ano_edicion") || k.includes("ano_edici"))
 
       const titleKey = col("title", "titulo", "title", "articulo")
       const authorKey = col("author", "autor", "author", "autores")
@@ -221,10 +254,18 @@ export async function POST(request: NextRequest) {
         cost_price,
         price,
         price_ars,
-        image_url: (imageKey ? row[imageKey] : null) || row["url"] || row["portada"] || row["imagen"] || row["image"] || row["url_fotografia"] || null,
+        image_url:
+          (imageKey ? row[imageKey] : null) ||
+          row["url"] ||
+          row["portada"] ||
+          row["imagen"] ||
+          row["image"] ||
+          row["url_fotografia"] ||
+          null,
         stock,
         brand: row[cm["brand"] ?? ""] || row["editorial"] || row["marca"] || row["brand"] || null,
-        category: (categoryKey ? row[categoryKey] : null) || row["categoria"] || row["category"] || row["tematica"] || null,
+        category:
+          (categoryKey ? row[categoryKey] : null) || row["categoria"] || row["category"] || row["tematica"] || null,
         description: (descKey ? row[descKey] : null) || row["descripcion"] || row["description"] || null,
         language: row[cm["language"] ?? ""] || row["idioma"] || row["language"] || null,
         year_edition: (yearKey ? row[yearKey] : null) || row["year_edition"] || null,
@@ -253,12 +294,12 @@ export async function POST(request: NextRequest) {
         const STOCK_CHUNK = 200
         for (let i = 0; i < deduped.length; i += STOCK_CHUNK) {
           const chunk = deduped.slice(i, i + STOCK_CHUNK)
-          const eans = chunk.map(p => String(p.ean))
-          const stocks = chunk.map(p => {
+          const eans = chunk.map((p) => String(p.ean))
+          const stocks = chunk.map((p) => {
             const n = parseInt(String(p.stock ?? 0), 10)
             return isNaN(n) ? 0 : n
           })
-          const costPrices = chunk.map(p => {
+          const costPrices = chunk.map((p) => {
             if (p.cost_price === null || p.cost_price === undefined) return null
             const n = parseFloat(String(p.cost_price).replace(",", "."))
             return isNaN(n) ? null : n
@@ -272,12 +313,12 @@ export async function POST(request: NextRequest) {
 
             if (hasTwoPrices) {
               // PVP EUR → price, PVP ARS → custom_fields.precio_ars
-              const eurPrices = chunk.map(p => {
+              const eurPrices = chunk.map((p) => {
                 if (p.price === null || p.price === undefined) return null
                 const n = parseFloat(String(p.price).replace(",", "."))
                 return isNaN(n) ? null : n
               })
-              const arsPrices = chunk.map(p => {
+              const arsPrices = chunk.map((p) => {
                 if (p.price_ars === null || p.price_ars === undefined) return null
                 const n = parseFloat(String(p.price_ars).replace(",", "."))
                 return isNaN(n) ? null : n
@@ -288,7 +329,8 @@ export async function POST(request: NextRequest) {
                 p_prices: eurPrices,
                 p_prices_ars: arsPrices,
               })
-              rpcError = res.error; rpcData = res.data
+              rpcError = res.error
+              rpcData = res.data
             } else {
               const stockKey = (source as any).source_key || source.name?.toLowerCase().replace(/[^a-z0-9]/g, "_") || ""
               const res = await supabase.rpc("bulk_update_stock_price", {
@@ -297,7 +339,8 @@ export async function POST(request: NextRequest) {
                 p_prices: costPrices,
                 p_source_key: stockKey || undefined,
               })
-              rpcError = res.error; rpcData = res.data
+              rpcError = res.error
+              rpcData = res.data
             }
 
             if (rpcError) {
@@ -305,7 +348,7 @@ export async function POST(request: NextRequest) {
                 timeout_count++
                 retryCount++
                 console.log(`[BATCH][STOCK] Timeout en chunk, retry ${retryCount}/2`)
-                await new Promise(r => setTimeout(r, 1000 * retryCount))
+                await new Promise((r) => setTimeout(r, 1000 * retryCount))
                 continue
               }
               last_error = rpcError.message
@@ -320,20 +363,18 @@ export async function POST(request: NextRequest) {
         }
       } else {
         // Catálogo: upsert con select previo para separar created/updated
-        const eans = deduped.map(p => p.ean)
-        const { data: existingRows } = await supabase
-          .from("products")
-          .select("ean, sku")
-          .in("ean", eans)
+        const eans = deduped.map((p) => p.ean)
+        const { data: existingRows } = await supabase.from("products").select("ean, sku").in("ean", eans)
         const eanToSku = new Map<string, string>()
         existingRows?.forEach((r: any) => eanToSku.set(r.ean, r.sku))
 
-        const toUpsert = deduped.map(p => {
+        const toUpsert = deduped.map((p) => {
           // Strip price_ars — not a products column (goes to custom_fields via two-prices RPC path)
           const { price_ars, ...rest } = p
-          const custom_fields = price_ars != null
-            ? { ...(rest.custom_fields ?? {}), precio_ars: price_ars }
-            : (rest.custom_fields ?? undefined)
+          const custom_fields =
+            price_ars != null
+              ? { ...(rest.custom_fields ?? {}), precio_ars: price_ars }
+              : (rest.custom_fields ?? undefined)
           return {
             ...rest,
             ...(custom_fields ? { custom_fields } : {}),
@@ -350,16 +391,14 @@ export async function POST(request: NextRequest) {
           let chunkDone = false
 
           while (!chunkDone && retryCount <= 2) {
-            const { error: chunkError } = await supabase
-              .from("products")
-              .upsert(chunk, { onConflict: "ean" })
+            const { error: chunkError } = await supabase.from("products").upsert(chunk, { onConflict: "ean" })
 
             if (chunkError) {
               if (isTimeoutError(chunkError.message) && retryCount < 2) {
                 timeout_count++
                 retryCount++
                 console.log(`[BATCH][CATALOG] Timeout en chunk offset=${i}, retry ${retryCount}/2`)
-                await new Promise(r => setTimeout(r, 1000 * retryCount))
+                await new Promise((r) => setTimeout(r, 1000 * retryCount))
                 continue
               }
               last_error = chunkError.message
@@ -369,7 +408,11 @@ export async function POST(request: NextRequest) {
             } else {
               // Contar created vs updated basado en si existía antes
               for (const p of chunk) {
-                if (eanToSku.has(p.ean)) { updated++ } else { created++ }
+                if (eanToSku.has(p.ean)) {
+                  updated++
+                } else {
+                  created++
+                }
               }
               chunkDone = true
             }
@@ -379,7 +422,9 @@ export async function POST(request: NextRequest) {
 
       // Validar: created+updated nunca puede superar rows_processed
       if (created + updated > rows_processed) {
-        console.log(`[BATCH] INCONSISTENCIA: created=${created}+updated=${updated} > rows_processed=${rows_processed}. Corrigiendo.`)
+        console.log(
+          `[BATCH] INCONSISTENCIA: created=${created}+updated=${updated} > rows_processed=${rows_processed}. Corrigiendo.`,
+        )
         const total_ok = rows_processed - failed_rows
         updated = isStockImport ? total_ok : Math.min(updated, total_ok)
         created = isStockImport ? 0 : Math.min(created, total_ok - updated)
@@ -409,7 +454,7 @@ export async function POST(request: NextRequest) {
                 id: p.id,
                 stock_by_source: { ...(p.stock_by_source ?? {}), [sourceKey]: eanStockMap.get(p.ean) ?? 0 },
               })),
-              { onConflict: "id" }
+              { onConflict: "id" },
             )
           } catch (e) {
             console.warn("[BATCH] stock_by_source update failed for chunk:", e)
@@ -425,7 +470,9 @@ export async function POST(request: NextRequest) {
     const duration_ms = Date.now() - startTime
     const next_offset = done ? null : offset + rows_seen
 
-    console.log(`[BATCH] done=${done} offset=${offset} seen=${rows_seen} processed=${rows_processed} created=${created} updated=${updated} failed=${failed_rows} timeouts=${timeout_count} duration=${duration_ms}ms reason=${last_reason}`)
+    console.log(
+      `[BATCH] done=${done} offset=${offset} seen=${rows_seen} processed=${rows_processed} created=${created} updated=${updated} failed=${failed_rows} timeouts=${timeout_count} duration=${duration_ms}ms reason=${last_reason}`,
+    )
 
     // Record run on first batch (captures the initial batch metrics)
     if (run) {
@@ -447,18 +494,23 @@ export async function POST(request: NextRequest) {
     if (historyId) {
       const { data: history } = await supabase.from("import_history").select("*").eq("id", historyId).single()
       if (history) {
-        await supabase.from("import_history").update({
-          status: done ? "completed" : "running",
-          processed_rows: (history.processed_rows || 0) + rows_processed,
-          created_count: (history.created_count || 0) + created,
-          updated_count: (history.updated_count || 0) + updated,
-          skipped_count: (history.skipped_count || 0) + missing_ean + invalid_ean,
-          error_count: last_error ? (history.error_count || 0) + 1 : history.error_count,
-          current_offset: next_offset,
-          last_message: done ? `Completado: ${(history.processed_rows || 0) + rows_processed} procesadas` : `Procesando offset ${offset}`,
-          completed_at: done ? new Date().toISOString() : null,
-          updated_at: new Date().toISOString(),
-        }).eq("id", historyId)
+        await supabase
+          .from("import_history")
+          .update({
+            status: done ? "completed" : "running",
+            processed_rows: (history.processed_rows || 0) + rows_processed,
+            created_count: (history.created_count || 0) + created,
+            updated_count: (history.updated_count || 0) + updated,
+            skipped_count: (history.skipped_count || 0) + missing_ean + invalid_ean,
+            error_count: last_error ? (history.error_count || 0) + 1 : history.error_count,
+            current_offset: next_offset,
+            last_message: done
+              ? `Completado: ${(history.processed_rows || 0) + rows_processed} procesadas`
+              : `Procesando offset ${offset}`,
+            completed_at: done ? new Date().toISOString() : null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", historyId)
       }
     }
 
@@ -479,19 +531,22 @@ export async function POST(request: NextRequest) {
       last_reason,
       last_error,
       duration_ms,
-      suggested_next_batch_size: timeout_count > 0
-        ? Math.max(BATCH_SIZE_MIN, Math.floor(effectiveBatchSize / 2))
-        : duration_ms < 5000 && effectiveBatchSize < BATCH_SIZE_MAX
-          ? Math.min(BATCH_SIZE_MAX, Math.floor(effectiveBatchSize * 1.5))
-          : effectiveBatchSize,
-      debug: offset === 0 ? {
-        delimiter,
-        headers_normalized: headersNormalized.slice(0, 20),
-        sample_ean: batchRows[0]?.["ean"] || batchRows[0]?.["ean13"] || "(no encontrado)",
-        total_rows_in_file: totalRows,
-      } : undefined,
+      suggested_next_batch_size:
+        timeout_count > 0
+          ? Math.max(BATCH_SIZE_MIN, Math.floor(effectiveBatchSize / 2))
+          : duration_ms < 5000 && effectiveBatchSize < BATCH_SIZE_MAX
+            ? Math.min(BATCH_SIZE_MAX, Math.floor(effectiveBatchSize * 1.5))
+            : effectiveBatchSize,
+      debug:
+        offset === 0
+          ? {
+              delimiter,
+              headers_normalized: headersNormalized.slice(0, 20),
+              sample_ean: batchRows[0]?.["ean"] || batchRows[0]?.["ean13"] || "(no encontrado)",
+              total_rows_in_file: totalRows,
+            }
+          : undefined,
     })
-
   } catch (error: any) {
     console.error("[BATCH] Fatal error:", error)
     return NextResponse.json({ error: error.message || "Error interno" }, { status: 500 })

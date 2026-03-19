@@ -46,23 +46,39 @@ export async function runArnoiaStockImport(): Promise<ArnoiaStockImportResult> {
       .single()
 
     if (!source) {
-      return { success: false, updated: 0, not_found: 0, total_rows: 0, unique_eans: 0, duration_seconds: 0, error: "Arnoia Stock source not found or inactive" }
+      return {
+        success: false,
+        updated: 0,
+        not_found: 0,
+        total_rows: 0,
+        unique_eans: 0,
+        duration_seconds: 0,
+        error: "Arnoia Stock source not found or inactive",
+      }
     }
 
     const credentials = source.credentials as any
     const url = credentials?.url || source.url_template
     if (!url) {
-      return { success: false, updated: 0, not_found: 0, total_rows: 0, unique_eans: 0, duration_seconds: 0, error: "URL not configured" }
+      return {
+        success: false,
+        updated: 0,
+        not_found: 0,
+        total_rows: 0,
+        unique_eans: 0,
+        duration_seconds: 0,
+        error: "URL not configured",
+      }
     }
 
     // Descargar CSV
     console.log("[ARNOIA-STOCK] Fetching from:", url)
     const fetchRes = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 compatible" } })
     if (!fetchRes.ok) throw new Error(`HTTP ${fetchRes.status} fetching stock CSV`)
-    const buffer  = Buffer.from(await fetchRes.arrayBuffer())
+    const buffer = Buffer.from(await fetchRes.arrayBuffer())
     const csvText = buffer.toString("latin1")
 
-    const lines = csvText.split("\n").filter(l => l.trim())
+    const lines = csvText.split("\n").filter((l) => l.trim())
     console.log(`[ARNOIA-STOCK] Descargado: ${lines.length} líneas`)
     if (lines.length === 0) throw new Error("CSV vacío o sin datos")
 
@@ -75,17 +91,21 @@ export async function runArnoiaStockImport(): Promise<ArnoiaStockImportResult> {
     const hasHeader = !/^[0-9]+$/.test(firstCol)
     const startLine = hasHeader ? 1 : 0
 
-    let eanColIdx = 0, stockColIdx = 1, priceColIdx = -1
+    let eanColIdx = 0,
+      stockColIdx = 1,
+      priceColIdx = -1
     if (hasHeader) {
-      const headers = firstLine.split(delimiter).map(h => h.replace(/['"]/g, "").trim().toLowerCase())
-      eanColIdx   = headers.findIndex(h => ["ean", "ean13", "isbn", "gtin", "codigo"].includes(h))
-      stockColIdx = headers.findIndex(h => ["stock", "cantidad", "qty", "disponible"].includes(h))
-      priceColIdx = headers.findIndex(h => ["precio_sin_iva", "precio", "pvp", "price"].includes(h))
-      if (eanColIdx < 0)   eanColIdx   = 0
+      const headers = firstLine.split(delimiter).map((h) => h.replace(/['"]/g, "").trim().toLowerCase())
+      eanColIdx = headers.findIndex((h) => ["ean", "ean13", "isbn", "gtin", "codigo"].includes(h))
+      stockColIdx = headers.findIndex((h) => ["stock", "cantidad", "qty", "disponible"].includes(h))
+      priceColIdx = headers.findIndex((h) => ["precio_sin_iva", "precio", "pvp", "price"].includes(h))
+      if (eanColIdx < 0) eanColIdx = 0
       if (stockColIdx < 0) stockColIdx = 1
     }
 
-    console.log(`[ARNOIA-STOCK] delimiter="${delimiter}" hasHeader=${hasHeader} eanCol=${eanColIdx} stockCol=${stockColIdx}`)
+    console.log(
+      `[ARNOIA-STOCK] delimiter="${delimiter}" hasHeader=${hasHeader} eanCol=${eanColIdx} stockCol=${stockColIdx}`,
+    )
 
     // Construir mapa EAN → {stock, price} deduplicado
     const eanMap = new Map<string, { stock: number; price: number | null }>()
@@ -112,9 +132,9 @@ export async function runArnoiaStockImport(): Promise<ArnoiaStockImportResult> {
       }
     }
 
-    const eans   = Array.from(eanMap.keys())
-    const stocks = eans.map(e => eanMap.get(e)!.stock)
-    const prices = eans.map(e => eanMap.get(e)!.price)
+    const eans = Array.from(eanMap.keys())
+    const stocks = eans.map((e) => eanMap.get(e)!.stock)
+    const prices = eans.map((e) => eanMap.get(e)!.price)
 
     console.log(`[ARNOIA-STOCK] ${eans.length} unique EANs to update`)
 
@@ -124,15 +144,15 @@ export async function runArnoiaStockImport(): Promise<ArnoiaStockImportResult> {
     const stockKey = (source as any).source_key ?? "arnoia"
 
     for (let i = 0; i < eans.length; i += BATCH_SIZE) {
-      const batchEans   = eans.slice(i, i + BATCH_SIZE)
+      const batchEans = eans.slice(i, i + BATCH_SIZE)
       const batchStocks = stocks.slice(i, i + BATCH_SIZE)
       const batchPrices = prices.slice(i, i + BATCH_SIZE)
 
       // RPC actualiza stock_by_source[source_key] + trigger recalcula products.stock
       const { data: rpcResult, error: rpcError } = await supabase.rpc("bulk_update_stock_price", {
-        p_eans:       batchEans,
-        p_stocks:     batchStocks,
-        p_prices:     batchPrices,
+        p_eans: batchEans,
+        p_stocks: batchStocks,
+        p_prices: batchPrices,
         p_source_key: stockKey,
       })
 
@@ -140,9 +160,11 @@ export async function runArnoiaStockImport(): Promise<ArnoiaStockImportResult> {
         console.error(`[ARNOIA-STOCK] RPC error batch ${i}-${i + batchEans.length}:`, rpcError.message)
       } else {
         const batchUpdated = typeof rpcResult === "number" ? rpcResult : 0
-        totalUpdated  += batchUpdated
+        totalUpdated += batchUpdated
         totalNotFound += batchEans.length - batchUpdated
-        console.log(`[ARNOIA-STOCK] Batch ${i}-${i + batchEans.length}: ${batchUpdated} updated (source_key=${stockKey})`)
+        console.log(
+          `[ARNOIA-STOCK] Batch ${i}-${i + batchEans.length}: ${batchUpdated} updated (source_key=${stockKey})`,
+        )
       }
 
       // Checkpoint: update process_runs so progress is visible mid-run.
@@ -159,10 +181,10 @@ export async function runArnoiaStockImport(): Promise<ArnoiaStockImportResult> {
     // NO están en el archivo (ya no disponibles en Arnoia este día).
     // Preserva stock de otros proveedores (Azeta, Libral, etc.)
     let zeroed = 0
-    const { data: zeroResult, error: zeroError } = await supabase.rpc(
-      "zero_source_stock_not_in_list",
-      { p_eans: eans, p_source_key: stockKey }
-    )
+    const { data: zeroResult, error: zeroError } = await supabase.rpc("zero_source_stock_not_in_list", {
+      p_eans: eans,
+      p_source_key: stockKey,
+    })
     if (zeroError) {
       // Si la función no existe aún, intentar con la genérica
       console.warn(`[ARNOIA-STOCK] zero_source_stock_not_in_list error: ${zeroError.message}`)
@@ -198,15 +220,20 @@ export async function runArnoiaStockImport(): Promise<ArnoiaStockImportResult> {
       console.log(`[ARNOIA-STOCK] Zeroed ${zeroed} products not in file`)
     }
 
-    const duration = ((Date.now() - startTime) / 1000)
+    const duration = (Date.now() - startTime) / 1000
 
     // Actualizar last_run del source
-    await supabase.from("import_sources").update({
-      last_run:    new Date().toISOString(),
-      last_status: "success",
-    }).eq("id", source.id)
+    await supabase
+      .from("import_sources")
+      .update({
+        last_run: new Date().toISOString(),
+        last_status: "success",
+      })
+      .eq("id", source.id)
 
-    console.log(`[ARNOIA-STOCK] Done: ${totalUpdated} updated, ${totalNotFound} not found, ${zeroed} zeroed, ${duration.toFixed(2)}s`)
+    console.log(
+      `[ARNOIA-STOCK] Done: ${totalUpdated} updated, ${totalNotFound} not found, ${zeroed} zeroed, ${duration.toFixed(2)}s`,
+    )
 
     await run.complete({
       rows_processed: eans.length,
@@ -216,17 +243,25 @@ export async function runArnoiaStockImport(): Promise<ArnoiaStockImportResult> {
     })
 
     return {
-      success:          true,
-      updated:          totalUpdated,
-      not_found:        totalNotFound,
+      success: true,
+      updated: totalUpdated,
+      not_found: totalNotFound,
       zeroed,
-      total_rows:       lines.length,
-      unique_eans:      eans.length,
+      total_rows: lines.length,
+      unique_eans: eans.length,
       duration_seconds: parseFloat(duration.toFixed(2)),
     }
   } catch (err: any) {
     console.error("[ARNOIA-STOCK] Fatal error:", err.message)
     await run.fail(err)
-    return { success: false, updated: 0, not_found: 0, total_rows: 0, unique_eans: 0, duration_seconds: 0, error: err.message }
+    return {
+      success: false,
+      updated: 0,
+      not_found: 0,
+      total_rows: 0,
+      unique_eans: 0,
+      duration_seconds: 0,
+      error: err.message,
+    }
   }
 }

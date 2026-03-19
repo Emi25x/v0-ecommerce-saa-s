@@ -14,27 +14,30 @@ function buildPDFResponse(factura: any) {
 
   return new Response(html, {
     headers: {
-      "Content-Type":        "text/html; charset=utf-8",
+      "Content-Type": "text/html; charset=utf-8",
       "Content-Disposition": `inline; filename="factura-${String(factura.punto_venta).padStart(4, "0")}-${String(factura.numero).padStart(8, "0")}.html"`,
     },
   })
 }
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     // 1. Buscar la factura
     const { data: factura, error: facturaError } = await supabase
       .from("facturas")
       .select("*")
-      .eq("id", params.id)
+      .eq("id", id)
       .maybeSingle()
 
     if (facturaError || !factura) {
-      console.log("[v0] PDF - Factura not found, id:", params.id, "error:", facturaError?.message)
+      console.log("[v0] PDF - Factura not found, id:", id, "error:", facturaError?.message)
       return NextResponse.json({ error: "Factura no encontrada" }, { status: 404 })
     }
 

@@ -13,14 +13,14 @@ export const maxDuration = 30
 async function handleAdvance(request: Request) {
   const url = new URL(request.url)
   const secret = url.searchParams.get("secret")
-  
+
   // Validar secret
   if (!secret || secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
   console.log("[v0] ADVANCE - Starting...")
-  
+
   try {
     const supabase = await createClient()
 
@@ -34,9 +34,9 @@ async function handleAdvance(request: Request) {
       .maybeSingle()
 
     if (!activeJob) {
-      return NextResponse.json({ 
+      return NextResponse.json({
         ok: false,
-        message: "No active jobs" 
+        message: "No active jobs",
       })
     }
 
@@ -49,7 +49,7 @@ async function handleAdvance(request: Request) {
       const indexData = await executeIndexBatch(supabase, {
         job_id: activeJob.id,
         account_id: activeJob.account_id,
-        offset: offsetBefore
+        offset: offsetBefore,
       })
 
       // Re-leer offset actualizado
@@ -70,7 +70,7 @@ async function handleAdvance(request: Request) {
         status: updatedJob?.status || activeJob.status,
         offset_before: offsetBefore,
         offset_after: offsetAfter,
-        items_indexed: indexData.items_indexed || 0
+        items_indexed: indexData.items_indexed || 0,
       })
     }
 
@@ -80,7 +80,7 @@ async function handleAdvance(request: Request) {
 
       const workerData = await executeWorkerBatch(supabase, {
         job_id: activeJob.id,
-        batch_size: 20
+        batch_size: 20,
       })
 
       console.log("[v0] ADVANCE - Worker complete. Processed:", workerData.processed || 0)
@@ -92,22 +92,24 @@ async function handleAdvance(request: Request) {
         status: workerData.status || "processing",
         offset_before: offsetBefore,
         offset_after: offsetBefore,
-        items_processed: workerData.processed || 0
+        items_processed: workerData.processed || 0,
       })
     }
 
     return NextResponse.json({
       ok: false,
       message: "Unknown job status",
-      status: activeJob.status
+      status: activeJob.status,
     })
-
   } catch (error: any) {
     console.error("[v0] ADVANCE - Error:", error)
-    return NextResponse.json({ 
-      ok: false,
-      error: error.message 
-    }, { status: 500 })
+    return NextResponse.json(
+      {
+        ok: false,
+        error: error.message,
+      },
+      { status: 500 },
+    )
   }
 }
 

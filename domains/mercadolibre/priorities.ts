@@ -57,67 +57,65 @@ export async function calculateMlPriorities(opts?: {
 
   for (const product of products) {
     const productPubs = pubsByProduct.get(product.id) ?? []
-    const activePubs  = productPubs.filter(p => p.status === "active")
-    const pausedPubs  = productPubs.filter(p => ["paused", "closed"].includes(p.status ?? ""))
-    const mlFiltered  = mlAccountId
-      ? activePubs.filter(p => p.account_id === mlAccountId)
-      : activePubs
+    const activePubs = productPubs.filter((p) => p.status === "active")
+    const pausedPubs = productPubs.filter((p) => ["paused", "closed"].includes(p.status ?? ""))
+    const mlFiltered = mlAccountId ? activePubs.filter((p) => p.account_id === mlAccountId) : activePubs
 
     // ── Demand score (0-30)
     const competitorListings = mlFiltered.length
     let scoreDemand = 0
-    if (competitorListings === 0)  scoreDemand = 20
+    if (competitorListings === 0) scoreDemand = 20
     else if (competitorListings <= 3) scoreDemand = 28
     else if (competitorListings <= 8) scoreDemand = 22
     else scoreDemand = 12
 
     // ── Competition score (0-20)
     let scoreCompetition = 0
-    if (competitorListings === 0)      scoreCompetition = 20
-    else if (competitorListings <= 2)  scoreCompetition = 16
-    else if (competitorListings <= 5)  scoreCompetition = 10
+    if (competitorListings === 0) scoreCompetition = 20
+    else if (competitorListings <= 2) scoreCompetition = 16
+    else if (competitorListings <= 5) scoreCompetition = 10
     else if (competitorListings <= 10) scoreCompetition = 6
     else scoreCompetition = 2
 
     // ── Stock score (0-25)
     const stockTotal = product.stock ?? 0
     let scoreStock = 0
-    if (stockTotal >= 10)     scoreStock = 25
+    if (stockTotal >= 10) scoreStock = 25
     else if (stockTotal >= 5) scoreStock = 18
     else if (stockTotal >= 1) scoreStock = 10
     else scoreStock = 0
 
     // ── Profitability score (0-15)
-    const cost  = Number(product.cost_price ?? 0)
+    const cost = Number(product.cost_price ?? 0)
     const price = Number(product.price ?? 0)
     let scoreProfitability = 0
     if (cost > 0 && price > 0) {
       const margin = (price - cost) / price
-      if (margin >= 0.40)      scoreProfitability = 15
+      if (margin >= 0.4) scoreProfitability = 15
       else if (margin >= 0.25) scoreProfitability = 10
-      else if (margin >= 0.10) scoreProfitability = 6
+      else if (margin >= 0.1) scoreProfitability = 6
       else scoreProfitability = 2
     } else if (price > 0) {
       scoreProfitability = 7
     }
 
     // ── Radar boost (0-10)
-    const radarScore   = radarByProduct.get(product.id) ?? 0
-    const scoreRadar   = radarScore > 0 ? Math.min(10, Math.round(radarScore / 10)) : 0
+    const radarScore = radarByProduct.get(product.id) ?? 0
+    const scoreRadar = radarScore > 0 ? Math.min(10, Math.round(radarScore / 10)) : 0
 
     // ── Total
     const total = scoreDemand + scoreCompetition + scoreStock + scoreProfitability + scoreRadar
 
     // ── Priority level
     let priorityLevel: string
-    if (total >= 80)      priorityLevel = "critical"
+    if (total >= 80) priorityLevel = "critical"
     else if (total >= 60) priorityLevel = "high"
     else if (total >= 35) priorityLevel = "medium"
     else priorityLevel = "low"
 
     // ── Recommended action
     let action: string
-    const hasActive   = activePubs.length > 0
+    const hasActive = activePubs.length > 0
     const hasInactive = pausedPubs.length > 0
 
     if (stockTotal === 0) {
@@ -134,30 +132,30 @@ export async function calculateMlPriorities(opts?: {
 
     // ── Reason summary
     const reasons: string[] = []
-    if (radarScore > 0)           reasons.push(`radar editorial (${radarScore}pts)`)
-    if (stockTotal === 0)          reasons.push("sin stock")
-    else if (stockTotal < 5)       reasons.push("stock bajo")
-    if (competitorListings === 0)  reasons.push("sin competencia")
+    if (radarScore > 0) reasons.push(`radar editorial (${radarScore}pts)`)
+    if (stockTotal === 0) reasons.push("sin stock")
+    else if (stockTotal < 5) reasons.push("stock bajo")
+    if (competitorListings === 0) reasons.push("sin competencia")
     else if (competitorListings > 10) reasons.push("alta competencia")
-    if (hasInactive)               reasons.push("publicación inactiva existente")
-    if (scoreProfitability >= 12)  reasons.push("margen alto")
+    if (hasInactive) reasons.push("publicación inactiva existente")
+    if (scoreProfitability >= 12) reasons.push("margen alto")
 
     upsertRows.push({
-      product_id:             product.id,
-      ml_account_id:          mlAccountId,
+      product_id: product.id,
+      ml_account_id: mlAccountId,
       publish_priority_score: total,
-      priority_level:         priorityLevel,
-      recommended_action:     action,
-      reason_summary:         reasons.join(" · ") || null,
-      score_demand:           scoreDemand,
-      score_competition:      scoreCompetition,
-      score_stock:            scoreStock,
-      score_profitability:    scoreProfitability,
-      score_radar_boost:      scoreRadar,
-      has_inactive_listing:   hasInactive,
-      active_listings_count:  activePubs.length,
-      stock_total:            stockTotal,
-      updated_at:             new Date().toISOString(),
+      priority_level: priorityLevel,
+      recommended_action: action,
+      reason_summary: reasons.join(" · ") || null,
+      score_demand: scoreDemand,
+      score_competition: scoreCompetition,
+      score_stock: scoreStock,
+      score_profitability: scoreProfitability,
+      score_radar_boost: scoreRadar,
+      has_inactive_listing: hasInactive,
+      active_listings_count: activePubs.length,
+      stock_total: stockTotal,
+      updated_at: new Date().toISOString(),
     })
   }
 
@@ -174,8 +172,8 @@ export async function calculateMlPriorities(opts?: {
   }
 
   return {
-    ok:        true,
+    ok: true,
     processed: upserted,
-    total:     products.length,
+    total: products.length,
   }
 }

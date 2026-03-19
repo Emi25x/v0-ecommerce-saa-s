@@ -4,12 +4,12 @@ import { createAdminClient } from "@/lib/db/admin"
 export async function GET(req: NextRequest) {
   const supabase = createAdminClient()
   const { searchParams } = new URL(req.url)
-  const type       = searchParams.get("type")        // trending|classic|gap|new_release|adaptation
-  const status     = searchParams.get("status")      // new|reviewing|approved|rejected|archived
-  const confidence = searchParams.get("confidence")  // high|medium|low
-  const q          = searchParams.get("q")?.trim()
-  const page       = parseInt(searchParams.get("page") ?? "0")
-  const limit      = Math.min(parseInt(searchParams.get("limit") ?? "50"), 200)
+  const type = searchParams.get("type") // trending|classic|gap|new_release|adaptation
+  const status = searchParams.get("status") // new|reviewing|approved|rejected|archived
+  const confidence = searchParams.get("confidence") // high|medium|low
+  const q = searchParams.get("q")?.trim()
+  const page = parseInt(searchParams.get("page") ?? "0")
+  const limit = Math.min(parseInt(searchParams.get("limit") ?? "50"), 200)
 
   try {
     let qb = supabase
@@ -18,10 +18,10 @@ export async function GET(req: NextRequest) {
       .order("score", { ascending: false })
       .range(page * limit, (page + 1) * limit - 1)
 
-    if (type)       qb = qb.eq("opportunity_type", type)
-    if (status)     qb = qb.eq("status", status)
+    if (type) qb = qb.eq("opportunity_type", type)
+    if (status) qb = qb.eq("status", status)
     if (confidence) qb = qb.eq("confidence", confidence)
-    if (q)          qb = qb.or(`title.ilike.%${q}%,author.ilike.%${q}%,isbn.ilike.%${q}%,publisher.ilike.%${q}%`)
+    if (q) qb = qb.or(`title.ilike.%${q}%,author.ilike.%${q}%,isbn.ilike.%${q}%,publisher.ilike.%${q}%`)
 
     const { data, error, count } = await qb
     if (error) throw error

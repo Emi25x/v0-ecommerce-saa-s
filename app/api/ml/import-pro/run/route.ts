@@ -1,11 +1,7 @@
 import { createAdminClient } from "@/lib/db/admin"
 import { NextRequest, NextResponse } from "next/server"
 import { protectAPI } from "@/lib/auth/protect-api"
-import {
-  validateImportPreconditions,
-  runProImport,
-  handleImportError,
-} from "@/domains/mercadolibre/import/pro-worker"
+import { validateImportPreconditions, runProImport, handleImportError } from "@/domains/mercadolibre/import/pro-worker"
 
 export const maxDuration = 60
 

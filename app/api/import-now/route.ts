@@ -65,18 +65,22 @@ export async function GET(request: Request) {
         const { data: histRecord } = await supabase
           .from("import_history")
           .insert({ source_id: source.id, status: "running", started_at: new Date().toISOString() })
-          .select().single()
+          .select()
+          .single()
 
         const r = await runAzetaStockUpdate(source as any)
 
         if (histRecord) {
-          await supabase.from("import_history").update({
-            status: r.success ? "success" : "error",
-            completed_at: new Date().toISOString(),
-            products_updated: r.updated ?? 0,
-            products_failed: r.not_found ?? 0,
-            error_message: r.error ?? null,
-          }).eq("id", histRecord.id)
+          await supabase
+            .from("import_history")
+            .update({
+              status: r.success ? "success" : "error",
+              completed_at: new Date().toISOString(),
+              products_updated: r.updated ?? 0,
+              products_failed: r.not_found ?? 0,
+              error_message: r.error ?? null,
+            })
+            .eq("id", histRecord.id)
         }
 
         results.push({
@@ -98,17 +102,21 @@ export async function GET(request: Request) {
         const { data: histRecord } = await supabase
           .from("import_history")
           .insert({ source_id: source.id, status: "running", started_at: new Date().toISOString() })
-          .select().single()
+          .select()
+          .single()
 
         const r = await runArnoiaStockImport()
 
         if (histRecord) {
-          await supabase.from("import_history").update({
-            status: r.success ? "success" : "error",
-            completed_at: new Date().toISOString(),
-            products_updated: r.updated,
-            error_message: r.error ?? null,
-          }).eq("id", histRecord.id)
+          await supabase
+            .from("import_history")
+            .update({
+              status: r.success ? "success" : "error",
+              completed_at: new Date().toISOString(),
+              products_updated: r.updated,
+              error_message: r.error ?? null,
+            })
+            .eq("id", histRecord.id)
         }
 
         results.push({
@@ -187,10 +195,11 @@ export async function GET(request: Request) {
 
         // Auto-detect separator (|, ;, \t, ,)
         const firstLine = lines[0]
-        const separatorCounts = ["|", ";", "\t", ","].map(s => ({
-          s, n: (firstLine.match(new RegExp(`\\${s === "\t" ? "t" : s}`, "g")) || []).length
+        const separatorCounts = ["|", ";", "\t", ","].map((s) => ({
+          s,
+          n: (firstLine.match(new RegExp(`\\${s === "\t" ? "t" : s}`, "g")) || []).length,
         }))
-        const separator = separatorCounts.reduce((best, cur) => cur.n > best.n ? cur : best).s
+        const separator = separatorCounts.reduce((best, cur) => (cur.n > best.n ? cur : best)).s
         console.log(`[v0] Separator detected: "${separator}"`)
 
         const headers = firstLine.split(separator).map((h) => h.trim().replace(/^["']|["']$/g, ""))
@@ -256,14 +265,20 @@ export async function GET(request: Request) {
             }
 
             // Check if product exists (include stock_by_source for merge)
-            const { data: existing } = await supabase.from("products").select("id, source, stock_by_source").eq("sku", sku).single()
+            const { data: existing } = await supabase
+              .from("products")
+              .select("id, source, stock_by_source")
+              .eq("sku", sku)
+              .single()
 
             // Use source_key (short string) as bucket key — not UUID — so warehouse stock filters work correctly
             const stockKey = source.source_key ?? source.id
 
             // Merge stock into the source's bucket
             const { stock_by_source, stock: totalStock } = mergeStockBySource(
-              existing?.stock_by_source, stockKey, productData.stock
+              existing?.stock_by_source,
+              stockKey,
+              productData.stock,
             )
             productData.stock = totalStock
             productData.stock_by_source = stock_by_source

@@ -17,11 +17,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`[v0][RUN/CANCEL] Cancelando run_id=${run_id}`)
 
-    const { data: run, error: runError } = await supabase
-      .from("import_runs")
-      .select("*")
-      .eq("id", run_id)
-      .single()
+    const { data: run, error: runError } = await supabase.from("import_runs").select("*").eq("id", run_id).single()
 
     if (runError || !run) {
       return NextResponse.json({ error: "Run no encontrado" }, { status: 404 })
@@ -29,17 +25,20 @@ export async function POST(request: NextRequest) {
 
     // Solo se puede cancelar si está en running o queued
     if (run.status !== "running" && run.status !== "queued") {
-      return NextResponse.json({
-        ok: false,
-        error: `No se puede cancelar un run en estado ${run.status}`
-      }, { status: 400 })
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `No se puede cancelar un run en estado ${run.status}`,
+        },
+        { status: 400 },
+      )
     }
 
     await supabase
       .from("import_runs")
       .update({
         status: "canceled",
-        finished_at: new Date().toISOString()
+        finished_at: new Date().toISOString(),
       })
       .eq("id", run_id)
 
@@ -47,13 +46,15 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      status: "canceled"
+      status: "canceled",
     })
-
   } catch (error: any) {
     console.error("[v0][RUN/CANCEL] Error inesperado:", error)
-    return NextResponse.json({ 
-      error: error.message || "Error interno del servidor" 
-    }, { status: 500 })
+    return NextResponse.json(
+      {
+        error: error.message || "Error interno del servidor",
+      },
+      { status: 500 },
+    )
   }
 }

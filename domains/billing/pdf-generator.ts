@@ -11,11 +11,11 @@
  */
 
 let puppeteerCore: any = null
-let chromiumMod:   any = null
+let chromiumMod: any = null
 
 async function lazyLoad() {
   if (!puppeteerCore) puppeteerCore = (await import("puppeteer-core")).default
-  if (!chromiumMod)   chromiumMod   = (await import("@sparticuz/chromium-min")).default
+  if (!chromiumMod) chromiumMod = (await import("@sparticuz/chromium-min")).default
 }
 
 export async function htmlToPdfBuffer(html: string): Promise<Buffer> {
@@ -30,37 +30,42 @@ export async function htmlToPdfBuffer(html: string): Promise<Buffer> {
     // Desarrollo local: intentar Chrome/Chromium del sistema
     const fs = await import("fs")
     const localPaths = ["/usr/bin/chromium-browser", "/usr/bin/google-chrome", "/usr/bin/chromium"]
-    const found = localPaths.find(p => { try { return fs.existsSync(p) } catch { return false } })
+    const found = localPaths.find((p) => {
+      try {
+        return fs.existsSync(p)
+      } catch {
+        return false
+      }
+    })
     if (found) {
       executablePath = found
     } else {
       const remoteUrl = process.env.CHROMIUM_REMOTE_URL
-      executablePath = remoteUrl
-        ? await chromiumMod.executablePath(remoteUrl)
-        : await chromiumMod.executablePath()
+      executablePath = remoteUrl ? await chromiumMod.executablePath(remoteUrl) : await chromiumMod.executablePath()
     }
   } else {
     // Producción (Vercel): descargar binario desde URL remota al arrancar la función
     // Si CHROMIUM_REMOTE_URL no está configurada, usa el pack oficial para x64 Linux.
-    const remoteUrl = process.env.CHROMIUM_REMOTE_URL
-      || "https://github.com/Sparticuz/chromium/releases/download/v143.0.4/chromium-v143.0.4-pack.x64.tar"
+    const remoteUrl =
+      process.env.CHROMIUM_REMOTE_URL ||
+      "https://github.com/Sparticuz/chromium/releases/download/v143.0.4/chromium-v143.0.4-pack.x64.tar"
     executablePath = await chromiumMod.executablePath(remoteUrl)
   }
 
   const browser = await puppeteerCore.launch({
-    args:            chromiumMod.args,
+    args: chromiumMod.args,
     defaultViewport: chromiumMod.defaultViewport,
     executablePath,
-    headless:        true,
+    headless: true,
   })
 
   try {
     const page = await browser.newPage()
     await page.setContent(html, { waitUntil: "networkidle0" })
     const pdf = await page.pdf({
-      format:          "A4",
+      format: "A4",
       printBackground: true,
-      margin:          { top: "0", right: "0", bottom: "0", left: "0" },
+      margin: { top: "0", right: "0", bottom: "0", left: "0" },
     })
     return Buffer.from(pdf)
   } finally {

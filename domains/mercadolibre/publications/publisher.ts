@@ -14,7 +14,11 @@
 import { calculateMlPrice } from "@/domains/mercadolibre/price-calculator"
 import { resolveProductImage } from "@/domains/mercadolibre/publications/image-uploader"
 import { buildMlTitle, buildMlDescription } from "@/domains/mercadolibre/publications/text-sanitizer"
-import { buildTraditionalItem, buildCatalogItem, validateTraditionalItem } from "@/domains/mercadolibre/publications/builder"
+import {
+  buildTraditionalItem,
+  buildCatalogItem,
+  validateTraditionalItem,
+} from "@/domains/mercadolibre/publications/builder"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -55,7 +59,7 @@ export async function checkAlreadyPublished(params: {
     // Buscar items del vendedor que tengan este EAN en atributos
     const searchUrl = `https://api.mercadolibre.com/users/${mlUserId}/items/search?search_type=scan&attributes=GTIN:${ean}`
     const searchResponse = await fetch(searchUrl, {
-      headers: { "Authorization": `Bearer ${accessToken}` }
+      headers: { Authorization: `Bearer ${accessToken}` },
     })
 
     if (searchResponse.ok) {
@@ -72,16 +76,13 @@ export async function checkAlreadyPublished(params: {
               ml_item_id: mlItemId,
               account_id: accountId,
               ml_status: "active",
-              ml_last_checked_at: new Date().toISOString()
+              ml_last_checked_at: new Date().toISOString(),
             })
             .eq("id", productId)
         }
       } else {
         // No está publicado en ML, actualizar last_checked
-        await supabase
-          .from("products")
-          .update({ ml_last_checked_at: new Date().toISOString() })
-          .eq("id", productId)
+        await supabase.from("products").update({ ml_last_checked_at: new Date().toISOString() }).eq("id", productId)
       }
     }
 
@@ -103,7 +104,7 @@ export async function checkAlreadyPublished(params: {
             ml_item_id: existingPub.ml_item_id,
             account_id: accountId,
             ml_status: "active",
-            ml_last_checked_at: new Date().toISOString()
+            ml_last_checked_at: new Date().toISOString(),
           })
           .eq("id", productId)
       }
@@ -119,7 +120,7 @@ export async function checkAlreadyPublished(params: {
 
 export async function searchCatalog(
   ean: string | null | undefined,
-  accessToken: string
+  accessToken: string,
 ): Promise<{ catalogProductId: string | null; familyName: string | null }> {
   let catalogProductId: string | null = null
   let familyName: string | null = null
@@ -128,7 +129,7 @@ export async function searchCatalog(
     try {
       const catalogSearch = await fetch(
         `https://api.mercadolibre.com/products/search?status=active&site_id=MLA&product_identifier=${ean}`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
+        { headers: { Authorization: `Bearer ${accessToken}` } },
       )
 
       if (catalogSearch.ok) {
@@ -168,9 +169,10 @@ export async function resolvePrice(params: {
   }
 
   if (!finalPrice || finalPrice <= 0) {
-    const errorMessage = finalPrice !== undefined && finalPrice !== null && finalPrice <= 0
-      ? `Precio calculado inválido (${finalPrice}). Verificar costo y margen del producto.`
-      : "No se pudo calcular el precio. El producto no tiene cost_price."
+    const errorMessage =
+      finalPrice !== undefined && finalPrice !== null && finalPrice <= 0
+        ? `Precio calculado inválido (${finalPrice}). Verificar costo y margen del producto.`
+        : "No se pudo calcular el precio. El producto no tiene cost_price."
     return { finalPrice: null, priceCalculation, errorMessage }
   }
 
@@ -190,15 +192,18 @@ export async function publishToMl(params: {
   console.log("[v0] Item to publish - price:", itemToPublish.price)
   console.log("[v0] Item to publish - pictures:", JSON.stringify(itemToPublish.pictures))
   console.log("[v0] Item to publish - shipping:", JSON.stringify(itemToPublish.shipping))
-  console.log("[v0] Item to publish - attributes (first 5):", JSON.stringify((itemToPublish.attributes as Array<unknown>)?.slice(0, 5)))
+  console.log(
+    "[v0] Item to publish - attributes (first 5):",
+    JSON.stringify((itemToPublish.attributes as Array<unknown>)?.slice(0, 5)),
+  )
 
   const mlResponse = await fetch("https://api.mercadolibre.com/items", {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${accessToken}`,
-      "Content-Type": "application/json"
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
     },
-    body: JSON.stringify(itemToPublish)
+    body: JSON.stringify(itemToPublish),
   })
 
   const mlData = await mlResponse.json()
@@ -221,7 +226,7 @@ function formatMlError(mlData: any): PublishResult {
         invalidFields.push(cause.message)
       }
       if (cause.field) {
-        invalidFields.push(`Campo "${cause.field}": ${cause.message || 'inválido'}`)
+        invalidFields.push(`Campo "${cause.field}": ${cause.message || "inválido"}`)
       }
     })
   }
@@ -245,21 +250,17 @@ function formatMlError(mlData: any): PublishResult {
 
 // ─── Post-publish: add seller_sku ─────────────────────────────────────────────
 
-export async function addSellerSku(params: {
-  mlItemId: string
-  sku: string
-  accessToken: string
-}): Promise<boolean> {
+export async function addSellerSku(params: { mlItemId: string; sku: string; accessToken: string }): Promise<boolean> {
   const { mlItemId, sku, accessToken } = params
   try {
     console.log("[v0] Adding seller_sku to item", mlItemId, "value:", sku)
     const skuResponse = await fetch(`https://api.mercadolibre.com/items/${mlItemId}`, {
       method: "PUT",
       headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Content-Type": "application/json"
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify({ seller_custom_field: sku })
+      body: JSON.stringify({ seller_custom_field: sku }),
     })
 
     if (!skuResponse.ok) {
@@ -294,10 +295,10 @@ export async function addDescription(params: {
     const descResponse = await fetch(`https://api.mercadolibre.com/items/${mlItemId}/description`, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Content-Type": "application/json"
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify({ plain_text: description })
+      body: JSON.stringify({ plain_text: description }),
     })
 
     if (!descResponse.ok) {
@@ -330,10 +331,10 @@ export async function doCatalogOptin(params: {
       const activateResponse = await fetch(`https://api.mercadolibre.com/items/${mlItemId}`, {
         method: "PUT",
         headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json"
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify({ status: "active" })
+        body: JSON.stringify({ status: "active" }),
       })
 
       if (!activateResponse.ok) {
@@ -344,11 +345,11 @@ export async function doCatalogOptin(params: {
 
       console.log("[v0] Item activated, waiting for ML to process...")
       // Esperar 2 segundos para que ML procese el cambio de estado
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      await new Promise((resolve) => setTimeout(resolve, 2000))
 
       // Verificar que realmente se activó
       const verifyResponse = await fetch(`https://api.mercadolibre.com/items/${mlItemId}`, {
-        headers: { "Authorization": `Bearer ${accessToken}` }
+        headers: { Authorization: `Bearer ${accessToken}` },
       })
 
       if (verifyResponse.ok) {
@@ -364,13 +365,13 @@ export async function doCatalogOptin(params: {
     const optinResponse = await fetch("https://api.mercadolibre.com/items/catalog_listings", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Content-Type": "application/json"
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         item_id: mlItemId,
-        catalog_product_id: catalogProductId
-      })
+        catalog_product_id: catalogProductId,
+      }),
     })
 
     if (optinResponse.ok) {
@@ -396,18 +397,16 @@ export async function savePublication(params: {
 }): Promise<void> {
   const { supabase, productId, accountId, mlData } = params
 
-  const { error: insertError } = await supabase
-    .from("ml_publications")
-    .insert({
-      product_id: productId,
-      account_id: accountId,
-      ml_item_id: mlData.id,
-      title: mlData.title,
-      price: mlData.price,
-      status: mlData.status,
-      permalink: mlData.permalink,
-      published_at: new Date().toISOString()
-    })
+  const { error: insertError } = await supabase.from("ml_publications").insert({
+    product_id: productId,
+    account_id: accountId,
+    ml_item_id: mlData.id,
+    title: mlData.title,
+    price: mlData.price,
+    status: mlData.status,
+    permalink: mlData.permalink,
+    published_at: new Date().toISOString(),
+  })
 
   if (insertError) {
     console.error("Error saving publication:", insertError)
@@ -425,18 +424,16 @@ export async function saveCatalogPublication(params: {
   const { supabase, productId, accountId, catalogListing, fallbackTitle, fallbackPrice } = params
 
   if (catalogListing.id) {
-    await supabase
-      .from("ml_publications")
-      .insert({
-        product_id: productId,
-        account_id: accountId,
-        ml_item_id: catalogListing.id,
-        title: catalogListing.title || fallbackTitle,
-        price: catalogListing.price || fallbackPrice,
-        status: catalogListing.status || "active",
-        permalink: catalogListing.permalink,
-        published_at: new Date().toISOString()
-      })
+    await supabase.from("ml_publications").insert({
+      product_id: productId,
+      account_id: accountId,
+      ml_item_id: catalogListing.id,
+      title: catalogListing.title || fallbackTitle,
+      price: catalogListing.price || fallbackPrice,
+      status: catalogListing.status || "active",
+      permalink: catalogListing.permalink,
+      published_at: new Date().toISOString(),
+    })
   }
 }
 
@@ -455,7 +452,7 @@ export async function updateProductMlStatus(params: {
       ml_account_id: accountId,
       ml_status: mlData.status || "active",
       ml_published_at: new Date().toISOString(),
-      ml_permalink: mlData.permalink
+      ml_permalink: mlData.permalink,
     })
     .eq("id", productId)
 }
@@ -505,15 +502,16 @@ export async function loadPublishContext(params: {
           : `No existe en BD (ID: ${String(productId).slice(0, 8)}...)`,
         product_id_received: productId,
         db_error: errorMsg,
-        is_rate_limit: isRateLimit
-      }
+        is_rate_limit: isRateLimit,
+      },
     }
   }
 
   console.log("[v0] Product loaded from DB:", {
-    id: product.id, title: product.title,
+    id: product.id,
+    title: product.title,
     image_url: product.image_url,
-    description: product.description?.substring(0, 100) + "..."
+    description: product.description?.substring(0, 100) + "...",
   })
 
   // Load template
@@ -552,7 +550,7 @@ export async function loadPublishContext(params: {
     return { ok: false, status: 404, body: { success: false, error: "Cuenta ML no encontrada" } }
   }
 
-  const validAccount = await refreshTokenFn(account) as any
+  const validAccount = (await refreshTokenFn(account)) as any
   const accessToken = validAccount.access_token
 
   return { ok: true, ctx: { product, template, account, marginPercent, accessToken, validAccount } }
@@ -570,7 +568,7 @@ export function calculateActualMargin(params: {
   const shippingCostFinal = priceCalculation?.shippingCost || 0
   const fixedFeeFinal = priceCalculation?.fixedFee || 0
   const netReceived = finalPrice - mlCommission - shippingCostFinal - fixedFeeFinal
-  const costInArs = priceCalculation?.costInArs || (costPrice * 1765)
+  const costInArs = priceCalculation?.costInArs || costPrice * 1765
   return ((netReceived - costInArs) / costInArs) * 100
 }
 
@@ -586,13 +584,30 @@ export function buildWarnings(params: {
   catalogProductId: string | null
   catalogListing: any | null
 }): string[] {
-  const { imageWarning, sellerSkuAdded, sellerSkuValue, descriptionAdded, descriptionError, publishMode, catalogProductId, catalogListing } = params
+  const {
+    imageWarning,
+    sellerSkuAdded,
+    sellerSkuValue,
+    descriptionAdded,
+    descriptionError,
+    publishMode,
+    catalogProductId,
+    catalogListing,
+  } = params
   const warnings: string[] = []
   if (imageWarning) warnings.push(`Imagen: ${imageWarning}`)
   if (!sellerSkuAdded && sellerSkuValue) warnings.push("SKU no pudo agregarse al listing")
   if (!descriptionAdded) warnings.push(`Descripción no agregada${descriptionError ? `: ${descriptionError}` : ""}`)
-  if (publishMode === "linked" && catalogProductId && !catalogListing) warnings.push("Catalog opt-in falló, publicado solo como listing tradicional")
+  if (publishMode === "linked" && catalogProductId && !catalogListing)
+    warnings.push("Catalog opt-in falló, publicado solo como listing tradicional")
   return warnings
 }
 
-export { resolveProductImage, buildMlTitle, buildMlDescription, buildTraditionalItem, buildCatalogItem, validateTraditionalItem }
+export {
+  resolveProductImage,
+  buildMlTitle,
+  buildMlDescription,
+  buildTraditionalItem,
+  buildCatalogItem,
+  validateTraditionalItem,
+}

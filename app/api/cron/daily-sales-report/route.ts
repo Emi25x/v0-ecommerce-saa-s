@@ -42,14 +42,10 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       message: "Reporte enviado",
-      recipients: settings.email_recipients
+      recipients: settings.email_recipients,
     })
-
   } catch (error) {
     console.error("[v0] Error en cron de reportes:", error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Error desconocido" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Error desconocido" }, { status: 500 })
   }
 }

@@ -21,15 +21,15 @@ import Link from "next/link"
 export default function ImportProPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  
+
   const [sourceId, setSourceId] = useState<string>("")
   const [sourceName, setSourceName] = useState<string>("")
   const [importMode, setImportMode] = useState<string>("upsert")
-  
+
   const [runId, setRunId] = useState<string | null>(null)
   const [isInitializing, setIsInitializing] = useState(false)
   const [isRunning, setIsRunning] = useState(false)
-  
+
   const [status, setStatus] = useState<string>("idle")
   const [progress, setProgress] = useState(0)
   const [total, setTotal] = useState(0)
@@ -40,7 +40,7 @@ export default function ImportProPage() {
   const [skippedInvalid, setSkippedInvalid] = useState(0)
   const [speedRowsSec, setSpeedRowsSec] = useState(0)
   const [etaSec, setEtaSec] = useState<number | null>(null)
-  
+
   const [logs, setLogs] = useState<string[]>([])
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -53,7 +53,7 @@ export default function ImportProPage() {
     const urlSourceId = searchParams.get("sourceId")
     const urlName = searchParams.get("name")
     const urlMode = searchParams.get("mode")
-    
+
     if (urlSourceId) setSourceId(urlSourceId)
     if (urlName) setSourceName(decodeURIComponent(urlName))
     if (urlMode && ["create", "update", "upsert"].includes(urlMode)) setImportMode(urlMode)
@@ -84,8 +84,8 @@ export default function ImportProPage() {
         body: JSON.stringify({
           source_id: sourceId,
           feed_kind: "catalog",
-          mode: importMode
-        })
+          mode: importMode,
+        }),
       })
 
       const result = await response.json()
@@ -104,7 +104,6 @@ export default function ImportProPage() {
 
       // Iniciar loop de procesamiento
       startProcessingLoop(result.run_id)
-
     } catch (error: any) {
       addLog(`Error: ${error.message}`)
       setStatus("failed")
@@ -123,7 +122,7 @@ export default function ImportProPage() {
         const response = await fetch("/api/inventory/import/run/step", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ run_id })
+          body: JSON.stringify({ run_id }),
         })
 
         const result = await response.json()
@@ -139,7 +138,7 @@ export default function ImportProPage() {
         setUpdated(result.updated_count)
         setSkippedMissing(result.skipped_missing_key || 0)
         setSkippedInvalid(result.skipped_invalid_key || 0)
-        
+
         if (result.total_rows) {
           setTotal(result.total_rows)
           setProgress(Math.round((result.processed_rows / result.total_rows) * 100))
@@ -152,10 +151,10 @@ export default function ImportProPage() {
           const d = result.debug_first_chunk
           addLog(`[DEBUG] === HEADERS DETECTADOS ===`)
           addLog(`[DEBUG] Delimiter: "${d.delimiter}"`)
-          addLog(`[DEBUG] Headers originales (primeros 10): ${d.headers_original?.slice(0, 10).join(', ')}`)
-          addLog(`[DEBUG] Headers normalizados (primeros 10): ${d.headers_normalized?.slice(0, 10).join(', ')}`)
+          addLog(`[DEBUG] Headers originales (primeros 10): ${d.headers_original?.slice(0, 10).join(", ")}`)
+          addLog(`[DEBUG] Headers normalizados (primeros 10): ${d.headers_normalized?.slice(0, 10).join(", ")}`)
           addLog(`[DEBUG] === PRIMERA FILA ===`)
-          addLog(`[DEBUG] Claves disponibles (primeras 10): ${d.first_row_keys?.slice(0, 10).join(', ')}`)
+          addLog(`[DEBUG] Claves disponibles (primeras 10): ${d.first_row_keys?.slice(0, 10).join(", ")}`)
           addLog(`[DEBUG] row["ean"] = "${d.first_row_ean}"`)
           addLog(`[DEBUG] row["isbn"] = "${d.first_row_isbn}"`)
           if (d.first_row_sample) {
@@ -173,7 +172,7 @@ export default function ImportProPage() {
             intervalRef.current = null
           }
           setIsRunning(false)
-          
+
           if (result.status === "completed") {
             addLog(`✅ Importación completada. Creados: ${result.created_count}, Actualizados: ${result.updated_count}`)
           } else if (result.status === "canceled") {
@@ -182,7 +181,6 @@ export default function ImportProPage() {
             addLog(`⚠️ Importación detenida: ${result.status}`)
           }
         }
-
       } catch (error: any) {
         addLog(`Error procesando chunk: ${error.message}`)
         if (intervalRef.current) {
@@ -208,7 +206,7 @@ export default function ImportProPage() {
       const response = await fetch("/api/inventory/import/run/cancel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ run_id: runId })
+        body: JSON.stringify({ run_id: runId }),
       })
 
       const result = await response.json()
@@ -218,15 +216,14 @@ export default function ImportProPage() {
       }
 
       addLog("Cancelando importación...")
-      
+
       if (intervalRef.current) {
         clearInterval(intervalRef.current)
         intervalRef.current = null
       }
-      
+
       setIsRunning(false)
       setStatus("canceled")
-
     } catch (error: any) {
       addLog(`Error al cancelar: ${error.message}`)
     }
@@ -249,14 +246,17 @@ export default function ImportProPage() {
           </Button>
         </Link>
         <h1 className="text-3xl font-bold">Importador PRO</h1>
-        <Badge variant="outline" className="ml-auto">Anti-Timeout</Badge>
+        <Badge variant="outline" className="ml-auto">
+          Anti-Timeout
+        </Badge>
       </div>
 
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>Importación por Lotes - {sourceName}</CardTitle>
           <CardDescription>
-            Procesa archivos CSV grandes (430k+ filas) sin timeouts. El CSV se descarga una sola vez y se procesa por chunks.
+            Procesa archivos CSV grandes (430k+ filas) sin timeouts. El CSV se descarga una sola vez y se procesa por
+            chunks.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -282,12 +282,7 @@ export default function ImportProPage() {
                 </p>
               </div>
 
-              <Button 
-                onClick={startImport} 
-                disabled={isInitializing || !sourceId}
-                className="w-full"
-                size="lg"
-              >
+              <Button onClick={startImport} disabled={isInitializing || !sourceId} className="w-full" size="lg">
                 {isInitializing ? (
                   <>Descargando CSV...</>
                 ) : (
@@ -328,8 +323,16 @@ export default function ImportProPage() {
                 <div className="border border-yellow-200 bg-yellow-50 dark:bg-yellow-950/20 rounded p-3 text-xs">
                   <div className="font-medium mb-2">Descartados:</div>
                   <div className="space-y-1">
-                    {skippedMissing > 0 && <div>• Sin EAN/ISBN: <span className="font-mono font-bold">{skippedMissing.toLocaleString()}</span></div>}
-                    {skippedInvalid > 0 && <div>• EAN inválido: <span className="font-mono font-bold">{skippedInvalid.toLocaleString()}</span></div>}
+                    {skippedMissing > 0 && (
+                      <div>
+                        • Sin EAN/ISBN: <span className="font-mono font-bold">{skippedMissing.toLocaleString()}</span>
+                      </div>
+                    )}
+                    {skippedInvalid > 0 && (
+                      <div>
+                        • EAN inválido: <span className="font-mono font-bold">{skippedInvalid.toLocaleString()}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -377,9 +380,7 @@ export default function ImportProPage() {
               {logs.length === 0 ? (
                 <div className="text-gray-500">Esperando inicio...</div>
               ) : (
-                logs.map((log, i) => (
-                  <div key={i}>{log}</div>
-                ))
+                logs.map((log, i) => <div key={i}>{log}</div>)
               )}
             </div>
           </div>

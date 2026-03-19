@@ -36,7 +36,9 @@ export async function GET(request: NextRequest) {
   const eans = [...new Set(pubs.map((p) => p.ean).filter(Boolean))]
   const { data: snaps } = await supabase
     .from("ml_market_snapshots")
-    .select("ean, min_price, median_price, avg_price, sellers_count, full_sellers_count, free_shipping_rate, sold_qty_proxy")
+    .select(
+      "ean, min_price, median_price, avg_price, sellers_count, full_sellers_count, free_shipping_rate, sold_qty_proxy",
+    )
     .eq("account_id", account_id)
     .eq("captured_day", today)
     .in("ean", eans)
@@ -46,12 +48,9 @@ export async function GET(request: NextRequest) {
 
   // Cost price desde products (opcional)
   const productIds = [...new Set(pubs.map((p) => p.product_id).filter(Boolean))]
-  let costMap = new Map<string, number>()
+  const costMap = new Map<string, number>()
   if (productIds.length > 0) {
-    const { data: prods } = await supabase
-      .from("products")
-      .select("id, cost_price")
-      .in("id", productIds)
+    const { data: prods } = await supabase.from("products").select("id, cost_price").in("id", productIds)
     for (const p of prods || []) {
       if (p.cost_price) costMap.set(p.id, Number(p.cost_price))
     }
@@ -67,7 +66,7 @@ export async function GET(request: NextRequest) {
     const fullSellers = snap ? snap.full_sellers_count : null
     const fullPct = sellers && sellers > 0 ? Math.round((fullSellers / sellers) * 100) : null
     const soldProxy = snap ? snap.sold_qty_proxy : null
-    const costPrice = pub.product_id ? costMap.get(pub.product_id) ?? null : null
+    const costPrice = pub.product_id ? (costMap.get(pub.product_id) ?? null) : null
 
     // Zona 33k flag
     const zona33k = myPrice >= ZONE_LOW && myPrice <= ZONE_HIGH

@@ -26,35 +26,32 @@ interface CarrierRow {
 }
 
 const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  pending:    { label: "Pendiente",    variant: "secondary" },
-  in_transit: { label: "En tránsito",  variant: "default" },
-  delivered:  { label: "Entregado",    variant: "outline" },
-  failed:     { label: "Fallido",      variant: "destructive" },
-  returned:   { label: "Devuelto",     variant: "destructive" },
+  pending: { label: "Pendiente", variant: "secondary" },
+  in_transit: { label: "En tránsito", variant: "default" },
+  delivered: { label: "Entregado", variant: "outline" },
+  failed: { label: "Fallido", variant: "destructive" },
+  returned: { label: "Devuelto", variant: "destructive" },
 }
 
 export default function EnviosPage() {
-  const [shipments, setShipments]   = useState<ShipmentRow[]>([])
-  const [carriers, setCarriers]     = useState<CarrierRow[]>([])
-  const [loading, setLoading]       = useState(true)
-  const [stats, setStats]           = useState({ total: 0, in_transit: 0, delivered: 0, pending: 0 })
+  const [shipments, setShipments] = useState<ShipmentRow[]>([])
+  const [carriers, setCarriers] = useState<CarrierRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState({ total: 0, in_transit: 0, delivered: 0, pending: 0 })
 
   async function load() {
     setLoading(true)
     try {
-      const [sRes, cRes] = await Promise.all([
-        fetch("/api/envios/shipments?limit=20"),
-        fetch("/api/envios/carriers"),
-      ])
+      const [sRes, cRes] = await Promise.all([fetch("/api/envios/shipments?limit=20"), fetch("/api/envios/carriers")])
       if (sRes.ok) {
         const { data } = await sRes.json()
         setShipments(data ?? [])
         const rows: ShipmentRow[] = data ?? []
         setStats({
-          total:      rows.length,
-          in_transit: rows.filter(r => r.status === "in_transit").length,
-          delivered:  rows.filter(r => r.status === "delivered").length,
-          pending:    rows.filter(r => r.status === "pending").length,
+          total: rows.length,
+          in_transit: rows.filter((r) => r.status === "in_transit").length,
+          delivered: rows.filter((r) => r.status === "delivered").length,
+          pending: rows.filter((r) => r.status === "pending").length,
         })
       }
       if (cRes.ok) {
@@ -66,7 +63,9 @@ export default function EnviosPage() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+  }, [])
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -149,7 +148,7 @@ export default function EnviosPage() {
             <CardTitle className="text-base">Transportistas configurados</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2">
-            {carriers.map(c => (
+            {carriers.map((c) => (
               <Link key={c.id} href={`/envios/transportistas/${c.slug}`}>
                 <Badge variant={c.active ? "default" : "secondary"} className="cursor-pointer text-sm px-3 py-1">
                   <Truck className="mr-1.5 h-3 w-3" />
@@ -194,7 +193,7 @@ export default function EnviosPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {shipments.map(s => {
+                {shipments.map((s) => {
                   const st = STATUS_LABELS[s.status] ?? { label: s.status, variant: "secondary" as const }
                   return (
                     <TableRow key={s.id} className="cursor-pointer hover:bg-muted/30">

@@ -20,17 +20,18 @@ export const maxDuration = 300
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient()
-    const { data: { user }, error: authErr } = await supabase.auth.getUser()
-    if (authErr || !user)
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 })
+    const {
+      data: { user },
+      error: authErr,
+    } = await supabase.auth.getUser()
+    if (authErr || !user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 })
 
     const body = await req.json()
 
     // Mode 1: Create a new job
     if (body.eans && body.store_id) {
       const eans: string[] = [...new Set(body.eans.map((e: string) => String(e).trim()).filter(Boolean) as string[])]
-      if (eans.length === 0)
-        return NextResponse.json({ ok: false, error: "No EANs provided" }, { status: 400 })
+      if (eans.length === 0) return NextResponse.json({ ok: false, error: "No EANs provided" }, { status: 400 })
 
       const { data: job, error } = await supabase
         .from("shopify_push_jobs")
@@ -47,10 +48,13 @@ export async function POST(req: NextRequest) {
       if (error) {
         // Table might not exist yet — graceful fallback
         if (error.message?.includes("relation") && error.message?.includes("does not exist")) {
-          return NextResponse.json({
-            ok: false,
-            error: "shopify_push_jobs table not found. Run migration 053_create_shopify_push_jobs.sql first.",
-          }, { status: 500 })
+          return NextResponse.json(
+            {
+              ok: false,
+              error: "shopify_push_jobs table not found. Run migration 053_create_shopify_push_jobs.sql first.",
+            },
+            { status: 500 },
+          )
         }
         throw error
       }
@@ -73,22 +77,18 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   try {
     const supabase = await createClient()
-    const { data: { user }, error: authErr } = await supabase.auth.getUser()
-    if (authErr || !user)
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 })
+    const {
+      data: { user },
+      error: authErr,
+    } = await supabase.auth.getUser()
+    if (authErr || !user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 })
 
     const jobId = req.nextUrl.searchParams.get("job_id")
-    if (!jobId)
-      return NextResponse.json({ ok: false, error: "job_id required" }, { status: 400 })
+    if (!jobId) return NextResponse.json({ ok: false, error: "job_id required" }, { status: 400 })
 
-    const { data: job } = await supabase
-      .from("shopify_push_jobs")
-      .select("*")
-      .eq("id", jobId)
-      .single()
+    const { data: job } = await supabase.from("shopify_push_jobs").select("*").eq("id", jobId).single()
 
-    if (!job)
-      return NextResponse.json({ ok: false, error: "Job not found" }, { status: 404 })
+    if (!job) return NextResponse.json({ ok: false, error: "Job not found" }, { status: 404 })
 
     return NextResponse.json({
       ok: true,
@@ -98,9 +98,7 @@ export async function GET(req: NextRequest) {
       completed: job.completed_count,
       failed: job.failed_count,
       remaining: job.total_count - job.completed_count - job.failed_count,
-      percent: job.total_count > 0
-        ? Math.round(((job.completed_count + job.failed_count) / job.total_count) * 100)
-        : 0,
+      percent: job.total_count > 0 ? Math.round(((job.completed_count + job.failed_count) / job.total_count) * 100) : 0,
       failed_eans: job.failed_eans,
     })
   } catch (err: any) {
@@ -113,35 +111,42 @@ export async function GET(req: NextRequest) {
 const BATCH_LIMIT = 20
 
 async function processJobBatch(supabase: any, jobId: string, userId: string) {
-  const { data: job, error } = await supabase
-    .from("shopify_push_jobs")
-    .select("*")
-    .eq("id", jobId)
-    .single()
+  const { data: job, error } = await supabase.from("shopify_push_jobs").select("*").eq("id", jobId).single()
 
-  if (error || !job)
-    return NextResponse.json({ ok: false, error: "Job not found" }, { status: 404 })
+  if (error || !job) return NextResponse.json({ ok: false, error: "Job not found" }, { status: 404 })
 
-  if (job.status === "completed")
-    return NextResponse.json({ ok: true, status: "completed", message: "Already done" })
+  if (job.status === "completed") return NextResponse.json({ ok: true, status: "completed", message: "Already done" })
 
   // Determine pending EANs
   const completedSet = new Set(job.completed_eans ?? [])
   const failedSet = new Set((job.failed_eans ?? []).map((f: any) => f.ean))
-  const pendingEans = (job.eans as string[]).filter(e => !completedSet.has(e) && !failedSet.has(e))
+  const pendingEans = (job.eans as string[]).filter((e) => !completedSet.has(e) && !failedSet.has(e))
 
   if (pendingEans.length === 0) {
-    await supabase.from("shopify_push_jobs").update({
-      status: "completed", updated_at: new Date().toISOString(),
-    }).eq("id", jobId)
-    return NextResponse.json({ ok: true, status: "completed", completed: job.completed_count, failed: job.failed_count })
+    await supabase
+      .from("shopify_push_jobs")
+      .update({
+        status: "completed",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", jobId)
+    return NextResponse.json({
+      ok: true,
+      status: "completed",
+      completed: job.completed_count,
+      failed: job.failed_count,
+    })
   }
 
   // Mark as running
   if (job.status !== "running") {
-    await supabase.from("shopify_push_jobs").update({
-      status: "running", updated_at: new Date().toISOString(),
-    }).eq("id", jobId)
+    await supabase
+      .from("shopify_push_jobs")
+      .update({
+        status: "running",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", jobId)
   }
 
   const batch = pendingEans.slice(0, BATCH_LIMIT)
@@ -169,14 +174,17 @@ async function processJobBatch(supabase: any, jobId: string, userId: string) {
   const newFailedCount = newFailed.length
   const allDone = newCompletedCount + newFailedCount >= job.total_count
 
-  await supabase.from("shopify_push_jobs").update({
-    completed_eans: newCompleted,
-    failed_eans: newFailed,
-    completed_count: newCompletedCount,
-    failed_count: newFailedCount,
-    status: allDone ? "completed" : "running",
-    updated_at: new Date().toISOString(),
-  }).eq("id", jobId)
+  await supabase
+    .from("shopify_push_jobs")
+    .update({
+      completed_eans: newCompleted,
+      failed_eans: newFailed,
+      completed_count: newCompletedCount,
+      failed_count: newFailedCount,
+      status: allDone ? "completed" : "running",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", jobId)
 
   return NextResponse.json({
     ok: true,

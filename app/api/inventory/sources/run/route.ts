@@ -17,10 +17,7 @@ export async function POST(request: Request) {
     // Validar que source_id sea un UUID válido
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
     if (!source_id || !uuidRegex.test(source_id)) {
-      return NextResponse.json(
-        { error: "source_not_found", message: "Invalid source_id format" },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: "source_not_found", message: "Invalid source_id format" }, { status: 404 })
     }
 
     const supabase = await createClient()
@@ -34,10 +31,7 @@ export async function POST(request: Request) {
 
     if (sourceError || !source) {
       console.error(`[SOURCES-RUN] Fuente no encontrada:`, sourceError)
-      return NextResponse.json(
-        { error: "source_not_found", message: "Import source not found" },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: "source_not_found", message: "Import source not found" }, { status: 404 })
     }
 
     console.log(`[SOURCES-RUN] Fuente encontrada: ${source.name} (${source.feed_type})`)
@@ -46,7 +40,7 @@ export async function POST(request: Request) {
     if (!source.url_template) {
       return NextResponse.json(
         { error: "no_url_configured", message: "Source has no URL template configured" },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
@@ -64,10 +58,7 @@ export async function POST(request: Request) {
 
     if (historyError) {
       console.error(`[SOURCES-RUN] Error creando history:`, historyError)
-      return NextResponse.json(
-        { error: "failed_to_create_history", message: historyError.message },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: "failed_to_create_history", message: historyError.message }, { status: 500 })
     }
 
     console.log(`[SOURCES-RUN] History record creado: ${historyRecord.id}`)
@@ -107,9 +98,11 @@ export async function POST(request: Request) {
     // Se ejecuta en background sin esperar el resultado
     executeBatchImport(source.id, 0, mode as "update" | "upsert" | "create", true)
       .then((r) => {
-        console.log(`[SOURCES-RUN] Batch import completado: created=${r.created}, updated=${r.updated}, failed=${r.failed}`)
+        console.log(
+          `[SOURCES-RUN] Batch import completado: created=${r.created}, updated=${r.updated}, failed=${r.failed}`,
+        )
         // Actualizar history record con resultado
-        createClient().then(sb => {
+        createClient().then((sb) => {
           sb.from("import_history")
             .update({
               status: r.success ? "success" : "error",
@@ -125,7 +118,7 @@ export async function POST(request: Request) {
       })
       .catch((err) => {
         console.error(`[SOURCES-RUN] Error en batch import:`, err)
-        createClient().then(sb => {
+        createClient().then((sb) => {
           sb.from("import_history")
             .update({
               status: "error",
@@ -149,7 +142,7 @@ export async function POST(request: Request) {
     console.error(`[SOURCES-RUN] Error general:`, error)
     return NextResponse.json(
       { error: "internal_error", message: error.message || "Internal server error" },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }

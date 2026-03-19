@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { 
+import {
   ArrowLeft,
   Calendar,
   Clock,
@@ -20,7 +20,7 @@ import {
   Link as LinkIcon,
   Shield,
   Loader2,
-  Warehouse
+  Warehouse,
 } from "lucide-react"
 import Link from "next/link"
 import { createClient } from "@/lib/db/client"
@@ -30,7 +30,7 @@ export default function SourceDetailPage() {
   const params = useParams()
   const router = useRouter()
   const sourceId = params.id as string
-  
+
   const [source, setSource] = useState<any>(null)
   const [warehouse, setWarehouse] = useState<{ name: string; code: string } | null>(null)
   const [loading, setLoading] = useState(true)
@@ -52,7 +52,7 @@ export default function SourceDetailPage() {
     setLoading(true)
     try {
       const supabase = createClient()
-      
+
       // Fetch source details
       const { data: sourceData, error: sourceError } = await supabase
         .from("import_sources")
@@ -133,9 +133,7 @@ export default function SourceDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Badge variant={source.is_active ? "default" : "secondary"}>
-            {source.is_active ? "Activa" : "Inactiva"}
-          </Badge>
+          <Badge variant={source.is_active ? "default" : "secondary"}>{source.is_active ? "Activa" : "Inactiva"}</Badge>
           <Button variant="outline" asChild>
             <Link href={`/inventory/sources/${sourceId}/history`}>
               <History className="mr-2 h-4 w-4" />
@@ -189,9 +187,11 @@ export default function SourceDetailPage() {
               <div>
                 <p className="text-sm font-medium">Almacén asociado</p>
                 <p className="text-sm text-muted-foreground">
-                  {warehouse
-                    ? `${warehouse.name} (${warehouse.code})`
-                    : <span className="italic">Sin almacén específico</span>}
+                  {warehouse ? (
+                    `${warehouse.name} (${warehouse.code})`
+                  ) : (
+                    <span className="italic">Sin almacén específico</span>
+                  )}
                 </p>
               </div>
             </div>
@@ -206,7 +206,7 @@ export default function SourceDetailPage() {
                     month: "long",
                     day: "numeric",
                     hour: "2-digit",
-                    minute: "2-digit"
+                    minute: "2-digit",
                   })}
                 </p>
               </div>
@@ -231,7 +231,7 @@ export default function SourceDetailPage() {
                         month: "long",
                         day: "numeric",
                         hour: "2-digit",
-                        minute: "2-digit"
+                        minute: "2-digit",
                       })}
                     </p>
                   </div>
@@ -272,43 +272,46 @@ export default function SourceDetailPage() {
       </div>
 
       {/* Column Mapping */}
-      {source.column_mapping && (() => {
-        // Support both legacy flat format and new { delimiter, mappings } format
-        const cm = source.column_mapping
-        const mappings: Record<string, string> = cm.mappings ?? cm
-        const delimiter: string | null = cm.delimiter ?? null
-        const entries = Object.entries(mappings).filter(([, v]) => typeof v === "string")
-        if (entries.length === 0) return null
-        return (
-          <Card>
-            <CardHeader>
-              <CardTitle>Mapeo de Columnas</CardTitle>
-              <CardDescription>
-                {delimiter && <span className="font-mono text-xs">Delimitador: "{delimiter}" · </span>}
-                {entries.length} columnas mapeadas
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-                {entries.map(([csvCol, internalField]) => {
-                  const isCustom = isCustomField(internalField)
-                  return (
-                    <div key={csvCol} className="flex items-center gap-2 p-2.5 border rounded-lg text-sm">
-                      <span className="font-mono text-xs text-muted-foreground flex-1 truncate" title={csvCol}>{csvCol}</span>
-                      <span className="text-muted-foreground text-xs">→</span>
-                      {isCustom ? (
-                        <span className="text-amber-400 font-mono text-xs">{customFieldKey(internalField)}</span>
-                      ) : (
-                        <span className="font-medium text-xs">{internalField}</span>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        )
-      })()}
+      {source.column_mapping &&
+        (() => {
+          // Support both legacy flat format and new { delimiter, mappings } format
+          const cm = source.column_mapping
+          const mappings: Record<string, string> = cm.mappings ?? cm
+          const delimiter: string | null = cm.delimiter ?? null
+          const entries = Object.entries(mappings).filter(([, v]) => typeof v === "string")
+          if (entries.length === 0) return null
+          return (
+            <Card>
+              <CardHeader>
+                <CardTitle>Mapeo de Columnas</CardTitle>
+                <CardDescription>
+                  {delimiter && <span className="font-mono text-xs">Delimitador: "{delimiter}" · </span>}
+                  {entries.length} columnas mapeadas
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+                  {entries.map(([csvCol, internalField]) => {
+                    const isCustom = isCustomField(internalField)
+                    return (
+                      <div key={csvCol} className="flex items-center gap-2 p-2.5 border rounded-lg text-sm">
+                        <span className="font-mono text-xs text-muted-foreground flex-1 truncate" title={csvCol}>
+                          {csvCol}
+                        </span>
+                        <span className="text-muted-foreground text-xs">→</span>
+                        {isCustom ? (
+                          <span className="text-amber-400 font-mono text-xs">{customFieldKey(internalField)}</span>
+                        ) : (
+                          <span className="font-medium text-xs">{internalField}</span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })()}
 
       {/* Actions */}
       <Card>

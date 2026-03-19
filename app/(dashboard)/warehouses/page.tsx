@@ -69,9 +69,7 @@ export default function WarehousesPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Almacenes</h1>
-          <p className="text-muted-foreground mt-2">
-            Gestiona tus ubicaciones de almacenamiento
-          </p>
+          <p className="text-muted-foreground mt-2">Gestiona tus ubicaciones de almacenamiento</p>
         </div>
         <Button onClick={() => setDialogOpen(true)} className="gap-2">
           <Plus className="h-4 w-4" />
@@ -102,12 +100,7 @@ export default function WarehousesPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {warehouses.map((warehouse) => (
-            <WarehouseCard
-              key={warehouse.id}
-              warehouse={warehouse}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
-            />
+            <WarehouseCard key={warehouse.id} warehouse={warehouse} onEdit={handleEdit} onDelete={handleDelete} />
           ))}
         </div>
       )}

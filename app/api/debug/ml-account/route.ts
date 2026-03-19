@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
       ml_user_id: account.ml_user_id,
       token_expires_at: account.token_expires_at,
       has_refresh_token: !!account.refresh_token,
-      token_valid: account.token_expires_at ? new Date(account.token_expires_at) > new Date() : false
+      token_valid: account.token_expires_at ? new Date(account.token_expires_at) > new Date() : false,
     }
 
     console.log(`[DEBUG-ML-ACCOUNT] Account found:`, response)

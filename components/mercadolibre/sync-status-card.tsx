@@ -69,7 +69,7 @@ export function SyncStatusCard() {
       const response = await fetch(`/api/ml/account-stats?account_id=${accountId}`)
       const stats = await response.json()
       if (!stats.error) {
-        setAccountStats(prev => ({ ...prev, [accountId]: stats }))
+        setAccountStats((prev) => ({ ...prev, [accountId]: stats }))
       }
     } catch (error) {
       console.error("Error fetching account stats:", error)
@@ -81,65 +81,67 @@ export function SyncStatusCard() {
       setAutoSyncResult("No hay cuentas para sincronizar")
       return
     }
-    
+
     setAutoSyncing(true)
     setAutoSyncResult("Sincronizando publicaciones de a 50 por vez...")
-    
+
     try {
       const account = accounts[0] // Primera cuenta
       let offset = 0
       let hasMore = true
       let totalProcessed = 0
-      
-      while (hasMore && totalProcessed < 500) { // Máximo 500 items por sesión
+
+      while (hasMore && totalProcessed < 500) {
+        // Máximo 500 items por sesión
         setAutoSyncResult(`Procesando items ${offset}-${offset + 50}... (total: ${totalProcessed})`)
-        
+
         const response = await fetch("/api/ml/sync-stock", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             account_id: account.id,
             limit: 50,
             offset: offset,
-            auto_continue: false
-          })
+            auto_continue: false,
+          }),
         })
-        
+
         if (!response.ok) {
           const error = await response.json()
           if (response.status === 429) {
-            setAutoSyncResult(`Rate limit alcanzado después de ${totalProcessed} items. Esperá 5 minutos y apretá de nuevo.`)
+            setAutoSyncResult(
+              `Rate limit alcanzado después de ${totalProcessed} items. Esperá 5 minutos y apretá de nuevo.`,
+            )
             break
           }
           setAutoSyncResult(`Error: ${error.error}`)
           break
         }
-        
+
         const data = await response.json()
         totalProcessed += data.processed
         hasMore = data.has_more
         offset = data.next_offset
-        
+
         setAutoSyncResult(`Procesados ${totalProcessed} - Progreso: ${data.progress}`)
-        
+
         if (!hasMore) {
           setAutoSyncResult(`✓ Completado: ${totalProcessed} publicaciones sincronizadas`)
           break
         }
-        
+
         // Delay de 2 segundos entre batches
-        await new Promise(resolve => setTimeout(resolve, 2000))
+        await new Promise((resolve) => setTimeout(resolve, 2000))
       }
-      
+
       if (hasMore && totalProcessed >= 500) {
         setAutoSyncResult(`✓ ${totalProcessed} items sincronizados. Apretá de nuevo para continuar.`)
       }
-      
+
       // Refrescar cuentas
       setTimeout(() => {
         fetchAccounts()
       }, 2000)
-      
     } catch (error) {
       console.error("Error auto sync:", error)
       setAutoSyncResult("Error al sincronizar")
@@ -152,35 +154,34 @@ export function SyncStatusCard() {
     setAdvancingImport(true)
     setAdvanceResult(null)
     try {
-      const response = await fetch(`/api/ml/import/run?secret=${process.env.NEXT_PUBLIC_CRON_SECRET || ''}`, {
-        method: "POST"
+      const response = await fetch(`/api/ml/import/run?secret=${process.env.NEXT_PUBLIC_CRON_SECRET || ""}`, {
+        method: "POST",
       })
-      
+
       const data = await response.json()
-      
+
       if (!response.ok || !data.ok) {
-        setAdvanceResult(`Error: ${data.error || 'Failed'}`)
+        setAdvanceResult(`Error: ${data.error || "Failed"}`)
         setTimeout(() => setAdvanceResult(null), 5000)
         return
       }
-      
+
       setAdvanceResult(`✓ Ejecutados ${data.ticksRun} ticks | Offset: ${data.offset_before} → ${data.offset_after}`)
       setTimeout(() => setAdvanceResult(null), 5000)
-      
+
       // Actualizar progreso si hay un job activo siendo monitoreado
-      Object.keys(batchImportJobIds).forEach(accountId => {
+      Object.keys(batchImportJobIds).forEach((accountId) => {
         const jobId = batchImportJobIds[accountId]
         fetch(`/api/ml/import/status?job_id=${jobId}`)
-          .then(r => r.json())
-          .then(statusData => {
-            setBatchImportProgress(prev => ({
+          .then((r) => r.json())
+          .then((statusData) => {
+            setBatchImportProgress((prev) => ({
               ...prev,
-              [accountId]: statusData
+              [accountId]: statusData,
             }))
           })
           .catch(console.error)
       })
-      
     } catch (error: any) {
       console.error("[v0] Error advancing import:", error)
       setAdvanceResult(`Error: ${error.message}`)
@@ -197,41 +198,41 @@ export function SyncStatusCard() {
       const startResponse = await fetch("/api/ml/import/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account_id: accountId })
+        body: JSON.stringify({ account_id: accountId }),
       })
-      
+
       const startData = await startResponse.json()
-      
+
       if (!startResponse.ok || !startData.success) {
         const errorMsg = startData.message || startData.error || "Error iniciando importación"
         alert(errorMsg)
         setBatchImporting(null)
         return
       }
-      
+
       const jobId = startData.job_id
-      
+
       // Guardar job_id en state y localStorage
-      setBatchImportJobIds(prev => ({ ...prev, [accountId]: jobId }))
+      setBatchImportJobIds((prev) => ({ ...prev, [accountId]: jobId }))
       localStorage.setItem(`ml_import_job_${accountId}`, jobId)
-      
+
       // Monitorear progreso cada 3 segundos
       const interval = setInterval(async () => {
         try {
           const statusResponse = await fetch(`/api/ml/import/status?job_id=${jobId}`)
-          
+
           if (!statusResponse.ok) {
             const errorData = await statusResponse.json()
             console.error("[v0] Error fetching import status:", errorData)
-            
+
             if (statusResponse.status === 404) {
               // Job no encontrado, mostrar error y detener monitoreo
-              setBatchImportProgress(prev => ({
+              setBatchImportProgress((prev) => ({
                 ...prev,
-                [accountId]: { 
+                [accountId]: {
                   error: "Job no encontrado. Iniciá una nueva importación.",
-                  status: "failed"
-                }
+                  status: "failed",
+                },
               }))
               clearInterval(interval)
               setBatchImporting(null)
@@ -239,14 +240,14 @@ export function SyncStatusCard() {
             }
             return
           }
-          
+
           const statusData = await statusResponse.json()
-          
-          setBatchImportProgress(prev => ({
+
+          setBatchImportProgress((prev) => ({
             ...prev,
-            [accountId]: statusData
+            [accountId]: statusData,
           }))
-          
+
           // Si completó o falló, detener monitoreo
           if (statusData.status === "completed" || statusData.status === "failed") {
             clearInterval(interval)
@@ -258,7 +259,6 @@ export function SyncStatusCard() {
           console.error("[v0] Error monitoring import:", error)
         }
       }, 3000)
-      
     } catch (error: any) {
       console.error("[v0] Error in batch import:", error)
       alert("Error: " + error.message)
@@ -276,15 +276,17 @@ export function SyncStatusCard() {
         body: JSON.stringify({ account_id: accountId, limit: 100 }),
       })
       const data = await response.json()
-      
+
       if (data.rate_limited) {
         setSyncResult("Límite de API. Intenta más tarde.")
       } else if (data.error) {
         setSyncResult(`Error: ${data.error}`)
       } else {
-        setSyncResult(`Procesados: ${data.processed}, Vinculados: ${data.linked}, Sin EAN: ${data.no_ean || 0}, Sin producto: ${data.no_product_match || 0}${data.has_more ? " - Hay más" : ""}`)
+        setSyncResult(
+          `Procesados: ${data.processed}, Vinculados: ${data.linked}, Sin EAN: ${data.no_ean || 0}, Sin producto: ${data.no_product_match || 0}${data.has_more ? " - Hay más" : ""}`,
+        )
       }
-      
+
       // NO refrescar automáticamente para evitar rate limit
       // Solo mostrar el resultado
       setTimeout(() => setSyncResult(null), 8000)
@@ -299,27 +301,27 @@ export function SyncStatusCard() {
   const handleSyncAll = async () => {
     setSyncingAll(true)
     setSyncAllResult("Iniciando sincronización completa...")
-    
+
     try {
       // Implementación para sincronizar todas las cuentas
       for (const account of accounts) {
         setSyncAllResult(`Iniciando ${account.nickname}...`)
-        
+
         const response = await fetch("/api/ml/sync-all", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ account_id: account.id }),
         })
-        
+
         if (!response.ok) {
           const error = await response.json()
           setSyncAllResult(`Error en ${account.nickname}: ${error.error}`)
           break
         }
-        
+
         setSyncAllResult(`${account.nickname}: Sincronización iniciada en segundo plano...`)
       }
-      
+
       setSyncAllResult(`✓ Sincronización completa iniciada.`)
       // Refrescar cada 15 segundos para ver progreso
       const interval = setInterval(() => fetchAccounts(), 15000)
@@ -391,14 +393,13 @@ export function SyncStatusCard() {
               <RefreshCw className="h-5 w-5" />
               Estado de Sincronización ML
             </CardTitle>
-            <CardDescription>
-              Última actualización de stock y publicaciones
-            </CardDescription>
+            <CardDescription>Última actualización de stock y publicaciones</CardDescription>
           </div>
-
         </div>
         {autoSyncResult && (
-          <div className="mt-2 text-sm text-green-700 bg-green-50 border border-green-200 p-2 rounded">{autoSyncResult}</div>
+          <div className="mt-2 text-sm text-green-700 bg-green-50 border border-green-200 p-2 rounded">
+            {autoSyncResult}
+          </div>
         )}
       </CardHeader>
       <CardContent className="space-y-4">
@@ -418,11 +419,7 @@ export function SyncStatusCard() {
                     disabled={syncing === account.id || batchImporting === account.id}
                     className="bg-transparent"
                   >
-                    {syncing === account.id ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      "Sincronizar"
-                    )}
+                    {syncing === account.id ? <Loader2 className="h-3 w-3 animate-spin" /> : "Sincronizar"}
                   </Button>
                   <Button
                     size="sm"
@@ -461,12 +458,8 @@ export function SyncStatusCard() {
                   </Button>
                 </div>
               </div>
-              {syncResult && (
-                <div className="text-sm text-primary bg-primary/10 p-2 rounded">{syncResult}</div>
-              )}
-              {advanceResult && (
-                <div className="text-sm text-blue-600 bg-blue-50 p-2 rounded">{advanceResult}</div>
-              )}
+              {syncResult && <div className="text-sm text-primary bg-primary/10 p-2 rounded">{syncResult}</div>}
+              {advanceResult && <div className="text-sm text-blue-600 bg-blue-50 p-2 rounded">{advanceResult}</div>}
 
               <div className="grid grid-cols-2 gap-3">
                 {/* Stock Status */}
@@ -494,9 +487,7 @@ export function SyncStatusCard() {
                     )}
                   </div>
                   {account.stock_sync_count > 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      {account.stock_sync_count} productos
-                    </p>
+                    <p className="text-xs text-muted-foreground">{account.stock_sync_count} productos</p>
                   )}
                 </div>
 
@@ -519,7 +510,8 @@ export function SyncStatusCard() {
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {accountStats[account.id].total_in_ml} en ML / {accountStats[account.id].total_publications} importadas / {accountStats[account.id].unlinked_publications} sin producto
+                        {accountStats[account.id].total_in_ml} en ML / {accountStats[account.id].total_publications}{" "}
+                        importadas / {accountStats[account.id].unlinked_publications} sin producto
                       </p>
                     </div>
                   ) : (
@@ -555,7 +547,7 @@ export function SyncStatusCard() {
                         size="sm"
                         variant="default"
                         onClick={() => {
-                          setBatchImportProgress(prev => {
+                          setBatchImportProgress((prev) => {
                             const newProgress = { ...prev }
                             delete newProgress[account.id]
                             return newProgress
@@ -570,11 +562,15 @@ export function SyncStatusCard() {
                     <>
                       <div className="flex items-center justify-between text-sm">
                         <span className="font-medium">Importación por Lotes</span>
-                        <Badge variant={
-                          batchImportProgress[account.id].status === "completed" ? "default" :
-                          batchImportProgress[account.id].status === "failed" ? "destructive" :
-                          "secondary"
-                        }>
+                        <Badge
+                          variant={
+                            batchImportProgress[account.id].status === "completed"
+                              ? "default"
+                              : batchImportProgress[account.id].status === "failed"
+                                ? "destructive"
+                                : "secondary"
+                          }
+                        >
                           {batchImportProgress[account.id].status}
                         </Badge>
                       </div>
@@ -584,7 +580,7 @@ export function SyncStatusCard() {
                           <span className="font-medium">{batchImportProgress[account.id].progress}%</span>
                         </div>
                         <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div 
+                          <div
                             className="bg-blue-600 h-2 rounded-full transition-all"
                             style={{ width: `${batchImportProgress[account.id].progress}%` }}
                           />
@@ -594,14 +590,10 @@ export function SyncStatusCard() {
                           <span>Total: {batchImportProgress[account.id].total_items || 0}</span>
                         </div>
                         {batchImportProgress[account.id].failed_items > 0 && (
-                          <div className="text-red-600">
-                            Fallidas: {batchImportProgress[account.id].failed_items}
-                          </div>
+                          <div className="text-red-600">Fallidas: {batchImportProgress[account.id].failed_items}</div>
                         )}
                         {batchImportProgress[account.id].error_message && (
-                          <div className="text-red-600">
-                            Error: {batchImportProgress[account.id].error_message}
-                          </div>
+                          <div className="text-red-600">Error: {batchImportProgress[account.id].error_message}</div>
                         )}
                       </div>
                     </>

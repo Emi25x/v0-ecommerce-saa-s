@@ -12,90 +12,90 @@ import { Badge } from "@/components/ui/badge"
 import { ArrowLeft, Calculator, Package, Truck, ExternalLink, CheckCircle, Send, User } from "lucide-react"
 
 interface Remitente {
-  id:        string
-  nombre:    string
+  id: string
+  nombre: string
   direccion: string
   localidad: string
   provincia: string
-  cp:        string
-  telefono:  string | null
-  email:     string | null
+  cp: string
+  telefono: string | null
+  email: string | null
   es_default: boolean
 }
 
 interface QuoteService {
-  codigo:     string
-  nombre:     string
+  codigo: string
+  nombre: string
   plazo_dias: number
-  precio:     number
+  precio: number
   descripcion?: string
 }
 
 interface Carrier {
-  id:   string
+  id: string
   name: string
   slug: string
 }
 
 export default function NuevoEnvioPage() {
-  const router       = useRouter()
+  const router = useRouter()
   const searchParams = useSearchParams()
 
   // Carriers disponibles
-  const [carriers, setCarriers]         = useState<Carrier[]>([])
-  const [carrierSlug, setCarrierSlug]   = useState("cabify")
+  const [carriers, setCarriers] = useState<Carrier[]>([])
+  const [carrierSlug, setCarrierSlug] = useState("cabify")
 
   // Remitentes guardados
-  const [remitentes, setRemitentes]         = useState<Remitente[]>([])
-  const [remitenteId, setRemitenteId]       = useState<string>("")
+  const [remitentes, setRemitentes] = useState<Remitente[]>([])
+  const [remitenteId, setRemitenteId] = useState<string>("")
 
   // Datos de Shopify (si viene desde la lista de pedidos)
-  const shopifyOrderId  = searchParams.get("shopify_order_id")  ?? ""
+  const shopifyOrderId = searchParams.get("shopify_order_id") ?? ""
   const shopifyOrderName = searchParams.get("ref") ?? ""
-  const shopifyStoreId  = searchParams.get("store_id") ?? ""
+  const shopifyStoreId = searchParams.get("store_id") ?? ""
 
   // Pre-fill desde Shopify si viene con params
   const [remitente, setRemitente] = useState({
-    nombre:    "",
+    nombre: "",
     direccion: "",
     localidad: "",
     provincia: "",
-    cp:        "",
-    telefono:  "",
-    email:     "",
+    cp: "",
+    telefono: "",
+    email: "",
   })
   const [destinatario, setDestinatario] = useState({
-    nombre:    searchParams.get("dest_nombre")    ?? "",
+    nombre: searchParams.get("dest_nombre") ?? "",
     direccion: searchParams.get("dest_direccion") ?? "",
     localidad: searchParams.get("dest_localidad") ?? "",
     provincia: searchParams.get("dest_provincia") ?? "",
-    cp:        searchParams.get("dest_cp")        ?? "",
-    telefono:  searchParams.get("dest_telefono")  ?? "",
-    email:     searchParams.get("dest_email")     ?? "",
+    cp: searchParams.get("dest_cp") ?? "",
+    telefono: searchParams.get("dest_telefono") ?? "",
+    email: searchParams.get("dest_email") ?? "",
   })
-  const [pesoG, setPesoG]                   = useState(searchParams.get("peso_g") ?? "")
-  const [valorDeclarado, setValorDeclarado] = useState(searchParams.get("valor")  ?? "")
-  const [servicio, setServicio]             = useState("express")
-  const [referencia, setReferencia]         = useState(searchParams.get("ref")    ?? "")
+  const [pesoG, setPesoG] = useState(searchParams.get("peso_g") ?? "")
+  const [valorDeclarado, setValorDeclarado] = useState(searchParams.get("valor") ?? "")
+  const [servicio, setServicio] = useState("express")
+  const [referencia, setReferencia] = useState(searchParams.get("ref") ?? "")
 
-  const [quoting, setQuoting]             = useState(false)
-  const [quotes, setQuotes]               = useState<QuoteService[] | null>(null)
-  const [quoteError, setQuoteError]       = useState<string | null>(null)
+  const [quoting, setQuoting] = useState(false)
+  const [quotes, setQuotes] = useState<QuoteService[] | null>(null)
+  const [quoteError, setQuoteError] = useState<string | null>(null)
   const [selectedQuote, setSelectedQuote] = useState<QuoteService | null>(null)
 
-  const [creating, setCreating]         = useState(false)
-  const [result, setResult]             = useState<any | null>(null)
-  const [createError, setCreateError]   = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [result, setResult] = useState<any | null>(null)
+  const [createError, setCreateError] = useState<string | null>(null)
 
   // Estado de notificación Shopify
-  const [fulfilling, setFulfilling]     = useState(false)
+  const [fulfilling, setFulfilling] = useState(false)
   const [fulfillResult, setFulfillResult] = useState<{ ok: boolean; message: string } | null>(null)
 
   // Cargar transportistas activos y remitentes
   useEffect(() => {
     fetch("/api/envios/carriers")
-      .then(r => r.json())
-      .then(d => {
+      .then((r) => r.json())
+      .then((d) => {
         const active = (d.data ?? []).filter((c: any) => c.active)
         setCarriers(active)
         const hasCabify = active.some((c: any) => c.slug === "cabify")
@@ -104,21 +104,21 @@ export default function NuevoEnvioPage() {
       .catch(console.error)
 
     fetch("/api/envios/remitentes")
-      .then(r => r.json())
-      .then(d => {
+      .then((r) => r.json())
+      .then((d) => {
         const list: Remitente[] = d.data ?? []
         setRemitentes(list)
-        const def = list.find(r => r.es_default)
+        const def = list.find((r) => r.es_default)
         if (def) {
           setRemitenteId(def.id)
           setRemitente({
-            nombre:    def.nombre,
+            nombre: def.nombre,
             direccion: def.direccion,
             localidad: def.localidad,
             provincia: def.provincia,
-            cp:        def.cp,
-            telefono:  def.telefono  ?? "",
-            email:     def.email     ?? "",
+            cp: def.cp,
+            telefono: def.telefono ?? "",
+            email: def.email ?? "",
           })
         }
       })
@@ -127,16 +127,16 @@ export default function NuevoEnvioPage() {
 
   function selectRemitente(id: string) {
     setRemitenteId(id)
-    const r = remitentes.find(r => r.id === id)
+    const r = remitentes.find((r) => r.id === id)
     if (r) {
       setRemitente({
-        nombre:    r.nombre,
+        nombre: r.nombre,
         direccion: r.direccion,
         localidad: r.localidad,
         provincia: r.provincia,
-        cp:        r.cp,
-        telefono:  r.telefono  ?? "",
-        email:     r.email     ?? "",
+        cp: r.cp,
+        telefono: r.telefono ?? "",
+        email: r.email ?? "",
       })
       setQuotes(null)
       setSelectedQuote(null)
@@ -150,19 +150,19 @@ export default function NuevoEnvioPage() {
     setQuotes(null)
     setSelectedQuote(null)
     const res = await fetch("/api/envios/quote", {
-      method:  "POST",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({
+      body: JSON.stringify({
         carrier_slug: carrierSlug,
-        origen_cp:    remitente.cp,
-        destino_cp:   destinatario.cp,
-        peso_g:       parseInt(pesoG),
-        valor:        parseFloat(valorDeclarado) || 0,
+        origen_cp: remitente.cp,
+        destino_cp: destinatario.cp,
+        peso_g: parseInt(pesoG),
+        valor: parseFloat(valorDeclarado) || 0,
       }),
     })
     const data = await res.json()
     if (!res.ok) setQuoteError(data.error ?? "Error al cotizar")
-    else         setQuotes(data.servicios ?? [])
+    else setQuotes(data.servicios ?? [])
     setQuoting(false)
   }
 
@@ -175,51 +175,51 @@ export default function NuevoEnvioPage() {
     const shipmentBody = isCabify
       ? {
           // Cabify: pickup / delivery + service
-          service:         servicio,
-          reference:       referencia || undefined,
+          service: servicio,
+          reference: referencia || undefined,
           pickup: {
-            name:         remitente.nombre,
-            phone:        remitente.telefono,
-            email:        remitente.email || undefined,
-            street:       remitente.direccion,
-            city:         remitente.localidad,
-            state:        remitente.provincia,
-            postal_code:  remitente.cp,
-            country:      "AR",
+            name: remitente.nombre,
+            phone: remitente.telefono,
+            email: remitente.email || undefined,
+            street: remitente.direccion,
+            city: remitente.localidad,
+            state: remitente.provincia,
+            postal_code: remitente.cp,
+            country: "AR",
           },
           delivery: {
-            name:         destinatario.nombre,
-            phone:        destinatario.telefono,
-            email:        destinatario.email || undefined,
-            street:       destinatario.direccion,
-            city:         destinatario.localidad,
-            state:        destinatario.provincia,
-            postal_code:  destinatario.cp,
-            country:      "AR",
+            name: destinatario.nombre,
+            phone: destinatario.telefono,
+            email: destinatario.email || undefined,
+            street: destinatario.direccion,
+            city: destinatario.localidad,
+            state: destinatario.provincia,
+            postal_code: destinatario.cp,
+            country: "AR",
           },
-          items:           [],
-          weight_g:        parseInt(pesoG) || 0,
-          declared_value:  parseFloat(valorDeclarado) || 0,
+          items: [],
+          weight_g: parseInt(pesoG) || 0,
+          declared_value: parseFloat(valorDeclarado) || 0,
         }
       : {
           // FastMail y otros: remitente / destinatario
-          remitente:       { ...remitente, calle: remitente.direccion },
-          destinatario:    { ...destinatario, calle: destinatario.direccion },
-          items:           [],
-          peso_total_g:    parseInt(pesoG) || 0,
+          remitente: { ...remitente, calle: remitente.direccion },
+          destinatario: { ...destinatario, calle: destinatario.direccion },
+          items: [],
+          peso_total_g: parseInt(pesoG) || 0,
           valor_declarado: parseFloat(valorDeclarado) || 0,
-          servicio:        selectedQuote?.codigo || servicio,
-          referencia:      referencia || undefined,
+          servicio: selectedQuote?.codigo || servicio,
+          referencia: referencia || undefined,
         }
 
     const res = await fetch("/api/envios/create-shipment", {
-      method:  "POST",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ carrier_slug: carrierSlug, shipment: shipmentBody }),
+      body: JSON.stringify({ carrier_slug: carrierSlug, shipment: shipmentBody }),
     })
     const data = await res.json()
     if (!res.ok) setCreateError(data.error ?? "Error al crear envío")
-    else         setResult(data)
+    else setResult(data)
     setCreating(false)
   }
 
@@ -228,36 +228,41 @@ export default function NuevoEnvioPage() {
     setFulfilling(true)
     setFulfillResult(null)
 
-    const carrierLabel = carriers.find(c => c.slug === carrierSlug)?.name ?? carrierSlug
+    const carrierLabel = carriers.find((c) => c.slug === carrierSlug)?.name ?? carrierSlug
 
     const res = await fetch("/api/shopify/fulfill-order", {
-      method:  "POST",
+      method: "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({
-        store_id:        shopifyStoreId,
-        order_id:        shopifyOrderId,
+      body: JSON.stringify({
+        store_id: shopifyStoreId,
+        order_id: shopifyOrderId,
         tracking_number: result.tracking_number,
-        tracking_url:    result.tracking_url ?? undefined,
-        carrier_name:    carrierLabel,
+        tracking_url: result.tracking_url ?? undefined,
+        carrier_name: carrierLabel,
         notify_customer: true,
       }),
     })
     const data = await res.json()
     setFulfillResult({
-      ok:      res.ok && data.ok,
+      ok: res.ok && data.ok,
       message: data.message ?? data.error ?? (res.ok ? "Listo" : "Error"),
     })
     setFulfilling(false)
   }
 
   const camposOk =
-    remitente.nombre && remitente.direccion && remitente.cp &&
-    destinatario.nombre && destinatario.direccion && destinatario.cp &&
-    pesoG && valorDeclarado
+    remitente.nombre &&
+    remitente.direccion &&
+    remitente.cp &&
+    destinatario.nombre &&
+    destinatario.direccion &&
+    destinatario.cp &&
+    pesoG &&
+    valorDeclarado
 
   // Para FastMail, si ya se cotizó, hay que seleccionar un servicio antes de crear el envío
-  const isFastMail   = carrierSlug !== "cabify"
-  const servicioOk   = !isFastMail || !quotes || quotes.length === 0 || selectedQuote !== null
+  const isFastMail = carrierSlug !== "cabify"
+  const servicioOk = !isFastMail || !quotes || quotes.length === 0 || selectedQuote !== null
 
   // ── Pantalla de éxito ──────────────────────────────────────────────────────
   if (result) {
@@ -297,18 +302,11 @@ export default function NuevoEnvioPage() {
             {/* Botón fulfillment Shopify */}
             {canFulfillShopify && !fulfillResult && (
               <div className="mt-2 rounded-md border bg-blue-50 dark:bg-blue-950/20 border-blue-200 p-3 flex flex-col gap-2">
-                <p className="text-sm font-medium text-blue-800 dark:text-blue-300">
-                  ¿Marcar como enviado en Shopify?
-                </p>
+                <p className="text-sm font-medium text-blue-800 dark:text-blue-300">¿Marcar como enviado en Shopify?</p>
                 <p className="text-xs text-muted-foreground">
                   Shopify actualizará el pedido y enviará el email de envío al cliente con el número de tracking.
                 </p>
-                <Button
-                  size="sm"
-                  onClick={fulfillShopifyOrder}
-                  disabled={fulfilling}
-                  className="self-start"
-                >
+                <Button size="sm" onClick={fulfillShopifyOrder} disabled={fulfilling} className="self-start">
                   <Send className="mr-2 h-3.5 w-3.5" />
                   {fulfilling ? "Notificando a Shopify…" : "Sí, marcar como enviado y notificar cliente"}
                 </Button>
@@ -316,15 +314,14 @@ export default function NuevoEnvioPage() {
             )}
 
             {fulfillResult && (
-              <div className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ${
-                fulfillResult.ok
-                  ? "bg-green-50 text-green-700 border border-green-200"
-                  : "bg-red-50 text-red-700 border border-red-200"
-              }`}>
-                {fulfillResult.ok
-                  ? <CheckCircle className="h-4 w-4 shrink-0" />
-                  : <span className="shrink-0">⚠</span>
-                }
+              <div
+                className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ${
+                  fulfillResult.ok
+                    ? "bg-green-50 text-green-700 border border-green-200"
+                    : "bg-red-50 text-red-700 border border-red-200"
+                }`}
+              >
+                {fulfillResult.ok ? <CheckCircle className="h-4 w-4 shrink-0" /> : <span className="shrink-0">⚠</span>}
                 {fulfillResult.message}
               </div>
             )}
@@ -366,13 +363,13 @@ export default function NuevoEnvioPage() {
     <div className="flex flex-col gap-6 p-6 max-w-3xl">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="sm" asChild>
-          <Link href="/envios"><ArrowLeft className="h-4 w-4" /></Link>
+          <Link href="/envios">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
         </Button>
         <div>
           <h1 className="text-2xl font-bold">Nuevo envío</h1>
-          {shopifyOrderName && (
-            <p className="text-sm text-muted-foreground">Pedido Shopify {shopifyOrderName}</p>
-          )}
+          {shopifyOrderName && <p className="text-sm text-muted-foreground">Pedido Shopify {shopifyOrderName}</p>}
         </div>
       </div>
 
@@ -386,15 +383,30 @@ export default function NuevoEnvioPage() {
         </CardHeader>
         <CardContent>
           {carriers.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No hay transportistas activos. Activá uno en <Link href="/envios/transportistas" className="underline">Transportistas</Link>.</p>
+            <p className="text-sm text-muted-foreground">
+              No hay transportistas activos. Activá uno en{" "}
+              <Link href="/envios/transportistas" className="underline">
+                Transportistas
+              </Link>
+              .
+            </p>
           ) : (
-            <Select value={carrierSlug} onValueChange={v => { setCarrierSlug(v); setQuotes(null); setSelectedQuote(null) }}>
+            <Select
+              value={carrierSlug}
+              onValueChange={(v) => {
+                setCarrierSlug(v)
+                setQuotes(null)
+                setSelectedQuote(null)
+              }}
+            >
               <SelectTrigger className="w-full max-w-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {carriers.map(c => (
-                  <SelectItem key={c.slug} value={c.slug}>{c.name}</SelectItem>
+                {carriers.map((c) => (
+                  <SelectItem key={c.slug} value={c.slug}>
+                    {c.name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -407,7 +419,10 @@ export default function NuevoEnvioPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center justify-between">
-              <span className="flex items-center gap-2"><User className="h-4 w-4" />Remitente (origen)</span>
+              <span className="flex items-center gap-2">
+                <User className="h-4 w-4" />
+                Remitente (origen)
+              </span>
               <Link href="/envios/remitentes" className="text-xs text-muted-foreground hover:underline font-normal">
                 Gestionar remitentes
               </Link>
@@ -422,21 +437,25 @@ export default function NuevoEnvioPage() {
                     <SelectValue placeholder="Seleccionar remitente guardado…" />
                   </SelectTrigger>
                   <SelectContent>
-                    {remitentes.map(r => (
+                    {remitentes.map((r) => (
                       <SelectItem key={r.id} value={r.id}>
-                        {r.nombre}{r.es_default ? " (por defecto)" : ""}
+                        {r.nombre}
+                        {r.es_default ? " (por defecto)" : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             )}
-            {(["nombre", "direccion", "localidad", "provincia", "cp", "telefono", "email"] as const).map(f => (
+            {(["nombre", "direccion", "localidad", "provincia", "cp", "telefono", "email"] as const).map((f) => (
               <div key={f} className="flex flex-col gap-1">
                 <Label className="capitalize text-xs">{f === "cp" ? "Código postal" : f}</Label>
                 <Input
                   value={remitente[f]}
-                  onChange={e => { setRemitenteId(""); setRemitente(prev => ({ ...prev, [f]: e.target.value })) }}
+                  onChange={(e) => {
+                    setRemitenteId("")
+                    setRemitente((prev) => ({ ...prev, [f]: e.target.value }))
+                  }}
                   placeholder={f === "cp" ? "Código postal" : f === "email" ? "correo@ejemplo.com" : ""}
                 />
               </div>
@@ -450,12 +469,12 @@ export default function NuevoEnvioPage() {
             <CardTitle className="text-base">Destinatario (destino)</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
-            {(["nombre", "direccion", "localidad", "provincia", "cp", "telefono", "email"] as const).map(f => (
+            {(["nombre", "direccion", "localidad", "provincia", "cp", "telefono", "email"] as const).map((f) => (
               <div key={f} className="flex flex-col gap-1">
                 <Label className="capitalize text-xs">{f}</Label>
                 <Input
                   value={destinatario[f]}
-                  onChange={e => setDestinatario(prev => ({ ...prev, [f]: e.target.value }))}
+                  onChange={(e) => setDestinatario((prev) => ({ ...prev, [f]: e.target.value }))}
                   placeholder={f === "cp" ? "Código postal" : f === "email" ? "correo@ejemplo.com" : ""}
                 />
               </div>
@@ -475,17 +494,24 @@ export default function NuevoEnvioPage() {
         <CardContent className="grid grid-cols-2 gap-4 md:grid-cols-4">
           <div className="flex flex-col gap-1">
             <Label className="text-xs">Peso (gramos)</Label>
-            <Input type="number" value={pesoG} onChange={e => setPesoG(e.target.value)} placeholder="500" />
+            <Input type="number" value={pesoG} onChange={(e) => setPesoG(e.target.value)} placeholder="500" />
           </div>
           <div className="flex flex-col gap-1">
             <Label className="text-xs">Valor declarado ($)</Label>
-            <Input type="number" value={valorDeclarado} onChange={e => setValorDeclarado(e.target.value)} placeholder="5000" />
+            <Input
+              type="number"
+              value={valorDeclarado}
+              onChange={(e) => setValorDeclarado(e.target.value)}
+              placeholder="5000"
+            />
           </div>
           {carrierSlug === "cabify" && (
             <div className="flex flex-col gap-1">
               <Label className="text-xs">Servicio</Label>
               <Select value={servicio} onValueChange={setServicio}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="express">Express (horas)</SelectItem>
                   <SelectItem value="same_day">Mismo día</SelectItem>
@@ -497,7 +523,7 @@ export default function NuevoEnvioPage() {
           )}
           <div className="flex flex-col gap-1">
             <Label className="text-xs">Referencia</Label>
-            <Input value={referencia} onChange={e => setReferencia(e.target.value)} placeholder="Nro. orden" />
+            <Input value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="Nro. orden" />
           </div>
         </CardContent>
       </Card>
@@ -527,7 +553,7 @@ export default function NuevoEnvioPage() {
             <>
               <p className="text-xs text-muted-foreground">Seleccioná un servicio para continuar.</p>
               <div className="rounded border divide-y text-sm">
-                {quotes.map(q => {
+                {quotes.map((q) => {
                   const isSelected = selectedQuote?.codigo === q.codigo
                   return (
                     <button
@@ -535,15 +561,15 @@ export default function NuevoEnvioPage() {
                       type="button"
                       onClick={() => setSelectedQuote(isSelected ? null : q)}
                       className={`w-full flex items-center justify-between px-3 py-2 text-left transition-colors ${
-                        isSelected
-                          ? "bg-primary/10 border-l-2 border-l-primary"
-                          : "hover:bg-muted/50"
+                        isSelected ? "bg-primary/10 border-l-2 border-l-primary" : "hover:bg-muted/50"
                       }`}
                     >
                       <div>
                         <span className="font-medium">{q.nombre}</span>
                         {q.plazo_dias > 0 && (
-                          <span className="ml-2 text-muted-foreground text-xs">{q.plazo_dias} día{q.plazo_dias !== 1 ? "s" : ""}</span>
+                          <span className="ml-2 text-muted-foreground text-xs">
+                            {q.plazo_dias} día{q.plazo_dias !== 1 ? "s" : ""}
+                          </span>
                         )}
                         {q.descripcion && <span className="ml-2 text-muted-foreground text-xs">{q.descripcion}</span>}
                       </div>
@@ -558,7 +584,13 @@ export default function NuevoEnvioPage() {
               {selectedQuote && (
                 <p className="text-xs text-muted-foreground">
                   Servicio seleccionado: <span className="font-medium text-foreground">{selectedQuote.nombre}</span>
-                  {selectedQuote.precio > 0 && <> — <span className="font-bold text-foreground">${selectedQuote.precio.toLocaleString("es-AR")}</span></>}
+                  {selectedQuote.precio > 0 && (
+                    <>
+                      {" "}
+                      —{" "}
+                      <span className="font-bold text-foreground">${selectedQuote.precio.toLocaleString("es-AR")}</span>
+                    </>
+                  )}
                 </p>
               )}
             </>

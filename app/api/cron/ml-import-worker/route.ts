@@ -52,7 +52,11 @@ export async function GET() {
       .limit(5)
 
     if (!jobs || jobs.length === 0) {
-      return NextResponse.json({ success: true, message: "No hay jobs pendientes", stale_recovered: staleItems?.length ?? 0 })
+      return NextResponse.json({
+        success: true,
+        message: "No hay jobs pendientes",
+        stale_recovered: staleItems?.length ?? 0,
+      })
     }
 
     console.log("[v0] Found", jobs.length, "jobs to process")
@@ -68,7 +72,12 @@ export async function GET() {
       }
     }
 
-    return NextResponse.json({ success: true, jobs_processed: jobs.length, results, stale_recovered: staleItems?.length ?? 0 })
+    return NextResponse.json({
+      success: true,
+      jobs_processed: jobs.length,
+      results,
+      stale_recovered: staleItems?.length ?? 0,
+    })
   } catch (error: any) {
     console.error("[v0] Error in cron worker:", error)
     return NextResponse.json({ error: error.message }, { status: 500 })

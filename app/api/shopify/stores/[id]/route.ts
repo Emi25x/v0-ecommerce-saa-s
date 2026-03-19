@@ -26,7 +26,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
     if (access_token !== undefined) {
       updates.access_token = access_token
-      
+
       // If updating access token, validate it
       const { data: store } = await supabase
         .from("shopify_stores")
@@ -44,7 +44,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
               error: "Invalid access token",
               details: testError.message,
             },
-            { status: 400 }
+            { status: 400 },
           )
         }
       }

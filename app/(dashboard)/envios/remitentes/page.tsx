@@ -10,28 +10,34 @@ import { Badge } from "@/components/ui/badge"
 import { ArrowLeft, Plus, Star, Trash2, Pencil, Check, X } from "lucide-react"
 
 interface Remitente {
-  id:        string
-  nombre:    string
+  id: string
+  nombre: string
   direccion: string
   localidad: string
   provincia: string
-  cp:        string
-  telefono:  string | null
-  email:     string | null
+  cp: string
+  telefono: string | null
+  email: string | null
   es_default: boolean
 }
 
 const EMPTY: Omit<Remitente, "id" | "es_default"> = {
-  nombre: "", direccion: "", localidad: "", provincia: "", cp: "", telefono: "", email: "",
+  nombre: "",
+  direccion: "",
+  localidad: "",
+  provincia: "",
+  cp: "",
+  telefono: "",
+  email: "",
 }
 
 export default function RemitentesPage() {
   const [remitentes, setRemitentes] = useState<Remitente[]>([])
-  const [loading, setLoading]       = useState(true)
-  const [showForm, setShowForm]     = useState(false)
-  const [form, setForm]             = useState({ ...EMPTY, es_default: false })
-  const [saving, setSaving]         = useState(false)
-  const [editId, setEditId]         = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ ...EMPTY, es_default: false })
+  const [saving, setSaving] = useState(false)
+  const [editId, setEditId] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -43,11 +49,13 @@ export default function RemitentesPage() {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+  }, [])
 
   async function save() {
     setSaving(true)
-    const url    = editId ? `/api/envios/remitentes/${editId}` : "/api/envios/remitentes"
+    const url = editId ? `/api/envios/remitentes/${editId}` : "/api/envios/remitentes"
     const method = editId ? "PATCH" : "POST"
     const res = await fetch(url, {
       method,
@@ -81,9 +89,14 @@ export default function RemitentesPage() {
   function startEdit(r: Remitente) {
     setEditId(r.id)
     setForm({
-      nombre: r.nombre, direccion: r.direccion, localidad: r.localidad,
-      provincia: r.provincia, cp: r.cp, telefono: r.telefono ?? "",
-      email: r.email ?? "", es_default: r.es_default,
+      nombre: r.nombre,
+      direccion: r.direccion,
+      localidad: r.localidad,
+      provincia: r.provincia,
+      cp: r.cp,
+      telefono: r.telefono ?? "",
+      email: r.email ?? "",
+      es_default: r.es_default,
     })
     setShowForm(true)
   }
@@ -101,7 +114,9 @@ export default function RemitentesPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" asChild>
-            <Link href="/envios"><ArrowLeft className="h-4 w-4" /></Link>
+            <Link href="/envios">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
           </Button>
           <h1 className="text-2xl font-bold">Remitentes</h1>
         </div>
@@ -121,12 +136,15 @@ export default function RemitentesPage() {
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {(["nombre", "direccion", "localidad", "provincia", "cp", "telefono", "email"] as const).map(f => (
-                <div key={f} className={`flex flex-col gap-1 ${f === "nombre" || f === "direccion" ? "sm:col-span-2" : ""}`}>
+              {(["nombre", "direccion", "localidad", "provincia", "cp", "telefono", "email"] as const).map((f) => (
+                <div
+                  key={f}
+                  className={`flex flex-col gap-1 ${f === "nombre" || f === "direccion" ? "sm:col-span-2" : ""}`}
+                >
                   <Label className="capitalize text-xs">{f === "cp" ? "Código postal" : f}</Label>
                   <Input
                     value={(form as any)[f]}
-                    onChange={e => setForm(prev => ({ ...prev, [f]: e.target.value }))}
+                    onChange={(e) => setForm((prev) => ({ ...prev, [f]: e.target.value }))}
                     placeholder={f === "email" ? "correo@ejemplo.com" : ""}
                   />
                 </div>
@@ -137,10 +155,12 @@ export default function RemitentesPage() {
                 type="checkbox"
                 id="es_default"
                 checked={form.es_default}
-                onChange={e => setForm(prev => ({ ...prev, es_default: e.target.checked }))}
+                onChange={(e) => setForm((prev) => ({ ...prev, es_default: e.target.checked }))}
                 className="h-4 w-4 rounded border"
               />
-              <Label htmlFor="es_default" className="cursor-pointer text-sm">Usar como remitente por defecto</Label>
+              <Label htmlFor="es_default" className="cursor-pointer text-sm">
+                Usar como remitente por defecto
+              </Label>
             </div>
             <div className="flex gap-2 pt-2">
               <Button onClick={save} disabled={saving || !formOk} className="flex-1">
@@ -167,7 +187,7 @@ export default function RemitentesPage() {
         </Card>
       ) : (
         <div className="flex flex-col gap-3">
-          {remitentes.map(r => (
+          {remitentes.map((r) => (
             <Card key={r.id} className={r.es_default ? "border-primary" : ""}>
               <CardContent className="pt-4 pb-4">
                 <div className="flex items-start justify-between gap-3">
@@ -192,14 +212,25 @@ export default function RemitentesPage() {
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     {!r.es_default && (
-                      <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setDefault(r.id)} title="Marcar como por defecto">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => setDefault(r.id)}
+                        title="Marcar como por defecto"
+                      >
                         <Star className="h-3.5 w-3.5" />
                       </Button>
                     )}
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => startEdit(r)}>
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => remove(r.id)}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      onClick={() => remove(r.id)}
+                    >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>

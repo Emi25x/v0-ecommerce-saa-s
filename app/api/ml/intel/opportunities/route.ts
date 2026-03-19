@@ -19,8 +19,8 @@ import { createAdminClient } from "@/lib/db/admin"
 import { mlFetchJson, isMlFetchError } from "@/domains/mercadolibre/api-client"
 
 const SITE_ID = "MLA"
-const MAX_SELLERS_THRESHOLD = 20   // más de esto → no sugerir
-const PRICE_ZONE_LOW = 31000       // zona umbral Argentina
+const MAX_SELLERS_THRESHOLD = 20 // más de esto → no sugerir
+const PRICE_ZONE_LOW = 31000 // zona umbral Argentina
 const PRICE_ZONE_HIGH = 34000
 const SHIPPING_COST_AVG = 6000
 const BATCH_DELAY_MS = 300
@@ -76,7 +76,13 @@ export async function GET(request: NextRequest) {
     }
 
     if (categories.length === 0) {
-      return NextResponse.json({ ok: true, items: [], saved: 0, scanned: 0, message: "No hay categorias en las publicaciones" })
+      return NextResponse.json({
+        ok: true,
+        items: [],
+        saved: 0,
+        scanned: 0,
+        message: "No hay categorias en las publicaciones",
+      })
     }
 
     // 3. Obtener EANs ya publicados por esta cuenta (para excluir)
@@ -96,7 +102,11 @@ export async function GET(request: NextRequest) {
     // 4. Para cada categoría, buscar items
     for (const categoryId of categories) {
       const searchUrl = `https://api.mercadolibre.com/sites/${SITE_ID}/search?category=${categoryId}&limit=${ITEMS_PER_CATEGORY}&sort=sold_quantity_desc`
-      const searchRes = await mlFetchJson(searchUrl, { accessToken }, { account_id, op_name: `intel-opp-cat-${categoryId}` })
+      const searchRes = await mlFetchJson(
+        searchUrl,
+        { accessToken },
+        { account_id, op_name: `intel-opp-cat-${categoryId}` },
+      )
 
       if (isMlFetchError(searchRes)) {
         console.warn(`[ML-INTEL-OPP] Error categoría ${categoryId}: ${searchRes.status}`)
@@ -110,10 +120,10 @@ export async function GET(request: NextRequest) {
       for (const item of items) {
         // Extraer EAN de attributes (conservador: solo si existe)
         const attrs: any[] = item.attributes || []
-        const eanAttr = attrs.find((a: any) =>
-          ["GTIN", "EAN", "ISBN"].includes(a.id?.toUpperCase() || "") && a.value_name
+        const eanAttr = attrs.find(
+          (a: any) => ["GTIN", "EAN", "ISBN"].includes(a.id?.toUpperCase() || "") && a.value_name,
         )
-        if (!eanAttr?.value_name) continue  // sin EAN → omitir conservadoramente
+        if (!eanAttr?.value_name) continue // sin EAN → omitir conservadoramente
 
         const ean = eanAttr.value_name.trim()
         if (!ean || ean.length < 8) continue
@@ -148,9 +158,8 @@ export async function GET(request: NextRequest) {
         if (score <= 0) continue
 
         // Upsert oportunidad
-        const { error: upsertErr } = await supabase
-          .from("ml_opportunities")
-          .upsert({
+        const { error: upsertErr } = await supabase.from("ml_opportunities").upsert(
+          {
             account_id,
             ean,
             title: item.title || "",
@@ -162,10 +171,12 @@ export async function GET(request: NextRequest) {
             sold_qty_proxy: soldQtyProxy,
             opportunity_score: parseFloat(score.toFixed(2)),
             status: "new",
-          }, {
+          },
+          {
             onConflict: "account_id,ean",
             ignoreDuplicates: false,
-          })
+          },
+        )
 
         if (!upsertErr) totalUpserted++
         else console.error(`[ML-INTEL-OPP] Upsert error EAN ${ean}:`, upsertErr.message)
@@ -180,7 +191,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       // Contrato estable: siempre estos campos
-      items: [],           // los items procesados (reservado para futuro)
+      items: [], // los items procesados (reservado para futuro)
       saved: totalUpserted,
       scanned: totalFound,
       // Alias legacy por compatibilidad
@@ -189,16 +200,18 @@ export async function GET(request: NextRequest) {
       opportunities_upserted: totalUpserted,
       elapsed_seconds: parseFloat(elapsed),
     })
-
   } catch (err: any) {
     console.error("[ML-INTEL-OPP] Fatal:", err.message)
-    return NextResponse.json({
-      ok: false,
-      items: [],
-      saved: 0,
-      scanned: 0,
-      error: err.message,
-    }, { status: 500 })
+    return NextResponse.json(
+      {
+        ok: false,
+        items: [],
+        saved: 0,
+        scanned: 0,
+        error: err.message,
+      },
+      { status: 500 },
+    )
   }
 }
 
@@ -209,14 +222,11 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "id y status válido requeridos" }, { status: 400 })
   }
   const supabase = createAdminClient()
-  const { error } = await supabase
-    .from("ml_opportunities")
-    .update({ status })
-    .eq("id", id)
+  const { error } = await supabase.from("ml_opportunities").update({ status }).eq("id", id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true })
 }
 
 function delay(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms))
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }

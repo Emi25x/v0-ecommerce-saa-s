@@ -11,9 +11,15 @@ import Link from "next/link"
 function formatCurrency(v: number) {
   return new Intl.NumberFormat("es-AR", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(v)
 }
-function fmt(v: number) { return v.toLocaleString("es-AR") }
-function fmtPct(v: number) { return `${v.toFixed(1)}%` }
-function fmtRoas(v: number) { return `${v.toFixed(2)}x` }
+function fmt(v: number) {
+  return v.toLocaleString("es-AR")
+}
+function fmtPct(v: number) {
+  return `${v.toFixed(1)}%`
+}
+function fmtRoas(v: number) {
+  return `${v.toFixed(2)}x`
+}
 
 const STATUS_BADGE: Record<string, string> = {
   ACTIVE: "text-green-600 border-green-600",
@@ -51,7 +57,11 @@ export default function MetaAdsPage() {
       const startDate = formatDate(dateRange)
       const endDate = formatDate(0)
       const res = await fetch(`/api/marketing/meta/ads?start_date=${startDate}&end_date=${endDate}`)
-      if (res.status === 404) { setNotConnected(true); setLoading(false); return }
+      if (res.status === 404) {
+        setNotConnected(true)
+        setLoading(false)
+        return
+      }
       if (!res.ok) throw new Error("Error al cargar datos")
       const json = await res.json()
       setData(json)
@@ -67,10 +77,12 @@ export default function MetaAdsPage() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center max-w-md">
-          <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6"
-            style={{ backgroundColor: "#1877F220" }}>
+          <div
+            className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6"
+            style={{ backgroundColor: "#1877F220" }}
+          >
             <svg className="w-10 h-10" viewBox="0 0 24 24" fill="#1877F2">
-              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+              <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
             </svg>
           </div>
           <h2 className="text-2xl font-bold mb-2">Meta Ads no conectado</h2>
@@ -112,7 +124,7 @@ export default function MetaAdsPage() {
           </div>
           {/* Date Range Selector */}
           <div className="flex gap-2">
-            {DATE_RANGES.map(range => (
+            {DATE_RANGES.map((range) => (
               <Button
                 key={range.days}
                 size="sm"
@@ -128,8 +140,13 @@ export default function MetaAdsPage() {
         {loading ? (
           <div className="space-y-4">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {[1,2,3,4].map(i => (
-                <Card key={i}><CardContent className="pt-6"><Skeleton className="h-8 w-20 mb-2" /><Skeleton className="h-4 w-24" /></CardContent></Card>
+              {[1, 2, 3, 4].map((i) => (
+                <Card key={i}>
+                  <CardContent className="pt-6">
+                    <Skeleton className="h-8 w-20 mb-2" />
+                    <Skeleton className="h-4 w-24" />
+                  </CardContent>
+                </Card>
               ))}
             </div>
             <Skeleton className="h-64 w-full" />
@@ -144,11 +161,14 @@ export default function MetaAdsPage() {
                     <div>
                       <div className="font-semibold text-lg">{data.account.name}</div>
                       <div className="text-sm text-muted-foreground">
-                        Cuenta · {data.account.currency} · Gastado: {formatCurrency(parseFloat(data.account.amount_spent ?? 0) / 100)}
+                        Cuenta · {data.account.currency} · Gastado:{" "}
+                        {formatCurrency(parseFloat(data.account.amount_spent ?? 0) / 100)}
                       </div>
                     </div>
-                    <Badge variant={data.account.account_status === 1 ? "outline" : "secondary"}
-                      className={data.account.account_status === 1 ? "text-green-600 border-green-600" : ""}>
+                    <Badge
+                      variant={data.account.account_status === 1 ? "outline" : "secondary"}
+                      className={data.account.account_status === 1 ? "text-green-600 border-green-600" : ""}
+                    >
                       {data.account.account_status === 1 ? "Activa" : "Inactiva"}
                     </Badge>
                   </div>
@@ -165,7 +185,7 @@ export default function MetaAdsPage() {
                 { label: "Gasto", value: formatCurrency(data.totals?.spend ?? 0) },
                 { label: "Conversiones", value: (data.totals?.conversions ?? 0).toFixed(0) },
                 { label: "ROAS", value: fmtRoas(data.totals?.roas ?? 0), highlight: true },
-              ].map(kpi => (
+              ].map((kpi) => (
                 <Card key={kpi.label}>
                   <CardContent className="pt-6">
                     <div className={`text-2xl font-bold ${kpi.highlight ? "text-green-600" : ""}`}>{kpi.value}</div>

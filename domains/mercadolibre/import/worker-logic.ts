@@ -39,7 +39,10 @@ function extractSku(item: any): string | null {
 
   if (!sku && Array.isArray(item.variations)) {
     for (const v of item.variations) {
-      if (v.seller_custom_field) { sku = v.seller_custom_field; break }
+      if (v.seller_custom_field) {
+        sku = v.seller_custom_field
+        break
+      }
     }
   }
 
@@ -88,34 +91,45 @@ export interface WorkerBatchResult {
   error?: string
 }
 
-export async function executeWorkerBatch(
-  supabase: any,
-  params: WorkerBatchParams,
-): Promise<WorkerBatchResult> {
+export async function executeWorkerBatch(supabase: any, params: WorkerBatchParams): Promise<WorkerBatchResult> {
   const { job_id, batch_size = 20 } = params
 
   // Get job + account
-  const { data: job } = await supabase
-    .from("ml_import_jobs")
-    .select("*, ml_accounts(*)")
-    .eq("id", job_id)
-    .single()
+  const { data: job } = await supabase.from("ml_import_jobs").select("*, ml_accounts(*)").eq("id", job_id).single()
 
   if (!job) {
-    return { success: false, processed: 0, failed: 0, linked: 0, unmatched: 0, unmatched_percent: 0, has_more: false, error: "Job not found" }
+    return {
+      success: false,
+      processed: 0,
+      failed: 0,
+      linked: 0,
+      unmatched: 0,
+      unmatched_percent: 0,
+      has_more: false,
+      error: "Job not found",
+    }
   }
 
   const account = job.ml_accounts
 
   // Atomically claim batch (uses FOR UPDATE SKIP LOCKED)
-  const { data: pendingItems, error: claimError } = await supabase.rpc(
-    "claim_import_items",
-    { p_job_id: job_id, p_limit: batch_size },
-  )
+  const { data: pendingItems, error: claimError } = await supabase.rpc("claim_import_items", {
+    p_job_id: job_id,
+    p_limit: batch_size,
+  })
 
   if (claimError) {
     console.error("[WORKER] Error claiming items:", claimError)
-    return { success: false, processed: 0, failed: 0, linked: 0, unmatched: 0, unmatched_percent: 0, has_more: false, error: "Error claiming items" }
+    return {
+      success: false,
+      processed: 0,
+      failed: 0,
+      linked: 0,
+      unmatched: 0,
+      unmatched_percent: 0,
+      has_more: false,
+      error: "Error claiming items",
+    }
   }
 
   if (!pendingItems || pendingItems.length === 0) {
@@ -127,16 +141,39 @@ export async function executeWorkerBatch(
       .in("status", ["pending", "processing"])
 
     if (count === 0) {
-      await supabase.from("ml_import_jobs").update({
-        status: "completed",
-        completed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }).eq("id", job_id)
+      await supabase
+        .from("ml_import_jobs")
+        .update({
+          status: "completed",
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", job_id)
 
-      return { success: true, status: "completed", processed: 0, failed: 0, linked: 0, unmatched: 0, unmatched_percent: 0, has_more: false, message: "Import completed" }
+      return {
+        success: true,
+        status: "completed",
+        processed: 0,
+        failed: 0,
+        linked: 0,
+        unmatched: 0,
+        unmatched_percent: 0,
+        has_more: false,
+        message: "Import completed",
+      }
     }
 
-    return { success: true, status: "processing", processed: 0, failed: 0, linked: 0, unmatched: 0, unmatched_percent: 0, has_more: true, message: "Items being processed by other workers" }
+    return {
+      success: true,
+      status: "processing",
+      processed: 0,
+      failed: 0,
+      linked: 0,
+      unmatched: 0,
+      unmatched_percent: 0,
+      has_more: true,
+      message: "Items being processed by other workers",
+    }
   }
 
   const itemIds = pendingItems.map((item: any) => item.ml_item_id)
@@ -155,19 +192,36 @@ export async function executeWorkerBatch(
       const retryAfterSeconds = retryAfterHeader ? parseInt(retryAfterHeader) : 120
       const nextRetryAt = new Date(Date.now() + retryAfterSeconds * 1000)
 
-      await supabase.from("ml_import_queue").update({
-        status: "pending",
-        next_retry_at: nextRetryAt.toISOString(),
-      }).in("ml_item_id", itemIds).eq("job_id", job_id)
+      await supabase
+        .from("ml_import_queue")
+        .update({
+          status: "pending",
+          next_retry_at: nextRetryAt.toISOString(),
+        })
+        .in("ml_item_id", itemIds)
+        .eq("job_id", job_id)
 
-      return { success: false, processed: 0, failed: 0, linked: 0, unmatched: 0, unmatched_percent: 0, has_more: true, error: "Rate limit", message: `Retry in ${retryAfterSeconds}s` }
+      return {
+        success: false,
+        processed: 0,
+        failed: 0,
+        linked: 0,
+        unmatched: 0,
+        unmatched_percent: 0,
+        has_more: true,
+        error: "Rate limit",
+        message: `Retry in ${retryAfterSeconds}s`,
+      }
     }
     throw new Error(`ML multiget error: ${multigetResponse.status}`)
   }
 
   const itemsData = await multigetResponse.json()
 
-  let processed = 0, failed = 0, linked = 0, unmatched = 0
+  let processed = 0,
+    failed = 0,
+    linked = 0,
+    unmatched = 0
 
   for (const itemResponse of itemsData) {
     const item = itemResponse.body
@@ -176,11 +230,14 @@ export async function executeWorkerBatch(
       failed++
       const currentItem = pendingItems.find((i: any) => i.ml_item_id === itemResponse.id)
       if (currentItem) {
-        await supabase.from("ml_import_queue").update({
-          status: "failed",
-          last_error: `ML API returned ${itemResponse.code}`,
-          processed_at: new Date().toISOString(),
-        }).eq("id", currentItem.id)
+        await supabase
+          .from("ml_import_queue")
+          .update({
+            status: "failed",
+            last_error: `ML API returned ${itemResponse.code}`,
+            processed_at: new Date().toISOString(),
+          })
+          .eq("id", currentItem.id)
       }
       continue
     }
@@ -198,14 +255,29 @@ export async function executeWorkerBatch(
       if (normalizedSku || normalizedGtin) {
         if (normalizedSku) {
           const { data: productBySku } = await supabase
-            .from("products").select("id").eq("sku", normalizedSku).limit(1).single()
-          if (productBySku) { product_id = productBySku.id; matched_by = "sku"; linked++ }
+            .from("products")
+            .select("id")
+            .eq("sku", normalizedSku)
+            .limit(1)
+            .single()
+          if (productBySku) {
+            product_id = productBySku.id
+            matched_by = "sku"
+            linked++
+          }
         }
         if (!product_id && normalizedGtin) {
           const { data: productByGtin } = await supabase
-            .from("products").select("id").eq("sku", normalizedGtin).limit(1).single()
-          if (productByGtin) { product_id = productByGtin.id; matched_by = "gtin"; linked++ }
-          else unmatched++
+            .from("products")
+            .select("id")
+            .eq("sku", normalizedGtin)
+            .limit(1)
+            .single()
+          if (productByGtin) {
+            product_id = productByGtin.id
+            matched_by = "gtin"
+            linked++
+          } else unmatched++
         } else if (!product_id) {
           unmatched++
         }
@@ -214,24 +286,31 @@ export async function executeWorkerBatch(
       }
 
       // Upsert ml_publications
-      await supabase.from("ml_publications").upsert({
-        account_id: account.id,
-        ml_item_id: item.id,
-        product_id,
-        matched_by,
-        title: item.title,
-        price: item.price,
-        current_stock: item.available_quantity,
-        status: item.status,
-        permalink: item.permalink,
-        sku: candidateSku ?? null,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "account_id,ml_item_id" })
+      await supabase.from("ml_publications").upsert(
+        {
+          account_id: account.id,
+          ml_item_id: item.id,
+          product_id,
+          matched_by,
+          title: item.title,
+          price: item.price,
+          current_stock: item.available_quantity,
+          status: item.status,
+          permalink: item.permalink,
+          sku: candidateSku ?? null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "account_id,ml_item_id" },
+      )
 
-      await supabase.from("ml_import_queue").update({
-        status: "completed",
-        processed_at: new Date().toISOString(),
-      }).eq("ml_item_id", item.id).eq("job_id", job_id)
+      await supabase
+        .from("ml_import_queue")
+        .update({
+          status: "completed",
+          processed_at: new Date().toISOString(),
+        })
+        .eq("ml_item_id", item.id)
+        .eq("job_id", job_id)
 
       processed++
     } catch (itemError: any) {
@@ -239,34 +318,42 @@ export async function executeWorkerBatch(
       const currentItem = pendingItems.find((i: any) => i.ml_item_id === item.id)
       const attempts = currentItem?.attempts || 1
 
-      const shouldRetry = attempts < 3 && (
-        itemError.status === 429 || (itemError.status >= 500 && itemError.status < 600)
-      )
+      const shouldRetry =
+        attempts < 3 && (itemError.status === 429 || (itemError.status >= 500 && itemError.status < 600))
 
       if (shouldRetry) {
         const delayMinutes = Math.pow(2, attempts)
-        await supabase.from("ml_import_queue").update({
-          status: "pending",
-          last_error: itemError.message || "Unknown error",
-          next_retry_at: new Date(Date.now() + delayMinutes * 60 * 1000).toISOString(),
-        }).eq("id", currentItem?.id)
+        await supabase
+          .from("ml_import_queue")
+          .update({
+            status: "pending",
+            last_error: itemError.message || "Unknown error",
+            next_retry_at: new Date(Date.now() + delayMinutes * 60 * 1000).toISOString(),
+          })
+          .eq("id", currentItem?.id)
       } else {
         failed++
-        await supabase.from("ml_import_queue").update({
-          status: "failed",
-          last_error: itemError.message || "Max retries exceeded",
-          processed_at: new Date().toISOString(),
-        }).eq("id", currentItem?.id)
+        await supabase
+          .from("ml_import_queue")
+          .update({
+            status: "failed",
+            last_error: itemError.message || "Max retries exceeded",
+            processed_at: new Date().toISOString(),
+          })
+          .eq("id", currentItem?.id)
       }
     }
   }
 
   // Update job stats
-  await supabase.from("ml_import_jobs").update({
-    processed_items: job.processed_items + processed,
-    failed_items: job.failed_items + failed,
-    updated_at: new Date().toISOString(),
-  }).eq("id", job_id)
+  await supabase
+    .from("ml_import_jobs")
+    .update({
+      processed_items: job.processed_items + processed,
+      failed_items: job.failed_items + failed,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", job_id)
 
   return {
     success: true,

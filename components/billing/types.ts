@@ -99,24 +99,24 @@ export interface ConfigFormState {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 export const TIPO_COMPROBANTE: Record<number, { letra: string; label: string }> = {
-  1:  { letra: "A", label: "Factura A" },
-  6:  { letra: "B", label: "Factura B" },
+  1: { letra: "A", label: "Factura A" },
+  6: { letra: "B", label: "Factura B" },
   11: { letra: "C", label: "Factura C" },
 }
 
 // Segun FEParamGetCondicionIvaReceptor de ARCA (RG 5616)
 export const CONDICION_IVA_OPTS = [
-  { value: "consumidor_final",                    label: "Consumidor Final (5)" },
-  { value: "responsable_inscripto",               label: "Responsable Inscripto (1)" },
-  { value: "monotributo",                         label: "Responsable Monotributo (6)" },
-  { value: "exento",                              label: "IVA Sujeto Exento (4)" },
-  { value: "no_categorizado",                     label: "Sujeto No Categorizado (7)" },
-  { value: "monotributista_social",               label: "Monotributista Social (13)" },
-  { value: "no_alcanzado",                        label: "IVA No Alcanzado (15)" },
-  { value: "proveedor_exterior",                  label: "Proveedor del Exterior (8)" },
-  { value: "cliente_exterior",                    label: "Cliente del Exterior (9)" },
-  { value: "liberado",                            label: "IVA Liberado Ley 19640 (10)" },
-  { value: "monotributo_trabajador_independiente",label: "Monotributo Trab. Independiente (16)" },
+  { value: "consumidor_final", label: "Consumidor Final (5)" },
+  { value: "responsable_inscripto", label: "Responsable Inscripto (1)" },
+  { value: "monotributo", label: "Responsable Monotributo (6)" },
+  { value: "exento", label: "IVA Sujeto Exento (4)" },
+  { value: "no_categorizado", label: "Sujeto No Categorizado (7)" },
+  { value: "monotributista_social", label: "Monotributista Social (13)" },
+  { value: "no_alcanzado", label: "IVA No Alcanzado (15)" },
+  { value: "proveedor_exterior", label: "Proveedor del Exterior (8)" },
+  { value: "cliente_exterior", label: "Cliente del Exterior (9)" },
+  { value: "liberado", label: "IVA Liberado Ley 19640 (10)" },
+  { value: "monotributo_trabajador_independiente", label: "Monotributo Trab. Independiente (16)" },
 ]
 
 // Segun FEParamGetTiposDoc de ARCA
@@ -134,10 +134,10 @@ export const TIPO_DOC_OPTS = [
 ]
 
 export const IVA_OPTS: Array<{ value: 0 | 10.5 | 21 | 27; label: string }> = [
-  { value: 0,    label: "Exento (0%)" },
+  { value: 0, label: "Exento (0%)" },
   { value: 10.5, label: "10.5%" },
-  { value: 21,   label: "21%" },
-  { value: 27,   label: "27%" },
+  { value: 21, label: "21%" },
+  { value: 27, label: "27%" },
 ]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -157,46 +157,63 @@ export function nroFmt(pv: number, num: number) {
 }
 
 export function calcItem(item: Partial<FacturaItem>): FacturaItem {
-  const cantidad   = Number(item.cantidad || 0)
-  const precio     = Number(item.precio_unitario || 0)
-  const alicuota   = Number(item.alicuota_iva ?? 21) as 0 | 10.5 | 21 | 27
-  const subtotal   = parseFloat((cantidad * precio).toFixed(2))
-  const iva        = alicuota === 0 ? 0 : parseFloat((subtotal * alicuota / 100).toFixed(2))
+  const cantidad = Number(item.cantidad || 0)
+  const precio = Number(item.precio_unitario || 0)
+  const alicuota = Number(item.alicuota_iva ?? 21) as 0 | 10.5 | 21 | 27
+  const subtotal = parseFloat((cantidad * precio).toFixed(2))
+  const iva = alicuota === 0 ? 0 : parseFloat(((subtotal * alicuota) / 100).toFixed(2))
   return {
-    descripcion:     item.descripcion || "",
+    descripcion: item.descripcion || "",
     cantidad,
     precio_unitario: precio,
-    alicuota_iva:    alicuota,
+    alicuota_iva: alicuota,
     subtotal,
     iva,
   }
 }
 
 export const EMPTY_ITEM = (ivaDefault: number = 21): Partial<FacturaItem> => ({
-  descripcion: "", cantidad: 1, precio_unitario: 0, alicuota_iva: ivaDefault as 0 | 10.5 | 21 | 27, subtotal: 0, iva: 0,
+  descripcion: "",
+  cantidad: 1,
+  precio_unitario: 0,
+  alicuota_iva: ivaDefault as 0 | 10.5 | 21 | 27,
+  subtotal: 0,
+  iva: 0,
 })
 
 export const EMPTY_CONFIG_FORM = (): ConfigFormState => ({
   id: "",
   // ARCA
-  cuit: "", razon_social: "", nombre_empresa: "", domicilio_fiscal: "", punto_venta: "1",
-  condicion_iva: "responsable_inscripto", ambiente: "homologacion",
-  cert_pem: "", clave_pem: "",
+  cuit: "",
+  razon_social: "",
+  nombre_empresa: "",
+  domicilio_fiscal: "",
+  punto_venta: "1",
+  condicion_iva: "responsable_inscripto",
+  ambiente: "homologacion",
+  cert_pem: "",
+  clave_pem: "",
   // Contacto y redes
-  telefono: "", email: "", web: "", instagram: "", facebook: "", whatsapp: "",
+  telefono: "",
+  email: "",
+  web: "",
+  instagram: "",
+  facebook: "",
+  whatsapp: "",
   // Contenido de la factura
   iva_default: 21,
-  nota_factura: "", datos_pago: "",
+  nota_factura: "",
+  datos_pago: "",
   // Logo
   logo_url: "",
   // Visibilidad
   factura_opciones: {
-    mostrar_logo:            true,
-    mostrar_datos_contacto:  true,
-    mostrar_redes:           true,
-    mostrar_nota:            true,
-    mostrar_datos_pago:      true,
-    mostrar_domicilio:       true,
+    mostrar_logo: true,
+    mostrar_datos_contacto: true,
+    mostrar_redes: true,
+    mostrar_nota: true,
+    mostrar_datos_pago: true,
+    mostrar_domicilio: true,
   },
 })
 

@@ -8,7 +8,9 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("import_sources")
-    .select("id, name, description, url_template, auth_type, credentials, feed_type, column_mapping, is_active, delimiter")
+    .select(
+      "id, name, description, url_template, auth_type, credentials, feed_type, column_mapping, is_active, delimiter",
+    )
     .order("name")
 
   if (error) {

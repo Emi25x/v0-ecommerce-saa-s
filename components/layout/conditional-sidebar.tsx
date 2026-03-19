@@ -11,7 +11,7 @@ export function ConditionalSidebar() {
   const pathname = usePathname()
 
   // Rutas donde NO debe mostrarse el sidebar
-  const isAuthRoute = pathname === '/login' || pathname.startsWith('/auth/')
+  const isAuthRoute = pathname === "/login" || pathname.startsWith("/auth/")
 
   if (isAuthRoute) {
     return null

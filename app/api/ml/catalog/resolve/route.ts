@@ -18,11 +18,7 @@ export async function POST(req: NextRequest) {
 
   const supabase = createAdminClient()
 
-  const { data: account } = await supabase
-    .from("ml_accounts")
-    .select("*")
-    .eq("id", account_id)
-    .single()
+  const { data: account } = await supabase.from("ml_accounts").select("*").eq("id", account_id).single()
   if (!account) return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
 
   const validAccount = await refreshTokenIfNeeded(account)
@@ -41,7 +37,13 @@ export async function POST(req: NextRequest) {
     const data = await mlFetchJson(url, { accessToken }, { account_id, op_name: `catalog_resolve_${item.ean}` })
 
     if (isMlFetchError(data)) {
-      resolved.push({ ml_item_id: item.ml_item_id, ean: item.ean, action: "skip_no_match", catalog_product_id: null, error: data.body_text })
+      resolved.push({
+        ml_item_id: item.ml_item_id,
+        ean: item.ean,
+        action: "skip_no_match",
+        catalog_product_id: null,
+        error: data.body_text,
+      })
       continue
     }
 
@@ -50,7 +52,13 @@ export async function POST(req: NextRequest) {
     if (results.length === 0) {
       resolved.push({ ml_item_id: item.ml_item_id, ean: item.ean, action: "skip_no_match", catalog_product_id: null })
     } else if (results.length > 1) {
-      resolved.push({ ml_item_id: item.ml_item_id, ean: item.ean, action: "skip_ambiguous", catalog_product_id: null, matches: results.length })
+      resolved.push({
+        ml_item_id: item.ml_item_id,
+        ean: item.ean,
+        action: "skip_ambiguous",
+        catalog_product_id: null,
+        matches: results.length,
+      })
     } else {
       // Exactamente 1 match — aceptar
       resolved.push({

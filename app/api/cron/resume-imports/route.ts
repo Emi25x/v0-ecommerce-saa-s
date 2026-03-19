@@ -68,10 +68,13 @@ export async function POST() {
         .single()
 
       if (!source) {
-        await supabase.from("import_history").update({
-          status: "failed",
-          last_message: "Source not found during cron resume",
-        }).eq("id", orphan.id)
+        await supabase
+          .from("import_history")
+          .update({
+            status: "failed",
+            last_message: "Source not found during cron resume",
+          })
+          .eq("id", orphan.id)
         results.push({ id: orphan.id, error: "source_not_found" })
         continue
       }
@@ -81,12 +84,15 @@ export async function POST() {
         // The underlying upsert is idempotent, so re-processing already-done rows is safe
         const result = await executeFullImport(orphan.source_id, source.feed_type)
 
-        await supabase.from("import_history").update({
-          status: result.success ? "completed" : "failed",
-          last_message: result.message,
-          completed_at: result.success ? new Date().toISOString() : null,
-          updated_at: new Date().toISOString(),
-        }).eq("id", orphan.id)
+        await supabase
+          .from("import_history")
+          .update({
+            status: result.success ? "completed" : "failed",
+            last_message: result.message,
+            completed_at: result.success ? new Date().toISOString() : null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", orphan.id)
 
         results.push({
           id: orphan.id,
@@ -97,11 +103,14 @@ export async function POST() {
         })
       } catch (err: any) {
         console.error(`[CRON RESUME-IMPORTS] Error resuming ${orphan.id}:`, err.message)
-        await supabase.from("import_history").update({
-          status: "failed",
-          last_message: `Cron resume error: ${err.message}`,
-          updated_at: new Date().toISOString(),
-        }).eq("id", orphan.id)
+        await supabase
+          .from("import_history")
+          .update({
+            status: "failed",
+            last_message: `Cron resume error: ${err.message}`,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", orphan.id)
         results.push({ id: orphan.id, error: err.message })
       }
     }

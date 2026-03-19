@@ -24,29 +24,52 @@ export async function GET(req: NextRequest) {
   if (!job) return NextResponse.json({ ok: true, job: null })
 
   // Conteos de items por estado (solo si hay job)
-  const [resolvedCount, optinOkCount, optinFailedCount, noMatchCount, ambiguousCount, candidateCount, errorsCount] = await Promise.all([
-    // Migrables: resolve_status=resolved Y migrate_status=pending (listos para optin)
-    supabase.from("ml_catalog_migration_items").select("*", { count: "exact", head: true })
-      .eq("job_id", job.id).eq("resolve_status", "resolved").eq("migrate_status", "pending"),
-    // Optin OK
-    supabase.from("ml_catalog_migration_items").select("*", { count: "exact", head: true })
-      .eq("job_id", job.id).eq("migrate_status", "optin_ok"),
-    // Optin fallido
-    supabase.from("ml_catalog_migration_items").select("*", { count: "exact", head: true })
-      .eq("job_id", job.id).eq("migrate_status", "optin_failed"),
-    // Sin match: not_found
-    supabase.from("ml_catalog_migration_items").select("*", { count: "exact", head: true })
-      .eq("job_id", job.id).eq("resolve_status", "not_found"),
-    // Ambiguos
-    supabase.from("ml_catalog_migration_items").select("*", { count: "exact", head: true })
-      .eq("job_id", job.id).eq("resolve_status", "ambiguous"),
-    // Total candidatos
-    supabase.from("ml_catalog_migration_items").select("*", { count: "exact", head: true })
-      .eq("job_id", job.id).eq("is_candidate", true),
-    // Errores de migración
-    supabase.from("ml_catalog_migration_items").select("*", { count: "exact", head: true })
-      .eq("job_id", job.id).in("migrate_status", ["error"]),
-  ])
+  const [resolvedCount, optinOkCount, optinFailedCount, noMatchCount, ambiguousCount, candidateCount, errorsCount] =
+    await Promise.all([
+      // Migrables: resolve_status=resolved Y migrate_status=pending (listos para optin)
+      supabase
+        .from("ml_catalog_migration_items")
+        .select("*", { count: "exact", head: true })
+        .eq("job_id", job.id)
+        .eq("resolve_status", "resolved")
+        .eq("migrate_status", "pending"),
+      // Optin OK
+      supabase
+        .from("ml_catalog_migration_items")
+        .select("*", { count: "exact", head: true })
+        .eq("job_id", job.id)
+        .eq("migrate_status", "optin_ok"),
+      // Optin fallido
+      supabase
+        .from("ml_catalog_migration_items")
+        .select("*", { count: "exact", head: true })
+        .eq("job_id", job.id)
+        .eq("migrate_status", "optin_failed"),
+      // Sin match: not_found
+      supabase
+        .from("ml_catalog_migration_items")
+        .select("*", { count: "exact", head: true })
+        .eq("job_id", job.id)
+        .eq("resolve_status", "not_found"),
+      // Ambiguos
+      supabase
+        .from("ml_catalog_migration_items")
+        .select("*", { count: "exact", head: true })
+        .eq("job_id", job.id)
+        .eq("resolve_status", "ambiguous"),
+      // Total candidatos
+      supabase
+        .from("ml_catalog_migration_items")
+        .select("*", { count: "exact", head: true })
+        .eq("job_id", job.id)
+        .eq("is_candidate", true),
+      // Errores de migración
+      supabase
+        .from("ml_catalog_migration_items")
+        .select("*", { count: "exact", head: true })
+        .eq("job_id", job.id)
+        .in("migrate_status", ["error"]),
+    ])
 
   return NextResponse.json({
     ok: true,
@@ -67,10 +90,12 @@ export async function GET(req: NextRequest) {
 // POST /api/ml/catalog-migration/status (cancelar job)
 export async function POST(req: NextRequest) {
   const { jobId, action } = await req.json()
-  if (!jobId || action !== "cancel") return NextResponse.json({ error: "jobId y action=cancel requeridos" }, { status: 400 })
+  if (!jobId || action !== "cancel")
+    return NextResponse.json({ error: "jobId y action=cancel requeridos" }, { status: 400 })
 
   const supabase = createAdminClient()
-  await supabase.from("ml_catalog_migration_jobs")
+  await supabase
+    .from("ml_catalog_migration_jobs")
     .update({ status: "canceled", last_heartbeat_at: new Date().toISOString() })
     .eq("id", jobId)
 

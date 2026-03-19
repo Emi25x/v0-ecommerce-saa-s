@@ -42,7 +42,7 @@ export default function OpsStatusPage() {
     try {
       const response = await fetch("/api/ops/status")
       const data = await response.json()
-      
+
       setProviders(data.providers || [])
       setMlStats(data.ml_stats || null)
       setSystemStats(data.system_stats || null)
@@ -70,7 +70,7 @@ export default function OpsStatusPage() {
     if (!dateString) return "Nunca"
     const date = new Date(dateString)
     const seconds = Math.floor((Date.now() - date.getTime()) / 1000)
-    
+
     if (seconds < 60) return `Hace ${seconds}s`
     if (seconds < 3600) return `Hace ${Math.floor(seconds / 60)}m`
     if (seconds < 86400) return `Hace ${Math.floor(seconds / 3600)}h`
@@ -111,9 +111,7 @@ export default function OpsStatusPage() {
             <CardTitle className="text-sm font-medium">Con Stock</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {systemStats?.with_stock.toLocaleString() || 0}
-            </div>
+            <div className="text-2xl font-bold text-green-600">{systemStats?.with_stock.toLocaleString() || 0}</div>
             <p className="text-xs text-muted-foreground mt-1">
               {systemStats && systemStats.total_products > 0
                 ? `${((systemStats.with_stock / systemStats.total_products) * 100).toFixed(1)}%`
@@ -127,12 +125,8 @@ export default function OpsStatusPage() {
             <CardTitle className="text-sm font-medium">Publicados ML</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">
-              {mlStats?.total_published.toLocaleString() || 0}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {mlStats?.active_listings || 0} activos
-            </p>
+            <div className="text-2xl font-bold text-blue-600">{mlStats?.total_published.toLocaleString() || 0}</div>
+            <p className="text-xs text-muted-foreground mt-1">{mlStats?.active_listings || 0} activos</p>
           </CardContent>
         </Card>
 
@@ -203,7 +197,7 @@ export default function OpsStatusPage() {
                     </p>
                   </div>
                 </div>
-                
+
                 <div className="flex gap-6 text-right">
                   <div>
                     <p className="text-sm text-muted-foreground">Productos</p>
@@ -218,9 +212,7 @@ export default function OpsStatusPage() {
             ))}
 
             {providers.length === 0 && !loading && (
-              <p className="text-center text-muted-foreground py-8">
-                No hay proveedores configurados
-              </p>
+              <p className="text-center text-muted-foreground py-8">No hay proveedores configurados</p>
             )}
           </div>
         </CardContent>

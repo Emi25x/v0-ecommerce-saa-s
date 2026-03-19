@@ -28,16 +28,16 @@ export async function POST(request: Request) {
       return NextResponse.json({
         success: true,
         message: "No hay items fallidos para reintentar",
-        retried: 0
+        retried: 0,
       })
     }
 
     // Resetear status de items fallidos a pending (máximo 3 intentos)
     const { data: retriedItems, error } = await supabase
       .from("ml_import_queue")
-      .update({ 
+      .update({
         status: "pending",
-        last_error: null
+        last_error: null,
       })
       .eq("job_id", job_id)
       .eq("status", "failed")
@@ -57,9 +57,8 @@ export async function POST(request: Request) {
       success: true,
       message: `${retriedCount} items marcados para reintentar`,
       retried: retriedCount,
-      total_failed: failedCount
+      total_failed: failedCount,
     })
-
   } catch (error: any) {
     console.error("[v0] Error in retry-failed:", error)
     return NextResponse.json({ error: error.message }, { status: 500 })

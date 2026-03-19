@@ -23,11 +23,7 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient()
 
     // Verify account exists (ownership check disabled until auth is implemented)
-    const { data: account } = await supabase
-      .from("ml_accounts")
-      .select("id")
-      .eq("id", account_id)
-      .single()
+    const { data: account } = await supabase.from("ml_accounts").select("id").eq("id", account_id).single()
 
     if (!account) {
       return NextResponse.json({ error: "Account not found" }, { status: 404 })

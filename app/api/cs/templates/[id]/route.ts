@@ -1,12 +1,13 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   const supabase = await createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
   if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const body = await request.json().catch(() => ({}))
@@ -19,7 +20,7 @@ export async function PATCH(
   const { data, error } = await supabase
     .from("cs_response_templates")
     .update(updates)
-    .eq("id", params.id)
+    .eq("id", id)
     .eq("user_id", user.id)
     .select()
     .single()
@@ -28,19 +29,20 @@ export async function PATCH(
   return NextResponse.json({ template: data })
 }
 
-export async function DELETE(
-  _request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   const supabase = await createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
   if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   // Soft delete: set is_active = false
   const { error } = await supabase
     .from("cs_response_templates")
     .update({ is_active: false })
-    .eq("id", params.id)
+    .eq("id", id)
     .eq("user_id", user.id)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

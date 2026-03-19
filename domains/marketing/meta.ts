@@ -7,26 +7,38 @@ async function getMetaToken(credentials: Record<string, any>): Promise<string> {
   return credentials.access_token
 }
 
-export async function getMetaAdsCampaigns(credentials: Record<string, any>, options: {
-  startDate: string
-  endDate: string
-}) {
+export async function getMetaAdsCampaigns(
+  credentials: Record<string, any>,
+  options: {
+    startDate: string
+    endDate: string
+  },
+) {
   const token = await getMetaToken(credentials)
   const adAccountId = credentials.ad_account_id.startsWith("act_")
     ? credentials.ad_account_id
     : `act_${credentials.ad_account_id}`
 
   const fields = [
-    "campaign_id", "campaign_name", "status",
-    "impressions", "clicks", "spend",
-    "actions", "action_values", "ctr", "cpc", "cpm",
-    "reach", "frequency",
+    "campaign_id",
+    "campaign_name",
+    "status",
+    "impressions",
+    "clicks",
+    "spend",
+    "actions",
+    "action_values",
+    "ctr",
+    "cpc",
+    "cpm",
+    "reach",
+    "frequency",
   ].join(",")
 
   const timeRange = JSON.stringify({ since: options.startDate, until: options.endDate })
 
   const res = await fetch(
-    `${GRAPH_API_BASE}/${adAccountId}/insights?fields=${fields}&time_range=${encodeURIComponent(timeRange)}&level=campaign&limit=50&access_token=${token}`
+    `${GRAPH_API_BASE}/${adAccountId}/insights?fields=${fields}&time_range=${encodeURIComponent(timeRange)}&level=campaign&limit=50&access_token=${token}`,
   )
   if (!res.ok) throw new Error(`Meta Ads API error: ${await res.text()}`)
   const data = await res.json()
@@ -63,7 +75,7 @@ export async function getMetaAccountInfo(credentials: Record<string, any>) {
     : `act_${credentials.ad_account_id}`
 
   const res = await fetch(
-    `${GRAPH_API_BASE}/${adAccountId}?fields=name,account_status,currency,spend_cap,amount_spent&access_token=${token}`
+    `${GRAPH_API_BASE}/${adAccountId}?fields=name,account_status,currency,spend_cap,amount_spent&access_token=${token}`,
   )
   if (!res.ok) throw new Error(`Meta account info error: ${await res.text()}`)
   return res.json()
@@ -77,7 +89,7 @@ export async function getMetaCatalogProducts(credentials: Record<string, any>) {
 
   // Get product catalogs associated with ad account
   const res = await fetch(
-    `${GRAPH_API_BASE}/${adAccountId}/product_catalogs?fields=id,name,product_count&access_token=${token}`
+    `${GRAPH_API_BASE}/${adAccountId}/product_catalogs?fields=id,name,product_count&access_token=${token}`,
   )
   if (!res.ok) return { data: [] }
   return res.json()
@@ -96,14 +108,14 @@ export function buildMetaOAuthUrl(credentials: Record<string, any>, redirectUri:
 
 export async function exchangeMetaCode(credentials: Record<string, any>, code: string, redirectUri: string) {
   const res = await fetch(
-    `${GRAPH_API_BASE}/oauth/access_token?client_id=${credentials.app_id}&client_secret=${credentials.app_secret}&code=${code}&redirect_uri=${encodeURIComponent(redirectUri)}`
+    `${GRAPH_API_BASE}/oauth/access_token?client_id=${credentials.app_id}&client_secret=${credentials.app_secret}&code=${code}&redirect_uri=${encodeURIComponent(redirectUri)}`,
   )
   if (!res.ok) throw new Error(`Meta OAuth exchange failed: ${await res.text()}`)
   const data = await res.json()
 
   // Exchange for long-lived token
   const llRes = await fetch(
-    `${GRAPH_API_BASE}/oauth/access_token?grant_type=fb_exchange_token&client_id=${credentials.app_id}&client_secret=${credentials.app_secret}&fb_exchange_token=${data.access_token}`
+    `${GRAPH_API_BASE}/oauth/access_token?grant_type=fb_exchange_token&client_id=${credentials.app_id}&client_secret=${credentials.app_secret}&fb_exchange_token=${data.access_token}`,
   )
   if (!llRes.ok) return data
   return llRes.json()

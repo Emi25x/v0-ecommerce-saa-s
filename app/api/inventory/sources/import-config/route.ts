@@ -13,7 +13,10 @@ export async function POST(request: NextRequest) {
 
   const sources = body?.sources
   if (!Array.isArray(sources) || sources.length === 0) {
-    return NextResponse.json({ error: "El JSON debe contener un array 'sources' con al menos una fuente" }, { status: 400 })
+    return NextResponse.json(
+      { error: "El JSON debe contener un array 'sources' con al menos una fuente" },
+      { status: 400 },
+    )
   }
 
   // Validar que cada fuente tenga id y name
@@ -36,9 +39,7 @@ export async function POST(request: NextRequest) {
     delimiter: s.delimiter ?? null,
   }))
 
-  const { error } = await supabase
-    .from("import_sources")
-    .upsert(rows, { onConflict: "id" })
+  const { error } = await supabase.from("import_sources").upsert(rows, { onConflict: "id" })
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

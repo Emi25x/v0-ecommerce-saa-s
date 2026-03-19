@@ -5,7 +5,10 @@ import { NextRequest, NextResponse } from "next/server"
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const storeId = request.nextUrl.searchParams.get("store_id")
@@ -36,7 +39,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const { store_id, template_columns_json, defaults_json } = await request.json()

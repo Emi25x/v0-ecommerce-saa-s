@@ -10,12 +10,13 @@ import { createAdminClient } from "@/lib/db/admin"
  *
  * Body: { content, template_id? }
  */
-export async function POST(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   const supabase = await createClient()
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
   if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const body = await request.json().catch(() => ({}))
@@ -28,7 +29,7 @@ export async function POST(
   const { data: conv, error: convErr } = await adminSupabase
     .from("cs_conversations")
     .select("*")
-    .eq("id", params.id)
+    .eq("id", id)
     .eq("user_id", user.id)
     .single()
 
@@ -54,20 +55,17 @@ export async function POST(
         token = await refreshTokenIfNeeded(conv.ml_account_id)
       }
 
-      const mlRes = await fetch(
-        `https://api.mercadolibre.com/answers`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            question_id: parseInt(conv.external_id),
-            text: content.trim(),
-          }),
-        }
-      )
+      const mlRes = await fetch(`https://api.mercadolibre.com/answers`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          question_id: parseInt(conv.external_id),
+          text: content.trim(),
+        }),
+      })
       const mlData = await mlRes.json()
       if (!mlRes.ok) {
         channelError = `ML API error ${mlRes.status}: ${mlData?.message ?? JSON.stringify(mlData)}`
@@ -81,7 +79,7 @@ export async function POST(
   const { data: message, error: msgErr } = await adminSupabase
     .from("cs_messages")
     .insert({
-      conversation_id: params.id,
+      conversation_id: id,
       user_id: user.id,
       direction: "outbound",
       author_type: "agent",
@@ -105,7 +103,7 @@ export async function POST(
       last_message_at: new Date().toISOString(),
       message_count: (conv.message_count ?? 0) + 1,
     })
-    .eq("id", params.id)
+    .eq("id", id)
 
   // Update template last_used_at if a template was used (use_count requires DB-side increment)
   if (template_id) {
@@ -114,15 +112,15 @@ export async function POST(
         .from("cs_response_templates")
         .update({ last_used_at: new Date().toISOString() })
         .eq("id", template_id)
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   return NextResponse.json({
     ok: true,
     message,
     channel_error: channelError,
-    warning: channelError
-      ? "Mensaje guardado localmente pero no se pudo enviar al canal: " + channelError
-      : undefined,
+    warning: channelError ? "Mensaje guardado localmente pero no se pudo enviar al canal: " + channelError : undefined,
   })
 }

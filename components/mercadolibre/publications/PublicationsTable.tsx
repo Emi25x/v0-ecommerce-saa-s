@@ -2,17 +2,8 @@
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import {
   ExternalLink,
   Copy,
@@ -32,13 +23,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import type { Publication } from "@/components/mercadolibre/publications/types"
-import {
-  PAGE_SIZE,
-  STATUS_LABEL,
-  STATUS_COLOR,
-  fmt,
-  relDate,
-} from "@/components/mercadolibre/publications/types"
+import { PAGE_SIZE, STATUS_LABEL, STATUS_COLOR, fmt, relDate } from "@/components/mercadolibre/publications/types"
 import type { UseMlPublicationsReturn } from "@/hooks/use-ml-publications"
 
 interface PublicationsTableProps {
@@ -105,8 +90,13 @@ export function PublicationsTable({ hook }: PublicationsTableProps) {
                     <input
                       type="checkbox"
                       className="accent-primary cursor-pointer"
-                      checked={selected.size > 0 && rows.filter(r => r.catalog_listing_eligible && !r.catalog_listing).every(r => selected.has(r.ml_item_id))}
-                      onChange={e => e.target.checked ? selectAllEligible() : setSelected(new Set())}
+                      checked={
+                        selected.size > 0 &&
+                        rows
+                          .filter((r) => r.catalog_listing_eligible && !r.catalog_listing)
+                          .every((r) => selected.has(r.ml_item_id))
+                      }
+                      onChange={(e) => (e.target.checked ? selectAllEligible() : setSelected(new Set()))}
                     />
                   </TooltipTrigger>
                   <TooltipContent>Seleccionar elegibles de esta pagina</TooltipContent>
@@ -136,7 +126,7 @@ export function PublicationsTable({ hook }: PublicationsTableProps) {
                     ))}
                   </tr>
                 ))
-              : rows.map(row => (
+              : rows.map((row) => (
                   <TableRow
                     key={row.id}
                     row={row}
@@ -153,8 +143,7 @@ export function PublicationsTable({ hook }: PublicationsTableProps) {
                     onVerifyItem={verifyItem}
                     onOpenHistorial={openHistorial}
                   />
-                ))
-            }
+                ))}
           </tbody>
         </table>
       </div>
@@ -165,8 +154,7 @@ export function PublicationsTable({ hook }: PublicationsTableProps) {
           <p className="text-sm text-muted-foreground">
             {loading
               ? "Cargando..."
-              : `${(page * PAGE_SIZE + 1).toLocaleString("es-AR")}\u2013${Math.min((page + 1) * PAGE_SIZE, total).toLocaleString("es-AR")} de ${total.toLocaleString("es-AR")}`
-            }
+              : `${(page * PAGE_SIZE + 1).toLocaleString("es-AR")}\u2013${Math.min((page + 1) * PAGE_SIZE, total).toLocaleString("es-AR")} de ${total.toLocaleString("es-AR")}`}
           </p>
           <div className="flex items-center gap-2">
             <Button
@@ -231,13 +219,10 @@ function TableRow({
   onOpenHistorial,
 }: TableRowProps) {
   return (
-    <tr
-      className="border-b hover:bg-muted/20 transition-colors group cursor-pointer"
-      onClick={() => onDetail(row)}
-    >
+    <tr className="border-b hover:bg-muted/20 transition-colors group cursor-pointer" onClick={() => onDetail(row)}>
       {/* Checkbox seleccion */}
-      <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-        {(row.catalog_listing_eligible && !row.catalog_listing) && (
+      <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+        {row.catalog_listing_eligible && !row.catalog_listing && (
           <input
             type="checkbox"
             className="accent-primary cursor-pointer"
@@ -248,20 +233,19 @@ function TableRow({
       </td>
 
       {/* Item ID */}
-      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-1.5">
-          <span className="font-mono text-xs text-muted-foreground whitespace-nowrap">
-            {row.ml_item_id}
-          </span>
+          <span className="font-mono text-xs text-muted-foreground whitespace-nowrap">{row.ml_item_id}</span>
           <button
             onClick={() => onCopyId(row.ml_item_id)}
             className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
             title="Copiar item_id"
           >
-            {copied === row.ml_item_id
-              ? <CheckCircle2 className="h-3.5 w-3.5 text-green-400" />
-              : <Copy className="h-3.5 w-3.5" />
-            }
+            {copied === row.ml_item_id ? (
+              <CheckCircle2 className="h-3.5 w-3.5 text-green-400" />
+            ) : (
+              <Copy className="h-3.5 w-3.5" />
+            )}
           </button>
         </div>
       </td>
@@ -273,18 +257,13 @@ function TableRow({
 
       {/* Estado */}
       <td className="px-4 py-3">
-        <Badge
-          variant="outline"
-          className={`text-xs whitespace-nowrap ${STATUS_COLOR[row.status] ?? ""}`}
-        >
+        <Badge variant="outline" className={`text-xs whitespace-nowrap ${STATUS_COLOR[row.status] ?? ""}`}>
           {STATUS_LABEL[row.status] ?? row.status}
         </Badge>
       </td>
 
       {/* Precio */}
-      <td className="px-4 py-3 text-right font-mono text-sm whitespace-nowrap">
-        {fmt(row.price)}
-      </td>
+      <td className="px-4 py-3 text-right font-mono text-sm whitespace-nowrap">{fmt(row.price)}</td>
 
       {/* Stock */}
       <td className="px-4 py-3 text-right">
@@ -305,39 +284,36 @@ function TableRow({
 
       {/* Catalogo elegible */}
       <td className="px-4 py-3 text-center">
-        {row.catalog_listing_eligible
-          ? <CheckCircle2 className="h-4 w-4 text-green-400 mx-auto" />
-          : <span className="text-muted-foreground/30 text-base leading-none">\u2014</span>
-        }
+        {row.catalog_listing_eligible ? (
+          <CheckCircle2 className="h-4 w-4 text-green-400 mx-auto" />
+        ) : (
+          <span className="text-muted-foreground/30 text-base leading-none">\u2014</span>
+        )}
       </td>
 
       {/* Peso */}
       <td className="px-4 py-3 text-right font-mono text-xs whitespace-nowrap">
-        {row.meli_weight_g != null
-          ? <span className="text-foreground">{row.meli_weight_g.toLocaleString()} g</span>
-          : (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="inline-flex items-center gap-1 text-yellow-500/70">
-                  <AlertCircle className="h-3 w-3" />
-                  <span className="text-[11px]">Faltante</span>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>Peso no sincronizado. Usa "Sincronizar pesos".</TooltipContent>
-            </Tooltip>
-          )
-        }
+        {row.meli_weight_g != null ? (
+          <span className="text-foreground">{row.meli_weight_g.toLocaleString()} g</span>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex items-center gap-1 text-yellow-500/70">
+                <AlertCircle className="h-3 w-3" />
+                <span className="text-[11px]">Faltante</span>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>Peso no sincronizado. Usa "Sincronizar pesos".</TooltipContent>
+          </Tooltip>
+        )}
       </td>
 
       {/* Fecha */}
-      <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-        {relDate(row.updated_at)}
-      </td>
+      <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">{relDate(row.updated_at)}</td>
 
       {/* Acciones */}
-      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-1">
-
           {/* Abrir en ML + Copiar link */}
           {row.permalink && (
             <>
@@ -360,15 +336,14 @@ function TableRow({
                     onClick={() => onCopyLink(row.permalink!, row.id)}
                     className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-muted/50"
                   >
-                    {copiedLink === row.id
-                      ? <CheckCircle2 className="h-4 w-4 text-green-400" />
-                      : <Link2 className="h-4 w-4" />
-                    }
+                    {copiedLink === row.id ? (
+                      <CheckCircle2 className="h-4 w-4 text-green-400" />
+                    ) : (
+                      <Link2 className="h-4 w-4" />
+                    )}
                   </button>
                 </TooltipTrigger>
-                <TooltipContent>
-                  {copiedLink === row.id ? "Copiado!" : "Copiar link"}
-                </TooltipContent>
+                <TooltipContent>{copiedLink === row.id ? "Copiado!" : "Copiar link"}</TooltipContent>
               </Tooltip>
             </>
           )}
@@ -397,12 +372,8 @@ function TableRow({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-52">
-
               {/* Copiar item ID */}
-              <DropdownMenuItem
-                className="gap-2"
-                onClick={() => onCopyId(row.ml_item_id)}
-              >
+              <DropdownMenuItem className="gap-2" onClick={() => onCopyId(row.ml_item_id)}>
                 <Copy className="h-4 w-4" />
                 Copiar item ID
               </DropdownMenuItem>
@@ -440,9 +411,7 @@ function TableRow({
                       </DropdownMenuItem>
                     </div>
                   </TooltipTrigger>
-                  <TooltipContent side="left">
-                    Ya tiene catalogo asociado ({row.catalog_linked_item_id})
-                  </TooltipContent>
+                  <TooltipContent side="left">Ya tiene catalogo asociado ({row.catalog_linked_item_id})</TooltipContent>
                 </Tooltip>
               ) : row.catalog_listing_eligible ? (
                 <DropdownMenuItem
@@ -498,17 +467,12 @@ function TableRow({
               </DropdownMenuItem>
 
               {/* Historial */}
-              <DropdownMenuItem
-                className="gap-2"
-                onClick={() => onOpenHistorial(row)}
-              >
+              <DropdownMenuItem className="gap-2" onClick={() => onOpenHistorial(row)}>
                 <History className="h-4 w-4" />
                 Historial
               </DropdownMenuItem>
-
             </DropdownMenuContent>
           </DropdownMenu>
-
         </div>
       </td>
     </tr>

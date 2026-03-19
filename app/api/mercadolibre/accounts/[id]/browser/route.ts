@@ -1,11 +1,12 @@
 import { type NextRequest, NextResponse } from "next/server"
 
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
     console.log("[v0] PATCH /api/mercadolibre/accounts/[id]/browser - Starting")
 
     const { browser_preference } = await request.json()
-    const accountId = params.id
+    const accountId = id
 
     console.log("[v0] Account ID:", accountId)
     console.log("[v0] Browser preference:", browser_preference)

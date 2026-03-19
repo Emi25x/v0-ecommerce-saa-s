@@ -31,7 +31,7 @@ export async function POST(request: Request) {
         account_id,
         limit,
         offset: result.next_offset,
-      }).catch(e => console.error("[v0] Error en auto-continue:", e))
+      }).catch((e) => console.error("[v0] Error en auto-continue:", e))
     }
 
     return NextResponse.json(result)
@@ -50,10 +50,7 @@ export async function GET() {
   try {
     const supabase = await createClient()
 
-    const { data: accounts } = await supabase
-      .from("ml_accounts")
-      .select("id, nickname")
-      .eq("auto_sync_stock", true)
+    const { data: accounts } = await supabase.from("ml_accounts").select("id, nickname").eq("auto_sync_stock", true)
 
     if (!accounts || accounts.length === 0) {
       return NextResponse.json({ message: "No hay cuentas con auto-sync habilitado" })

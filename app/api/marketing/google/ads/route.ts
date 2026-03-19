@@ -19,16 +19,19 @@ export async function GET(request: NextRequest) {
 
   try {
     const campaigns = await getGoogleAdsCampaigns(conn.credentials, { startDate, endDate })
-    const totals = campaigns.reduce((acc: any, c: any) => ({
-      impressions: acc.impressions + c.impressions,
-      clicks: acc.clicks + c.clicks,
-      spend: acc.spend + c.spend,
-      conversions: acc.conversions + c.conversions,
-      conversion_value: acc.conversion_value + c.conversion_value,
-    }), { impressions: 0, clicks: 0, spend: 0, conversions: 0, conversion_value: 0 })
+    const totals = campaigns.reduce(
+      (acc: any, c: any) => ({
+        impressions: acc.impressions + c.impressions,
+        clicks: acc.clicks + c.clicks,
+        spend: acc.spend + c.spend,
+        conversions: acc.conversions + c.conversions,
+        conversion_value: acc.conversion_value + c.conversion_value,
+      }),
+      { impressions: 0, clicks: 0, spend: 0, conversions: 0, conversion_value: 0 },
+    )
 
     totals.roas = totals.spend > 0 ? totals.conversion_value / totals.spend : 0
-    totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions * 100) : 0
+    totals.ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0
 
     return NextResponse.json({ campaigns, totals, startDate, endDate })
   } catch (err: any) {

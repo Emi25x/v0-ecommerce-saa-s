@@ -11,10 +11,10 @@ import { createClient } from "@/lib/db/server"
 
 function detectSeparator(line: string): string {
   const counts = {
-    "|":  (line.match(/\|/g)  || []).length,
-    ";":  (line.match(/;/g)   || []).length,
-    "\t": (line.match(/\t/g)  || []).length,
-    ",":  (line.match(/,/g)   || []).length,
+    "|": (line.match(/\|/g) || []).length,
+    ";": (line.match(/;/g) || []).length,
+    "\t": (line.match(/\t/g) || []).length,
+    ",": (line.match(/,/g) || []).length,
   }
   const max = Math.max(...Object.values(counts))
   return Object.entries(counts).find(([, v]) => v === max)![0]
@@ -26,9 +26,14 @@ function parseCSVLine(line: string, sep: string): string[] {
   let inQuotes = false
   for (let i = 0; i < line.length; i++) {
     const ch = line[i]
-    if (ch === '"') { inQuotes = !inQuotes }
-    else if (ch === sep && !inQuotes) { result.push(current.trim().replace(/^["']|["']$/g, "")); current = "" }
-    else { current += ch }
+    if (ch === '"') {
+      inQuotes = !inQuotes
+    } else if (ch === sep && !inQuotes) {
+      result.push(current.trim().replace(/^["']|["']$/g, ""))
+      current = ""
+    } else {
+      current += ch
+    }
   }
   result.push(current.trim().replace(/^["']|["']$/g, ""))
   return result
@@ -42,7 +47,9 @@ function toNum(v: string): number | null {
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
 
   const body = await request.json()
@@ -67,7 +74,7 @@ export async function POST(request: NextRequest) {
   const mapping: Record<string, string> = source.column_mapping || {}
 
   // Necesitamos al menos la columna de EAN
-  const eanColName   = mapping.ean
+  const eanColName = mapping.ean
   const stockColName = mapping.stock
   const priceColName = mapping.price
 
@@ -88,29 +95,32 @@ export async function POST(request: NextRequest) {
   if (!resp.ok) {
     return NextResponse.json(
       { error: `Error al descargar archivo: HTTP ${resp.status} ${resp.statusText}` },
-      { status: 500 }
+      { status: 500 },
     )
   }
 
-  const text  = await resp.text()
-  const lines = text.split("\n").map(l => l.trim()).filter(Boolean)
+  const text = await resp.text()
+  const lines = text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
 
   if (lines.length < 2) {
     return NextResponse.json({ error: "Archivo vacío o sin datos" }, { status: 400 })
   }
 
-  const sep     = source.csv_separator || detectSeparator(lines[0])
+  const sep = source.csv_separator || detectSeparator(lines[0])
   const headers = parseCSVLine(lines[0], sep)
-  const data    = lines.slice(1)
+  const data = lines.slice(1)
 
-  const eanIdx   = headers.indexOf(eanColName)
+  const eanIdx = headers.indexOf(eanColName)
   const stockIdx = stockColName ? headers.indexOf(stockColName) : -1
   const priceIdx = priceColName ? headers.indexOf(priceColName) : -1
 
   if (eanIdx === -1) {
     return NextResponse.json(
       { error: `Columna EAN "${eanColName}" no encontrada. Columnas disponibles: ${headers.join(", ")}` },
-      { status: 400 }
+      { status: 400 },
     )
   }
 
@@ -122,14 +132,16 @@ export async function POST(request: NextRequest) {
     .single()
 
   // ── Procesar filas en lotes ───────────────────────────────────────────────
-  let updated = 0, notFound = 0, failed = 0
+  let updated = 0,
+    notFound = 0,
+    failed = 0
   const BATCH = 500
 
   // Extraer todos los EAN del archivo de una vez para hacer bulk query
   const rows: { ean: string; stock: number | null; price: number | null }[] = []
   for (const line of data) {
     const vals = parseCSVLine(line, sep)
-    const ean  = vals[eanIdx]?.trim()
+    const ean = vals[eanIdx]?.trim()
     if (!ean || ean.length < 8) continue
     rows.push({
       ean,
@@ -141,13 +153,10 @@ export async function POST(request: NextRequest) {
   // Procesar en lotes para evitar timeouts
   for (let i = 0; i < rows.length; i += BATCH) {
     const batch = rows.slice(i, i + BATCH)
-    const batchEans = batch.map(r => r.ean)
+    const batchEans = batch.map((r) => r.ean)
 
     // Buscar productos por EAN
-    const { data: products } = await supabase
-      .from("products")
-      .select("id, ean, stock_by_source")
-      .in("ean", batchEans)
+    const { data: products } = await supabase.from("products").select("id, ean, stock_by_source").in("ean", batchEans)
 
     if (!products?.length) {
       notFound += batch.length
@@ -161,7 +170,10 @@ export async function POST(request: NextRequest) {
 
     for (const row of batch) {
       const prod = prodByEan[row.ean]
-      if (!prod) { notFound++; continue }
+      if (!prod) {
+        notFound++
+        continue
+      }
 
       const patch: Record<string, any> = {}
 
@@ -175,32 +187,33 @@ export async function POST(request: NextRequest) {
 
       if (Object.keys(patch).length === 0) continue
 
-      const { error: upErr } = await supabase
-        .from("products")
-        .update(patch)
-        .eq("id", prod.id)
+      const { error: upErr } = await supabase.from("products").update(patch).eq("id", prod.id)
 
-      if (upErr) { failed++; console.error("[stock-price-ean] update error:", upErr.message) }
-      else        { updated++ }
+      if (upErr) {
+        failed++
+        console.error("[stock-price-ean] update error:", upErr.message)
+      } else {
+        updated++
+      }
     }
   }
 
   // ── Cerrar historial ──────────────────────────────────────────────────────
   if (histRecord) {
-    await supabase.from("import_history").update({
-      status: failed > 0 && updated === 0 ? "error" : failed > 0 ? "partial" : "success",
-      products_updated:  updated,
-      products_failed:   failed,
-      products_imported: notFound,  // reused as "not found"
-      completed_at: new Date().toISOString(),
-    }).eq("id", histRecord.id)
+    await supabase
+      .from("import_history")
+      .update({
+        status: failed > 0 && updated === 0 ? "error" : failed > 0 ? "partial" : "success",
+        products_updated: updated,
+        products_failed: failed,
+        products_imported: notFound, // reused as "not found"
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", histRecord.id)
   }
 
   // ── Actualizar last_import_at ─────────────────────────────────────────────
-  await supabase
-    .from("import_sources")
-    .update({ last_import_at: new Date().toISOString() })
-    .eq("id", sourceId)
+  await supabase.from("import_sources").update({ last_import_at: new Date().toISOString() }).eq("id", sourceId)
 
   return NextResponse.json({
     success: true,

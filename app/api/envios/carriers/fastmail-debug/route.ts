@@ -14,7 +14,12 @@
  */
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/db/admin"
-import { createFastMailClient, type FastMailConfig, type FastMailCredentials, type FastMailProducto } from "@/domains/shipping/carriers/fastmail"
+import {
+  createFastMailClient,
+  type FastMailConfig,
+  type FastMailCredentials,
+  type FastMailProducto,
+} from "@/domains/shipping/carriers/fastmail"
 
 export const dynamic = "force-dynamic"
 
@@ -23,9 +28,9 @@ const toVal = (r: PromiseSettledResult<any>) =>
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
-  const origen_cp  = searchParams.get("origen_cp")  ?? "1000"
+  const origen_cp = searchParams.get("origen_cp") ?? "1000"
   const destino_cp = searchParams.get("destino_cp") ?? "1900"
-  const peso_g     = parseInt(searchParams.get("peso_g") ?? "1000")
+  const peso_g = parseInt(searchParams.get("peso_g") ?? "1000")
 
   const supabase = createAdminClient()
   const { data: carrier } = await supabase
@@ -38,38 +43,39 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "FastMail no configurado o inactivo" }, { status: 404 })
   }
 
-  const client = createFastMailClient(
-    carrier.config as FastMailConfig,
-    carrier.credentials as FastMailCredentials,
-  )
+  const client = createFastMailClient(carrier.config as FastMailConfig, carrier.credentials as FastMailCredentials)
 
-  const productos: FastMailProducto[] = [{
-    bultos:      1,
-    peso:        peso_g / 1000,
-    descripcion: "Paquete",
-    dimensiones: { alto: 10, largo: 20, profundidad: 15 },
-  }]
+  const productos: FastMailProducto[] = [
+    {
+      bultos: 1,
+      peso: peso_g / 1000,
+      descripcion: "Paquete",
+      dimensiones: { alto: 10, largo: 20, profundidad: 15 },
+    },
+  ]
 
-  const config    = carrier.config as any
-  const sucursal  = config?.sucursal ?? ""
+  const config = carrier.config as any
+  const sucursal = config?.sucursal ?? ""
 
   // ── 1. Obtener lista de servicios de ambas fuentes en paralelo ──────────────
   const [rawServiciosCliente, rawServiciosByCp] = await Promise.allSettled([
     client.serviciosCliente(),
-    sucursal
-      ? client.serviciosByCp(destino_cp)
-      : Promise.resolve(null),
+    sucursal ? client.serviciosByCp(destino_cp) : Promise.resolve(null),
   ])
 
   // Normalizar lista de serviciosCliente
   const listaCliente: Array<{ codigo: string; nombre: string; cotiza: string }> = (() => {
     const raw = toVal(rawServiciosCliente)
-    const arr: any[] =
-      Array.isArray(raw)            ? raw          :
-      Array.isArray(raw?.servicios) ? raw.servicios :
-      Array.isArray(raw?.message)   ? raw.message   :
-      Array.isArray(raw?.data)      ? raw.data      : []
-    return arr.map(s => ({
+    const arr: any[] = Array.isArray(raw)
+      ? raw
+      : Array.isArray(raw?.servicios)
+        ? raw.servicios
+        : Array.isArray(raw?.message)
+          ? raw.message
+          : Array.isArray(raw?.data)
+            ? raw.data
+            : []
+    return arr.map((s) => ({
       codigo: String(s.codigo_servicio ?? s.codigo ?? ""),
       nombre: String(s.descripcion ?? s.detalle_servicio ?? s.codigo_servicio ?? ""),
       cotiza: String(s.cotiza ?? "?"),
@@ -88,7 +94,8 @@ export async function GET(request: NextRequest) {
 
   // ── 2. Cotizador A: precio-servicio.json (un solo llamado) ──────────────────
   const precioServicioResult = sucursal
-    ? await (client as any).precioServicio({ cp_destino: destino_cp, sucursal, productos })
+    ? await (client as any)
+        .precioServicio({ cp_destino: destino_cp, sucursal, productos })
         .then((r: any) => ({ ok: true, raw: r }))
         .catch((e: any) => ({ ok: false, error: e.message }))
     : { ok: false, error: "SKIPPED (sucursal no configurada)" }
@@ -114,14 +121,14 @@ export async function GET(request: NextRequest) {
   const cotizadorResults = await Promise.allSettled(
     candidatosCotizador.map(async ({ codigo, nombre, fuente }) => {
       const raw = await (client as any).cotizador({
-        cp_origen:       origen_cp,
-        cp_destino:      destino_cp,
-        sucursal:        sucursal || undefined,
+        cp_origen: origen_cp,
+        cp_destino: destino_cp,
+        sucursal: sucursal || undefined,
         codigo_servicio: codigo,
         productos,
       })
       return { codigo, nombre, fuente, raw }
-    })
+    }),
   )
 
   const cotizadorPorServicio = cotizadorResults.map((r, i) => {
@@ -144,12 +151,12 @@ export async function GET(request: NextRequest) {
       servicios_cliente: {
         total: listaCliente.length,
         lista: listaCliente,
-        raw:   toVal(rawServiciosCliente),
+        raw: toVal(rawServiciosCliente),
       },
       servicios_by_cp: {
         total: listaByCp.length,
         lista: listaByCp,
-        raw:   toVal(rawServiciosByCp),
+        raw: toVal(rawServiciosByCp),
       },
     },
 

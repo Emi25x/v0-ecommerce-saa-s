@@ -13,7 +13,7 @@ const getColumnValue = (row: Record<string, any>, columnName: string): any => {
   if (row[columnName] !== undefined) return row[columnName]
   const lowerColumnName = columnName.toLowerCase()
   const keys = Object.keys(row)
-  const matchingKey = keys.find(k => k.toLowerCase() === lowerColumnName)
+  const matchingKey = keys.find((k) => k.toLowerCase() === lowerColumnName)
   return matchingKey ? row[matchingKey] : undefined
 }
 
@@ -62,13 +62,12 @@ export async function POST(request: NextRequest) {
     console.log("[v0] Background import: Iniciando importación para", source.name)
     const result = await processImportInBackground(sourceId, fileUrl, mode, importRecord.id, source, supabase)
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success: true,
       importId: importRecord.id,
       message: "Importación completada",
-      summary: result
+      summary: result,
     })
-
   } catch (error) {
     console.error("[v0] Error en background import:", error)
     return NextResponse.json({ error: "Error interno" }, { status: 500 })
@@ -82,25 +81,28 @@ async function processImportInBackground(
   mode: string,
   importId: string,
   source: any,
-  supabaseClient: any
+  supabaseClient: any,
 ) {
   const supabase = supabaseClient
   const mapping = source.column_mapping || {}
 
   try {
     console.log("[v0] Background import: Descargando archivo desde", fileUrl)
-    
+
     // Descargar el archivo CSV
     const fileResponse = await fetch(fileUrl)
     if (!fileResponse.ok) {
-      await supabase.from("import_history").update({ status: "failed", completed_at: new Date().toISOString() }).eq("id", importId)
+      await supabase
+        .from("import_history")
+        .update({ status: "failed", completed_at: new Date().toISOString() })
+        .eq("id", importId)
       console.error("[v0] Error descargando archivo:", fileResponse.status, fileResponse.statusText)
       return { total: 0, imported: 0, updated: 0, failed: 0, error: `Error descargando: ${fileResponse.status}` }
     }
 
     const csvText = await fileResponse.text()
     console.log("[v0] Background import: Archivo descargado, tamaño:", csvText.length, "caracteres")
-    
+
     // Parsear CSV con delimitador pipe
     const parseResult = Papa.parse(csvText, {
       header: true,
@@ -116,9 +118,12 @@ async function processImportInBackground(
     let failedCount = 0
 
     // Actualizar total en import_history
-    await supabase.from("import_history").update({ 
-      products_total: totalRows 
-    }).eq("id", importId)
+    await supabase
+      .from("import_history")
+      .update({
+        products_total: totalRows,
+      })
+      .eq("id", importId)
 
     // Procesar en batches
     for (let i = 0; i < data.length; i += BATCH_SIZE) {
@@ -129,8 +134,8 @@ async function processImportInBackground(
           const skuColumn = mapping.sku || "sku"
           const eanColumn = mapping.ean || "ean"
 
-          let sku = getColumnValue(row, skuColumn)
-          let ean = getColumnValue(row, eanColumn)
+          const sku = getColumnValue(row, skuColumn)
+          const ean = getColumnValue(row, eanColumn)
           const price = getColumnValue(row, mapping.price || "price")
           const stock = getColumnValue(row, mapping.stock || "stock")
           const title = getColumnValue(row, mapping.title || mapping.name || "title")
@@ -168,7 +173,9 @@ async function processImportInBackground(
 
           const stockQty = stock ? parseInt(String(stock)) : 0
           const { stock_by_source, stock: totalStock } = mergeStockBySource(
-            existingProduct?.stock_by_source, source.id, stockQty
+            existingProduct?.stock_by_source,
+            source.id,
+            stockQty,
           )
 
           const productData: any = {
@@ -191,10 +198,7 @@ async function processImportInBackground(
               if (brand) productData.brand = brand
             }
 
-            const { error } = await supabase
-              .from("products")
-              .update(productData)
-              .eq("id", existingProduct.id)
+            const { error } = await supabase.from("products").update(productData).eq("id", existingProduct.id)
 
             if (error) {
               failedCount++
@@ -248,13 +252,12 @@ async function processImportInBackground(
       .eq("id", importId)
 
     // Actualizar última importación de la fuente
-    await supabase
-      .from("import_sources")
-      .update({ last_import: new Date().toISOString() })
-      .eq("id", sourceId)
+    await supabase.from("import_sources").update({ last_import: new Date().toISOString() }).eq("id", sourceId)
 
-    console.log(`[v0] Importación completada: ${importedCount} importados, ${updatedCount} actualizados, ${failedCount} fallidos`)
-    
+    console.log(
+      `[v0] Importación completada: ${importedCount} importados, ${updatedCount} actualizados, ${failedCount} fallidos`,
+    )
+
     return {
       total: totalRows,
       imported: importedCount,
@@ -265,11 +268,14 @@ async function processImportInBackground(
     console.error("[v0] Error en importación background:", error)
     // Marcar como fallido
     const supabase = await createClient()
-    await supabase.from("import_history").update({ 
-      status: "failed",
-      completed_at: new Date().toISOString(),
-    }).eq("id", importId)
-    
+    await supabase
+      .from("import_history")
+      .update({
+        status: "failed",
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", importId)
+
     return { total: 0, imported: 0, updated: 0, failed: 0, error: String(error) }
   }
 }
@@ -284,11 +290,7 @@ export async function GET(request: NextRequest) {
 
   const supabase = await createClient()
 
-  const { data, error } = await supabase
-    .from("import_history")
-    .select("*")
-    .eq("id", importId)
-    .single()
+  const { data, error } = await supabase.from("import_history").select("*").eq("id", importId).single()
 
   if (error || !data) {
     return NextResponse.json({ error: "Importación no encontrada" }, { status: 404 })

@@ -36,7 +36,8 @@ export async function GET(request: Request) {
     }
 
     // Usar source_key (string corto) como clave en stock_by_source para compatibilidad con filtros del almacén
-    const libralSourceKey: string = libralSource.source_key ?? libralSource.name?.toLowerCase().replace(/[^a-z0-9]/g, "_") ?? libralSource.id
+    const libralSourceKey: string =
+      libralSource.source_key ?? libralSource.name?.toLowerCase().replace(/[^a-z0-9]/g, "_") ?? libralSource.id
 
     // Obtener token de Libral
     const token = await getLibralToken()
@@ -93,7 +94,9 @@ export async function GET(request: Request) {
           if (existingProduct) {
             // Producto existe - verificar si hay cambios
             const { stock_by_source, stock: totalStock } = mergeStockBySource(
-              existingProduct.stock_by_source, libralSourceKey, newStock
+              existingProduct.stock_by_source,
+              libralSourceKey,
+              newStock,
             )
             const stockChanged = existingProduct.stock !== totalStock
             const priceChanged = Math.abs(existingProduct.price - newPrice) > 0.01

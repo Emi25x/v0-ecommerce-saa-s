@@ -24,17 +24,16 @@ export interface IndexBatchResult {
 
 const BATCH_SIZE = 200
 
-export async function executeIndexBatch(
-  supabase: any,
-  params: IndexBatchParams,
-): Promise<IndexBatchResult> {
+export async function executeIndexBatch(supabase: any, params: IndexBatchParams): Promise<IndexBatchResult> {
   const { job_id, account_id, offset = 0 } = params
 
   // Get job and account
-  const { data: job, error: jobError } = await supabase
-    .from("ml_import_jobs").select("*").eq("id", job_id).single()
+  const { data: job, error: jobError } = await supabase.from("ml_import_jobs").select("*").eq("id", job_id).single()
   const { data: account, error: accountError } = await supabase
-    .from("ml_accounts").select("*").eq("id", account_id).single()
+    .from("ml_accounts")
+    .select("*")
+    .eq("id", account_id)
+    .single()
 
   if (jobError || accountError || !job || !account) {
     return { success: false, status: "error", items_indexed: 0, error: "Job or account not found" }

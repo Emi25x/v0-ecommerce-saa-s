@@ -77,8 +77,8 @@ export function ImportDialog({
 
           <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
             <p className="text-sm text-blue-800 dark:text-blue-200">
-              <strong>Nota:</strong> Solo se importar&aacute;n productos nuevos. Los productos con SKU existente ser&aacute;n
-              saltados autom&aacute;ticamente.
+              <strong>Nota:</strong> Solo se importar&aacute;n productos nuevos. Los productos con SKU existente
+              ser&aacute;n saltados autom&aacute;ticamente.
             </p>
           </div>
 
@@ -133,9 +133,7 @@ export function ImportDialog({
                     }}
                     className="mt-1"
                   />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Hora en formato 24h (ej: 14:30 para 2:30 PM)
-                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">Hora en formato 24h (ej: 14:30 para 2:30 PM)</p>
                 </div>
 
                 {console.log("[v0] scheduleFrequency actual:", scheduleFrequency)}
@@ -185,9 +183,10 @@ export function ImportDialog({
 
                 <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
                   <p className="text-sm text-blue-800 dark:text-blue-200">
-                    <strong>Nota:</strong> La importaci&oacute;n programada se ejecutar&aacute; autom&aacute;ticamente seg&uacute;n la
-                    frecuencia seleccionada.
-                    {scheduleFrequency === "daily" && " Se ejecutar\u00e1 todos los d\u00edas a las " + scheduleTime + "."}
+                    <strong>Nota:</strong> La importaci&oacute;n programada se ejecutar&aacute; autom&aacute;ticamente
+                    seg&uacute;n la frecuencia seleccionada.
+                    {scheduleFrequency === "daily" &&
+                      " Se ejecutar\u00e1 todos los d\u00edas a las " + scheduleTime + "."}
                     {scheduleFrequency === "weekly" &&
                       " Se ejecutar\u00e1 todos los " +
                         ["domingos", "lunes", "martes", "mi\u00e9rcoles", "jueves", "viernes", "s\u00e1bados"][
@@ -197,7 +196,11 @@ export function ImportDialog({
                         scheduleTime +
                         "."}
                     {scheduleFrequency === "monthly" &&
-                      " Se ejecutar\u00e1 el d\u00eda " + scheduleDayOfMonth + " de cada mes a las " + scheduleTime + "."}
+                      " Se ejecutar\u00e1 el d\u00eda " +
+                        scheduleDayOfMonth +
+                        " de cada mes a las " +
+                        scheduleTime +
+                        "."}
                   </p>
                 </div>
               </>
@@ -208,9 +211,7 @@ export function ImportDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button onClick={onImport}>
-            {scheduleFrequency === "once" ? "Importar Ahora" : "Importar y Programar"}
-          </Button>
+          <Button onClick={onImport}>{scheduleFrequency === "once" ? "Importar Ahora" : "Importar y Programar"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

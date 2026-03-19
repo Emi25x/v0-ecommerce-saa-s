@@ -11,9 +11,7 @@ import { useEffect, useState } from "react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { LibralConfigDialog } from "@/components/suppliers/libral-config-dialog"
 import { WebhookStatusCard } from "@/components/shared/webhook-status-card"
-import { MLAccountCard }       from "@/components/mercadolibre/account-card"
-
-
+import { MLAccountCard } from "@/components/mercadolibre/account-card"
 
 export default function IntegrationsPage() {
   const [shopifyConnected, setShopifyConnected] = useState(false)
@@ -371,8 +369,8 @@ export default function IntegrationsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Conecta tu cuenta de Mercado Libre para sincronizar productos, gestionar inventario y actualizar
-                precios automáticamente.
+                Conecta tu cuenta de Mercado Libre para sincronizar productos, gestionar inventario y actualizar precios
+                automáticamente.
               </p>
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm">
@@ -398,12 +396,12 @@ export default function IntegrationsPage() {
                   </a>
                 </Button>
               </div>
-              
+
               {/* Refrescar token */}
               {mlConnected && (
                 <div className="pt-3 border-t">
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     className="w-full bg-transparent"
                     onClick={async () => {
                       try {
@@ -451,17 +449,12 @@ export default function IntegrationsPage() {
                   Link de autorización (válido por 30 minutos)
                 </label>
                 <div className="flex items-center gap-2">
-                  <Input 
+                  <Input
                     value={shareableLink || "Genera un link para compartir..."}
                     readOnly
                     className="font-mono text-xs"
                   />
-                  <Button 
-                    variant="outline" 
-                    size="sm"
-                    disabled={generatingLink}
-                    onClick={generateShareableLink}
-                  >
+                  <Button variant="outline" size="sm" disabled={generatingLink} onClick={generateShareableLink}>
                     {generatingLink ? "..." : <Copy className="h-4 w-4" />}
                   </Button>
                 </div>
@@ -503,8 +496,7 @@ export default function IntegrationsPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Conecta tu tienda Shopify para sincronizar productos, gestionar inventario y mantener todo
-                actualizado.
+                Conecta tu tienda Shopify para sincronizar productos, gestionar inventario y mantener todo actualizado.
               </p>
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm">
@@ -525,9 +517,7 @@ export default function IntegrationsPage() {
                   {testingShopify ? "Probando..." : shopifyConnected ? "Reconectar" : "Probar Conexión"}
                 </Button>
                 <Button variant="outline" asChild>
-                  <a href="/integrations/shopify-stores">
-                    Gestionar Tiendas
-                  </a>
+                  <a href="/integrations/shopify-stores">Gestionar Tiendas</a>
                 </Button>
                 <Button variant="outline" size="icon" asChild>
                   <a href="https://shopify.dev" target="_blank" rel="noopener noreferrer">

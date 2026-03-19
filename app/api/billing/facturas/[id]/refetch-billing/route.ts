@@ -13,17 +13,20 @@ import { normalizeDocType } from "@/domains/billing/doc-type"
  * Solo actualiza campos del receptor (nunca CAE ni totales).
  * Requiere que la factura tenga orden_id y que la cuenta ML esté conectada.
  */
-export async function POST(_req: Request, { params }: { params: { id: string } }) {
+export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
     const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     // Buscar la factura
     const { data: factura, error: fetchErr } = await supabase
       .from("facturas")
       .select("id, orden_id, user_id")
-      .eq("id", params.id)
+      .eq("id", id)
       .eq("user_id", user.id)
       .single()
 
@@ -58,12 +61,12 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
     // Construir patch con los datos obtenidos
     const patch: Record<string, any> = {
       billing_info_snapshot: {
-        nombre:        bi.nombre,
-        doc_tipo:      bi.doc_tipo,
-        doc_numero:    bi.doc_numero,
+        nombre: bi.nombre,
+        doc_tipo: bi.doc_tipo,
+        doc_numero: bi.doc_numero,
         condicion_iva: bi.condicion_iva,
-        direccion:     bi.direccion,
-        missing:       bi.billing_info_missing ?? false,
+        direccion: bi.direccion,
+        missing: bi.billing_info_missing ?? false,
       },
     }
 
@@ -87,17 +90,17 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
     const { data: updated, error: updateErr } = await supabase
       .from("facturas")
       .update(patch)
-      .eq("id", params.id)
+      .eq("id", id)
       .select()
       .single()
 
     if (updateErr) throw updateErr
 
     return NextResponse.json({
-      ok:      true,
+      ok: true,
       factura: updated,
       billing: bi,
-      patched: Object.keys(patch).filter(k => k !== "billing_info_snapshot"),
+      patched: Object.keys(patch).filter((k) => k !== "billing_info_snapshot"),
     })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })

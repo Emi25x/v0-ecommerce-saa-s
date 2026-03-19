@@ -3,73 +3,98 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import {
-  Tag, List, ArrowLeftRight, Calculator, BarChart2,
-  AlertTriangle, TrendingDown, Package, FileText, RefreshCw,
+  Tag,
+  List,
+  ArrowLeftRight,
+  Calculator,
+  BarChart2,
+  AlertTriangle,
+  TrendingDown,
+  Package,
+  FileText,
+  RefreshCw,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
 interface Stats {
-  active_lists:  number
-  calculated:    number
+  active_lists: number
+  calculated: number
   with_warnings: number
-  margin_low:    number
-  sin_costo:     number
-  sin_pvp:       number
+  margin_low: number
+  sin_costo: number
+  sin_pvp: number
 }
 
 interface RecentList {
-  id:           string
-  name:         string
-  channel:      string
-  currency:     string
+  id: string
+  name: string
+  channel: string
+  currency: string
   pricing_base: string
-  updated_at:   string
+  updated_at: string
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 const CHANNEL_LABEL: Record<string, string> = {
-  ml: "Mercado Libre", shopify: "Shopify", web: "Web", mayorista: "Mayorista",
+  ml: "Mercado Libre",
+  shopify: "Shopify",
+  web: "Web",
+  mayorista: "Mayorista",
 }
 const BASE_LABEL: Record<string, string> = {
-  cost: "Costo", pvp: "PVP", hybrid: "Híbrido",
+  cost: "Costo",
+  pvp: "PVP",
+  hybrid: "Híbrido",
 }
 const BASE_COLOR: Record<string, string> = {
-  cost:   "bg-blue-500/15 text-blue-400 border-blue-500/30",
-  pvp:    "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+  cost: "bg-blue-500/15 text-blue-400 border-blue-500/30",
+  pvp: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
   hybrid: "bg-amber-500/15 text-amber-400 border-amber-500/30",
 }
 const relDate = (iso: string) => {
   const diff = Date.now() - new Date(iso).getTime()
-  const m    = Math.floor(diff / 60000)
-  if (m < 1)   return "ahora"
-  if (m < 60)  return `hace ${m}m`
+  const m = Math.floor(diff / 60000)
+  if (m < 1) return "ahora"
+  if (m < 60) return `hace ${m}m`
   const h = Math.floor(m / 60)
-  if (h < 24)  return `hace ${h}h`
+  if (h < 24) return `hace ${h}h`
   return `hace ${Math.floor(h / 24)}d`
 }
 
 // ── StatCard ───────────────────────────────────────────────────────────────
 
-function StatCard({ label, value, sub, color = "default", href }: {
-  label: string; value: number | string; sub?: string
+function StatCard({
+  label,
+  value,
+  sub,
+  color = "default",
+  href,
+}: {
+  label: string
+  value: number | string
+  sub?: string
   color?: "default" | "green" | "amber" | "red" | "blue"
   href?: string
 }) {
   const colorCls = {
     default: "border-border",
-    green:   "border-green-500/30 bg-green-500/5",
-    amber:   "border-amber-500/30 bg-amber-500/5",
-    red:     "border-red-500/30 bg-red-500/5",
-    blue:    "border-blue-500/30 bg-blue-500/5",
+    green: "border-green-500/30 bg-green-500/5",
+    amber: "border-amber-500/30 bg-amber-500/5",
+    red: "border-red-500/30 bg-red-500/5",
+    blue: "border-blue-500/30 bg-blue-500/5",
   }[color]
 
   const content = (
-    <div className={`rounded-lg border ${colorCls} bg-card p-5 flex flex-col gap-1 transition-colors hover:bg-muted/10`}>
+    <div
+      className={`rounded-lg border ${colorCls} bg-card p-5 flex flex-col gap-1 transition-colors hover:bg-muted/10`}
+    >
       <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
-      <p className={`text-3xl font-bold tabular-nums ${color === "red" ? "text-red-400" : color === "amber" ? "text-amber-400" : ""}`}>
+      <p
+        className={`text-3xl font-bold tabular-nums ${color === "red" ? "text-red-400" : color === "amber" ? "text-amber-400" : ""}`}
+      >
         {typeof value === "number" ? value.toLocaleString("es-AR") : value}
       </p>
       {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
@@ -82,30 +107,57 @@ function StatCard({ label, value, sub, color = "default", href }: {
 // ── Quick links ────────────────────────────────────────────────────────────
 
 const QUICK_LINKS = [
-  { href: "/pricing/lists",          icon: List,          label: "Listas de precios",  desc: "Crear y editar listas con reglas y tramos" },
-  { href: "/pricing/assignments",    icon: ArrowLeftRight, label: "Asignaciones",       desc: "Asignar listas a cuentas ML, Shopify o canales" },
-  { href: "/pricing/exchange-rates", icon: Tag,            label: "Tipos de cambio",    desc: "Gestionar tasas manuales o automáticas" },
-  { href: "/pricing/calculator",     icon: Calculator,     label: "Calculadora",        desc: "Simular precio para un producto y lista" },
-  { href: "/pricing/results",        icon: BarChart2,      label: "Resultados",         desc: "Ver precios calculados con margen y warnings" },
+  { href: "/pricing/lists", icon: List, label: "Listas de precios", desc: "Crear y editar listas con reglas y tramos" },
+  {
+    href: "/pricing/assignments",
+    icon: ArrowLeftRight,
+    label: "Asignaciones",
+    desc: "Asignar listas a cuentas ML, Shopify o canales",
+  },
+  {
+    href: "/pricing/exchange-rates",
+    icon: Tag,
+    label: "Tipos de cambio",
+    desc: "Gestionar tasas manuales o automáticas",
+  },
+  {
+    href: "/pricing/calculator",
+    icon: Calculator,
+    label: "Calculadora",
+    desc: "Simular precio para un producto y lista",
+  },
+  {
+    href: "/pricing/results",
+    icon: BarChart2,
+    label: "Resultados",
+    desc: "Ver precios calculados con margen y warnings",
+  },
 ]
 
 // ── Page ───────────────────────────────────────────────────────────────────
 
 export default function PricingDashboard() {
-  const [stats,       setStats]       = useState<Stats | null>(null)
+  const [stats, setStats] = useState<Stats | null>(null)
   const [recentLists, setRecentLists] = useState<RecentList[]>([])
-  const [loading,     setLoading]     = useState(true)
+  const [loading, setLoading] = useState(true)
 
   const load = async () => {
     setLoading(true)
     try {
-      const res  = await fetch("/api/pricing/stats")
+      const res = await fetch("/api/pricing/stats")
       const data = await res.json()
-      if (data.ok) { setStats(data.stats); setRecentLists(data.recent_lists ?? []) }
-    } finally { setLoading(false) }
+      if (data.ok) {
+        setStats(data.stats)
+        setRecentLists(data.recent_lists ?? [])
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+  }, [])
 
   return (
     <div className="flex flex-col gap-6 p-6 max-w-5xl">
@@ -189,9 +241,7 @@ export default function PricingDashboard() {
       {/* Recent lists */}
       {recentLists.length > 0 && (
         <div>
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-            Listas recientes
-          </h2>
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Listas recientes</h2>
           <div className="rounded-lg border border-border overflow-hidden">
             <table className="w-full text-sm">
               <thead>
@@ -203,14 +253,18 @@ export default function PricingDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {recentLists.map(l => (
+                {recentLists.map((l) => (
                   <tr key={l.id} className="border-b last:border-0 hover:bg-muted/10 transition-colors">
                     <td className="px-4 py-2.5">
-                      <Link href={`/pricing/lists`} className="font-medium hover:underline">{l.name}</Link>
+                      <Link href={`/pricing/lists`} className="font-medium hover:underline">
+                        {l.name}
+                      </Link>
                     </td>
                     <td className="px-4 py-2.5 text-muted-foreground">{CHANNEL_LABEL[l.channel] ?? l.channel}</td>
                     <td className="px-4 py-2.5">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs border font-medium ${BASE_COLOR[l.pricing_base] ?? ""}`}>
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs border font-medium ${BASE_COLOR[l.pricing_base] ?? ""}`}
+                      >
                         {BASE_LABEL[l.pricing_base] ?? l.pricing_base}
                       </span>
                     </td>
@@ -230,14 +284,20 @@ export default function PricingDashboard() {
           <div className="text-sm text-muted-foreground">
             {(stats?.with_warnings ?? 0) > 0 && (
               <p>
-                <span className="font-semibold text-foreground">{stats!.with_warnings}</span> productos con warnings (falta costo, PVP o reglas de canal).{" "}
-                <Link href="/pricing/results?warnings_only=1" className="underline text-amber-400">Ver</Link>
+                <span className="font-semibold text-foreground">{stats!.with_warnings}</span> productos con warnings
+                (falta costo, PVP o reglas de canal).{" "}
+                <Link href="/pricing/results?warnings_only=1" className="underline text-amber-400">
+                  Ver
+                </Link>
               </p>
             )}
             {(stats?.margin_low ?? 0) > 0 && (
               <p className="mt-1">
-                <span className="font-semibold text-foreground">{stats!.margin_low}</span> productos con margen por debajo del mínimo.{" "}
-                <Link href="/pricing/results?margin_low=1" className="underline text-red-400">Ver</Link>
+                <span className="font-semibold text-foreground">{stats!.margin_low}</span> productos con margen por
+                debajo del mínimo.{" "}
+                <Link href="/pricing/results?margin_low=1" className="underline text-red-400">
+                  Ver
+                </Link>
               </p>
             )}
           </div>

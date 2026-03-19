@@ -1,9 +1,10 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
-    const shipmentId = params.id
+    const shipmentId = id
     console.log(`[v0] === ML Shipment Status API called for shipment: ${shipmentId} ===`)
 
     // Create Supabase client

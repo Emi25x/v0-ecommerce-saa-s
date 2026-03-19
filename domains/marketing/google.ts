@@ -19,39 +19,39 @@ async function refreshGoogleToken(credentials: Record<string, any>): Promise<str
 
 // ── Google Analytics 4 ────────────────────────────────────────────────────────
 
-export async function getGA4Report(credentials: Record<string, any>, options: {
-  startDate: string
-  endDate: string
-  propertyId?: string
-}) {
+export async function getGA4Report(
+  credentials: Record<string, any>,
+  options: {
+    startDate: string
+    endDate: string
+    propertyId?: string
+  },
+) {
   const token = await refreshGoogleToken(credentials)
   const propertyId = options.propertyId || credentials.property_id
 
-  const res = await fetch(
-    `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        dateRanges: [{ startDate: options.startDate, endDate: options.endDate }],
-        dimensions: [{ name: "date" }],
-        metrics: [
-          { name: "sessions" },
-          { name: "totalUsers" },
-          { name: "newUsers" },
-          { name: "screenPageViews" },
-          { name: "bounceRate" },
-          { name: "averageSessionDuration" },
-          { name: "conversions" },
-          { name: "totalRevenue" },
-        ],
-        orderBys: [{ dimension: { dimensionName: "date" } }],
-      }),
-    }
-  )
+  const res = await fetch(`https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      dateRanges: [{ startDate: options.startDate, endDate: options.endDate }],
+      dimensions: [{ name: "date" }],
+      metrics: [
+        { name: "sessions" },
+        { name: "totalUsers" },
+        { name: "newUsers" },
+        { name: "screenPageViews" },
+        { name: "bounceRate" },
+        { name: "averageSessionDuration" },
+        { name: "conversions" },
+        { name: "totalRevenue" },
+      ],
+      orderBys: [{ dimension: { dimensionName: "date" } }],
+    }),
+  })
   if (!res.ok) throw new Error(`GA4 API error: ${await res.text()}`)
   const data = await res.json()
 
@@ -72,27 +72,27 @@ export async function getGA4Realtime(credentials: Record<string, any>) {
   const token = await refreshGoogleToken(credentials)
   const propertyId = credentials.property_id
 
-  const res = await fetch(
-    `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runRealtimeReport`,
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        dimensions: [{ name: "country" }, { name: "deviceCategory" }],
-        metrics: [{ name: "activeUsers" }],
-      }),
-    }
-  )
+  const res = await fetch(`https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runRealtimeReport`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      dimensions: [{ name: "country" }, { name: "deviceCategory" }],
+      metrics: [{ name: "activeUsers" }],
+    }),
+  })
   if (!res.ok) throw new Error(`GA4 Realtime error: ${await res.text()}`)
   return res.json()
 }
 
 // ── Google Ads ────────────────────────────────────────────────────────────────
 
-export async function getGoogleAdsCampaigns(credentials: Record<string, any>, options: {
-  startDate: string
-  endDate: string
-}) {
+export async function getGoogleAdsCampaigns(
+  credentials: Record<string, any>,
+  options: {
+    startDate: string
+    endDate: string
+  },
+) {
   const token = await refreshGoogleToken(credentials)
   const customerId = (credentials.customer_id || "").replace(/-/g, "")
 
@@ -116,19 +116,18 @@ export async function getGoogleAdsCampaigns(credentials: Record<string, any>, op
     LIMIT 50
   `
 
-  const res = await fetch(
-    `https://googleads.googleapis.com/v17/customers/${customerId}/googleAds:search`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "developer-token": credentials.developer_token,
-        "Content-Type": "application/json",
-        ...(credentials.login_customer_id ? { "login-customer-id": credentials.login_customer_id.replace(/-/g, "") } : {}),
-      },
-      body: JSON.stringify({ query }),
-    }
-  )
+  const res = await fetch(`https://googleads.googleapis.com/v17/customers/${customerId}/googleAds:search`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "developer-token": credentials.developer_token,
+      "Content-Type": "application/json",
+      ...(credentials.login_customer_id
+        ? { "login-customer-id": credentials.login_customer_id.replace(/-/g, "") }
+        : {}),
+    },
+    body: JSON.stringify({ query }),
+  })
   if (!res.ok) throw new Error(`Google Ads API error: ${await res.text()}`)
   const data = await res.json()
 
@@ -139,23 +138,29 @@ export async function getGoogleAdsCampaigns(credentials: Record<string, any>, op
     channel_type: r.campaign.advertisingChannelType,
     impressions: parseInt(r.metrics.impressions ?? 0),
     clicks: parseInt(r.metrics.clicks ?? 0),
-    spend: (parseInt(r.metrics.costMicros ?? 0) / 1_000_000),
+    spend: parseInt(r.metrics.costMicros ?? 0) / 1_000_000,
     conversions: parseFloat(r.metrics.conversions ?? 0),
     conversion_value: parseFloat(r.metrics.conversionsValue ?? 0),
-    roas: r.metrics.costMicros > 0 ? (parseFloat(r.metrics.conversionsValue ?? 0) / (parseInt(r.metrics.costMicros ?? 0) / 1_000_000)) : 0,
+    roas:
+      r.metrics.costMicros > 0
+        ? parseFloat(r.metrics.conversionsValue ?? 0) / (parseInt(r.metrics.costMicros ?? 0) / 1_000_000)
+        : 0,
     ctr: parseFloat(r.metrics.ctr ?? 0),
-    cpc: (parseInt(r.metrics.averageCpc ?? 0) / 1_000_000),
-    cpm: (parseInt(r.metrics.averageCpm ?? 0) / 1_000_000),
+    cpc: parseInt(r.metrics.averageCpc ?? 0) / 1_000_000,
+    cpm: parseInt(r.metrics.averageCpm ?? 0) / 1_000_000,
   }))
 }
 
 // ── Google Search Console ─────────────────────────────────────────────────────
 
-export async function getSearchConsoleData(credentials: Record<string, any>, options: {
-  startDate: string
-  endDate: string
-  dimensions?: string[]
-}) {
+export async function getSearchConsoleData(
+  credentials: Record<string, any>,
+  options: {
+    startDate: string
+    endDate: string
+    dimensions?: string[]
+  },
+) {
   const token = await refreshGoogleToken(credentials)
   const siteUrl = credentials.site_url
 
@@ -171,7 +176,7 @@ export async function getSearchConsoleData(credentials: Record<string, any>, opt
         rowLimit: 100,
         searchType: "web",
       }),
-    }
+    },
   )
   if (!res.ok) throw new Error(`Search Console API error: ${await res.text()}`)
   const data = await res.json()
@@ -191,12 +196,9 @@ export async function getMerchantProducts(credentials: Record<string, any>) {
   const token = await refreshGoogleToken(credentials)
   const merchantId = credentials.merchant_id
 
-  const res = await fetch(
-    `https://shoppingcontent.googleapis.com/content/v2.1/${merchantId}/products?maxResults=100`,
-    {
-      headers: { Authorization: `Bearer ${token}` },
-    }
-  )
+  const res = await fetch(`https://shoppingcontent.googleapis.com/content/v2.1/${merchantId}/products?maxResults=100`, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
   if (!res.ok) throw new Error(`Merchant Center API error: ${await res.text()}`)
   const data = await res.json()
 
@@ -219,18 +221,10 @@ export async function getMerchantProducts(credentials: Record<string, any>) {
 
 export function buildGoogleOAuthUrl(credentials: Record<string, any>, service: string, redirectUri: string): string {
   const scopes: Record<string, string[]> = {
-    google_ads: [
-      "https://www.googleapis.com/auth/adwords",
-    ],
-    google_analytics: [
-      "https://www.googleapis.com/auth/analytics.readonly",
-    ],
-    google_search_console: [
-      "https://www.googleapis.com/auth/webmasters.readonly",
-    ],
-    google_merchant: [
-      "https://www.googleapis.com/auth/content",
-    ],
+    google_ads: ["https://www.googleapis.com/auth/adwords"],
+    google_analytics: ["https://www.googleapis.com/auth/analytics.readonly"],
+    google_search_console: ["https://www.googleapis.com/auth/webmasters.readonly"],
+    google_merchant: ["https://www.googleapis.com/auth/content"],
   }
 
   const scope = (scopes[service] ?? []).join(" ")

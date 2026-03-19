@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
     opp_id?: string
   }> = []
 
-  for (const pub of (pubs ?? [])) {
+  for (const pub of pubs ?? []) {
     const snap = snapMap.get(pub.ean!)
     const myPrice = Number(pub.price) || 0
     if (!snap || !myPrice) continue
@@ -114,7 +114,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Agregar oportunidades
-  for (const opp of (opps ?? [])) {
+  for (const opp of opps ?? []) {
     actions.push({
       type: "opportunity",
       priority: "info",

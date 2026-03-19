@@ -45,9 +45,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result)
   } catch (err: any) {
-    await supabase.from("ml_matcher_progress").update({
-      status: "failed", last_error: err.message,
-    }).eq("account_id", accountId)
+    await supabase
+      .from("ml_matcher_progress")
+      .update({
+        status: "failed",
+        last_error: err.message,
+      })
+      .eq("account_id", accountId)
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 })
   }
 }

@@ -33,50 +33,50 @@
  */
 
 export interface FastMailCredentials {
-  token: string   // API token — requerido para todos los endpoints
+  token: string // API token — requerido para todos los endpoints
   user?: string
   password?: string
 }
 
 export interface FastMailConfig {
-  base_url:        string
-  api_version?:    string
-  timeout_ms:      number
-  sucursal?:       string   // Código de sucursal del cliente (requerido por cotizador, guías, etc.)
+  base_url: string
+  api_version?: string
+  timeout_ms: number
+  sucursal?: string // Código de sucursal del cliente (requerido por cotizador, guías, etc.)
   servicio_default?: string // Código de servicio por defecto para crear guías
 }
 
 // ── Tipos de respuesta ───────────────────────────────────────────────────────
 
 export interface FastMailHealthCheckResponse {
-  server:   string   // "OK"
-  user:     string   // "OK"
-  cliente?: string   // Nombre del cliente, ej: "Presis Consultores"
-  error?:   string
+  server: string // "OK"
+  user: string // "OK"
+  cliente?: string // Nombre del cliente, ej: "Presis Consultores"
+  error?: string
 }
 
 // ── Servicios ────────────────────────────────────────────────────────────────
 
 export interface FastMailServicio {
   codigo_servicio: string
-  descripcion:     string
+  descripcion: string
   detalle_servicio: string
-  tiempo_entrega:  number
-  is_ecommerce:    number
-  cotiza:          "SI" | "NO" | string
+  tiempo_entrega: number
+  is_ecommerce: number
+  cotiza: "SI" | "NO" | string
 }
 
 /** Respuesta de servicios-cp.json (v1) — servicios disponibles por CP destino */
 export interface FastMailServicioCp {
-  id:          number
-  cod_serv:    string
+  id: number
+  cod_serv: string
   descripcion: string
 }
 
 // ── Tipos de operación ────────────────────────────────────────────────────────
 
 export interface FastMailTipoOperacion {
-  id:     number
+  id: number
   codigo: string
   nombre: string
 }
@@ -84,39 +84,39 @@ export interface FastMailTipoOperacion {
 // ── Comprador / Destinatario ──────────────────────────────────────────────────
 
 export interface FastMailComprador {
-  empresa?:          string
-  destinatario:      string
-  hora_desde?:       string
-  hora_hasta?:       string
-  calle:             string
-  altura:            number
-  piso?:             string
-  dpto?:             string
-  localidad:         string
-  provincia:         string
+  empresa?: string
+  destinatario: string
+  hora_desde?: string
+  hora_hasta?: string
+  calle: string
+  altura: number
+  piso?: string
+  dpto?: string
+  localidad: string
+  provincia: string
   info_adicional_1?: string
   info_adicional_2?: string
   info_adicional_3?: string
   info_adicional_4?: string
   info_adicional_5?: string
-  cp:                number
-  email?:            string
-  celular?:          string
-  cuit?:             string
-  contenido?:        string
-  latitud?:          string
-  longitud?:         string
+  cp: number
+  email?: string
+  celular?: string
+  cuit?: string
+  contenido?: string
+  latitud?: string
+  longitud?: string
 }
 
 // ── Productos ─────────────────────────────────────────────────────────────────
 
 export interface FastMailProducto {
-  bultos:      number
-  peso:        number
+  bultos: number
+  peso: number
   descripcion: string
   dimensiones: {
-    alto:        number
-    largo:       number
+    alto: number
+    largo: number
     profundidad: number
   }
 }
@@ -124,62 +124,62 @@ export interface FastMailProducto {
 // ── Guías ─────────────────────────────────────────────────────────────────────
 
 export interface FastMailGuiaRequest {
-  codigo_sucursal:  string
-  codigo_servicio:  string
-  tiempo?:          string
-  destino?:         string
-  fragil?:          boolean
-  remito?:          string
-  guia_agente?:     string
-  fob?:             string
-  internacional:    boolean
-  valorDeclarado?:  number   // camelCase según manual v2
-  isInversa:        boolean
-  observaciones?:   string
-  codigo_ceco?:     string
+  codigo_sucursal: string
+  codigo_servicio: string
+  tiempo?: string
+  destino?: string
+  fragil?: boolean
+  remito?: string
+  guia_agente?: string
+  fob?: string
+  internacional: boolean
+  valorDeclarado?: number // camelCase según manual v2
+  isInversa: boolean
+  observaciones?: string
+  codigo_ceco?: string
   contrareembolso?: number
-  cobro_efectivo?:  number
-  cobro_cheque?:    number
-  precinto?:        string
-  pago_en:          string          // ej: "DESTINO", "ORIGEN"
-  tipo_operacion:   string          // ej: "ENT", "RET"
-  is_urgente:       boolean
-  valida_stock?:    boolean
-  canal?:           string
-  codigo_expreso?:  string
-  comprador:        FastMailComprador
-  productos:        FastMailProducto[]
+  cobro_efectivo?: number
+  cobro_cheque?: number
+  precinto?: string
+  pago_en: string // ej: "DESTINO", "ORIGEN"
+  tipo_operacion: string // ej: "ENT", "RET"
+  is_urgente: boolean
+  valida_stock?: boolean
+  canal?: string
+  codigo_expreso?: string
+  comprador: FastMailComprador
+  productos: FastMailProducto[]
 }
 
 export interface FastMailGuiaResponse {
-  guia?:             number
-  importe?:          number
+  guia?: number
+  importe?: number
   sub_zona_destino?: string
-  remito?:           string
-  zona?:             string
-  error?:            string
-  [key: string]:     unknown
+  remito?: string
+  zona?: string
+  error?: string
+  [key: string]: unknown
 }
 
 // ── Cotizador ─────────────────────────────────────────────────────────────────
 
 export interface FastMailCotizadorRequest {
-  sucursal?:        string
-  cp_origen?:       string   // CP de origen (sucursal o remitente) — requerido por la API
-  cp_destino?:      string   // CP de destino — cotizador.json usa cp_destino (no cp_entrega)
+  sucursal?: string
+  cp_origen?: string // CP de origen (sucursal o remitente) — requerido por la API
+  cp_destino?: string // CP de destino — cotizador.json usa cp_destino (no cp_entrega)
   codigo_servicio?: string
-  productos:        FastMailProducto[]
+  productos: FastMailProducto[]
 }
 
 // ── Seguro ────────────────────────────────────────────────────────────────────
 
 export interface FastMailSeguroResponse {
-  status:   string
-  message:  number   // valor del seguro calculado
+  status: string
+  message: number // valor del seguro calculado
   data?: {
-    seguro_minimo:  number
-    porcentaje:     number
-    seguro_maximo:  number
+    seguro_minimo: number
+    porcentaje: number
+    seguro_maximo: number
   }
   error?: string
 }
@@ -188,28 +188,28 @@ export interface FastMailSeguroResponse {
 
 export interface FastMailPrecioServicioRequest {
   cp_destino: string
-  sucursal:   string
-  productos:  FastMailProducto[]
+  sucursal: string
+  productos: FastMailProducto[]
 }
 
 // ── Retiro ────────────────────────────────────────────────────────────────────
 
 export interface FastMailSolicitarRetiroRequest {
-  sucursal:       string
-  fecha:          string   // ej: "2026-03-20"
-  calle:          string
-  altura:         string
-  piso?:          string
-  dpto?:          string
-  localidad:      string
-  provincia:      string
-  cp:             number
-  contacto:       string
-  telefono?:      string
-  mail?:          string
-  franja:         "POR LA MAÑANA" | "TODO EL DIA" | "POR LA TARDE"
-  peso:           string
-  bultos:         string
+  sucursal: string
+  fecha: string // ej: "2026-03-20"
+  calle: string
+  altura: string
+  piso?: string
+  dpto?: string
+  localidad: string
+  provincia: string
+  cp: number
+  contacto: string
+  telefono?: string
+  mail?: string
+  franja: "POR LA MAÑANA" | "TODO EL DIA" | "POR LA TARDE"
+  peso: string
+  bultos: string
   observaciones?: string
 }
 
@@ -218,44 +218,44 @@ export interface FastMailSolicitarRetiroRequest {
 /** Item de sucursal devuelto por sucursalesByCliente.json */
 export interface FastMailSucursalItem {
   codigo_sucursal: string
-  descripcion:     string
-  localidad?:      string
-  provincia?:      string
-  cp?:             number | string
-  calle?:          string
-  altura?:         number | string
-  contacto?:       string
-  telefono?:       string
-  mail?:           string
-  [key: string]:   unknown
+  descripcion: string
+  localidad?: string
+  provincia?: string
+  cp?: number | string
+  calle?: string
+  altura?: number | string
+  contacto?: string
+  telefono?: string
+  mail?: string
+  [key: string]: unknown
 }
 
 export interface FastMailSucursalesResponse {
   sucursales?: FastMailSucursalItem[]
-  message?:    FastMailSucursalItem[] | unknown
-  data?:       FastMailSucursalItem[] | unknown
-  error?:      string
+  message?: FastMailSucursalItem[] | unknown
+  data?: FastMailSucursalItem[] | unknown
+  error?: string
   [key: string]: unknown
 }
 
 export interface FastMailSucursalData {
-  razon_social?:     string
-  codigo_sucursal?:  string
-  calle?:            string
-  altura?:           number
-  piso?:             string
-  dpto?:             string
-  localidad:         string
-  provincia:         string
-  cp:                number
-  contacto?:         string
-  telefono?:         string
-  mail?:             string
-  descripcion:       string
+  razon_social?: string
+  codigo_sucursal?: string
+  calle?: string
+  altura?: number
+  piso?: string
+  dpto?: string
+  localidad: string
+  provincia: string
+  cp: number
+  contacto?: string
+  telefono?: string
+  mail?: string
+  descripcion: string
 }
 
 export interface FastMailEditarSucursalResponse {
-  ok?:   boolean
+  ok?: boolean
   error?: string
   [key: string]: unknown
 }
@@ -263,54 +263,54 @@ export interface FastMailEditarSucursalResponse {
 // ── Webhook ───────────────────────────────────────────────────────────────────
 
 export interface FastMailIntegracionRequest {
-  url:          string
+  url: string
   notificacion: boolean
-  token?:       string
-  usuario?:     string
-  sucursal?:    string
+  token?: string
+  usuario?: string
+  sucursal?: string
 }
 
 // ── Etiquetas ─────────────────────────────────────────────────────────────────
 
 export interface FastMailPrintEtiquetasRequest {
-  tipo:       "fixed" | "custom"
-  nombre:     string
-  ides:       number[]
+  tipo: "fixed" | "custom"
+  nombre: string
+  ides: number[]
   is_remito?: boolean
 }
 
 // ── Recepción de stock (WMS) ──────────────────────────────────────────────────
 
 export interface FastMailContacto {
-  nombre:    string
-  calle:     string
-  cp:        string
+  nombre: string
+  calle: string
+  cp: string
   localidad: string
   provincia: string
-  email?:    string
+  email?: string
   telefono?: string
 }
 
 export interface FastMailProductoRecepcion {
-  sku:         string
+  sku: string
   descripcion: string
-  cajas:       number
-  cantidad:    number
-  trazable:    boolean   // required: 1=SI, 0=NO
+  cajas: number
+  cantidad: number
+  trazable: boolean // required: 1=SI, 0=NO
 }
 
 export interface FastMailGeneraRecepcionRequest {
-  remito:          string
-  operacion:       "RECEPCION" | string
-  fecha_pactada:   string    // requerido, ej: "2026-03-22"
-  permite_parcial: boolean   // requerido: 1=SI, 0=NO
-  contacto:        FastMailContacto
-  productos:       FastMailProductoRecepcion[]
+  remito: string
+  operacion: "RECEPCION" | string
+  fecha_pactada: string // requerido, ej: "2026-03-22"
+  permite_parcial: boolean // requerido: 1=SI, 0=NO
+  contacto: FastMailContacto
+  productos: FastMailProductoRecepcion[]
 }
 
 export interface FastMailGeneraRecepcionResponse {
-  ok?:   boolean
-  id?:   string
+  ok?: boolean
+  id?: string
   error?: string
   [key: string]: unknown
 }
@@ -322,38 +322,38 @@ interface FastMailSeguimientoApiResponse {
   status?: string
   guia?: {
     fechas?: Array<{
-      fecha:         string
-      hora:          string
-      estado:        string
-      receptor:      string | null
+      fecha: string
+      hora: string
+      estado: string
+      receptor: string | null
       fecha_pactada: string | null
     }>
   }
-  error?:   string
+  error?: string
   message?: string
 }
 
 /** Formato normalizado expuesto por el cliente (compatible con routes existentes) */
 export interface FastMailTrackingEvent {
-  estado:      string
+  estado: string
   descripcion: string
-  ubicacion?:  string
-  fecha:       string
+  ubicacion?: string
+  fecha: string
 }
 
 export interface FastMailTrackingResponse {
   numero_guia?: string
-  estado?:      string
-  eventos?:     FastMailTrackingEvent[]
-  error?:       string
+  estado?: string
+  eventos?: FastMailTrackingEvent[]
+  error?: string
 }
 
 // ── Stock / CPs ───────────────────────────────────────────────────────────────
 
 export interface FastMailStockItem {
-  sku:          string
+  sku: string
   descripcion?: string
-  stock:        number
+  stock: number
   [key: string]: unknown
 }
 
@@ -364,14 +364,14 @@ export interface FastMailConsultarStockResponse {
 }
 
 export interface FastMailCp {
-  cp:        string
+  cp: string
   localidad?: string
   provincia?: string
   [key: string]: unknown
 }
 
 export interface FastMailListarCpsResponse {
-  cps?:  FastMailCp[]
+  cps?: FastMailCp[]
   error?: string
   [key: string]: unknown
 }
@@ -379,40 +379,40 @@ export interface FastMailListarCpsResponse {
 // ── Tipos legacy para compatibilidad con routes existentes ────────────────────
 
 export interface FastMailQuoteRequest {
-  origen_cp:    string
-  destino_cp:   string
-  peso_g:       number
-  valor:        number
+  origen_cp: string
+  destino_cp: string
+  peso_g: number
+  valor: number
   dimensiones?: { largo_cm: number; ancho_cm: number; alto_cm: number }
 }
 
 export interface FastMailQuoteResponse {
   servicios: Array<{
-    codigo:     string
-    nombre:     string
+    codigo: string
+    nombre: string
     plazo_dias: number
-    precio:     number
+    precio: number
   }>
   error?: string
 }
 
 export interface FastMailShipmentRequest {
-  remitente:       FastMailContacto
-  destinatario:    FastMailContacto
-  peso_g:          number
+  remitente: FastMailContacto
+  destinatario: FastMailContacto
+  peso_g: number
   valor_declarado: number
-  servicio?:       string   // Código de servicio seleccionado; si no se envía, usa servicio_default de config
-  referencia?:     string
+  servicio?: string // Código de servicio seleccionado; si no se envía, usa servicio_default de config
+  referencia?: string
 }
 
 export interface FastMailShipmentResponse {
-  id?:              string
-  numero_guia?:     string
-  estado?:          string
-  url_etiqueta?:    string
+  id?: string
+  numero_guia?: string
+  estado?: string
+  url_etiqueta?: string
   url_seguimiento?: string
-  costo?:           number
-  error?:           string
+  costo?: number
+  error?: string
 }
 
 // ── Helpers internos ─────────────────────────────────────────────────────────
@@ -450,7 +450,7 @@ function parsePrecioFromRaw(raw: any): number | null {
 
     if (Array.isArray(msg) && msg.length > 0) {
       const first = msg[0]
-      const p     = first?.precio ?? first?.importe ?? first?.costo
+      const p = first?.precio ?? first?.importe ?? first?.costo
       if (p != null && Number(p) > 0) return Number(p)
     }
   }
@@ -486,32 +486,35 @@ function parsePrecioFromRaw(raw: any): number | null {
 function parsePrecioServicioResponse(raw: any): FastMailQuoteResponse["servicios"] {
   if (!raw || raw.error) return []
 
-  const candidates: any[] =
-    Array.isArray(raw)           ? raw          :
-    Array.isArray(raw.servicios) ? raw.servicios :
-    Array.isArray(raw.message)   ? raw.message   :
-    Array.isArray(raw.data)      ? raw.data      :
-    []
+  const candidates: any[] = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw.servicios)
+      ? raw.servicios
+      : Array.isArray(raw.message)
+        ? raw.message
+        : Array.isArray(raw.data)
+          ? raw.data
+          : []
 
   return candidates
-    .map(s => {
+    .map((s) => {
       // Formato real de precio-servicio.json: { servicio: { cod_serv, descripcion, alias }, precio: { importe_total_flete, ... } }
       if (s.servicio && typeof s.precio === "object" && s.precio !== null) {
         const total = Number(s.precio.importe_total_flete ?? s.precio.retiro_precio ?? 0)
         if (total <= 0) return null
         return {
-          codigo:     String(s.servicio.cod_serv ?? s.servicio.codigo_servicio ?? ""),
-          nombre:     String(s.servicio.alias ?? s.servicio.descripcion ?? s.servicio.nombre ?? "Servicio"),
+          codigo: String(s.servicio.cod_serv ?? s.servicio.codigo_servicio ?? ""),
+          nombre: String(s.servicio.alias ?? s.servicio.descripcion ?? s.servicio.nombre ?? "Servicio"),
           plazo_dias: Number(s.servicio.tiempo_entrega ?? 0),
-          precio:     total,
+          precio: total,
         }
       }
       // Formato plano (cotizador.json y respuestas legacy)
       const precio = Number(s.precio ?? s.importe ?? s.costo ?? 0)
       if (precio <= 0) return null
       return {
-        codigo:     String(s.codigo_servicio ?? s.codigo ?? s.servicio ?? ""),
-        nombre:     String(s.nombre_servicio ?? s.nombre ?? s.descripcion ?? s.servicio ?? "Servicio"),
+        codigo: String(s.codigo_servicio ?? s.codigo ?? s.servicio ?? ""),
+        nombre: String(s.nombre_servicio ?? s.nombre ?? s.descripcion ?? s.servicio ?? "Servicio"),
         plazo_dias: Number(s.plazo_dias ?? s.plazo ?? 0),
         precio,
       }
@@ -522,17 +525,17 @@ function parsePrecioServicioResponse(raw: any): FastMailQuoteResponse["servicios
 // ── Cliente ───────────────────────────────────────────────────────────────────
 
 export class FastMailClient {
-  private readonly baseUrl:        string
-  private readonly token:          string
-  private readonly timeout:        number
-  private readonly sucursal:       string
+  private readonly baseUrl: string
+  private readonly token: string
+  private readonly timeout: number
+  private readonly sucursal: string
   private readonly servicioDefault: string
 
   constructor(config: FastMailConfig, credentials: FastMailCredentials) {
-    this.baseUrl        = config.base_url.replace(/\/$/, "")
-    this.token          = credentials.token
-    this.timeout        = config.timeout_ms ?? 15_000
-    this.sucursal       = config.sucursal       ?? ""
+    this.baseUrl = config.base_url.replace(/\/$/, "")
+    this.token = credentials.token
+    this.timeout = config.timeout_ms ?? 15_000
+    this.sucursal = config.sucursal ?? ""
     this.servicioDefault = config.servicio_default ?? ""
   }
 
@@ -542,17 +545,17 @@ export class FastMailClient {
   }
 
   private async post<T>(path: string, body?: Record<string, unknown>): Promise<T> {
-    const url        = `${this.baseUrl}${path}`
+    const url = `${this.baseUrl}${path}`
     const controller = new AbortController()
-    const timer      = setTimeout(() => controller.abort(), this.timeout)
+    const timer = setTimeout(() => controller.abort(), this.timeout)
 
     try {
       const res = await fetch(url, {
-        method:  "POST",
-        signal:  controller.signal,
+        method: "POST",
+        signal: controller.signal,
         headers: {
           "Content-Type": "application/json",
-          "Accept":       "application/json",
+          Accept: "application/json",
         },
         body: JSON.stringify(this.withToken(body)),
       })
@@ -560,9 +563,7 @@ export class FastMailClient {
       const data = await res.json().catch(() => ({}))
 
       if (!res.ok) {
-        throw new Error(
-          `FastMail API error ${res.status}: ${(data as any)?.message ?? res.statusText}`
-        )
+        throw new Error(`FastMail API error ${res.status}: ${(data as any)?.message ?? res.statusText}`)
       }
 
       return data as T
@@ -603,13 +604,10 @@ export class FastMailClient {
    * Se normaliza al formato FastMailTrackingResponse para mantener
    * compatibilidad con las routes existentes.
    */
-  async getTracking(
-    trackingNumber: string,
-    useRemito = false
-  ): Promise<FastMailTrackingResponse> {
+  async getTracking(trackingNumber: string, useRemito = false): Promise<FastMailTrackingResponse> {
     try {
       const param = useRemito ? { remito: trackingNumber } : { nro_guia: trackingNumber }
-      const raw   = await this.post<FastMailSeguimientoApiResponse>("/api/v2/seguimiento.json", param)
+      const raw = await this.post<FastMailSeguimientoApiResponse>("/api/v2/seguimiento.json", param)
 
       if (raw.error || (raw.status && raw.status !== "ok")) {
         return { error: raw.message ?? raw.error ?? `status: ${raw.status}` }
@@ -617,18 +615,18 @@ export class FastMailClient {
 
       const fechas = raw.guia?.fechas ?? []
 
-      const eventos: FastMailTrackingEvent[] = fechas.map(f => ({
-        estado:      f.estado,
-        descripcion: f.estado,                        // la API no provee descripción separada
-        fecha:       `${f.fecha} ${f.hora}`.trim(),
-        ubicacion:   undefined,
+      const eventos: FastMailTrackingEvent[] = fechas.map((f) => ({
+        estado: f.estado,
+        descripcion: f.estado, // la API no provee descripción separada
+        fecha: `${f.fecha} ${f.hora}`.trim(),
+        ubicacion: undefined,
       }))
 
       const ultimoEstado = fechas.length ? fechas[fechas.length - 1].estado : undefined
 
       return {
         numero_guia: useRemito ? undefined : trackingNumber,
-        estado:      ultimoEstado,
+        estado: ultimoEstado,
         eventos,
       }
     } catch (err: any) {
@@ -704,12 +702,12 @@ export class FastMailClient {
    * La API puede devolver array directo, o envuelto en { sucursales, message, data }.
    */
   async getSucursales(): Promise<FastMailSucursalItem[]> {
-    const raw = await this.sucursalesByCliente() as any
+    const raw = (await this.sucursalesByCliente()) as any
     if (!raw) return []
     if (Array.isArray(raw)) return raw as FastMailSucursalItem[]
     if (Array.isArray(raw.sucursales)) return raw.sucursales
-    if (Array.isArray(raw.message))    return raw.message
-    if (Array.isArray(raw.data))       return raw.data
+    if (Array.isArray(raw.message)) return raw.message
+    if (Array.isArray(raw.data)) return raw.data
     return []
   }
 
@@ -774,7 +772,7 @@ export class FastMailClient {
   async generaRecepcion(req: FastMailGeneraRecepcionRequest): Promise<FastMailGeneraRecepcionResponse> {
     return this.post<FastMailGeneraRecepcionResponse>(
       "/api/v2/generaRecepcion.json",
-      req as unknown as Record<string, unknown>
+      req as unknown as Record<string, unknown>,
     )
   }
 
@@ -784,7 +782,7 @@ export class FastMailClient {
   async editarSucursal(data: FastMailSucursalData): Promise<FastMailEditarSucursalResponse> {
     return this.post<FastMailEditarSucursalResponse>(
       "/api/v2/editarSucursal.json",
-      data as unknown as Record<string, unknown>
+      data as unknown as Record<string, unknown>,
     )
   }
 
@@ -797,18 +795,20 @@ export class FastMailClient {
    */
   async quote(req: FastMailQuoteRequest): Promise<FastMailQuoteResponse> {
     const pesoKg = req.peso_g / 1000
-    const dim    = req.dimensiones
+    const dim = req.dimensiones
 
-    const productos: FastMailProducto[] = [{
-      bultos:      1,
-      peso:        pesoKg,
-      descripcion: "Paquete",
-      dimensiones: {
-        alto:        dim?.alto_cm      ?? 10,
-        largo:       dim?.largo_cm     ?? 20,
-        profundidad: dim?.ancho_cm     ?? 15,
+    const productos: FastMailProducto[] = [
+      {
+        bultos: 1,
+        peso: pesoKg,
+        descripcion: "Paquete",
+        dimensiones: {
+          alto: dim?.alto_cm ?? 10,
+          largo: dim?.largo_cm ?? 20,
+          profundidad: dim?.ancho_cm ?? 15,
+        },
       },
-    }]
+    ]
 
     // Sin sucursal no hay cotización posible — mostrar error claro
     if (!this.sucursal) {
@@ -823,11 +823,11 @@ export class FastMailClient {
     // Solo funciona si el cliente tiene este endpoint habilitado.
     if (this.sucursal) {
       try {
-        const raw = await this.precioServicio({
+        const raw = (await this.precioServicio({
           cp_destino: req.destino_cp,
-          sucursal:   this.sucursal,
+          sucursal: this.sucursal,
           productos,
-        }) as any
+        })) as any
 
         const servicios = parsePrecioServicioResponse(raw)
         console.log(`[FastMail][quote] precio-servicio: ${servicios.length} servicios para CP ${req.destino_cp}`)
@@ -840,21 +840,26 @@ export class FastMailClient {
     // Helper: obtener candidatos de serviciosCliente
     const getCandidatosDeCliente = async (): Promise<Array<{ codigo: string; nombre: string }>> => {
       try {
-        const rawLista = await this.serviciosCliente() as any
+        const rawLista = (await this.serviciosCliente()) as any
         // La API puede devolver array directo o envuelto en { servicios, services, message, data }
-        const lista: FastMailServicio[] =
-          Array.isArray(rawLista)              ? rawLista              :
-          Array.isArray(rawLista?.servicios)   ? rawLista.servicios    :
-          Array.isArray(rawLista?.services)    ? rawLista.services     :
-          Array.isArray(rawLista?.message)     ? rawLista.message      :
-          Array.isArray(rawLista?.data)        ? rawLista.data         : []
+        const lista: FastMailServicio[] = Array.isArray(rawLista)
+          ? rawLista
+          : Array.isArray(rawLista?.servicios)
+            ? rawLista.servicios
+            : Array.isArray(rawLista?.services)
+              ? rawLista.services
+              : Array.isArray(rawLista?.message)
+                ? rawLista.message
+                : Array.isArray(rawLista?.data)
+                  ? rawLista.data
+                  : []
         if (lista.length === 0) return []
-        const cotizables = lista.filter(s =>
-          String(s.cotiza).toUpperCase() === "SI" || String(s.cotiza) === "1" || s.cotiza === true as any
+        const cotizables = lista.filter(
+          (s) => String(s.cotiza).toUpperCase() === "SI" || String(s.cotiza) === "1" || s.cotiza === (true as any),
         )
         const fuente = cotizables.length > 0 ? cotizables : lista
         console.log(`[FastMail][quote] serviciosCliente: ${fuente.length} candidatos`)
-        return fuente.map(s => ({
+        return fuente.map((s) => ({
           codigo: s.codigo_servicio,
           nombre: s.descripcion ?? s.detalle_servicio ?? s.codigo_servicio,
         }))
@@ -866,33 +871,31 @@ export class FastMailClient {
 
     // Helper: cotizar candidatos con cotizador.json
     const cotizarCandidatos = async (
-      candidatos: Array<{ codigo: string; nombre: string }>
+      candidatos: Array<{ codigo: string; nombre: string }>,
     ): Promise<FastMailQuoteResponse["servicios"]> => {
       const resultados = await Promise.allSettled(
         candidatos.map(async ({ codigo, nombre }) => {
-          const raw = await this.cotizador({
-            cp_origen:       req.origen_cp,
-            cp_destino:      req.destino_cp,
-            sucursal:        this.sucursal || undefined,
+          const raw = (await this.cotizador({
+            cp_origen: req.origen_cp,
+            cp_destino: req.destino_cp,
+            sucursal: this.sucursal || undefined,
             codigo_servicio: codigo,
             productos,
-          }) as any
+          })) as any
           const precio = parsePrecioFromRaw(raw)
           console.log(`[FastMail][cotizador] servicio=${codigo} precio=${precio} raw.error=${raw?.error}`)
           if (precio === null) return null
           return {
             codigo,
-            nombre:     raw.nombre_servicio ?? raw.nombre ?? nombre,
+            nombre: raw.nombre_servicio ?? raw.nombre ?? nombre,
             plazo_dias: Number(raw.plazo_dias ?? raw.plazo ?? 0),
             precio,
           }
-        })
+        }),
       )
       return resultados
-        .filter((r): r is PromiseFulfilledResult<NonNullable<any>> =>
-          r.status === "fulfilled" && r.value !== null
-        )
-        .map(r => r.value)
+        .filter((r): r is PromiseFulfilledResult<NonNullable<any>> => r.status === "fulfilled" && r.value !== null)
+        .map((r) => r.value)
     }
 
     // ── Intento 2: servicios-cp.json (v1) + cotizador.json ───────────────────
@@ -901,7 +904,7 @@ export class FastMailClient {
       try {
         const porCp = await this.serviciosByCp(req.destino_cp)
         if (Array.isArray(porCp) && porCp.length > 0) {
-          const candidatosCp = porCp.map(s => ({ codigo: s.cod_serv, nombre: s.descripcion }))
+          const candidatosCp = porCp.map((s) => ({ codigo: s.cod_serv, nombre: s.descripcion }))
           console.log(`[FastMail][quote] serviciosByCp(${req.destino_cp}): ${candidatosCp.length} candidatos`)
           const servicios = await cotizarCandidatos(candidatosCp)
           if (servicios.length > 0) return { servicios }
@@ -923,11 +926,8 @@ export class FastMailClient {
     const desdeCliente = await getCandidatosDeCliente()
     if (desdeCliente.length > 0) {
       // Merge: desdeCliente tiene prioridad, servicioDefault como respaldo
-      const codigosCliente = new Set(desdeCliente.map(c => c.codigo))
-      candidatosCliente = [
-        ...desdeCliente,
-        ...candidatosCliente.filter(c => !codigosCliente.has(c.codigo)),
-      ]
+      const codigosCliente = new Set(desdeCliente.map((c) => c.codigo))
+      candidatosCliente = [...desdeCliente, ...candidatosCliente.filter((c) => !codigosCliente.has(c.codigo))]
     }
 
     if (candidatosCliente.length === 0) {
@@ -948,35 +948,37 @@ export class FastMailClient {
     const calleRaw = req.destinatario.calle ?? (req.destinatario as any).direccion ?? ""
     // Separar calle y altura del destinatario (ej: "Av Rivadavia 1234" → calle + 1234)
     const matchAltura = calleRaw.match(/^(.*?)\s+(\d+)\s*$/)
-    const calle  = matchAltura ? matchAltura[1].trim() : calleRaw
+    const calle = matchAltura ? matchAltura[1].trim() : calleRaw
     const altura = matchAltura ? parseInt(matchAltura[2]) : 0
 
     const guiaReq: FastMailGuiaRequest = {
       codigo_sucursal: this.sucursal,
       codigo_servicio: req.servicio || this.servicioDefault || "STD",
-      internacional:   false,
-      valorDeclarado:  req.valor_declarado,
-      isInversa:       false,
-      pago_en:         "DESTINO",
-      tipo_operacion:  "ENT",
-      is_urgente:      false,
-      remito:          req.referencia ?? undefined,
+      internacional: false,
+      valorDeclarado: req.valor_declarado,
+      isInversa: false,
+      pago_en: "DESTINO",
+      tipo_operacion: "ENT",
+      is_urgente: false,
+      remito: req.referencia ?? undefined,
       comprador: {
         destinatario: req.destinatario.nombre,
         calle,
         altura,
-        localidad:    req.destinatario.localidad,
-        provincia:    req.destinatario.provincia,
-        cp:           parseInt(req.destinatario.cp as any) || 0,
-        email:        req.destinatario.email    ?? undefined,
-        celular:      req.destinatario.telefono ?? undefined,
+        localidad: req.destinatario.localidad,
+        provincia: req.destinatario.provincia,
+        cp: parseInt(req.destinatario.cp as any) || 0,
+        email: req.destinatario.email ?? undefined,
+        celular: req.destinatario.telefono ?? undefined,
       },
-      productos: [{
-        bultos:      1,
-        peso:        req.peso_g / 1000,
-        descripcion: "Paquete",
-        dimensiones: { alto: 10, largo: 20, profundidad: 15 },
-      }],
+      productos: [
+        {
+          bultos: 1,
+          peso: req.peso_g / 1000,
+          descripcion: "Paquete",
+          dimensiones: { alto: 10, largo: 20, profundidad: 15 },
+        },
+      ],
     }
 
     try {
@@ -984,10 +986,10 @@ export class FastMailClient {
       if (res.error) return { error: String(res.error) }
       const nroGuia = String(res.guia ?? "")
       return {
-        id:          nroGuia,
+        id: nroGuia,
         numero_guia: nroGuia,
-        estado:      "pending",
-        costo:       res.importe ?? undefined,
+        estado: "pending",
+        costo: res.importe ?? undefined,
       }
     } catch (err: any) {
       return { error: err.message }
@@ -998,10 +1000,7 @@ export class FastMailClient {
 // ── Factory ───────────────────────────────────────────────────────────────────
 
 /** Crear cliente desde la configuración guardada en DB */
-export function createFastMailClient(
-  config: FastMailConfig,
-  credentials: FastMailCredentials
-): FastMailClient {
+export function createFastMailClient(config: FastMailConfig, credentials: FastMailCredentials): FastMailClient {
   if (!credentials.token) {
     throw new Error("FastMail: configurá el Token API en Transportistas → Fast Mail")
   }

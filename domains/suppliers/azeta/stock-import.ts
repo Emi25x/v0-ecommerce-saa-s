@@ -13,21 +13,21 @@
 import { createAdminClient } from "@/lib/db/admin"
 
 export interface StockUpdateResult {
-  success:      boolean
-  processed?:   number
-  updated?:     number
-  not_found?:   number
-  zeroed?:      number   // productos puestos a stock_by_source.azeta=0 por no estar en el archivo
-  skipped?:     number
-  elapsed_ms?:  number
-  error?:       string
+  success: boolean
+  processed?: number
+  updated?: number
+  not_found?: number
+  zeroed?: number // productos puestos a stock_by_source.azeta=0 por no estar en el archivo
+  skipped?: number
+  elapsed_ms?: number
+  error?: string
 }
 
 export async function runAzetaStockUpdate(
-  source?: { id: string; url_template: string; name: string } | null
+  source?: { id: string; url_template: string; name: string } | null,
 ): Promise<StockUpdateResult> {
   const startTime = Date.now()
-  const supabase  = createAdminClient()
+  const supabase = createAdminClient()
 
   // Resolver fuente si no viene como parámetro
   let src = source
@@ -53,9 +53,9 @@ export async function runAzetaStockUpdate(
     return { success: false, error: `Error descargando: ${response.status} ${response.statusText}` }
   }
 
-  const buffer  = Buffer.from(await response.arrayBuffer())
+  const buffer = Buffer.from(await response.arrayBuffer())
   const csvText = buffer.toString("latin1")
-  const lines   = csvText.split("\n").filter(l => l.trim())
+  const lines = csvText.split("\n").filter((l) => l.trim())
   console.log(`[AZETA][STOCK] Descargado: ${lines.length} líneas`)
 
   // Parsear (sin header: col0=EAN, col1=cantidad)
@@ -65,13 +65,22 @@ export async function runAzetaStockUpdate(
 
   for (const line of lines) {
     const parts = line.trim().split(";")
-    if (parts.length < 2) { skipped++; continue }
+    if (parts.length < 2) {
+      skipped++
+      continue
+    }
 
     const eanRaw = parts[0].trim().replace(/\D/g, "")
-    if (!eanRaw || eanRaw.length < 8 || eanRaw.length > 14) { skipped++; continue }
+    if (!eanRaw || eanRaw.length < 8 || eanRaw.length > 14) {
+      skipped++
+      continue
+    }
 
     const qty = parseInt(parts[1].trim(), 10)
-    if (isNaN(qty) || qty < 0) { skipped++; continue }
+    if (isNaN(qty) || qty < 0) {
+      skipped++
+      continue
+    }
 
     validUpdates.push({ ean: eanRaw, stock: Math.min(qty, 9999) })
   }
@@ -80,19 +89,19 @@ export async function runAzetaStockUpdate(
 
   // Actualizar en bulk (preserva stock de otros proveedores)
   const BATCH = 500
-  let updated  = 0
+  let updated = 0
   let notFound = 0
 
   for (let i = 0; i < validUpdates.length; i += BATCH) {
     const batch = validUpdates.slice(i, i + BATCH)
     const { data: rpcResult, error: rpcError } = await supabase.rpc("bulk_update_azeta_stock", {
-      p_eans:   batch.map(r => r.ean),
-      p_stocks: batch.map(r => r.stock),
+      p_eans: batch.map((r) => r.ean),
+      p_stocks: batch.map((r) => r.stock),
     })
     if (rpcError) {
       console.error(`[AZETA][STOCK] RPC error batch ${i}:`, rpcError.message)
     } else {
-      updated  += rpcResult?.updated  ?? 0
+      updated += rpcResult?.updated ?? 0
       notFound += rpcResult?.not_found ?? 0
     }
     if ((i + BATCH) % 5000 === 0) console.log(`[AZETA][STOCK] Progreso: ${i + BATCH}/${validUpdates.length}`)
@@ -102,11 +111,8 @@ export async function runAzetaStockUpdate(
   // (productos que Azeta ya no tiene disponibles en este run)
   // Solo afecta el campo "azeta" del JSONB — preserva arnoia y otros proveedores
   let zeroed = 0
-  const allEans = validUpdates.map(u => u.ean)
-  const { data: zeroResult, error: zeroError } = await supabase.rpc(
-    "zero_azeta_stock_not_in_list",
-    { p_eans: allEans }
-  )
+  const allEans = validUpdates.map((u) => u.ean)
+  const { data: zeroResult, error: zeroError } = await supabase.rpc("zero_azeta_stock_not_in_list", { p_eans: allEans })
   if (zeroError) {
     console.error(`[AZETA][STOCK] Error zeroing: ${zeroError.message}`)
   } else {
@@ -121,13 +127,15 @@ export async function runAzetaStockUpdate(
     .eq("id", src.id)
 
   const elapsed = Date.now() - startTime
-  console.log(`[AZETA][STOCK] Completado en ${elapsed}ms: ${updated} actualizados, ${notFound} no encontrados, ${zeroed} puestos a 0`)
+  console.log(
+    `[AZETA][STOCK] Completado en ${elapsed}ms: ${updated} actualizados, ${notFound} no encontrados, ${zeroed} puestos a 0`,
+  )
 
   return {
-    success:    true,
-    processed:  validUpdates.length,
+    success: true,
+    processed: validUpdates.length,
     updated,
-    not_found:  notFound,
+    not_found: notFound,
     zeroed,
     skipped,
     elapsed_ms: elapsed,

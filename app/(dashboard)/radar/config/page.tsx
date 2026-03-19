@@ -6,12 +6,8 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog"
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface Source {
   id: string
@@ -27,51 +23,58 @@ interface Source {
 
 const KIND_COLOR: Record<string, string> = {
   bestseller_list: "bg-blue-500/15 text-blue-400",
-  ml_ranking:      "bg-yellow-500/15 text-yellow-400",
-  isbn_db:         "bg-purple-500/15 text-purple-400",
-  rss:             "bg-emerald-500/15 text-emerald-400",
-  manual:          "bg-muted text-muted-foreground",
-  api:             "bg-rose-500/15 text-rose-400",
+  ml_ranking: "bg-yellow-500/15 text-yellow-400",
+  isbn_db: "bg-purple-500/15 text-purple-400",
+  rss: "bg-emerald-500/15 text-emerald-400",
+  manual: "bg-muted text-muted-foreground",
+  api: "bg-rose-500/15 text-rose-400",
 }
 
 const KIND_LABEL: Record<string, string> = {
   bestseller_list: "Lista bestsellers",
-  ml_ranking:      "Ranking ML",
-  isbn_db:         "DB ISBN",
-  rss:             "RSS",
-  manual:          "Manual",
-  api:             "API externa",
+  ml_ranking: "Ranking ML",
+  isbn_db: "DB ISBN",
+  rss: "RSS",
+  manual: "Manual",
+  api: "API externa",
 }
 
 function relDate(iso: string | null) {
   if (!iso) return "Nunca"
   const diff = Date.now() - new Date(iso).getTime()
   const h = Math.floor(diff / 3600000)
-  if (h < 1)  return "hace menos de 1h"
+  if (h < 1) return "hace menos de 1h"
   if (h < 24) return `hace ${h}h`
   const d = Math.floor(h / 24)
   return `hace ${d}d`
 }
 
 export default function RadarConfigPage() {
-  const [sources, setSources]   = useState<Source[]>([])
-  const [loading, setLoading]   = useState(true)
-  const [showNew, setShowNew]   = useState(false)
-  const [saving, setSaving]     = useState(false)
+  const [sources, setSources] = useState<Source[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showNew, setShowNew] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
-    name: "", kind: "rss", url: "", sync_interval_hours: "24",
+    name: "",
+    kind: "rss",
+    url: "",
+    sync_interval_hours: "24",
   })
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res  = await fetch("/api/radar/sources")
+      const res = await fetch("/api/radar/sources")
       const data = await res.json()
       if (data.ok) setSources(data.rows)
-    } finally { setLoading(false) }
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+  }, [load])
 
   const handleToggle = async (id: string, active: boolean) => {
     await fetch(`/api/radar/sources/${id}`, {
@@ -79,13 +82,13 @@ export default function RadarConfigPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ active }),
     })
-    setSources(s => s.map(x => x.id === id ? { ...x, active } : x))
+    setSources((s) => s.map((x) => (x.id === id ? { ...x, active } : x)))
   }
 
   const handleDelete = async (id: string) => {
     if (!confirm("¿Eliminar esta fuente?")) return
     await fetch(`/api/radar/sources/${id}`, { method: "DELETE" })
-    setSources(s => s.filter(x => x.id !== id))
+    setSources((s) => s.filter((x) => x.id !== id))
   }
 
   const handleCreate = async () => {
@@ -98,17 +101,22 @@ export default function RadarConfigPage() {
         body: JSON.stringify({
           name: form.name,
           kind: form.kind,
-          url:  form.url || null,
+          url: form.url || null,
           sync_interval_hours: parseInt(form.sync_interval_hours) || 24,
         }),
       })
       const data = await res.json()
-      if (data.ok) { setShowNew(false); load() }
-    } finally { setSaving(false) }
+      if (data.ok) {
+        setShowNew(false)
+        load()
+      }
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const activeSources   = sources.filter(s => s.active).length
-  const inactiveSources = sources.filter(s => !s.active).length
+  const activeSources = sources.filter((s) => s.active).length
+  const inactiveSources = sources.filter((s) => !s.active).length
 
   return (
     <div className="p-6 space-y-6 max-w-4xl mx-auto">
@@ -152,12 +160,14 @@ export default function RadarConfigPage() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {sources.map(src => (
+          {sources.map((src) => (
             <Card key={src.id} className={`p-4 flex items-center gap-4 ${!src.active ? "opacity-60" : ""}`}>
               <div className="flex-1 min-w-0 space-y-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="font-medium text-sm">{src.name}</p>
-                  <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${KIND_COLOR[src.kind] ?? "bg-muted"}`}>
+                  <span
+                    className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${KIND_COLOR[src.kind] ?? "bg-muted"}`}
+                  >
                     {KIND_LABEL[src.kind] ?? src.kind}
                   </span>
                   {!src.active && (
@@ -178,10 +188,11 @@ export default function RadarConfigPage() {
                   className="text-muted-foreground hover:text-foreground transition-colors"
                   title={src.active ? "Desactivar" : "Activar"}
                 >
-                  {src.active
-                    ? <ToggleRight className="h-5 w-5 text-emerald-400" />
-                    : <ToggleLeft className="h-5 w-5" />
-                  }
+                  {src.active ? (
+                    <ToggleRight className="h-5 w-5 text-emerald-400" />
+                  ) : (
+                    <ToggleLeft className="h-5 w-5" />
+                  )}
                 </button>
                 <button
                   onClick={() => handleDelete(src.id)}
@@ -205,45 +216,74 @@ export default function RadarConfigPage() {
             { label: "Días hacia atrás para señales (ventana)", value: "30" },
             { label: "Mínimo listings ML para gap válido", value: "5" },
             { label: "Gap score mínimo para alertar", value: "50" },
-          ].map(p => (
+          ].map((p) => (
             <div key={p.label} className="space-y-1">
               <Label className="text-xs text-muted-foreground">{p.label}</Label>
               <Input className="h-8 text-sm font-mono" defaultValue={p.value} readOnly />
             </div>
           ))}
         </div>
-        <p className="text-xs text-muted-foreground">Los parámetros de scoring se configuran desde el panel de administración.</p>
+        <p className="text-xs text-muted-foreground">
+          Los parámetros de scoring se configuran desde el panel de administración.
+        </p>
       </Card>
 
       {/* New source dialog */}
       <Dialog open={showNew} onOpenChange={setShowNew}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Nueva fuente</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Nueva fuente</DialogTitle>
+          </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
               <Label className="text-xs">Nombre *</Label>
-              <Input className="h-8 text-sm" placeholder="Ej: NYT Bestsellers" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+              <Input
+                className="h-8 text-sm"
+                placeholder="Ej: NYT Bestsellers"
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Tipo *</Label>
-              <Select value={form.kind} onValueChange={v => setForm(f => ({ ...f, kind: v }))}>
-                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+              <Select value={form.kind} onValueChange={(v) => setForm((f) => ({ ...f, kind: v }))}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(KIND_LABEL).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+                  {Object.entries(KIND_LABEL).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>
+                      {v}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1">
               <Label className="text-xs">URL / Endpoint</Label>
-              <Input className="h-8 text-sm font-mono" placeholder="https://…" value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))} />
+              <Input
+                className="h-8 text-sm font-mono"
+                placeholder="https://…"
+                value={form.url}
+                onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
+              />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Intervalo de sync (horas)</Label>
-              <Input className="h-8 text-sm" type="number" min={1} max={720} value={form.sync_interval_hours} onChange={e => setForm(f => ({ ...f, sync_interval_hours: e.target.value }))} />
+              <Input
+                className="h-8 text-sm"
+                type="number"
+                min={1}
+                max={720}
+                value={form.sync_interval_hours}
+                onChange={(e) => setForm((f) => ({ ...f, sync_interval_hours: e.target.value }))}
+              />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setShowNew(false)}>Cancelar</Button>
+            <Button variant="outline" size="sm" onClick={() => setShowNew(false)}>
+              Cancelar
+            </Button>
             <Button size="sm" onClick={handleCreate} disabled={saving || !form.name}>
               {saving ? "Guardando…" : "Crear"}
             </Button>

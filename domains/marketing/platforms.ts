@@ -12,7 +12,13 @@ export const PLATFORMS: PlatformDefinition[] = [
     fields: [
       { key: "client_id", label: "Client ID", type: "text", required: true, help: "Desde Google Cloud Console" },
       { key: "client_secret", label: "Client Secret", type: "password", required: true },
-      { key: "developer_token", label: "Developer Token", type: "password", required: true, help: "Desde Google Ads API Center" },
+      {
+        key: "developer_token",
+        label: "Developer Token",
+        type: "password",
+        required: true,
+        help: "Desde Google Ads API Center",
+      },
       { key: "customer_id", label: "Customer ID (MCC)", type: "text", required: false, placeholder: "123-456-7890" },
     ],
   },
@@ -124,7 +130,13 @@ export const PLATFORMS: PlatformDefinition[] = [
     color: "#1C1C1C",
     capabilities: ["email_campaigns", "sms", "flows", "segments", "revenue"],
     fields: [
-      { key: "api_key", label: "API Key (Private)", type: "password", required: true, help: "Settings → API Keys → Create Private API Key" },
+      {
+        key: "api_key",
+        label: "API Key (Private)",
+        type: "password",
+        required: true,
+        help: "Settings → API Keys → Create Private API Key",
+      },
       { key: "public_key", label: "Public API Key (Site ID)", type: "text", required: false },
     ],
   },
@@ -137,8 +149,22 @@ export const PLATFORMS: PlatformDefinition[] = [
     color: "#FFE01B",
     capabilities: ["email_campaigns", "automations", "landing_pages", "lists"],
     fields: [
-      { key: "api_key", label: "API Key", type: "password", required: true, placeholder: "xxxxxxxx-us1", help: "Account → Extras → API Keys" },
-      { key: "server_prefix", label: "Server Prefix", type: "text", required: true, placeholder: "us1", help: "La parte final de tu API key (ej: us1)" },
+      {
+        key: "api_key",
+        label: "API Key",
+        type: "password",
+        required: true,
+        placeholder: "xxxxxxxx-us1",
+        help: "Account → Extras → API Keys",
+      },
+      {
+        key: "server_prefix",
+        label: "Server Prefix",
+        type: "text",
+        required: true,
+        placeholder: "us1",
+        help: "La parte final de tu API key (ej: us1)",
+      },
       { key: "list_id", label: "Audience ID", type: "text", required: false },
     ],
   },
@@ -163,7 +189,13 @@ export const PLATFORMS: PlatformDefinition[] = [
     color: "#FF7A59",
     capabilities: ["crm", "email_campaigns", "forms", "workflows", "contacts"],
     fields: [
-      { key: "api_key", label: "Private App Token", type: "password", required: true, help: "Settings → Integrations → Private Apps" },
+      {
+        key: "api_key",
+        label: "Private App Token",
+        type: "password",
+        required: true,
+        help: "Settings → Integrations → Private Apps",
+      },
       { key: "portal_id", label: "Portal ID (Hub ID)", type: "text", required: true },
     ],
   },
@@ -189,7 +221,13 @@ export const PLATFORMS: PlatformDefinition[] = [
     color: "#25D366",
     capabilities: ["messaging", "templates", "broadcasts"],
     fields: [
-      { key: "access_token", label: "Access Token", type: "password", required: true, help: "Meta for Developers → WhatsApp → API Setup" },
+      {
+        key: "access_token",
+        label: "Access Token",
+        type: "password",
+        required: true,
+        help: "Meta for Developers → WhatsApp → API Setup",
+      },
       { key: "phone_number_id", label: "Phone Number ID", type: "text", required: true },
       { key: "waba_id", label: "WhatsApp Business Account ID", type: "text", required: true },
     ],
@@ -197,11 +235,11 @@ export const PLATFORMS: PlatformDefinition[] = [
 ]
 
 export function getPlatform(id: string): PlatformDefinition | undefined {
-  return PLATFORMS.find(p => p.id === id)
+  return PLATFORMS.find((p) => p.id === id)
 }
 
 export function getPlatformsByCategory(category: string): PlatformDefinition[] {
-  return PLATFORMS.filter(p => p.category === category)
+  return PLATFORMS.filter((p) => p.category === category)
 }
 
 export const CATEGORY_LABELS: Record<string, string> = {

@@ -42,9 +42,6 @@ export async function POST(request: Request) {
     return NextResponse.json(result)
   } catch (error) {
     console.error("[sync-updates] Error:", error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Error interno" },
-      { status: 500 },
-    )
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Error interno" }, { status: 500 })
   }
 }

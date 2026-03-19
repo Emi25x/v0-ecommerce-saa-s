@@ -13,7 +13,15 @@ import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
 import { ArrowLeft, Save, Download, Check, X } from "lucide-react"
 import Link from "next/link"
-import { INTERNAL_FIELDS, generateSuggestedMapping, validateMapping, CUSTOM_FIELD_PREFIX, isCustomField, customFieldKey, makeCustomFieldValue } from "@/lib/column-mapping-helpers"
+import {
+  INTERNAL_FIELDS,
+  generateSuggestedMapping,
+  validateMapping,
+  CUSTOM_FIELD_PREFIX,
+  isCustomField,
+  customFieldKey,
+  makeCustomFieldValue,
+} from "@/lib/column-mapping-helpers"
 
 export default function NewSourcePage() {
   const router = useRouter()
@@ -32,17 +40,17 @@ export default function NewSourcePage() {
   const [isActive, setIsActive] = useState(true)
   const [warehouseId, setWarehouseId] = useState<string>("none")
   const [warehouses, setWarehouses] = useState<{ id: string; name: string; code: string }[]>([])
-  
+
   // Credenciales según tipo de auth
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [bearerToken, setBearerToken] = useState("")
   const [queryParamsList, setQueryParamsList] = useState<Array<{ key: string; value: string }>>([
     { key: "user", value: "" },
-    { key: "password", value: "" }
+    { key: "password", value: "" },
   ])
   const [showUrlWarning, setShowUrlWarning] = useState(false)
-  
+
   // Column mapping wizard
   const [detectedHeaders, setDetectedHeaders] = useState<string[]>([])
   const [detectedDelimiter, setDetectedDelimiter] = useState<string>(",")
@@ -56,15 +64,17 @@ export default function NewSourcePage() {
   // Verificar si la columna warehouse_id existe en la DB
   useEffect(() => {
     fetch("/api/migrations/warehouse-column")
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d && d.column_exists === false) setWarehouseColMissing(true) })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d && d.column_exists === false) setWarehouseColMissing(true)
+      })
       .catch(() => {})
   }, [])
 
   // Cargar almacenes disponibles
   useEffect(() => {
     fetch("/api/warehouses")
-      .then(r => r.ok ? r.json() : { warehouses: [] })
+      .then((r) => (r.ok ? r.json() : { warehouses: [] }))
       .then((data: any) => setWarehouses(Array.isArray(data.warehouses) ? data.warehouses : []))
       .catch(() => {})
   }, [])
@@ -74,9 +84,13 @@ export default function NewSourcePage() {
     if (!editId) return
     const supabase = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     )
-    supabase.from("import_sources").select("*").eq("id", editId).single()
+    supabase
+      .from("import_sources")
+      .select("*")
+      .eq("id", editId)
+      .single()
       .then(({ data, error }) => {
         if (error || !data) return
         setName(data.name ?? "")
@@ -95,9 +109,7 @@ export default function NewSourcePage() {
         } else if (data.auth_type === "bearer_token") {
           setBearerToken(creds.token ?? "")
         } else if (data.auth_type === "query_params" && creds.params) {
-          setQueryParamsList(
-            Object.entries(creds.params).map(([key, value]) => ({ key, value: String(value) }))
-          )
+          setQueryParamsList(Object.entries(creds.params).map(([key, value]) => ({ key, value: String(value) })))
         }
 
         // Column mapping — soportar formato plano y { delimiter, mappings }
@@ -122,41 +134,41 @@ export default function NewSourcePage() {
       toast({
         title: "Error",
         description: "Ingresa una URL primero",
-        variant: "destructive"
+        variant: "destructive",
       })
       return
     }
-    
+
     setDetectingHeaders(true)
-    
+
     try {
       const params = new URLSearchParams({ url: urlTemplate })
       const response = await fetch(`/api/inventory/sources/preview?${params}`)
       const data = await response.json()
-      
+
       if (!data.ok) {
         throw new Error(data.error || "Error al detectar columnas")
       }
-      
+
       setDetectedHeaders(data.headers || [])
       setDetectedDelimiter(data.detected_delimiter || ",")
       setSampleRows(data.sample_rows || [])
-      
+
       // Generar mapeo sugerido automáticamente
       const suggested = generateSuggestedMapping(data.headers || [])
       setMapping(suggested)
       setShowMappingWizard(true)
-      
+
       toast({
         title: "Columnas detectadas",
-        description: `Se detectaron ${data.headers?.length || 0} columnas con delimitador "${data.detected_delimiter}"`
+        description: `Se detectaron ${data.headers?.length || 0} columnas con delimitador "${data.detected_delimiter}"`,
       })
     } catch (error: any) {
       console.error("[v0] Error detecting columns:", error)
       toast({
         title: "Error",
         description: error.message || "No se pudo detectar las columnas",
-        variant: "destructive"
+        variant: "destructive",
       })
     } finally {
       setDetectingHeaders(false)
@@ -165,27 +177,27 @@ export default function NewSourcePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!name || !urlTemplate) {
       toast({
         title: "Error",
         description: "Nombre y URL Template son obligatorios",
-        variant: "destructive"
+        variant: "destructive",
       })
       return
     }
-    
+
     setLoading(true)
-    
+
     try {
       const supabase = createBrowserClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       )
-      
+
       // Construir credentials según tipo de auth
       let credentials: any = null
-      
+
       if (authType === "basic_auth") {
         credentials = { username, password }
       } else if (authType === "bearer_token") {
@@ -193,30 +205,30 @@ export default function NewSourcePage() {
       } else if (authType === "query_params") {
         // Convertir la lista de parámetros a objeto
         const params: Record<string, string> = {}
-        queryParamsList.forEach(param => {
+        queryParamsList.forEach((param) => {
           if (param.key && param.value) {
             params[param.key] = param.value
           }
         })
         credentials = {
           type: "query_params",
-          params
+          params,
         }
       } else if (authType === "none") {
         credentials = null
       }
-      
+
       // Validar column mapping
       if (Object.keys(mapping).length === 0) {
         toast({
           title: "Error",
           description: "Debes configurar el mapeo de columnas primero",
-          variant: "destructive"
+          variant: "destructive",
         })
         setLoading(false)
         return
       }
-      
+
       // Para fuentes de stock+precio por EAN, relajamos la validación (no se exige title)
       const isStockPriceByEan = feedType === "stock_price" && (mapping.ean || mapping.isbn)
       if (!isStockPriceByEan) {
@@ -225,7 +237,7 @@ export default function NewSourcePage() {
           toast({
             title: "Error en mapeo",
             description: validation.error,
-            variant: "destructive"
+            variant: "destructive",
           })
           setLoading(false)
           return
@@ -234,7 +246,7 @@ export default function NewSourcePage() {
         toast({
           title: "Error en mapeo",
           description: "Para fuentes de stock+precio debes mapear al menos el campo 'ean' o 'isbn'",
-          variant: "destructive"
+          variant: "destructive",
         })
         setLoading(false)
         return
@@ -242,9 +254,9 @@ export default function NewSourcePage() {
 
       const parsedMapping = {
         delimiter: detectedDelimiter,
-        mappings: mapping
+        mappings: mapping,
       }
-      
+
       const insertPayload: Record<string, unknown> = {
         name,
         description: description || null,
@@ -281,7 +293,7 @@ export default function NewSourcePage() {
         title: isEditMode ? "Fuente actualizada" : "Fuente creada",
         description: isEditMode
           ? "Los cambios se guardaron correctamente"
-          : "La fuente de importación se ha creado correctamente"
+          : "La fuente de importación se ha creado correctamente",
       })
 
       router.push(isEditMode ? `/inventory/sources/${editId}` : "/inventory/sources")
@@ -290,7 +302,7 @@ export default function NewSourcePage() {
       toast({
         title: "Error",
         description: error.message || (isEditMode ? "No se pudo actualizar la fuente" : "No se pudo crear la fuente"),
-        variant: "destructive"
+        variant: "destructive",
       })
     } finally {
       setLoading(false)
@@ -307,7 +319,7 @@ export default function NewSourcePage() {
           </Button>
         </Link>
       </div>
-      
+
       <Card>
         <CardHeader>
           <CardTitle>{isEditMode ? "Editar Fuente de Importación" : "Nueva Fuente de Importación"}</CardTitle>
@@ -320,10 +332,11 @@ export default function NewSourcePage() {
         <CardContent>
           {warehouseColMissing && (
             <div className="mb-6 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-400 space-y-2">
-              <p className="font-medium">Migración pendiente: columna <code>warehouse_id</code></p>
+              <p className="font-medium">
+                Migración pendiente: columna <code>warehouse_id</code>
+              </p>
               <p className="text-xs text-amber-400/80">
-                El almacén no se guardará hasta ejecutar este SQL en el{" "}
-                <strong>SQL Editor de Supabase</strong>:
+                El almacén no se guardará hasta ejecutar este SQL en el <strong>SQL Editor de Supabase</strong>:
               </p>
               <pre className="bg-black/30 rounded p-2 text-xs font-mono overflow-x-auto select-all">
                 {`ALTER TABLE import_sources\n  ADD COLUMN IF NOT EXISTS warehouse_id UUID REFERENCES warehouses(id) ON DELETE SET NULL;`}
@@ -343,7 +356,7 @@ export default function NewSourcePage() {
                   required
                 />
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="description">Descripción</Label>
                 <Textarea
@@ -354,7 +367,7 @@ export default function NewSourcePage() {
                   rows={3}
                 />
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="urlTemplate">URL Template *</Label>
                 <Input
@@ -364,7 +377,7 @@ export default function NewSourcePage() {
                     const newUrl = e.target.value
                     setUrlTemplate(newUrl)
                     // Detectar si la URL tiene query params
-                    if (newUrl.includes('?')) {
+                    if (newUrl.includes("?")) {
                       setShowUrlWarning(true)
                     } else {
                       setShowUrlWarning(false)
@@ -373,19 +386,18 @@ export default function NewSourcePage() {
                   placeholder="https://ejemplo.com/products.csv"
                   required
                 />
-                <p className="text-sm text-muted-foreground">
-                  URL completa del CSV o endpoint API
-                </p>
+                <p className="text-sm text-muted-foreground">URL completa del CSV o endpoint API</p>
                 {showUrlWarning && (
                   <div className="flex items-start gap-2 p-3 rounded-md bg-yellow-50 border border-yellow-200 text-sm text-yellow-800">
                     <span>⚠️</span>
                     <p>
-                      Tu URL parece incluir parámetros (?...). Revisá si corresponde usar "Query Parameters" como tipo de autenticación.
+                      Tu URL parece incluir parámetros (?...). Revisá si corresponde usar "Query Parameters" como tipo
+                      de autenticación.
                     </p>
                   </div>
                 )}
               </div>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="feedType">Tipo de Feed</Label>
                 <Select value={feedType} onValueChange={setFeedType}>
@@ -409,22 +421,24 @@ export default function NewSourcePage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Sin almacén específico</SelectItem>
-                    {warehouses.map(w => (
-                      <SelectItem key={w.id} value={w.id}>{w.name} ({w.code})</SelectItem>
+                    {warehouses.map((w) => (
+                      <SelectItem key={w.id} value={w.id}>
+                        {w.name} ({w.code})
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  El stock importado se acumula en este almacén. Luego, en la configuración de cada
-                  cuenta de ML se elige qué almacén usar para sincronizar el stock.
+                  El stock importado se acumula en este almacén. Luego, en la configuración de cada cuenta de ML se
+                  elige qué almacén usar para sincronizar el stock.
                 </p>
               </div>
             </div>
-            
+
             {/* Autenticación */}
             <div className="space-y-4">
               <h3 className="text-lg font-semibold">Autenticación</h3>
-              
+
               <div className="space-y-2">
                 <Label htmlFor="authType">Tipo de Autenticación</Label>
                 <Select value={authType} onValueChange={setAuthType}>
@@ -439,12 +453,18 @@ export default function NewSourcePage() {
                   </SelectContent>
                 </Select>
                 <div className="text-xs text-muted-foreground space-y-1 mt-2">
-                  <p>• <strong>Sin autenticación:</strong> Para URLs públicas</p>
-                  <p>• <strong>Query Parameters:</strong> Si tu URL ya trae ?user=... o similar</p>
-                  <p>• <strong>Usuario/Contraseña:</strong> Para Basic Auth en header Authorization</p>
+                  <p>
+                    • <strong>Sin autenticación:</strong> Para URLs públicas
+                  </p>
+                  <p>
+                    • <strong>Query Parameters:</strong> Si tu URL ya trae ?user=... o similar
+                  </p>
+                  <p>
+                    • <strong>Usuario/Contraseña:</strong> Para Basic Auth en header Authorization
+                  </p>
                 </div>
               </div>
-              
+
               {authType === "basic_auth" && (
                 <>
                   <div className="space-y-2">
@@ -468,7 +488,7 @@ export default function NewSourcePage() {
                   </div>
                 </>
               )}
-              
+
               {authType === "bearer_token" && (
                 <div className="space-y-2">
                   <Label htmlFor="bearerToken">Bearer Token</Label>
@@ -480,7 +500,7 @@ export default function NewSourcePage() {
                   />
                 </div>
               )}
-              
+
               {authType === "query_params" && (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
@@ -539,7 +559,7 @@ export default function NewSourcePage() {
                 </div>
               )}
             </div>
-            
+
             {/* Column Mapping Wizard */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -555,7 +575,7 @@ export default function NewSourcePage() {
                   {detectingHeaders ? "Detectando..." : "Detectar Columnas"}
                 </Button>
               </div>
-              
+
               {showMappingWizard && detectedHeaders.length > 0 && (
                 <div className="space-y-4 rounded-lg border p-4 bg-muted/30">
                   <div className="flex items-center justify-between">
@@ -569,7 +589,7 @@ export default function NewSourcePage() {
                       </div>
                     )}
                   </div>
-                  
+
                   <div className="space-y-3 max-h-96 overflow-y-auto">
                     <div className="grid grid-cols-[1fr_auto_1fr] gap-x-3 text-xs text-muted-foreground font-medium pb-1 border-b border-border/30">
                       <span>Columna CSV</span>
@@ -599,20 +619,28 @@ export default function NewSourcePage() {
                                   className="h-8 text-xs font-mono"
                                   placeholder="ej: precio_eur"
                                   value={customInputFor[header]}
-                                  onChange={e => {
+                                  onChange={(e) => {
                                     const sanitized = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "")
-                                    setCustomInputFor(prev => ({ ...prev, [header]: sanitized }))
+                                    setCustomInputFor((prev) => ({ ...prev, [header]: sanitized }))
                                   }}
-                                  onKeyDown={e => {
+                                  onKeyDown={(e) => {
                                     if (e.key === "Enter") {
                                       const key = customInputFor[header].trim()
                                       if (key) {
-                                        setMapping(prev => ({ ...prev, [header]: makeCustomFieldValue(key) }))
+                                        setMapping((prev) => ({ ...prev, [header]: makeCustomFieldValue(key) }))
                                       }
-                                      setCustomInputFor(prev => { const n = { ...prev }; delete n[header]; return n })
+                                      setCustomInputFor((prev) => {
+                                        const n = { ...prev }
+                                        delete n[header]
+                                        return n
+                                      })
                                     }
                                     if (e.key === "Escape") {
-                                      setCustomInputFor(prev => { const n = { ...prev }; delete n[header]; return n })
+                                      setCustomInputFor((prev) => {
+                                        const n = { ...prev }
+                                        delete n[header]
+                                        return n
+                                      })
                                     }
                                   }}
                                 />
@@ -624,9 +652,13 @@ export default function NewSourcePage() {
                                   onClick={() => {
                                     const key = customInputFor[header].trim()
                                     if (key) {
-                                      setMapping(prev => ({ ...prev, [header]: makeCustomFieldValue(key) }))
+                                      setMapping((prev) => ({ ...prev, [header]: makeCustomFieldValue(key) }))
                                     }
-                                    setCustomInputFor(prev => { const n = { ...prev }; delete n[header]; return n })
+                                    setCustomInputFor((prev) => {
+                                      const n = { ...prev }
+                                      delete n[header]
+                                      return n
+                                    })
                                   }}
                                 >
                                   <Check className="h-3 w-3" />
@@ -636,7 +668,13 @@ export default function NewSourcePage() {
                                   size="sm"
                                   variant="ghost"
                                   className="h-8 px-2"
-                                  onClick={() => setCustomInputFor(prev => { const n = { ...prev }; delete n[header]; return n })}
+                                  onClick={() =>
+                                    setCustomInputFor((prev) => {
+                                      const n = { ...prev }
+                                      delete n[header]
+                                      return n
+                                    })
+                                  }
                                 >
                                   <X className="h-3 w-3" />
                                 </Button>
@@ -646,7 +684,7 @@ export default function NewSourcePage() {
                                 value={isCustom ? "_custom_set" : currentValue}
                                 onValueChange={(value) => {
                                   if (value === "_custom_new") {
-                                    setCustomInputFor(prev => ({ ...prev, [header]: "" }))
+                                    setCustomInputFor((prev) => ({ ...prev, [header]: "" }))
                                     return
                                   }
                                   const newMapping = { ...mapping }
@@ -660,23 +698,27 @@ export default function NewSourcePage() {
                               >
                                 <SelectTrigger className="h-8 text-xs">
                                   <SelectValue>
-                                    {isCustom
-                                      ? <span className="text-amber-400 font-mono">campo: {customFieldKey(currentValue)}</span>
-                                      : undefined}
+                                    {isCustom ? (
+                                      <span className="text-amber-400 font-mono">
+                                        campo: {customFieldKey(currentValue)}
+                                      </span>
+                                    ) : undefined}
                                   </SelectValue>
                                 </SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="_ignore">
                                     <span className="text-muted-foreground">Ignorar</span>
                                   </SelectItem>
-                                  {INTERNAL_FIELDS.map(field => (
+                                  {INTERNAL_FIELDS.map((field) => (
                                     <SelectItem key={field.key} value={field.key}>
                                       {field.label} {field.required && "*"}
                                     </SelectItem>
                                   ))}
                                   {isCustom && (
                                     <SelectItem value="_custom_set">
-                                      <span className="text-amber-400 font-mono">campo: {customFieldKey(currentValue)}</span>
+                                      <span className="text-amber-400 font-mono">
+                                        campo: {customFieldKey(currentValue)}
+                                      </span>
                                     </SelectItem>
                                   )}
                                   <SelectItem value="_custom_new">
@@ -690,7 +732,7 @@ export default function NewSourcePage() {
                       )
                     })}
                   </div>
-                  
+
                   {sampleRows.length > 0 && (
                     <details className="text-sm">
                       <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
@@ -724,35 +766,27 @@ export default function NewSourcePage() {
                   )}
                 </div>
               )}
-              
+
               {!showMappingWizard && (
                 <p className="text-sm text-muted-foreground">
                   Haz clic en "Detectar Columnas" para configurar el mapeo automáticamente
                 </p>
               )}
             </div>
-            
+
             {/* Estado activo */}
             <div className="flex items-center space-x-2">
-              <Switch
-                id="isActive"
-                checked={isActive}
-                onCheckedChange={setIsActive}
-              />
+              <Switch id="isActive" checked={isActive} onCheckedChange={setIsActive} />
               <Label htmlFor="isActive">Fuente activa</Label>
             </div>
-            
+
             {/* Botones */}
             <div className="flex gap-4">
               <Button type="submit" disabled={loading}>
                 <Save className="mr-2 h-4 w-4" />
                 {loading ? "Guardando..." : isEditMode ? "Guardar Cambios" : "Guardar Fuente"}
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => router.push("/inventory/sources")}
-              >
+              <Button type="button" variant="outline" onClick={() => router.push("/inventory/sources")}>
                 Cancelar
               </Button>
             </div>

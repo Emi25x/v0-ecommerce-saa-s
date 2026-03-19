@@ -1,21 +1,32 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import { Button }    from "@/components/ui/button"
-import { Input }     from "@/components/ui/input"
-import { Label }     from "@/components/ui/label"
-import { Badge }     from "@/components/ui/badge"
-import { useToast }  from "@/hooks/use-toast"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Badge } from "@/components/ui/badge"
+import { useToast } from "@/hooks/use-toast"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select"
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table"
-import {
-  Upload, Plus, Trash2, Download, Save, Store, PackageSearch,
-  Loader2, X, CheckCircle2, CloudUpload, AlertCircle, RefreshCw,
-  Settings2, Warehouse, DollarSign, MapPin, Search,
+  Upload,
+  Plus,
+  Trash2,
+  Download,
+  Save,
+  Store,
+  PackageSearch,
+  Loader2,
+  X,
+  CheckCircle2,
+  CloudUpload,
+  AlertCircle,
+  RefreshCw,
+  Settings2,
+  Warehouse,
+  DollarSign,
+  MapPin,
+  Search,
 } from "lucide-react"
 import Link from "next/link"
 
@@ -90,44 +101,46 @@ export default function ShopifyConfigPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Stores
-  const [stores, setStores]           = useState<ShopifyStore[]>([])
-  const [storeId, setStoreId]         = useState<string>("")
+  const [stores, setStores] = useState<ShopifyStore[]>([])
+  const [storeId, setStoreId] = useState<string>("")
   const [storesLoading, setStoresLoading] = useState(true)
 
   // Store settings (editable)
-  const [vendor, setVendor]                     = useState("")
-  const [productCategory, setProductCategory]   = useState("Media > Books > Print Books")
-  const [priceSource, setPriceSource]           = useState<"products.price" | "product_prices" | "custom_fields_precio_ars">("products.price")
-  const [priceListId, setPriceListId]           = useState<string>("")
-  const [warehouseId, setWarehouseId]           = useState<string>("")
-  const [sucursalCode, setSucursalCode]         = useState<string>("")
-  const [settingsSaving, setSettingsSaving]     = useState(false)
-  const [settingsDirty, setSettingsDirty]       = useState(false)
+  const [vendor, setVendor] = useState("")
+  const [productCategory, setProductCategory] = useState("Media > Books > Print Books")
+  const [priceSource, setPriceSource] = useState<"products.price" | "product_prices" | "custom_fields_precio_ars">(
+    "products.price",
+  )
+  const [priceListId, setPriceListId] = useState<string>("")
+  const [warehouseId, setWarehouseId] = useState<string>("")
+  const [sucursalCode, setSucursalCode] = useState<string>("")
+  const [settingsSaving, setSettingsSaving] = useState(false)
+  const [settingsDirty, setSettingsDirty] = useState(false)
 
   // Price lists + warehouses
-  const [priceLists, setPriceLists]   = useState<PriceList[]>([])
-  const [warehouses, setWarehouses]   = useState<Warehouse[]>([])
+  const [priceLists, setPriceLists] = useState<PriceList[]>([])
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
 
   // EAN input + product rows
-  const [eanInput, setEanInput]       = useState("")
+  const [eanInput, setEanInput] = useState("")
   const [productRows, setProductRows] = useState<ProductRow[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
 
   // Push state
-  const [pushing, setPushing]         = useState(false)
+  const [pushing, setPushing] = useState(false)
 
   // Template builder
-  const [analyzing, setAnalyzing]         = useState(false)
+  const [analyzing, setAnalyzing] = useState(false)
   const [analyzeResult, setAnalyzeResult] = useState<AnalyzeResult | null>(null)
   const [templateDefaults, setTemplateDefaults] = useState<Record<string, string>>({})
-  const [templateSaving, setTemplateSaving]     = useState(false)
+  const [templateSaving, setTemplateSaving] = useState(false)
 
   // ── Load stores ────────────────────────────────────────────────────────
 
   const loadStores = useCallback(async () => {
     setStoresLoading(true)
     try {
-      const d = await fetch("/api/shopify/stores").then(r => r.json())
+      const d = await fetch("/api/shopify/stores").then((r) => r.json())
       const list: ShopifyStore[] = d.stores ?? []
       setStores(list)
       if (list.length > 0) setStoreId(list[0].id)
@@ -136,22 +149,30 @@ export default function ShopifyConfigPage() {
     }
   }, [])
 
-  useEffect(() => { loadStores() }, [loadStores])
+  useEffect(() => {
+    loadStores()
+  }, [loadStores])
 
   // ── Load catalogs (price lists + warehouses) once ─────────────────────
 
   useEffect(() => {
-    fetch("/api/shopify/price-lists").then(r => r.json()).then(d => setPriceLists(d.lists ?? [])).catch(() => {})
-    fetch("/api/warehouses").then(r => r.json()).then(d => {
-      const list: Warehouse[] = d.warehouses ?? []
-      setWarehouses(list)
-    }).catch(() => {})
+    fetch("/api/shopify/price-lists")
+      .then((r) => r.json())
+      .then((d) => setPriceLists(d.lists ?? []))
+      .catch(() => {})
+    fetch("/api/warehouses")
+      .then((r) => r.json())
+      .then((d) => {
+        const list: Warehouse[] = d.warehouses ?? []
+        setWarehouses(list)
+      })
+      .catch(() => {})
   }, [])
 
   // ── Sync store settings to form when store changes ────────────────────
 
   useEffect(() => {
-    const s = stores.find(s => s.id === storeId)
+    const s = stores.find((s) => s.id === storeId)
     if (!s) return
     setVendor(s.vendor ?? "")
     setProductCategory(s.product_category ?? "Media > Books > Print Books")
@@ -169,27 +190,36 @@ export default function ShopifyConfigPage() {
     setSettingsSaving(true)
     try {
       const res = await fetch("/api/shopify/stores/settings", {
-        method:  "PATCH",
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          store_id:             storeId,
-          vendor:               vendor  || null,
-          product_category:     productCategory || null,
-          price_source:         priceSource,
-          price_list_id:        priceListId  || null,
-          default_warehouse_id: warehouseId  || null,
-          sucursal_stock_code:  sucursalCode || null,
+          store_id: storeId,
+          vendor: vendor || null,
+          product_category: productCategory || null,
+          price_source: priceSource,
+          price_list_id: priceListId || null,
+          default_warehouse_id: warehouseId || null,
+          sucursal_stock_code: sucursalCode || null,
         }),
       })
       const d = await res.json()
       if (!d.ok) throw new Error(d.error)
       // Update local store list
-      setStores(prev => prev.map(s => s.id === storeId ? {
-        ...s, vendor, product_category: productCategory,
-        price_source: priceSource, price_list_id: priceListId || null,
-        default_warehouse_id: warehouseId || null,
-        sucursal_stock_code: sucursalCode || null,
-      } : s))
+      setStores((prev) =>
+        prev.map((s) =>
+          s.id === storeId
+            ? {
+                ...s,
+                vendor,
+                product_category: productCategory,
+                price_source: priceSource,
+                price_list_id: priceListId || null,
+                default_warehouse_id: warehouseId || null,
+                sucursal_stock_code: sucursalCode || null,
+              }
+            : s,
+        ),
+      )
       setSettingsDirty(false)
       toast({ title: "Configuración guardada" })
     } catch (err: any) {
@@ -204,7 +234,7 @@ export default function ShopifyConfigPage() {
   const addByEan = async () => {
     const ean = eanInput.trim()
     if (!ean) return
-    if (productRows.some(r => r.ean === ean)) {
+    if (productRows.some((r) => r.ean === ean)) {
       toast({ title: "EAN ya agregado", description: ean })
       setEanInput("")
       return
@@ -214,21 +244,24 @@ export default function ShopifyConfigPage() {
       let product: any = null
       for (const field of ["ean", "isbn"]) {
         const res = await fetch(`/api/products/search?q=${encodeURIComponent(ean)}&limit=1&field=${field}`)
-        const d   = await res.json()
-        product   = d.products?.[0] ?? d.product ?? null
+        const d = await res.json()
+        product = d.products?.[0] ?? d.product ?? null
         if (product) break
       }
       if (!product) throw new Error(`No se encontró producto con EAN/ISBN: ${ean}`)
-      setProductRows(prev => [...prev, {
-        ean,
-        product_id: product.id,
-        title:      product.title ?? "",
-        sku:        product.sku ?? "",
-        price:      product.price ?? null,
-        weight_g:   product.canonical_weight_g ?? null,
-        image_url:  product.image_url ?? null,
-        status:     "pending",
-      }])
+      setProductRows((prev) => [
+        ...prev,
+        {
+          ean,
+          product_id: product.id,
+          title: product.title ?? "",
+          sku: product.sku ?? "",
+          price: product.price ?? null,
+          weight_g: product.canonical_weight_g ?? null,
+          image_url: product.image_url ?? null,
+          status: "pending",
+        },
+      ])
       setEanInput("")
     } catch (err: any) {
       toast({ title: "Producto no encontrado", description: err.message, variant: "destructive" })
@@ -237,8 +270,7 @@ export default function ShopifyConfigPage() {
     }
   }
 
-  const removeRow = (ean: string) =>
-    setProductRows(prev => prev.filter(r => r.ean !== ean))
+  const removeRow = (ean: string) => setProductRows((prev) => prev.filter((r) => r.ean !== ean))
 
   // ── Push all products directly to Shopify ─────────────────────────────
 
@@ -247,35 +279,35 @@ export default function ShopifyConfigPage() {
     setPushing(true)
 
     // Reset all to pending
-    setProductRows(prev => prev.map(r => ({ ...r, status: "pending", error: undefined, shopify_url: undefined })))
+    setProductRows((prev) => prev.map((r) => ({ ...r, status: "pending", error: undefined, shopify_url: undefined })))
 
     for (const row of productRows) {
       // Mark as pushing
-      setProductRows(prev => prev.map(r => r.ean === row.ean ? { ...r, status: "pushing" } : r))
+      setProductRows((prev) => prev.map((r) => (r.ean === row.ean ? { ...r, status: "pushing" } : r)))
 
       try {
         const res = await fetch("/api/shopify/push-product", {
-          method:  "POST",
+          method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ store_id: storeId, ean: row.ean }),
         })
         const d = await res.json()
         if (!d.ok) throw new Error(d.error)
 
-        setProductRows(prev => prev.map(r => r.ean === row.ean
-          ? { ...r, status: "ok", shopify_url: d.shopify_url, action: d.action }
-          : r,
-        ))
+        setProductRows((prev) =>
+          prev.map((r) =>
+            r.ean === row.ean ? { ...r, status: "ok", shopify_url: d.shopify_url, action: d.action } : r,
+          ),
+        )
       } catch (err: any) {
-        setProductRows(prev => prev.map(r => r.ean === row.ean
-          ? { ...r, status: "error", error: err.message }
-          : r,
-        ))
+        setProductRows((prev) =>
+          prev.map((r) => (r.ean === row.ean ? { ...r, status: "error", error: err.message } : r)),
+        )
       }
     }
 
     setPushing(false)
-    const ok    = productRows.filter(r => r.status === "ok").length  // note: updated after loop ends
+    const ok = productRows.filter((r) => r.status === "ok").length // note: updated after loop ends
     toast({ title: "Subida completada" })
   }
 
@@ -285,11 +317,11 @@ export default function ShopifyConfigPage() {
     if (!storeId || productRows.length === 0) return
     try {
       const res = await fetch("/api/shopify/export-generate", {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          store_id:     storeId,
-          eans:         productRows.map(r => r.ean),
+          store_id: storeId,
+          eans: productRows.map((r) => r.ean),
           warehouse_id: warehouseId || undefined,
         }),
       })
@@ -299,7 +331,7 @@ export default function ShopifyConfigPage() {
       const ws = utils.json_to_sheet(d.rows, { header: d.columns })
       const wb = utils.book_new()
       utils.book_append_sheet(wb, ws, "products")
-      const name = stores.find(s => s.id === storeId)?.name ?? "shopify"
+      const name = stores.find((s) => s.id === storeId)?.name ?? "shopify"
       writeFile(wb, `export_${name}_${new Date().toISOString().slice(0, 10)}.xlsx`)
     } catch (err: any) {
       toast({ title: "Error al exportar", description: err.message, variant: "destructive" })
@@ -322,7 +354,7 @@ export default function ShopifyConfigPage() {
       const defaults: Record<string, string> = {}
       if (data.unique_vendors?.length === 1) defaults["Vendor"] = data.unique_vendors[0]
       if (data.unique_types?.length === 1) defaults["Type"] = data.unique_types[0]
-      setTemplateDefaults(prev => ({ ...defaults, ...prev }))
+      setTemplateDefaults((prev) => ({ ...defaults, ...prev }))
 
       toast({ title: "Análisis completado", description: `${data.products_analyzed} productos analizados` })
     } catch (err: any) {
@@ -361,8 +393,8 @@ export default function ShopifyConfigPage() {
   useEffect(() => {
     if (!storeId) return
     fetch(`/api/shopify/export-templates?store_id=${storeId}`)
-      .then(r => r.json())
-      .then(d => {
+      .then((r) => r.json())
+      .then((d) => {
         if (d.template?.defaults_json) {
           setTemplateDefaults(d.template.defaults_json)
         } else {
@@ -374,19 +406,20 @@ export default function ShopifyConfigPage() {
 
   // ── Derived state ──────────────────────────────────────────────────────
 
-  const selectedStore  = stores.find(s => s.id === storeId)
-  const okCount        = productRows.filter(r => r.status === "ok").length
-  const errCount       = productRows.filter(r => r.status === "error").length
-  const pushingCount   = productRows.filter(r => r.status === "pushing").length
+  const selectedStore = stores.find((s) => s.id === storeId)
+  const okCount = productRows.filter((r) => r.status === "ok").length
+  const errCount = productRows.filter((r) => r.status === "error").length
+  const pushingCount = productRows.filter((r) => r.status === "pushing").length
 
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
-
         {/* Header */}
         <div>
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-            <Link href="/shopify/orders" className="hover:text-foreground">Shopify</Link>
+            <Link href="/shopify/orders" className="hover:text-foreground">
+              Shopify
+            </Link>
             <span>/</span>
             <span className="text-foreground">Publicar productos</span>
           </div>
@@ -410,7 +443,9 @@ export default function ShopifyConfigPage() {
           ) : stores.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No hay tiendas conectadas.{" "}
-              <Link href="/integrations/shopify-stores" className="underline hover:text-foreground">Agregar tienda</Link>
+              <Link href="/integrations/shopify-stores" className="underline hover:text-foreground">
+                Agregar tienda
+              </Link>
             </p>
           ) : (
             <div className="flex items-center gap-4 flex-wrap">
@@ -419,7 +454,7 @@ export default function ShopifyConfigPage() {
                   <SelectValue placeholder="Seleccioná una tienda" />
                 </SelectTrigger>
                 <SelectContent>
-                  {stores.map(s => (
+                  {stores.map((s) => (
                     <SelectItem key={s.id} value={s.id}>
                       {s.name || s.shop_domain}
                     </SelectItem>
@@ -427,11 +462,12 @@ export default function ShopifyConfigPage() {
                 </SelectContent>
               </Select>
               {selectedStore && (
-                <span className="text-xs text-muted-foreground font-mono">
-                  {selectedStore.shop_domain}
-                </span>
+                <span className="text-xs text-muted-foreground font-mono">{selectedStore.shop_domain}</span>
               )}
-              <Link href="/integrations/shopify-stores" className="text-xs text-muted-foreground hover:text-foreground underline ml-auto">
+              <Link
+                href="/integrations/shopify-stores"
+                className="text-xs text-muted-foreground hover:text-foreground underline ml-auto"
+              >
                 Gestionar tiendas
               </Link>
             </div>
@@ -445,7 +481,11 @@ export default function ShopifyConfigPage() {
               <div className="flex items-center gap-2">
                 <Settings2 className="h-4 w-4 text-muted-foreground" />
                 <h2 className="font-medium">Configuración de la tienda</h2>
-                {settingsDirty && <Badge variant="outline" className="text-[10px] text-amber-400 border-amber-500/30">Sin guardar</Badge>}
+                {settingsDirty && (
+                  <Badge variant="outline" className="text-[10px] text-amber-400 border-amber-500/30">
+                    Sin guardar
+                  </Badge>
+                )}
               </div>
               <Button
                 size="sm"
@@ -453,9 +493,11 @@ export default function ShopifyConfigPage() {
                 disabled={settingsSaving || !settingsDirty}
                 variant={settingsDirty ? "default" : "outline"}
               >
-                {settingsSaving
-                  ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                  : <Save className="h-3.5 w-3.5 mr-1.5" />}
+                {settingsSaving ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                ) : (
+                  <Save className="h-3.5 w-3.5 mr-1.5" />
+                )}
                 Guardar
               </Button>
             </div>
@@ -468,7 +510,10 @@ export default function ShopifyConfigPage() {
                 </Label>
                 <Input
                   value={vendor}
-                  onChange={e => { setVendor(e.target.value); setSettingsDirty(true) }}
+                  onChange={(e) => {
+                    setVendor(e.target.value)
+                    setSettingsDirty(true)
+                  }}
                   placeholder="ej: libroide argentina"
                   className="h-8 text-sm"
                 />
@@ -480,7 +525,10 @@ export default function ShopifyConfigPage() {
                 <Label className="text-xs text-muted-foreground">Product Category</Label>
                 <Input
                   value={productCategory}
-                  onChange={e => { setProductCategory(e.target.value); setSettingsDirty(true) }}
+                  onChange={(e) => {
+                    setProductCategory(e.target.value)
+                    setSettingsDirty(true)
+                  }}
                   placeholder="Media > Books > Print Books"
                   className="h-8 text-sm"
                 />
@@ -493,7 +541,10 @@ export default function ShopifyConfigPage() {
                 </Label>
                 <Select
                   value={priceSource}
-                  onValueChange={v => { setPriceSource(v as any); setSettingsDirty(true) }}
+                  onValueChange={(v) => {
+                    setPriceSource(v as any)
+                    setSettingsDirty(true)
+                  }}
                 >
                   <SelectTrigger className="h-8 text-sm">
                     <SelectValue />
@@ -512,13 +563,16 @@ export default function ShopifyConfigPage() {
                   <Label className="text-xs text-muted-foreground">Lista de precios</Label>
                   <Select
                     value={priceListId}
-                    onValueChange={v => { setPriceListId(v); setSettingsDirty(true) }}
+                    onValueChange={(v) => {
+                      setPriceListId(v)
+                      setSettingsDirty(true)
+                    }}
                   >
                     <SelectTrigger className="h-8 text-sm">
                       <SelectValue placeholder="Seleccioná una lista" />
                     </SelectTrigger>
                     <SelectContent>
-                      {priceLists.map(pl => (
+                      {priceLists.map((pl) => (
                         <SelectItem key={pl.id} value={pl.id}>
                           {pl.name} ({pl.currency})
                         </SelectItem>
@@ -535,16 +589,20 @@ export default function ShopifyConfigPage() {
                 </Label>
                 <Select
                   value={warehouseId || "__none__"}
-                  onValueChange={v => { setWarehouseId(v === "__none__" ? "" : v); setSettingsDirty(true) }}
+                  onValueChange={(v) => {
+                    setWarehouseId(v === "__none__" ? "" : v)
+                    setSettingsDirty(true)
+                  }}
                 >
                   <SelectTrigger className="h-8 text-sm">
                     <SelectValue placeholder="Sin almacén configurado" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">Sin almacén fijo (mejor disponible)</SelectItem>
-                    {warehouses.map(w => (
+                    {warehouses.map((w) => (
                       <SelectItem key={w.id} value={w.id}>
-                        {w.name}{w.country ? ` (${w.country})` : ""}
+                        {w.name}
+                        {w.country ? ` (${w.country})` : ""}
                         {w.is_default ? " — predeterminado" : ""}
                       </SelectItem>
                     ))}
@@ -559,7 +617,10 @@ export default function ShopifyConfigPage() {
                 </Label>
                 <Input
                   value={sucursalCode}
-                  onChange={e => { setSucursalCode(e.target.value); setSettingsDirty(true) }}
+                  onChange={(e) => {
+                    setSucursalCode(e.target.value)
+                    setSettingsDirty(true)
+                  }}
                   placeholder="ej: 5AJ;YFB;YXZG"
                   className="h-8 text-sm font-mono"
                 />
@@ -578,15 +639,12 @@ export default function ShopifyConfigPage() {
                 <h2 className="font-medium">Template de Exportación</h2>
               </div>
               <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={analyzeStore}
-                  disabled={analyzing}
-                >
-                  {analyzing
-                    ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                    : <Search className="h-3.5 w-3.5 mr-1.5" />}
+                <Button size="sm" variant="outline" onClick={analyzeStore} disabled={analyzing}>
+                  {analyzing ? (
+                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  ) : (
+                    <Search className="h-3.5 w-3.5 mr-1.5" />
+                  )}
                   {analyzing ? "Analizando..." : "Analizar Tienda"}
                 </Button>
                 <Button
@@ -594,9 +652,11 @@ export default function ShopifyConfigPage() {
                   onClick={saveTemplate}
                   disabled={templateSaving || Object.keys(templateDefaults).length === 0}
                 >
-                  {templateSaving
-                    ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                    : <Save className="h-3.5 w-3.5 mr-1.5" />}
+                  {templateSaving ? (
+                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  ) : (
+                    <Save className="h-3.5 w-3.5 mr-1.5" />
+                  )}
                   Guardar Template
                 </Button>
               </div>
@@ -609,7 +669,9 @@ export default function ShopifyConfigPage() {
             {/* Defaults editor */}
             {Object.keys(templateDefaults).length > 0 && (
               <div className="space-y-3">
-                <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Valores por defecto</h3>
+                <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Valores por defecto
+                </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {Object.entries(templateDefaults).map(([key, value]) => (
                     <div key={key} className="space-y-1">
@@ -617,15 +679,17 @@ export default function ShopifyConfigPage() {
                       <div className="flex items-center gap-1">
                         <Input
                           value={value}
-                          onChange={e => setTemplateDefaults(prev => ({ ...prev, [key]: e.target.value }))}
+                          onChange={(e) => setTemplateDefaults((prev) => ({ ...prev, [key]: e.target.value }))}
                           className="h-7 text-xs"
                         />
                         <button
-                          onClick={() => setTemplateDefaults(prev => {
-                            const next = { ...prev }
-                            delete next[key]
-                            return next
-                          })}
+                          onClick={() =>
+                            setTemplateDefaults((prev) => {
+                              const next = { ...prev }
+                              delete next[key]
+                              return next
+                            })
+                          }
                           className="text-muted-foreground hover:text-destructive p-1"
                         >
                           <X className="h-3 w-3" />
@@ -640,12 +704,12 @@ export default function ShopifyConfigPage() {
                     placeholder="Nombre del campo..."
                     className="h-7 text-xs max-w-[200px]"
                     id="new-default-key"
-                    onKeyDown={e => {
+                    onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         const key = (e.target as HTMLInputElement).value.trim()
                         if (key && !templateDefaults[key]) {
-                          setTemplateDefaults(prev => ({ ...prev, [key]: "" }));
-                          (e.target as HTMLInputElement).value = ""
+                          setTemplateDefaults((prev) => ({ ...prev, [key]: "" }))
+                          ;(e.target as HTMLInputElement).value = ""
                         }
                       }
                     }}
@@ -683,16 +747,20 @@ export default function ShopifyConfigPage() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {analyzeResult.fields_detected.metafields.map(mf => (
+                          {analyzeResult.fields_detected.metafields.map((mf) => (
                             <TableRow key={mf.key} className="text-xs">
                               <TableCell className="py-1.5 font-mono text-[10px]">{mf.key}</TableCell>
                               <TableCell className="py-1.5 text-[10px] text-muted-foreground">{mf.type}</TableCell>
                               <TableCell className="py-1.5 text-center">
-                                <Badge variant="outline" className="text-[9px]">{mf.usage_pct}%</Badge>
+                                <Badge variant="outline" className="text-[9px]">
+                                  {mf.usage_pct}%
+                                </Badge>
                               </TableCell>
                               <TableCell className="py-1.5">
                                 {mf.suggested_db_column ? (
-                                  <Badge variant="default" className="text-[9px]">{mf.suggested_db_column}</Badge>
+                                  <Badge variant="default" className="text-[9px]">
+                                    {mf.suggested_db_column}
+                                  </Badge>
                                 ) : (
                                   <span className="text-[10px] text-muted-foreground/50">sin mapeo</span>
                                 )}
@@ -714,12 +782,12 @@ export default function ShopifyConfigPage() {
                     <div className="space-y-1.5">
                       <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Vendors</h3>
                       <div className="flex flex-wrap gap-1">
-                        {analyzeResult.unique_vendors.map(v => (
+                        {analyzeResult.unique_vendors.map((v) => (
                           <Badge
                             key={v}
                             variant="outline"
                             className="text-[10px] cursor-pointer hover:bg-primary/10"
-                            onClick={() => setTemplateDefaults(prev => ({ ...prev, Vendor: v }))}
+                            onClick={() => setTemplateDefaults((prev) => ({ ...prev, Vendor: v }))}
                           >
                             {v}
                           </Badge>
@@ -731,12 +799,12 @@ export default function ShopifyConfigPage() {
                     <div className="space-y-1.5">
                       <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Tipos</h3>
                       <div className="flex flex-wrap gap-1">
-                        {analyzeResult.unique_types.map(t => (
+                        {analyzeResult.unique_types.map((t) => (
                           <Badge
                             key={t}
                             variant="outline"
                             className="text-[10px] cursor-pointer hover:bg-primary/10"
-                            onClick={() => setTemplateDefaults(prev => ({ ...prev, Type: t }))}
+                            onClick={() => setTemplateDefaults((prev) => ({ ...prev, Type: t }))}
                           >
                             {t}
                           </Badge>
@@ -749,10 +817,14 @@ export default function ShopifyConfigPage() {
                 {/* Tags */}
                 {analyzeResult.unique_tags.length > 0 && (
                   <div className="space-y-1.5">
-                    <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Tags encontrados ({analyzeResult.unique_tags.length})</h3>
+                    <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Tags encontrados ({analyzeResult.unique_tags.length})
+                    </h3>
                     <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
-                      {analyzeResult.unique_tags.map(tag => (
-                        <Badge key={tag} variant="secondary" className="text-[9px]">{tag}</Badge>
+                      {analyzeResult.unique_tags.map((tag) => (
+                        <Badge key={tag} variant="secondary" className="text-[9px]">
+                          {tag}
+                        </Badge>
                       ))}
                     </div>
                   </div>
@@ -779,9 +851,13 @@ export default function ShopifyConfigPage() {
                             <TableRow key={p.id} className="text-xs">
                               <TableCell className="py-1.5 max-w-[200px] truncate">{p.title}</TableCell>
                               <TableCell className="py-1.5 text-muted-foreground">{p.vendor}</TableCell>
-                              <TableCell className="py-1.5 font-mono text-[10px]">{p.first_variant?.sku || "—"}</TableCell>
+                              <TableCell className="py-1.5 font-mono text-[10px]">
+                                {p.first_variant?.sku || "—"}
+                              </TableCell>
                               <TableCell className="py-1.5 text-center">
-                                <Badge variant="outline" className="text-[9px]">{p.metafield_count}</Badge>
+                                <Badge variant="outline" className="text-[9px]">
+                                  {p.metafield_count}
+                                </Badge>
                               </TableCell>
                             </TableRow>
                           ))}
@@ -806,20 +882,18 @@ export default function ShopifyConfigPage() {
           <div className="flex items-center gap-2">
             <Input
               value={eanInput}
-              onChange={e => setEanInput(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && addByEan()}
+              onChange={(e) => setEanInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addByEan()}
               placeholder="EAN / ISBN…"
               className="max-w-xs h-9"
               disabled={searchLoading || pushing}
             />
-            <Button
-              size="sm"
-              onClick={addByEan}
-              disabled={searchLoading || !eanInput.trim() || pushing}
-            >
-              {searchLoading
-                ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                : <Plus className="h-3.5 w-3.5 mr-1.5" />}
+            <Button size="sm" onClick={addByEan} disabled={searchLoading || !eanInput.trim() || pushing}>
+              {searchLoading ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <Plus className="h-3.5 w-3.5 mr-1.5" />
+              )}
               Agregar
             </Button>
             {productRows.length > 0 && !pushing && (
@@ -849,44 +923,58 @@ export default function ShopifyConfigPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {productRows.map(row => (
+                  {productRows.map((row) => (
                     <TableRow key={row.ean} className="text-sm">
                       <TableCell className="py-2">
                         {row.image_url && (
-                          <img src={row.image_url} alt="" className="h-8 w-8 object-cover rounded border border-border" />
+                          <img
+                            src={row.image_url}
+                            alt=""
+                            className="h-8 w-8 object-cover rounded border border-border"
+                          />
                         )}
                       </TableCell>
                       <TableCell className="py-2 max-w-xs">
                         <p className="truncate font-medium">{row.title}</p>
                         {row.shopify_url && (
-                          <a href={row.shopify_url} target="_blank" rel="noopener noreferrer"
-                            className="text-[10px] text-blue-400 hover:underline">
+                          <a
+                            href={row.shopify_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] text-blue-400 hover:underline"
+                          >
                             Ver en Shopify →
                           </a>
                         )}
-                        {row.error && (
-                          <p className="text-[10px] text-red-400 truncate">{row.error}</p>
-                        )}
+                        {row.error && <p className="text-[10px] text-red-400 truncate">{row.error}</p>}
                       </TableCell>
                       <TableCell className="py-2">
                         <p className="text-xs font-mono text-muted-foreground">{row.ean}</p>
                         {row.sku && <p className="text-[10px] text-muted-foreground/60">{row.sku}</p>}
                       </TableCell>
                       <TableCell className="py-2 text-right tabular-nums text-xs">
-                        {row.price != null
-                          ? `$${row.price.toLocaleString("es-AR")}`
-                          : <span className="text-muted-foreground/40">—</span>}
+                        {row.price != null ? (
+                          `$${row.price.toLocaleString("es-AR")}`
+                        ) : (
+                          <span className="text-muted-foreground/40">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="py-2 text-center">
-                        {row.status === "pending"  && <span className="text-[10px] text-muted-foreground">Pendiente</span>}
-                        {row.status === "pushing"  && <Loader2 className="h-3.5 w-3.5 animate-spin mx-auto text-blue-400" />}
-                        {row.status === "ok"       && (
+                        {row.status === "pending" && (
+                          <span className="text-[10px] text-muted-foreground">Pendiente</span>
+                        )}
+                        {row.status === "pushing" && (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin mx-auto text-blue-400" />
+                        )}
+                        {row.status === "ok" && (
                           <Badge variant="outline" className="text-[10px] text-emerald-400 border-emerald-500/30">
                             {row.action === "created" ? "Creado" : "Actualizado"}
                           </Badge>
                         )}
-                        {row.status === "error"    && (
-                          <Badge variant="outline" className="text-[10px] text-red-400 border-red-500/30">Error</Badge>
+                        {row.status === "error" && (
+                          <Badge variant="outline" className="text-[10px] text-red-400 border-red-500/30">
+                            Error
+                          </Badge>
                         )}
                       </TableCell>
                       <TableCell className="py-2">
@@ -906,9 +994,7 @@ export default function ShopifyConfigPage() {
           ) : (
             <div className="rounded-lg border border-dashed border-border py-10 text-center">
               <PackageSearch className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">
-                Ingresá un EAN o ISBN para agregar productos
-              </p>
+              <p className="text-sm text-muted-foreground">Ingresá un EAN o ISBN para agregar productos</p>
             </div>
           )}
         </section>
@@ -931,8 +1017,18 @@ export default function ShopifyConfigPage() {
             )}
             {!pushing && (okCount > 0 || errCount > 0) && (
               <span className="flex items-center gap-2">
-                {okCount > 0 && <span className="text-emerald-400 flex items-center gap-1"><CheckCircle2 className="h-4 w-4" />{okCount} ok</span>}
-                {errCount > 0 && <span className="text-red-400 flex items-center gap-1"><AlertCircle className="h-4 w-4" />{errCount} con error</span>}
+                {okCount > 0 && (
+                  <span className="text-emerald-400 flex items-center gap-1">
+                    <CheckCircle2 className="h-4 w-4" />
+                    {okCount} ok
+                  </span>
+                )}
+                {errCount > 0 && (
+                  <span className="text-red-400 flex items-center gap-1">
+                    <AlertCircle className="h-4 w-4" />
+                    {errCount} con error
+                  </span>
+                )}
               </span>
             )}
           </div>
@@ -957,16 +1053,13 @@ export default function ShopifyConfigPage() {
               disabled={!storeId || productRows.length === 0 || pushing}
               className="gap-2"
             >
-              {pushing
-                ? <Loader2 className="h-4 w-4 animate-spin" />
-                : <CloudUpload className="h-4 w-4" />}
+              {pushing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CloudUpload className="h-4 w-4" />}
               {pushing
                 ? `Subiendo ${okCount + errCount + pushingCount}/${productRows.length}…`
                 : `Subir a Shopify (${productRows.length})`}
             </Button>
           </div>
         </div>
-
       </div>
     </div>
   )

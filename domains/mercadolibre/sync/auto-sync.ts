@@ -25,15 +25,11 @@ export interface AutoSyncResult {
  * Processes in batches of 50 with 1s delay between batches.
  * Replaces the self-recursive fetch pattern.
  */
-export async function executeAutoSyncAccount(
-  supabase: any,
-  params: AutoSyncParams,
-): Promise<AutoSyncResult> {
+export async function executeAutoSyncAccount(supabase: any, params: AutoSyncParams): Promise<AutoSyncResult> {
   const { accountId, maxItems = Infinity } = params
 
   // Get account
-  const { data: account } = await supabase
-    .from("ml_accounts").select("*").eq("id", accountId).single()
+  const { data: account } = await supabase.from("ml_accounts").select("*").eq("id", accountId).single()
 
   if (!account) {
     return { success: false, processed: 0, linked: 0, errors: 0, total: 0, error: "Account not found" }
@@ -55,9 +51,23 @@ export async function executeAutoSyncAccount(
 
     if (!mlResponse.ok) {
       if (mlResponse.status === 429) {
-        return { success: true, processed: totalProcessed, linked: totalLinked, errors: totalErrors, total: totalInML, error: "Rate limited" }
+        return {
+          success: true,
+          processed: totalProcessed,
+          linked: totalLinked,
+          errors: totalErrors,
+          total: totalInML,
+          error: "Rate limited",
+        }
       }
-      return { success: false, processed: totalProcessed, linked: totalLinked, errors: totalErrors, total: totalInML, error: `ML API ${mlResponse.status}` }
+      return {
+        success: false,
+        processed: totalProcessed,
+        linked: totalLinked,
+        errors: totalErrors,
+        total: totalInML,
+        error: `ML API ${mlResponse.status}`,
+      }
     }
 
     const mlData = await mlResponse.json()
@@ -96,17 +106,20 @@ export async function executeAutoSyncAccount(
         }
 
         // Upsert publication
-        await supabase.from("ml_publications").upsert({
-          account_id: account.id,
-          ml_item_id: itemId,
-          product_id: product?.id || null,
-          title: item.title,
-          price: item.price,
-          current_stock: item.available_quantity,
-          status: item.status,
-          permalink: item.permalink,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: "account_id,ml_item_id" })
+        await supabase.from("ml_publications").upsert(
+          {
+            account_id: account.id,
+            ml_item_id: itemId,
+            product_id: product?.id || null,
+            title: item.title,
+            price: item.price,
+            current_stock: item.available_quantity,
+            status: item.status,
+            permalink: item.permalink,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "account_id,ml_item_id" },
+        )
 
         if (product) totalLinked++
         totalProcessed++
@@ -121,16 +134,21 @@ export async function executeAutoSyncAccount(
     if (!hasMore || itemIds.length === 0) break
 
     // Delay between batches
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    await new Promise((resolve) => setTimeout(resolve, 1000))
   }
 
   // Update account stats
-  await supabase.from("ml_accounts").update({
-    last_stock_sync_at: new Date().toISOString(),
-    total_ml_publications: totalInML,
-  }).eq("id", account.id)
+  await supabase
+    .from("ml_accounts")
+    .update({
+      last_stock_sync_at: new Date().toISOString(),
+      total_ml_publications: totalInML,
+    })
+    .eq("id", account.id)
 
-  console.log(`[AUTO-SYNC] Completed for ${account.nickname}: ${totalProcessed} processed, ${totalLinked} linked, ${totalErrors} errors`)
+  console.log(
+    `[AUTO-SYNC] Completed for ${account.nickname}: ${totalProcessed} processed, ${totalLinked} linked, ${totalErrors} errors`,
+  )
 
   return { success: true, processed: totalProcessed, linked: totalLinked, errors: totalErrors, total: totalInML }
 }

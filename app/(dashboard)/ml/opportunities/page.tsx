@@ -71,7 +71,9 @@ export default function OpportunitiesPage() {
     if (!selectedAccountId) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/ml/intel/data?account_id=${selectedAccountId}&type=opportunities&status=${filterStatus}`)
+      const res = await fetch(
+        `/api/ml/intel/data?account_id=${selectedAccountId}&type=opportunities&status=${filterStatus}`,
+      )
       const data = await res.json()
       setRows(data.rows || [])
     } finally {
@@ -109,9 +111,7 @@ export default function OpportunitiesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Oportunidades</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            EANs con potencial de venta que no publicaste aun
-          </p>
+          <p className="text-sm text-muted-foreground mt-0.5">EANs con potencial de venta que no publicaste aun</p>
         </div>
         <div className="flex items-center gap-3">
           {accounts.length > 1 && (
@@ -121,7 +121,9 @@ export default function OpportunitiesPage() {
               className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground"
             >
               {accounts.map((a) => (
-                <option key={a.id} value={a.id}>{a.nickname}</option>
+                <option key={a.id} value={a.id}>
+                  {a.nickname}
+                </option>
               ))}
             </select>
           )}
@@ -136,7 +138,12 @@ export default function OpportunitiesPage() {
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Buscar por titulo o EAN..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+          <Input
+            placeholder="Buscar por titulo o EAN..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
         </div>
         <div className="flex rounded-md border border-border overflow-hidden">
           {(["new", "reviewed", "ignored", "published"] as const).map((s) => (
@@ -156,7 +163,9 @@ export default function OpportunitiesPage() {
             type="number"
             value={minScore}
             onChange={(e) => setMinScore(Number(e.target.value))}
-            min={0} max={100} step={10}
+            min={0}
+            max={100}
+            step={10}
             className="w-16 h-8 rounded border border-input bg-background px-2 text-sm text-center text-foreground"
           />
         </div>
@@ -199,7 +208,9 @@ export default function OpportunitiesPage() {
                       <div className="text-xs text-muted-foreground font-mono">{row.ean}</div>
                     </td>
                     <td className="px-4 py-3 text-right font-mono text-muted-foreground">{fmt(row.min_price)}</td>
-                    <td className="px-4 py-3 text-right font-mono font-medium text-foreground">{fmt(row.median_price)}</td>
+                    <td className="px-4 py-3 text-right font-mono font-medium text-foreground">
+                      {fmt(row.median_price)}
+                    </td>
                     <td className="px-4 py-3 text-center text-muted-foreground">{row.sellers_count ?? "—"}</td>
                     <td className="px-4 py-3 text-center text-muted-foreground">{row.sold_qty_proxy ?? "—"}</td>
                     <td className="px-4 py-3 text-center">
@@ -219,7 +230,11 @@ export default function OpportunitiesPage() {
                             className="p-1.5 rounded hover:bg-amber-500/15 text-muted-foreground hover:text-amber-400 transition-colors"
                             title="Marcar revisada"
                           >
-                            {updating === row.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+                            {updating === row.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Eye className="h-4 w-4" />
+                            )}
                           </button>
                         )}
                         {row.status !== "published" && (

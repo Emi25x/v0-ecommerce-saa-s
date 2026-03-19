@@ -17,9 +17,9 @@ export async function POST(request: NextRequest) {
   if (authCheck.error) return authCheck.response
 
   const instanceId = randomUUID()
-  const body       = await request.json().catch(() => ({}))
-  const limit      = Math.min(50, Math.max(1, body.limit ?? 5))
-  const accountId  = body.account_id ?? null
+  const body = await request.json().catch(() => ({}))
+  const limit = Math.min(50, Math.max(1, body.limit ?? 5))
+  const accountId = body.account_id ?? null
 
   const supabase = createAdminClient()
 
@@ -71,32 +71,48 @@ export async function POST(request: NextRequest) {
     try {
       const result = await executeJob(job, supabase, instanceId)
 
-      await supabase.from("ml_jobs").update({
-        status: "success", locked_at: null, locked_by: null,
-        last_error: null, updated_at: new Date().toISOString(),
-      }).eq("id", job.id)
+      await supabase
+        .from("ml_jobs")
+        .update({
+          status: "success",
+          locked_at: null,
+          locked_by: null,
+          last_error: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", job.id)
 
       await supabase.from("ml_job_logs").insert({
-        job_id: job.id, level: "info", message: "Job completado exitosamente",
+        job_id: job.id,
+        level: "info",
+        message: "Job completado exitosamente",
         meta: { ...result, elapsed_ms: Date.now() - jobStart },
       })
 
       results.push({ job_id: job.id, type: job.type, status: "success", ...result })
-
     } catch (err: any) {
-      const attempts  = (job.attempts || 0) + 1
-      const backoff   = BACKOFF_SECONDS[Math.min(attempts - 1, BACKOFF_SECONDS.length - 1)]
-      const runAfter  = new Date(Date.now() + backoff * 1000).toISOString()
+      const attempts = (job.attempts || 0) + 1
+      const backoff = BACKOFF_SECONDS[Math.min(attempts - 1, BACKOFF_SECONDS.length - 1)]
+      const runAfter = new Date(Date.now() + backoff * 1000).toISOString()
       const newStatus = attempts >= MAX_ATTEMPTS ? "error" : "queued"
 
-      await supabase.from("ml_jobs").update({
-        status: newStatus, attempts, last_error: err.message,
-        run_after: newStatus === "queued" ? runAfter : undefined,
-        locked_at: null, locked_by: null, updated_at: new Date().toISOString(),
-      }).eq("id", job.id)
+      await supabase
+        .from("ml_jobs")
+        .update({
+          status: newStatus,
+          attempts,
+          last_error: err.message,
+          run_after: newStatus === "queued" ? runAfter : undefined,
+          locked_at: null,
+          locked_by: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", job.id)
 
       await supabase.from("ml_job_logs").insert({
-        job_id: job.id, level: "error", message: err.message,
+        job_id: job.id,
+        level: "error",
+        message: err.message,
         meta: { attempts, backoff_seconds: backoff, elapsed_ms: Date.now() - jobStart },
       })
 

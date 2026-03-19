@@ -11,12 +11,7 @@ interface SidebarSectionProps {
   children: React.ReactNode
 }
 
-export function SidebarSection({
-  label,
-  icon: Icon,
-  defaultExpanded = true,
-  children,
-}: SidebarSectionProps) {
+export function SidebarSection({ label, icon: Icon, defaultExpanded = true, children }: SidebarSectionProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
 
   return (
@@ -29,14 +24,10 @@ export function SidebarSection({
           <Icon className="h-5 w-5" />
           <span className="font-medium">{label}</span>
         </div>
-        <ChevronDown
-          className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`}
-        />
+        <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
       </button>
 
-      {expanded && (
-        <div className="ml-8 mt-1 flex flex-col gap-1">{children}</div>
-      )}
+      {expanded && <div className="ml-8 mt-1 flex flex-col gap-1">{children}</div>}
     </div>
   )
 }

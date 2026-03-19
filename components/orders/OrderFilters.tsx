@@ -9,20 +9,8 @@ import { Separator } from "@/components/ui/separator"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { MLConnectionStatus } from "@/components/mercadolibre/connection-status"
 import { LastUpdated } from "@/components/shared/last-updated"
-import {
-  RefreshCw,
-  Download,
-  Check,
-  ChevronDown,
-  Lightbulb,
-  Search,
-} from "lucide-react"
-import type {
-  OrderFiltersState,
-  GeneralStatusCounts,
-  AvailabilityCounts,
-  MlAccount,
-} from "@/components/orders/types"
+import { RefreshCw, Download, Check, ChevronDown, Lightbulb, Search } from "lucide-react"
+import type { OrderFiltersState, GeneralStatusCounts, AvailabilityCounts, MlAccount } from "@/components/orders/types"
 
 interface OrderFiltersProps {
   orders: any[]
@@ -72,21 +60,17 @@ export function OrderFilters({
           <p className="text-base text-muted-foreground">
             {orders.length > 0 ? (
               <>
-                <span className="font-semibold text-foreground">{totalOrders.toLocaleString()}</span> ordenes en
-                total
+                <span className="font-semibold text-foreground">{totalOrders.toLocaleString()}</span> ordenes en total
               </>
             ) : (
               "Gestiona tus ventas de Mercado Libre"
             )}
-            {selectedAccount !== "all" &&
-              mlAccounts[selectedAccount] && (
-                <span className="ml-2">
-                  {" "}
-                  <span className="font-medium">
-                    {mlAccounts[selectedAccount]?.nickname || "Cuenta seleccionada"}
-                  </span>
-                </span>
-              )}
+            {selectedAccount !== "all" && mlAccounts[selectedAccount] && (
+              <span className="ml-2">
+                {" "}
+                <span className="font-medium">{mlAccounts[selectedAccount]?.nickname || "Cuenta seleccionada"}</span>
+              </span>
+            )}
           </p>
         </div>
         <div className="flex gap-3">
@@ -182,9 +166,7 @@ export function OrderFilters({
               <CollapsibleTrigger asChild>
                 <Button variant="outline" size="sm" className="w-full justify-between bg-transparent">
                   Filtros adicionales
-                  <ChevronDown
-                    className={`h-4 w-4 transition-transform ${advancedFiltersOpen ? "rotate-180" : ""}`}
-                  />
+                  <ChevronDown className={`h-4 w-4 transition-transform ${advancedFiltersOpen ? "rotate-180" : ""}`} />
                 </Button>
               </CollapsibleTrigger>
               <CollapsibleContent className="mt-4 space-y-4">
@@ -281,21 +263,23 @@ export function OrderFilters({
             />
           </div>
           <div className="flex flex-wrap gap-2">
-            {([
-              { key: "all", label: "Todas", count: generalStatusCounts.all },
-              { key: "delivered", label: "Entregadas", count: generalStatusCounts.delivered },
-              { key: "toAgree", label: "Acordar entrega", count: generalStatusCounts.toAgree },
-              { key: "returned", label: "Devoluciones", count: generalStatusCounts.returned },
-              { key: "cancelled", label: "Canceladas", count: generalStatusCounts.cancelled },
-              { key: "waiting", label: "Esperando disponibilidad", count: generalStatusCounts.waiting },
-              { key: "con_reclamo", label: "Con reclamo", count: generalStatusCounts.withClaim },
-              { key: "in_transit", label: "En camino", count: generalStatusCounts.in_transit },
-              { key: "delayed", label: "Demoradas", count: generalStatusCounts.delayed },
-              { key: "ready", label: "Listas para enviar", count: generalStatusCounts.ready },
-              { key: "pending_payment", label: "Pendientes de pago", count: generalStatusCounts.pending_payment },
-              { key: "delivery_issues", label: "Problemas de entrega", count: generalStatusCounts.delivery_issues },
-              { key: "pending", label: "Pendientes", count: generalStatusCounts.pending },
-            ] as const).map(({ key, label, count }) => (
+            {(
+              [
+                { key: "all", label: "Todas", count: generalStatusCounts.all },
+                { key: "delivered", label: "Entregadas", count: generalStatusCounts.delivered },
+                { key: "toAgree", label: "Acordar entrega", count: generalStatusCounts.toAgree },
+                { key: "returned", label: "Devoluciones", count: generalStatusCounts.returned },
+                { key: "cancelled", label: "Canceladas", count: generalStatusCounts.cancelled },
+                { key: "waiting", label: "Esperando disponibilidad", count: generalStatusCounts.waiting },
+                { key: "con_reclamo", label: "Con reclamo", count: generalStatusCounts.withClaim },
+                { key: "in_transit", label: "En camino", count: generalStatusCounts.in_transit },
+                { key: "delayed", label: "Demoradas", count: generalStatusCounts.delayed },
+                { key: "ready", label: "Listas para enviar", count: generalStatusCounts.ready },
+                { key: "pending_payment", label: "Pendientes de pago", count: generalStatusCounts.pending_payment },
+                { key: "delivery_issues", label: "Problemas de entrega", count: generalStatusCounts.delivery_issues },
+                { key: "pending", label: "Pendientes", count: generalStatusCounts.pending },
+              ] as const
+            ).map(({ key, label, count }) => (
               <Button
                 key={key}
                 variant={filters.generalStatus === key ? "default" : "outline"}
@@ -315,20 +299,45 @@ export function OrderFilters({
       <Card className="border-border/50 shadow-sm hover:shadow-md transition-shadow">
         <CardHeader className="bg-gradient-to-r from-muted/30 to-muted/10">
           <CardTitle className="text-base font-semibold">Pendientes de entrega (Disponibilidad)</CardTitle>
-          <CardDescription className="mt-1">
-            Ordenes que requieren que tengas el producto disponible
-          </CardDescription>
+          <CardDescription className="mt-1">Ordenes que requieren que tengas el producto disponible</CardDescription>
         </CardHeader>
         <CardContent className="pt-4">
           <div className="flex flex-wrap gap-2">
-            {([
-              { key: "all", label: "Todas", count: availabilityCounts.all, colorClass: "" },
-              { key: "today", label: "Listas para enviar", count: availabilityCounts.today, colorClass: "border-green-500 text-green-500 hover:bg-green-500/10" },
-              { key: "twentyFourHours", label: "en 24 horas", count: availabilityCounts.twentyFourHours, colorClass: "border-orange-500 text-orange-500 hover:bg-orange-500/10" },
-              { key: "fortyEightHours", label: "48 horas", count: availabilityCounts.fortyEightHours, colorClass: "border-orange-500 text-orange-500 hover:bg-orange-500/10" },
-              { key: "lastWeek", label: "Ultima semana", count: availabilityCounts.lastWeek, colorClass: "border-blue-500 text-blue-500 hover:bg-blue-500/10" },
-              { key: "rest", label: "Mas de 7 dias", count: availabilityCounts.rest, colorClass: "border-green-500 text-green-500 hover:bg-green-500/10" },
-            ] as const).map(({ key, label, count, colorClass }) => (
+            {(
+              [
+                { key: "all", label: "Todas", count: availabilityCounts.all, colorClass: "" },
+                {
+                  key: "today",
+                  label: "Listas para enviar",
+                  count: availabilityCounts.today,
+                  colorClass: "border-green-500 text-green-500 hover:bg-green-500/10",
+                },
+                {
+                  key: "twentyFourHours",
+                  label: "en 24 horas",
+                  count: availabilityCounts.twentyFourHours,
+                  colorClass: "border-orange-500 text-orange-500 hover:bg-orange-500/10",
+                },
+                {
+                  key: "fortyEightHours",
+                  label: "48 horas",
+                  count: availabilityCounts.fortyEightHours,
+                  colorClass: "border-orange-500 text-orange-500 hover:bg-orange-500/10",
+                },
+                {
+                  key: "lastWeek",
+                  label: "Ultima semana",
+                  count: availabilityCounts.lastWeek,
+                  colorClass: "border-blue-500 text-blue-500 hover:bg-blue-500/10",
+                },
+                {
+                  key: "rest",
+                  label: "Mas de 7 dias",
+                  count: availabilityCounts.rest,
+                  colorClass: "border-green-500 text-green-500 hover:bg-green-500/10",
+                },
+              ] as const
+            ).map(({ key, label, count, colorClass }) => (
               <Button
                 key={key}
                 variant={filters.availability === key ? "default" : "outline"}
@@ -345,8 +354,8 @@ export function OrderFilters({
             <div className="mt-4 flex items-start gap-2 rounded-lg bg-green-500/10 p-3 text-sm">
               <Lightbulb className="h-5 w-5 flex-shrink-0 text-green-500" />
               <p className="text-green-600">
-                <span className="font-semibold">Tip:</span> Las ordenes "Listas para enviar" estan disponibles
-                para despachar. Las de "24 horas" son urgentes.
+                <span className="font-semibold">Tip:</span> Las ordenes "Listas para enviar" estan disponibles para
+                despachar. Las de "24 horas" son urgentes.
               </p>
             </div>
           )}

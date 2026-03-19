@@ -14,7 +14,10 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "store_id y product_id son requeridos" }, { status: 400 })
 
     const supabase = await createClient()
-    const { data: { user }, error: authErr } = await supabase.auth.getUser()
+    const {
+      data: { user },
+      error: authErr,
+    } = await supabase.auth.getUser()
     if (authErr || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const { data: store } = await supabase
@@ -30,7 +33,7 @@ export async function GET(request: Request) {
 
     const res = await fetch(
       `https://${store.shop_domain}/admin/api/2024-01/products/${product_id}/metafields.json?limit=250`,
-      { headers: { "X-Shopify-Access-Token": token } }
+      { headers: { "X-Shopify-Access-Token": token } },
     )
 
     if (!res.ok) {

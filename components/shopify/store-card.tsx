@@ -4,12 +4,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { MoreVertical, CheckCircle2, XCircle, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
@@ -30,25 +25,25 @@ interface ShopifyStoreCardProps {
 
 export function ShopifyStoreCard({ store, onEdit, onDelete, onRefresh }: ShopifyStoreCardProps) {
   const [testing, setTesting] = useState(false)
-  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [connectionStatus, setConnectionStatus] = useState<"idle" | "success" | "error">("idle")
   const { toast } = useToast()
 
   const testConnection = async () => {
     setTesting(true)
-    setConnectionStatus('idle')
+    setConnectionStatus("idle")
 
     try {
       const response = await fetch(`/api/shopify/test-connection?store_id=${store.id}`)
       const data = await response.json()
 
       if (data.connected) {
-        setConnectionStatus('success')
+        setConnectionStatus("success")
         toast({
           title: "Conexión exitosa",
           description: `Conectado a ${store.shop_domain}`,
         })
       } else {
-        setConnectionStatus('error')
+        setConnectionStatus("error")
         toast({
           title: "Error de conexión",
           description: data.error || "No se pudo conectar a Shopify",
@@ -56,7 +51,7 @@ export function ShopifyStoreCard({ store, onEdit, onDelete, onRefresh }: Shopify
         })
       }
     } catch (error) {
-      setConnectionStatus('error')
+      setConnectionStatus("error")
       toast({
         title: "Error",
         description: "Error al probar la conexión",
@@ -105,27 +100,15 @@ export function ShopifyStoreCard({ store, onEdit, onDelete, onRefresh }: Shopify
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-2">
             <h3 className="font-semibold">{(store as any).name || store.shop_domain}</h3>
-            <Badge variant={store.is_active ? "default" : "secondary"}>
-              {store.is_active ? "Activa" : "Inactiva"}
-            </Badge>
-            {connectionStatus === 'success' && (
-              <CheckCircle2 className="h-4 w-4 text-green-500" />
-            )}
-            {connectionStatus === 'error' && (
-              <XCircle className="h-4 w-4 text-red-500" />
-            )}
+            <Badge variant={store.is_active ? "default" : "secondary"}>{store.is_active ? "Activa" : "Inactiva"}</Badge>
+            {connectionStatus === "success" && <CheckCircle2 className="h-4 w-4 text-green-500" />}
+            {connectionStatus === "error" && <XCircle className="h-4 w-4 text-red-500" />}
           </div>
 
-          {(store as any).name && (
-            <p className="text-sm text-muted-foreground">
-              {store.shop_domain}
-            </p>
-          )}
+          {(store as any).name && <p className="text-sm text-muted-foreground">{store.shop_domain}</p>}
 
           {store.default_location_id && (
-            <p className="text-sm text-muted-foreground">
-              Location: {store.default_location_id}
-            </p>
+            <p className="text-sm text-muted-foreground">Location: {store.default_location_id}</p>
           )}
 
           <p className="text-xs text-muted-foreground mt-2">
@@ -140,12 +123,8 @@ export function ShopifyStoreCard({ store, onEdit, onDelete, onRefresh }: Shopify
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => onEdit(store)}>
-              Editar
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={toggleActive}>
-              {store.is_active ? "Desactivar" : "Activar"}
-            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onEdit(store)}>Editar</DropdownMenuItem>
+            <DropdownMenuItem onClick={toggleActive}>{store.is_active ? "Desactivar" : "Activar"}</DropdownMenuItem>
             <DropdownMenuItem onClick={handleDelete} className="text-red-600">
               Eliminar
             </DropdownMenuItem>

@@ -2,9 +2,10 @@ import { type NextRequest, NextResponse } from "next/server"
 import { getValidAccessToken } from "@/lib/mercadolibre"
 import { createClient } from "@/lib/db/server"
 
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
-    console.log("[v0] Deliver endpoint - Starting for order:", params.id)
+    console.log("[v0] Deliver endpoint - Starting for order:", id)
 
     let userId = request.cookies.get("ml_user_id")?.value
 
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     }
 
     console.log("[v0] Deliver endpoint - userId:", userId)
-    const orderId = params.id
+    const orderId = id
 
     let accessToken
     try {

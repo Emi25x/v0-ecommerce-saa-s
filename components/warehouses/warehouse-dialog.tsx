@@ -32,12 +32,7 @@ interface WarehouseDialogProps {
   onSuccess: () => void
 }
 
-export function WarehouseDialog({
-  open,
-  onOpenChange,
-  warehouse,
-  onSuccess,
-}: WarehouseDialogProps) {
+export function WarehouseDialog({ open, onOpenChange, warehouse, onSuccess }: WarehouseDialogProps) {
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
   const [name, setName] = useState("")
@@ -67,9 +62,7 @@ export function WarehouseDialog({
     setLoading(true)
 
     try {
-      const url = warehouse
-        ? `/api/warehouses/${warehouse.id}`
-        : "/api/warehouses"
+      const url = warehouse ? `/api/warehouses/${warehouse.id}` : "/api/warehouses"
       const method = warehouse ? "PATCH" : "POST"
 
       const response = await fetch(url, {
@@ -112,13 +105,9 @@ export function WarehouseDialog({
       <DialogContent className="sm:max-w-[500px]">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>
-              {warehouse ? "Editar Almacén" : "Nuevo Almacén"}
-            </DialogTitle>
+            <DialogTitle>{warehouse ? "Editar Almacén" : "Nuevo Almacén"}</DialogTitle>
             <DialogDescription>
-              {warehouse
-                ? "Modifica los datos del almacén"
-                : "Crea un nuevo almacén para gestionar tu inventario"}
+              {warehouse ? "Modifica los datos del almacén" : "Crea un nuevo almacén para gestionar tu inventario"}
             </DialogDescription>
           </DialogHeader>
 
@@ -144,9 +133,7 @@ export function WarehouseDialog({
                 required
                 maxLength={10}
               />
-              <p className="text-xs text-muted-foreground">
-                Identificador único para el almacén
-              </p>
+              <p className="text-xs text-muted-foreground">Identificador único para el almacén</p>
             </div>
 
             <div className="space-y-2">
@@ -173,25 +160,14 @@ export function WarehouseDialog({
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
                 <Label htmlFor="default">Almacén por defecto</Label>
-                <p className="text-xs text-muted-foreground">
-                  Se usará automáticamente en las importaciones
-                </p>
+                <p className="text-xs text-muted-foreground">Se usará automáticamente en las importaciones</p>
               </div>
-              <Switch
-                id="default"
-                checked={isDefault}
-                onCheckedChange={setIsDefault}
-              />
+              <Switch id="default" checked={isDefault} onCheckedChange={setIsDefault} />
             </div>
           </div>
 
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={loading}
-            >
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
               Cancelar
             </Button>
             <Button type="submit" disabled={loading}>

@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
     }
 
     const batchSize = Math.min(Number(rawBatch) || 20, 50)
-    const offset    = Number(rawOffset) || 0
+    const offset = Number(rawOffset) || 0
 
     const supabase = await createClient()
 
@@ -116,10 +116,10 @@ export async function POST(req: NextRequest) {
 
     // ── 3. Process each publication ──────────────────────────────────────────
 
-    let matched    = 0
-    let not_found  = 0
-    let ambiguous  = 0
-    let errors     = 0
+    let matched = 0
+    let not_found = 0
+    let ambiguous = 0
+    let errors = 0
     let last_error = ""
 
     for (const pub of pubs) {
@@ -129,26 +129,22 @@ export async function POST(req: NextRequest) {
       const identifierType = pub.isbn ? "ISBN" : pub.ean ? "EAN" : "GTIN"
 
       try {
-        const { catalog_product_id, match_count } = await searchCatalogProduct(
-          token,
-          identifier,
-          identifierType,
-        )
+        const { catalog_product_id, match_count } = await searchCatalogProduct(token, identifier, identifierType)
 
         const isEligible = catalog_product_id !== null
 
         await supabase
           .from("ml_publications")
           .update({
-            catalog_product_id:       catalog_product_id ?? null,
+            catalog_product_id: catalog_product_id ?? null,
             catalog_listing_eligible: isEligible,
-            updated_at:               new Date().toISOString(),
+            updated_at: new Date().toISOString(),
           })
           .eq("id", pub.id)
 
-        if (isEligible)             matched++
+        if (isEligible) matched++
         else if (match_count === 0) not_found++
-        else                        ambiguous++
+        else ambiguous++
 
         // Respect ML rate limits — small delay between requests
         await new Promise((r) => setTimeout(r, 150))
@@ -160,7 +156,7 @@ export async function POST(req: NextRequest) {
     }
 
     const nextOffset = offset + pubs.length
-    const has_more   = pubs.length === batchSize
+    const has_more = pubs.length === batchSize
 
     return NextResponse.json({
       ok: true,

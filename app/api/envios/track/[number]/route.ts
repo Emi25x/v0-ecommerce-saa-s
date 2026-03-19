@@ -5,21 +5,15 @@ import { createCabifyClient, mapCabifyStatus } from "@/domains/shipping/carriers
 
 export const dynamic = "force-dynamic"
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { number: string } }
-) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ number: string }> }) {
+  const { number } = await params
   try {
-    const trackingNumber = decodeURIComponent(params.number)
-    const carrierSlug    = req.nextUrl.searchParams.get("carrier") ?? "fastmail"
-    const supabase       = createAdminClient()
+    const trackingNumber = decodeURIComponent(number)
+    const carrierSlug = req.nextUrl.searchParams.get("carrier") ?? "fastmail"
+    const supabase = createAdminClient()
 
     // Cargar carrier
-    const { data: carrier } = await supabase
-      .from("carriers")
-      .select("*")
-      .eq("slug", carrierSlug)
-      .single()
+    const { data: carrier } = await supabase.from("carriers").select("*").eq("slug", carrierSlug).single()
 
     if (!carrier?.active) {
       return NextResponse.json({ error: `${carrierSlug}: transportista no configurado` }, { status: 503 })
@@ -46,23 +40,23 @@ export async function GET(
         .maybeSingle()
 
       const packageId = shipment?.external_id ?? trackingNumber
-      const client    = createCabifyClient(carrier.config, carrier.credentials)
-      const res       = await client.getTracking(packageId)
+      const client = createCabifyClient(carrier.config, carrier.credentials)
+      const res = await client.getTracking(packageId)
       tracking = {
         tracking_code: res.tracking_code,
-        estado:        res.status,
-        events:        res.events,
-        error:         res.error,
+        estado: res.status,
+        events: res.events,
+        error: res.error,
       }
     } else {
       // FastMail
       const client = createFastMailClient(carrier.config, carrier.credentials)
-      const res    = await client.getTracking(trackingNumber)
+      const res = await client.getTracking(trackingNumber)
       tracking = {
         numero_guia: res.numero_guia,
-        estado:      res.estado,
-        eventos:     res.eventos,
-        error:       res.error,
+        estado: res.estado,
+        eventos: res.eventos,
+        error: res.error,
       }
     }
 
@@ -79,9 +73,8 @@ export async function GET(
       .maybeSingle()
 
     if (shipment) {
-      const newStatus = carrierSlug === "cabify"
-        ? mapCabifyStatus(tracking.estado ?? "")
-        : mapFastMailStatus(tracking.estado ?? "")
+      const newStatus =
+        carrierSlug === "cabify" ? mapCabifyStatus(tracking.estado ?? "") : mapFastMailStatus(tracking.estado ?? "")
 
       await supabase
         .from("shipments")
@@ -89,27 +82,28 @@ export async function GET(
         .eq("id", shipment.id)
 
       // Normalizar eventos a formato unificado
-      const events = carrierSlug === "cabify"
-        ? (tracking.events ?? []).map(e => ({
-            shipment_id:  shipment.id,
-            status:       e.status,
-            description:  e.description,
-            location:     e.location ?? null,
-            occurred_at:  e.timestamp,
-            raw:          e,
-          }))
-        : (tracking.eventos ?? []).map(e => ({
-            shipment_id:  shipment.id,
-            status:       e.estado,
-            description:  e.descripcion,
-            location:     e.ubicacion ?? null,
-            occurred_at:  e.fecha,
-            raw:          e,
-          }))
+      const events =
+        carrierSlug === "cabify"
+          ? (tracking.events ?? []).map((e) => ({
+              shipment_id: shipment.id,
+              status: e.status,
+              description: e.description,
+              location: e.location ?? null,
+              occurred_at: e.timestamp,
+              raw: e,
+            }))
+          : (tracking.eventos ?? []).map((e) => ({
+              shipment_id: shipment.id,
+              status: e.estado,
+              description: e.descripcion,
+              location: e.ubicacion ?? null,
+              occurred_at: e.fecha,
+              raw: e,
+            }))
 
       if (events.length) {
         await supabase.from("shipment_events").upsert(events, {
-          onConflict:       "shipment_id,occurred_at",
+          onConflict: "shipment_id,occurred_at",
           ignoreDuplicates: true,
         })
       }
@@ -123,9 +117,9 @@ export async function GET(
 
 function mapFastMailStatus(estado: string): string {
   const s = estado?.toLowerCase() ?? ""
-  if (s.includes("entregad"))                                          return "delivered"
+  if (s.includes("entregad")) return "delivered"
   if (s.includes("transit") || s.includes("camino") || s.includes("distribuc")) return "in_transit"
-  if (s.includes("devuelt") || s.includes("retorn"))                  return "returned"
+  if (s.includes("devuelt") || s.includes("retorn")) return "returned"
   if (s.includes("fallid") || s.includes("error") || s.includes("no entregad")) return "failed"
   return "pending"
 }

@@ -12,14 +12,14 @@ export default function ImportCSVPage() {
   const [result, setResult] = useState<string | null>(null)
   const [accounts, setAccounts] = useState<any[]>([])
   const [selectedAccount, setSelectedAccount] = useState<string>("")
-  
+
   useEffect(() => {
     fetchAccounts()
   }, [])
-  
+
   const fetchAccounts = async () => {
     try {
-      const response = await fetch('/api/ml/accounts')
+      const response = await fetch("/api/ml/accounts")
       if (response.ok) {
         const data = await response.json()
         setAccounts(data.accounts || [])
@@ -28,7 +28,7 @@ export default function ImportCSVPage() {
         }
       }
     } catch (error) {
-      console.error('Error fetching accounts:', error)
+      console.error("Error fetching accounts:", error)
     }
   }
 
@@ -41,43 +41,43 @@ export default function ImportCSVPage() {
 
     try {
       const text = await file.text()
-      const lines = text.split('\n')
-      
+      const lines = text.split("\n")
+
       // Parsear CSV
-      const headers = lines[0].split(';')
+      const headers = lines[0].split(";")
       const csvData = []
-      
+
       for (let i = 1; i < lines.length; i++) {
         if (!lines[i].trim()) continue
-        
-        const values = lines[i].split(';')
+
+        const values = lines[i].split(";")
         const row: any = {}
-        
+
         headers.forEach((header, index) => {
-          row[header.trim()] = values[index]?.trim() || ''
+          row[header.trim()] = values[index]?.trim() || ""
         })
-        
+
         csvData.push(row)
       }
-      
+
       setResult(`Archivo leído: ${csvData.length} filas. Procesando...`)
-      
+
       if (!selectedAccount) {
-        setResult('Error: Debes seleccionar una cuenta primero')
+        setResult("Error: Debes seleccionar una cuenta primero")
         setProcessing(false)
         return
       }
-      
+
       // Enviar a API
-      const response = await fetch('/api/ml/import-csv', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+      const response = await fetch("/api/ml/import-csv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           csvData,
-          account_id: selectedAccount
-        })
+          account_id: selectedAccount,
+        }),
       })
-      
+
       if (response.ok) {
         const data = await response.json()
         setResult(`✓ Importación completada:
@@ -86,12 +86,11 @@ export default function ImportCSVPage() {
         - ${data.notLinked} sin vincular
         - ${data.errors} errores`)
       } else {
-        setResult('Error al procesar CSV')
+        setResult("Error al procesar CSV")
       }
-      
     } catch (error) {
-      console.error('Error:', error)
-      setResult('Error al leer archivo')
+      console.error("Error:", error)
+      setResult("Error al leer archivo")
     } finally {
       setProcessing(false)
     }
@@ -120,11 +119,11 @@ export default function ImportCSVPage() {
                 </SelectContent>
               </Select>
             </div>
-            
+
             <p className="text-sm text-muted-foreground">
               Sube el archivo CSV exportado desde MercadoLibre con las columnas: ITEM_ID, SKU, TITLE, QUANTITY
             </p>
-            
+
             <input
               type="file"
               accept=".csv"
@@ -132,16 +131,14 @@ export default function ImportCSVPage() {
               disabled={processing}
               className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
             />
-            
+
             {result && (
               <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded">
                 <pre className="text-sm whitespace-pre-wrap">{result}</pre>
               </div>
             )}
-            
-            {processing && (
-              <p className="text-sm text-muted-foreground">Procesando...</p>
-            )}
+
+            {processing && <p className="text-sm text-muted-foreground">Procesando...</p>}
           </div>
         </CardContent>
       </Card>

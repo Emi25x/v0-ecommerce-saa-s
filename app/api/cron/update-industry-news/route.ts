@@ -3,7 +3,7 @@ import { fetchRadarNews } from "@/domains/radar/fetch-news"
 
 export async function GET(req: Request) {
   const authHeader = req.headers.get("authorization")
-  const expected   = `Bearer ${process.env.CRON_SECRET}`
+  const expected = `Bearer ${process.env.CRON_SECRET}`
   if (authHeader !== expected) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }

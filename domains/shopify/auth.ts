@@ -16,7 +16,7 @@ export function normalizeDomain(shop_domain: string): string {
 export async function exchangeCredentialsForToken(
   domain: string,
   api_key: string,
-  api_secret: string
+  api_secret: string,
 ): Promise<string> {
   const url = `https://${domain}/admin/oauth/access_token`
 
@@ -53,8 +53,8 @@ export async function exchangeCredentialsForToken(
   if (res.status === 400) {
     throw new Error(
       `${errDetail}. La app probablemente no está INSTALADA en esta tienda. ` +
-      `Andá a Shopify → Configuración → Aplicaciones → Desarrollar apps → tu app → clickeá "Instalar". ` +
-      `Después volvé acá e intentá de nuevo.`
+        `Andá a Shopify → Configuración → Aplicaciones → Desarrollar apps → tu app → clickeá "Instalar". ` +
+        `Después volvé acá e intentá de nuevo.`,
     )
   }
 
@@ -69,7 +69,9 @@ export async function fetchShopInfo(domain: string, access_token: string) {
   const text = await res.text()
   if (!res.ok) {
     let msg = `HTTP ${res.status}`
-    try { msg = `HTTP ${res.status}: ${JSON.parse(text).errors ?? text.slice(0, 200)}` } catch {}
+    try {
+      msg = `HTTP ${res.status}: ${JSON.parse(text).errors ?? text.slice(0, 200)}`
+    } catch {}
     throw new Error(msg)
   }
   return JSON.parse(text).shop ?? null
@@ -78,7 +80,7 @@ export async function fetchShopInfo(domain: string, access_token: string) {
 // Renueva el token y lo persiste en la DB. Devuelve el nuevo token.
 export async function renewAndPersistToken(
   supabase: any,
-  store: { id: string; shop_domain: string; api_key: string; api_secret: string }
+  store: { id: string; shop_domain: string; api_key: string; api_secret: string },
 ): Promise<string> {
   const newToken = await exchangeCredentialsForToken(store.shop_domain, store.api_key, store.api_secret)
   const tokenExpiresAt = new Date(Date.now() + 23 * 60 * 60 * 1000).toISOString()

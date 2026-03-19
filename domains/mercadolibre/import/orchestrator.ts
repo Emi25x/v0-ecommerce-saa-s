@@ -113,7 +113,7 @@ export async function executeImportRun(
   let lastResult: TickResult | null = null
   const results: TickResult[] = []
 
-  while (ticksRun < maxTicks && (Date.now() - startTime) < maxDurationMs) {
+  while (ticksRun < maxTicks && Date.now() - startTime < maxDurationMs) {
     const result = await executeSingleTick(supabase)
 
     if (!result.ok) {
@@ -128,7 +128,7 @@ export async function executeImportRun(
     if (result.status === "completed") break
 
     // Small delay to avoid rate limiting
-    await new Promise(resolve => setTimeout(resolve, 100))
+    await new Promise((resolve) => setTimeout(resolve, 100))
   }
 
   return { ticksRun, elapsed: Date.now() - startTime, results, lastResult }

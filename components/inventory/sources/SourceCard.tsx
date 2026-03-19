@@ -4,7 +4,19 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
-import { ChevronDown, ChevronUp, Clock, Database, FileText, History, Loader2, Play, Settings, StopCircle, Trash2 } from "lucide-react"
+import {
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  Database,
+  FileText,
+  History,
+  Loader2,
+  Play,
+  Settings,
+  StopCircle,
+  Trash2,
+} from "lucide-react"
 import Link from "next/link"
 import type { SourceWithSchedule, ImportProgressState } from "./types"
 
@@ -54,9 +66,7 @@ export function SourceCard({
                 </Badge>
               )}
             </div>
-            {source.description && (
-              <CardDescription className="mt-1">{source.description}</CardDescription>
-            )}
+            {source.description && <CardDescription className="mt-1">{source.description}</CardDescription>}
           </div>
           <div className="flex gap-2">
             <Link href={`/inventory/sources/${source.id}`}>
@@ -64,17 +74,8 @@ export function SourceCard({
                 <Settings className="h-4 w-4" />
               </Button>
             </Link>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onRunImport(source)}
-              disabled={isRunning || isImporting}
-            >
-              {isImporting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Play className="h-4 w-4" />
-              )}
+            <Button variant="outline" size="sm" onClick={() => onRunImport(source)} disabled={isRunning || isImporting}>
+              {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
             </Button>
             <Button
               variant="outline"
@@ -99,9 +100,7 @@ export function SourceCard({
         <div className="px-6 pb-3">
           <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                Importación en progreso
-              </span>
+              <span className="text-sm font-medium text-blue-900 dark:text-blue-100">Importación en progreso</span>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-blue-700 dark:text-blue-300">
                   {backgroundProgress.processed} / {backgroundProgress.total}

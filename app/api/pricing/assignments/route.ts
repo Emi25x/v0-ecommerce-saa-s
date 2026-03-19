@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient()
-    const body     = await req.json()
+    const body = await req.json()
     const { price_list_id, entity_type, entity_id, priority = 0, is_active = true } = body
 
     if (!price_list_id || !entity_type || !entity_id)
@@ -28,9 +28,10 @@ export async function POST(req: NextRequest) {
 
     const { data, error } = await supabase
       .from("price_list_assignments")
-      .upsert({ price_list_id, entity_type, entity_id, priority, is_active,
-                updated_at: new Date().toISOString() },
-        { onConflict: "entity_type,entity_id" })
+      .upsert(
+        { price_list_id, entity_type, entity_id, priority, is_active, updated_at: new Date().toISOString() },
+        { onConflict: "entity_type,entity_id" },
+      )
       .select()
       .single()
 
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     const supabase = await createClient()
-    const { id }   = await req.json()
+    const { id } = await req.json()
     if (!id) return NextResponse.json({ ok: false, error: "id required" }, { status: 400 })
     const { error } = await supabase.from("price_list_assignments").delete().eq("id", id)
     if (error) throw error

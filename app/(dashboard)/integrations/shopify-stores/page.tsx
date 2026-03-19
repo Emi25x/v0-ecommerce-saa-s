@@ -115,9 +115,7 @@ export default function ShopifyStoresPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">Tiendas Shopify</h1>
-            <p className="text-muted-foreground mt-2">
-              Gestiona tus tiendas de Shopify conectadas
-            </p>
+            <p className="text-muted-foreground mt-2">Gestiona tus tiendas de Shopify conectadas</p>
           </div>
 
           <Button onClick={() => setDialogOpen(true)}>
@@ -134,9 +132,7 @@ export default function ShopifyStoresPage() {
       ) : stores.length === 0 ? (
         <div className="text-center py-12 border-2 border-dashed rounded-lg">
           <h3 className="text-lg font-semibold mb-2">No hay tiendas conectadas</h3>
-          <p className="text-muted-foreground mb-4">
-            Conecta tu primera tienda de Shopify para comenzar
-          </p>
+          <p className="text-muted-foreground mb-4">Conecta tu primera tienda de Shopify para comenzar</p>
           <Button onClick={() => setDialogOpen(true)}>
             <Plus className="mr-2 h-4 w-4" />
             Agregar Primera Tienda

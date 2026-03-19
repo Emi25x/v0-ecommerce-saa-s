@@ -33,7 +33,9 @@ export function BillingStats({ total, config }: BillingStatsProps) {
       </div>
       <div className="rounded-lg border border-border bg-card p-4">
         <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">CUIT</p>
-        <p className="text-sm font-mono font-semibold">{config?.cuit?.replace(/(\d{2})(\d{8})(\d)/, "$1-$2-$3") || "\u2014"}</p>
+        <p className="text-sm font-mono font-semibold">
+          {config?.cuit?.replace(/(\d{2})(\d{8})(\d)/, "$1-$2-$3") || "\u2014"}
+        </p>
       </div>
       <div className="rounded-lg border border-border bg-card p-4">
         <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Punto de venta</p>

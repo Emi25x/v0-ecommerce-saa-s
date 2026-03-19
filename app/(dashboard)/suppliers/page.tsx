@@ -8,31 +8,103 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/hooks/use-toast"
 import {
-  Upload, Package, FileText, CheckCircle2, XCircle, Clock, RefreshCw,
-  AlertTriangle, ChevronDown, ChevronUp, Eye, Play, Database, BarChart3,
-  FileSpreadsheet, Plus, Zap, History, ChevronRight,
+  Upload,
+  Package,
+  FileText,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  RefreshCw,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  Play,
+  Database,
+  BarChart3,
+  FileSpreadsheet,
+  Plus,
+  Zap,
+  History,
+  ChevronRight,
 } from "lucide-react"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { put } from "@vercel/blob"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type CatalogMode   = "create_only" | "update_only" | "create_and_update"
+type CatalogMode = "create_only" | "update_only" | "create_and_update"
 type OverwriteMode = "none" | "only_empty_fields" | "all"
-type FeedKind      = "catalog" | "stock"
+type FeedKind = "catalog" | "stock"
 
-interface Supplier  { id: string; name: string; code: string; is_active: boolean }
-interface Catalog   { id: string; name: string; file_url: string; file_format: string; import_status: string | null; imported_at: string | null; total_items: number; matched_items: number; catalog_mode: string; overwrite_mode: string; warehouse_id: string | null; created_at: string }
-interface Warehouse { id: string; name: string; code: string; is_default: boolean }
-interface ImportRun { id: string; catalog_id: string | null; feed_kind: string; catalog_mode: string | null; overwrite_mode: string | null; total_rows: number; valid_ean: number; created_count: number; updated_count: number; skipped_count: number; set_zero_stock_count: number; new_detected_count: number; error_count: number; status: string; started_at: string; finished_at: string | null }
-interface ImportSource { id: string; name: string; feed_type: string; is_active: boolean; source_key: string | null; last_import_at: string | null; url_template: string | null }
-interface HistoryEntry { id: string; status: string; products_imported: number | null; products_updated: number | null; products_failed: number | null; started_at: string; completed_at: string | null; mode: string | null; total_rows: number | null; created_count: number | null; updated_count: number | null; error_count: number | null; error_message: string | null }
+interface Supplier {
+  id: string
+  name: string
+  code: string
+  is_active: boolean
+}
+interface Catalog {
+  id: string
+  name: string
+  file_url: string
+  file_format: string
+  import_status: string | null
+  imported_at: string | null
+  total_items: number
+  matched_items: number
+  catalog_mode: string
+  overwrite_mode: string
+  warehouse_id: string | null
+  created_at: string
+}
+interface Warehouse {
+  id: string
+  name: string
+  code: string
+  is_default: boolean
+}
+interface ImportRun {
+  id: string
+  catalog_id: string | null
+  feed_kind: string
+  catalog_mode: string | null
+  overwrite_mode: string | null
+  total_rows: number
+  valid_ean: number
+  created_count: number
+  updated_count: number
+  skipped_count: number
+  set_zero_stock_count: number
+  new_detected_count: number
+  error_count: number
+  status: string
+  started_at: string
+  finished_at: string | null
+}
+interface ImportSource {
+  id: string
+  name: string
+  feed_type: string
+  is_active: boolean
+  source_key: string | null
+  last_import_at: string | null
+  url_template: string | null
+}
+interface HistoryEntry {
+  id: string
+  status: string
+  products_imported: number | null
+  products_updated: number | null
+  products_failed: number | null
+  started_at: string
+  completed_at: string | null
+  mode: string | null
+  total_rows: number | null
+  created_count: number | null
+  updated_count: number | null
+  error_count: number | null
+  error_message: string | null
+}
 
 interface Preview {
   total_rows: number
@@ -50,11 +122,11 @@ interface Preview {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
-  pending:    { label: "Pendiente",  cls: "bg-muted/50 text-muted-foreground" },
+  pending: { label: "Pendiente", cls: "bg-muted/50 text-muted-foreground" },
   processing: { label: "Procesando", cls: "bg-amber-500/15 text-amber-400" },
-  completed:  { label: "Completado", cls: "bg-emerald-500/15 text-emerald-400" },
-  failed:     { label: "Error",      cls: "bg-red-500/15 text-red-400" },
-  running:    { label: "Corriendo",  cls: "bg-blue-500/15 text-blue-400" },
+  completed: { label: "Completado", cls: "bg-emerald-500/15 text-emerald-400" },
+  failed: { label: "Error", cls: "bg-red-500/15 text-red-400" },
+  running: { label: "Corriendo", cls: "bg-blue-500/15 text-blue-400" },
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -70,72 +142,81 @@ function fmt(n: number | null | undefined) {
 export default function SuppliersPage() {
   const { toast } = useToast()
 
-  const [suppliers,        setSuppliers]        = useState<Supplier[]>([])
-  const [catalogs,         setCatalogs]         = useState<Catalog[]>([])
-  const [warehouses,       setWarehouses]       = useState<Warehouse[]>([])
-  const [importRuns,       setImportRuns]       = useState<ImportRun[]>([])
+  const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [catalogs, setCatalogs] = useState<Catalog[]>([])
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [importRuns, setImportRuns] = useState<ImportRun[]>([])
   const [selectedSupplier, setSelectedSupplier] = useState<string>("")
-  const [activeTab,        setActiveTab]        = useState("import")
-  const [loading,          setLoading]          = useState(false)
+  const [activeTab, setActiveTab] = useState("import")
+  const [loading, setLoading] = useState(false)
 
   // Import sources (automated feeds)
-  const [importSources,       setImportSources]       = useState<ImportSource[]>([])
-  const [sourcesHistory,      setSourcesHistory]      = useState<Record<string, HistoryEntry[]>>({})
+  const [importSources, setImportSources] = useState<ImportSource[]>([])
+  const [sourcesHistory, setSourcesHistory] = useState<Record<string, HistoryEntry[]>>({})
   const [loadingSourceHistory, setLoadingSourceHistory] = useState<Record<string, boolean>>({})
-  const [expandedSources,     setExpandedSources]     = useState<Set<string>>(new Set())
-  const [runningImports,      setRunningImports]      = useState<Record<string, boolean>>({})
+  const [expandedSources, setExpandedSources] = useState<Set<string>>(new Set())
+  const [runningImports, setRunningImports] = useState<Record<string, boolean>>({})
   const [showAddSupplierDialog, setShowAddSupplierDialog] = useState(false)
 
   // Upload form state
-  const [uploading,     setUploading]     = useState(false)
-  const [uploadFile,    setUploadFile]    = useState<File | null>(null)
-  const [feedKind,      setFeedKind]      = useState<FeedKind>("catalog")
-  const [catalogMode,   setCatalogMode]   = useState<CatalogMode>("update_only")
+  const [uploading, setUploading] = useState(false)
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [feedKind, setFeedKind] = useState<FeedKind>("catalog")
+  const [catalogMode, setCatalogMode] = useState<CatalogMode>("update_only")
   const [overwriteMode, setOverwriteMode] = useState<OverwriteMode>("only_empty_fields")
-  const [warehouseId,   setWarehouseId]   = useState<string>("")
+  const [warehouseId, setWarehouseId] = useState<string>("")
   const fileRef = useRef<HTMLInputElement>(null)
 
   // Preview state
-  const [preview,         setPreview]         = useState<Preview | null>(null)
-  const [previewLoading,  setPreviewLoading]  = useState(false)
+  const [preview, setPreview] = useState<Preview | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
   const [pendingCatalogId, setPendingCatalogId] = useState<string | null>(null)
-  const [applying,         setApplying]         = useState(false)
-  const [applyResult,      setApplyResult]      = useState<any | null>(null)
-  const [showNewEans,      setShowNewEans]      = useState(false)
+  const [applying, setApplying] = useState(false)
+  const [applyResult, setApplyResult] = useState<any | null>(null)
+  const [showNewEans, setShowNewEans] = useState(false)
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    fetch("/api/suppliers").then(r => r.json()).then(d => {
-      const list = d.suppliers ?? []
-      setSuppliers(list)
-      if (list.length && !selectedSupplier) setSelectedSupplier(list[0].id)
-    })
-    fetch("/api/warehouses").then(r => r.json()).then(d => {
-      const ws = d.warehouses ?? []
-      setWarehouses(ws)
-      const def = ws.find((w: Warehouse) => w.is_default)
-      if (def) setWarehouseId(def.id)
-    })
+    fetch("/api/suppliers")
+      .then((r) => r.json())
+      .then((d) => {
+        const list = d.suppliers ?? []
+        setSuppliers(list)
+        if (list.length && !selectedSupplier) setSelectedSupplier(list[0].id)
+      })
+    fetch("/api/warehouses")
+      .then((r) => r.json())
+      .then((d) => {
+        const ws = d.warehouses ?? []
+        setWarehouses(ws)
+        const def = ws.find((w: Warehouse) => w.is_default)
+        if (def) setWarehouseId(def.id)
+      })
   }, [])
 
   useEffect(() => {
     if (!selectedSupplier) return
-    fetch(`/api/suppliers/catalogs?supplier_id=${selectedSupplier}`).then(r => r.json()).then(d => setCatalogs(d.catalogs ?? []))
-    fetch(`/api/suppliers/import-runs?supplier_id=${selectedSupplier}&limit=20`).then(r => r.json()).then(d => setImportRuns(d.runs ?? []))
+    fetch(`/api/suppliers/catalogs?supplier_id=${selectedSupplier}`)
+      .then((r) => r.json())
+      .then((d) => setCatalogs(d.catalogs ?? []))
+    fetch(`/api/suppliers/import-runs?supplier_id=${selectedSupplier}&limit=20`)
+      .then((r) => r.json())
+      .then((d) => setImportRuns(d.runs ?? []))
 
     // Fetch automated import sources matching this supplier name
-    const sup = suppliers.find(s => s.id === selectedSupplier)
+    const sup = suppliers.find((s) => s.id === selectedSupplier)
     if (!sup) return
     fetch("/api/inventory/sources")
-      .then(r => r.json())
-      .then(d => {
+      .then((r) => r.json())
+      .then((d) => {
         const all: ImportSource[] = d.sources ?? d.data ?? []
         const keyword = sup.name.toLowerCase()
         const code = sup.code.toLowerCase()
-        const matched = all.filter(s =>
-          s.name?.toLowerCase().includes(keyword) ||
-          s.name?.toLowerCase().includes(code) ||
-          s.source_key?.toLowerCase().includes(code)
+        const matched = all.filter(
+          (s) =>
+            s.name?.toLowerCase().includes(keyword) ||
+            s.name?.toLowerCase().includes(code) ||
+            s.source_key?.toLowerCase().includes(code),
         )
         setImportSources(matched)
         setSourcesHistory({})
@@ -145,18 +226,18 @@ export default function SuppliersPage() {
 
   async function loadSourceHistory(sourceId: string) {
     if (sourcesHistory[sourceId] !== undefined) return
-    setLoadingSourceHistory(prev => ({ ...prev, [sourceId]: true }))
+    setLoadingSourceHistory((prev) => ({ ...prev, [sourceId]: true }))
     try {
       const res = await fetch(`/api/inventory/history?source_id=${sourceId}&limit=10`)
       const data = await res.json()
-      setSourcesHistory(prev => ({ ...prev, [sourceId]: data.history ?? [] }))
+      setSourcesHistory((prev) => ({ ...prev, [sourceId]: data.history ?? [] }))
     } finally {
-      setLoadingSourceHistory(prev => ({ ...prev, [sourceId]: false }))
+      setLoadingSourceHistory((prev) => ({ ...prev, [sourceId]: false }))
     }
   }
 
   function toggleSource(sourceId: string) {
-    setExpandedSources(prev => {
+    setExpandedSources((prev) => {
       const next = new Set(prev)
       if (next.has(sourceId)) {
         next.delete(sourceId)
@@ -169,7 +250,7 @@ export default function SuppliersPage() {
   }
 
   async function runImport(sourceId: string) {
-    setRunningImports(prev => ({ ...prev, [sourceId]: true }))
+    setRunningImports((prev) => ({ ...prev, [sourceId]: true }))
     try {
       const res = await fetch(`/api/inventory/sources/run`, {
         method: "POST",
@@ -183,15 +264,23 @@ export default function SuppliersPage() {
           description: "El proceso corre en segundo plano. Revisá el historial en unos minutos.",
         })
       } else {
-        toast({ title: "Error en importación", description: data.message ?? data.error ?? "Error desconocido", variant: "destructive" })
+        toast({
+          title: "Error en importación",
+          description: data.message ?? data.error ?? "Error desconocido",
+          variant: "destructive",
+        })
       }
       // Refresh history for this source (force reload)
-      setSourcesHistory(prev => { const next = { ...prev }; delete next[sourceId]; return next })
+      setSourcesHistory((prev) => {
+        const next = { ...prev }
+        delete next[sourceId]
+        return next
+      })
       if (expandedSources.has(sourceId)) loadSourceHistory(sourceId)
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" })
     } finally {
-      setRunningImports(prev => ({ ...prev, [sourceId]: false }))
+      setRunningImports((prev) => ({ ...prev, [sourceId]: false }))
     }
   }
 
@@ -205,13 +294,16 @@ export default function SuppliersPage() {
 
     try {
       // 1. Upload to Vercel Blob
-      const blobRes = await fetch(`/api/blob-upload?filename=catalogs/${selectedSupplier}/${Date.now()}-${uploadFile.name}`, {
-        method:  "POST",
-        headers: { "content-type": uploadFile.type || "application/octet-stream" },
-        body:    uploadFile,
-      })
+      const blobRes = await fetch(
+        `/api/blob-upload?filename=catalogs/${selectedSupplier}/${Date.now()}-${uploadFile.name}`,
+        {
+          method: "POST",
+          headers: { "content-type": uploadFile.type || "application/octet-stream" },
+          body: uploadFile,
+        },
+      )
       const blobData = blobRes.ok ? await blobRes.json() : null
-      const fileUrl  = blobData?.url
+      const fileUrl = blobData?.url
 
       if (!fileUrl) throw new Error("Error al subir archivo")
 
@@ -223,18 +315,18 @@ export default function SuppliersPage() {
 
       // Use a direct insert via a lightweight endpoint
       const catRes = await fetch("/api/suppliers/catalogs", {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          supplier_id:    selectedSupplier,
-          name:           `${feedKind === "stock" ? "[STOCK]" : "[CAT]"} ${uploadFile.name}`,
-          file_url:       fileUrl,
+          supplier_id: selectedSupplier,
+          name: `${feedKind === "stock" ? "[STOCK]" : "[CAT]"} ${uploadFile.name}`,
+          file_url: fileUrl,
           file_size_bytes: uploadFile.size,
-          file_format:    uploadFile.name.split(".").pop()?.toLowerCase() ?? "xlsx",
-          catalog_mode:   catalogMode,
+          file_format: uploadFile.name.split(".").pop()?.toLowerCase() ?? "xlsx",
+          catalog_mode: catalogMode,
           overwrite_mode: overwriteMode,
-          warehouse_id:   warehouseId || null,
-          feed_kind:      feedKind,
+          warehouse_id: warehouseId || null,
+          feed_kind: feedKind,
         }),
       })
       const catData = await catRes.json()
@@ -262,18 +354,19 @@ export default function SuppliersPage() {
     setPreviewLoading(true)
     setPreview(null)
     try {
-      const endpoint = feedKind === "stock"
-        ? `/api/suppliers/catalogs/${catalogId}/import-stock`
-        : `/api/suppliers/catalogs/${catalogId}/import`
+      const endpoint =
+        feedKind === "stock"
+          ? `/api/suppliers/catalogs/${catalogId}/import-stock`
+          : `/api/suppliers/catalogs/${catalogId}/import`
 
-      const res  = await fetch(endpoint, {
-        method:  "POST",
+      const res = await fetch(endpoint, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
-          preview:        true,
-          catalog_mode:   catalogMode,
+        body: JSON.stringify({
+          preview: true,
+          catalog_mode: catalogMode,
           overwrite_mode: overwriteMode,
-          warehouse_id:   warehouseId || null,
+          warehouse_id: warehouseId || null,
         }),
       })
       const data = await res.json()
@@ -288,18 +381,19 @@ export default function SuppliersPage() {
     if (!pendingCatalogId) return
     setApplying(true)
     try {
-      const endpoint = feedKind === "stock"
-        ? `/api/suppliers/catalogs/${pendingCatalogId}/import-stock`
-        : `/api/suppliers/catalogs/${pendingCatalogId}/import`
+      const endpoint =
+        feedKind === "stock"
+          ? `/api/suppliers/catalogs/${pendingCatalogId}/import-stock`
+          : `/api/suppliers/catalogs/${pendingCatalogId}/import`
 
-      const res  = await fetch(endpoint, {
-        method:  "POST",
+      const res = await fetch(endpoint, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
-          preview:        false,
-          catalog_mode:   catalogMode,
+        body: JSON.stringify({
+          preview: false,
+          catalog_mode: catalogMode,
           overwrite_mode: overwriteMode,
-          warehouse_id:   warehouseId || null,
+          warehouse_id: warehouseId || null,
         }),
       })
       const data = await res.json()
@@ -310,7 +404,10 @@ export default function SuppliersPage() {
       setImportRuns((await r.json()).runs ?? [])
 
       if (data.ok) {
-        toast({ title: "Importación completada", description: `${fmt(data.created ?? 0)} creados · ${fmt(data.updated ?? 0)} actualizados` })
+        toast({
+          title: "Importación completada",
+          description: `${fmt(data.created ?? 0)} creados · ${fmt(data.updated ?? 0)} actualizados`,
+        })
         setPreview(null)
         setPendingCatalogId(null)
         setUploadFile(null)
@@ -324,11 +421,10 @@ export default function SuppliersPage() {
   }
 
   // ─── Render ────────────────────────────────────────────────────────────────
-  const supplier = suppliers.find(s => s.id === selectedSupplier)
+  const supplier = suppliers.find((s) => s.id === selectedSupplier)
 
   return (
     <div className="min-h-screen bg-background text-foreground p-6 space-y-6">
-
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -336,13 +432,14 @@ export default function SuppliersPage() {
           <p className="text-sm text-muted-foreground mt-0.5">Importación controlada de catálogo y stock por EAN</p>
         </div>
         <Button size="sm" onClick={() => setShowAddSupplierDialog(true)} className="gap-1.5">
-          <Plus className="h-3.5 w-3.5" />Agregar proveedor
+          <Plus className="h-3.5 w-3.5" />
+          Agregar proveedor
         </Button>
       </div>
 
       {/* Supplier selector */}
       <div className="flex items-center gap-2 flex-wrap">
-        {suppliers.map(s => (
+        {suppliers.map((s) => (
           <button
             key={s.id}
             onClick={() => setSelectedSupplier(s.id)}
@@ -359,33 +456,36 @@ export default function SuppliersPage() {
         ))}
       </div>
 
-      {!selectedSupplier && (
-        <p className="text-muted-foreground text-sm">Seleccioná un proveedor para comenzar.</p>
-      )}
+      {!selectedSupplier && <p className="text-muted-foreground text-sm">Seleccioná un proveedor para comenzar.</p>}
 
       {selectedSupplier && (
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="bg-muted/30">
             <TabsTrigger value="import">
-              <Upload className="h-3.5 w-3.5 mr-1.5" />Importar
+              <Upload className="h-3.5 w-3.5 mr-1.5" />
+              Importar
             </TabsTrigger>
             <TabsTrigger value="catalogs">
-              <FileText className="h-3.5 w-3.5 mr-1.5" />Archivos
+              <FileText className="h-3.5 w-3.5 mr-1.5" />
+              Archivos
             </TabsTrigger>
             <TabsTrigger value="logs">
-              <BarChart3 className="h-3.5 w-3.5 mr-1.5" />Historial
+              <BarChart3 className="h-3.5 w-3.5 mr-1.5" />
+              Historial
             </TabsTrigger>
             <TabsTrigger value="fuentes">
-              <Zap className="h-3.5 w-3.5 mr-1.5" />Fuentes automáticas
+              <Zap className="h-3.5 w-3.5 mr-1.5" />
+              Fuentes automáticas
               {importSources.length > 0 && (
-                <span className="ml-1.5 text-[10px] bg-muted/50 rounded-full px-1.5 py-px font-mono">{importSources.length}</span>
+                <span className="ml-1.5 text-[10px] bg-muted/50 rounded-full px-1.5 py-px font-mono">
+                  {importSources.length}
+                </span>
               )}
             </TabsTrigger>
           </TabsList>
 
           {/* ── Import tab ── */}
           <TabsContent value="import" className="space-y-5 mt-4">
-
             {/* ARNOIA info banner */}
             {supplier?.code === "ARNOIA" && (
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 flex items-start gap-3">
@@ -393,9 +493,9 @@ export default function SuppliersPage() {
                 <div>
                   <p className="text-sm font-semibold text-amber-300">Catálogo inicial ya importado</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    El catálogo completo de ARNOIA ya fue cargado. Para no sobreescribir datos existentes,
-                    solo se permite <strong>actualización</strong> (update_only) o <strong>verificación</strong> de stock.
-                    No usar create_and_update en este proveedor.
+                    El catálogo completo de ARNOIA ya fue cargado. Para no sobreescribir datos existentes, solo se
+                    permite <strong>actualización</strong> (update_only) o <strong>verificación</strong> de stock. No
+                    usar create_and_update en este proveedor.
                   </p>
                 </div>
               </div>
@@ -406,20 +506,31 @@ export default function SuppliersPage() {
               <h2 className="text-sm font-semibold">Configuración de importación</h2>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-
                 {/* Feed kind */}
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">Tipo de archivo</Label>
-                  <Select value={feedKind} onValueChange={v => { setFeedKind(v as FeedKind); setPreview(null) }}>
+                  <Select
+                    value={feedKind}
+                    onValueChange={(v) => {
+                      setFeedKind(v as FeedKind)
+                      setPreview(null)
+                    }}
+                  >
                     <SelectTrigger className="h-9 text-sm">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="catalog">
-                        <span className="flex items-center gap-2"><FileSpreadsheet className="h-3.5 w-3.5" />Catálogo</span>
+                        <span className="flex items-center gap-2">
+                          <FileSpreadsheet className="h-3.5 w-3.5" />
+                          Catálogo
+                        </span>
                       </SelectItem>
                       <SelectItem value="stock">
-                        <span className="flex items-center gap-2"><Database className="h-3.5 w-3.5" />Stock (col A=EAN, col B=qty)</span>
+                        <span className="flex items-center gap-2">
+                          <Database className="h-3.5 w-3.5" />
+                          Stock (col A=EAN, col B=qty)
+                        </span>
                       </SelectItem>
                     </SelectContent>
                   </Select>
@@ -429,8 +540,14 @@ export default function SuppliersPage() {
                 {feedKind === "catalog" && (
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Modo catálogo</Label>
-                    <Select value={catalogMode} onValueChange={v => { setCatalogMode(v as CatalogMode); setPreview(null) }}
-                      disabled={supplier?.code === "ARNOIA"}>
+                    <Select
+                      value={catalogMode}
+                      onValueChange={(v) => {
+                        setCatalogMode(v as CatalogMode)
+                        setPreview(null)
+                      }}
+                      disabled={supplier?.code === "ARNOIA"}
+                    >
                       <SelectTrigger className="h-9 text-sm">
                         <SelectValue />
                       </SelectTrigger>
@@ -441,8 +558,10 @@ export default function SuppliersPage() {
                       </SelectContent>
                     </Select>
                     <p className="text-[10px] text-muted-foreground">
-                      {catalogMode === "update_only" && "Solo toca products donde el EAN ya existe. Los nuevos se registran pero no se crean."}
-                      {catalogMode === "create_only" && "Solo crea products si el EAN no existe. No modifica los existentes."}
+                      {catalogMode === "update_only" &&
+                        "Solo toca products donde el EAN ya existe. Los nuevos se registran pero no se crean."}
+                      {catalogMode === "create_only" &&
+                        "Solo crea products si el EAN no existe. No modifica los existentes."}
                       {catalogMode === "create_and_update" && "Crea nuevos y actualiza los existentes."}
                     </p>
                   </div>
@@ -452,7 +571,13 @@ export default function SuppliersPage() {
                 {feedKind === "catalog" && (
                   <div className="space-y-1.5">
                     <Label className="text-xs text-muted-foreground">Sobreescritura</Label>
-                    <Select value={overwriteMode} onValueChange={v => { setOverwriteMode(v as OverwriteMode); setPreview(null) }}>
+                    <Select
+                      value={overwriteMode}
+                      onValueChange={(v) => {
+                        setOverwriteMode(v as OverwriteMode)
+                        setPreview(null)
+                      }}
+                    >
                       <SelectTrigger className="h-9 text-sm">
                         <SelectValue />
                       </SelectTrigger>
@@ -463,9 +588,9 @@ export default function SuppliersPage() {
                       </SelectContent>
                     </Select>
                     <p className="text-[10px] text-muted-foreground">
-                      {overwriteMode === "none"              && "No modifica ningún campo en products existentes."}
+                      {overwriteMode === "none" && "No modifica ningún campo en products existentes."}
                       {overwriteMode === "only_empty_fields" && "Solo completa campos que estén vacíos o en 0."}
-                      {overwriteMode === "all"               && "Sobreescribe todos los campos del proveedor."}
+                      {overwriteMode === "all" && "Sobreescribe todos los campos del proveedor."}
                     </p>
                   </div>
                 )}
@@ -478,8 +603,10 @@ export default function SuppliersPage() {
                       <SelectValue placeholder="Seleccionar..." />
                     </SelectTrigger>
                     <SelectContent>
-                      {warehouses.map(w => (
-                        <SelectItem key={w.id} value={w.id}>{w.name} ({w.code})</SelectItem>
+                      {warehouses.map((w) => (
+                        <SelectItem key={w.id} value={w.id}>
+                          {w.name} ({w.code})
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -497,7 +624,11 @@ export default function SuppliersPage() {
                   accept=".xlsx,.xls,.csv"
                   className="hidden"
                   id="catalog-file-input"
-                  onChange={e => { setUploadFile(e.target.files?.[0] ?? null); setPreview(null); setApplyResult(null) }}
+                  onChange={(e) => {
+                    setUploadFile(e.target.files?.[0] ?? null)
+                    setPreview(null)
+                    setApplyResult(null)
+                  }}
                 />
                 <label
                   htmlFor="catalog-file-input"
@@ -507,21 +638,25 @@ export default function SuppliersPage() {
                   {uploadFile ? uploadFile.name : "Seleccionar archivo (.xlsx / .csv)"}
                 </label>
                 {uploadFile && (
-                  <Button
-                    onClick={handleUpload}
-                    disabled={uploading || !warehouseId}
-                    size="sm"
-                  >
-                    {uploading
-                      ? <><RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" />Subiendo...</>
-                      : <><Eye className="h-3.5 w-3.5 mr-1.5" />Subir y previsualizar</>
-                    }
+                  <Button onClick={handleUpload} disabled={uploading || !warehouseId} size="sm">
+                    {uploading ? (
+                      <>
+                        <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        Subiendo...
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="h-3.5 w-3.5 mr-1.5" />
+                        Subir y previsualizar
+                      </>
+                    )}
                   </Button>
                 )}
               </div>
               {!warehouseId && uploadFile && (
                 <p className="text-xs text-amber-400 flex items-center gap-1.5">
-                  <AlertTriangle className="h-3.5 w-3.5" />Seleccioná un almacén antes de continuar.
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Seleccioná un almacén antes de continuar.
                 </p>
               )}
             </div>
@@ -546,27 +681,33 @@ export default function SuppliersPage() {
                     {/* Stats grid */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       {[
-                        { label: "Filas leídas",       value: preview.total_rows,      color: "text-foreground" },
-                        { label: "EAN válidos",         value: preview.valid_ean,       color: "text-blue-400" },
-                        { label: "Descartados",         value: preview.skipped_invalid, color: "text-zinc-500" },
+                        { label: "Filas leídas", value: preview.total_rows, color: "text-foreground" },
+                        { label: "EAN válidos", value: preview.valid_ean, color: "text-blue-400" },
+                        { label: "Descartados", value: preview.skipped_invalid, color: "text-zinc-500" },
                         feedKind === "catalog"
-                          ? { label: "A crear",         value: preview.to_create,       color: "text-emerald-400" }
-                          : { label: "EAN únicos",      value: preview.unique_eans ?? 0, color: "text-emerald-400" },
+                          ? { label: "A crear", value: preview.to_create, color: "text-emerald-400" }
+                          : { label: "EAN únicos", value: preview.unique_eans ?? 0, color: "text-emerald-400" },
                         feedKind === "catalog"
-                          ? { label: "A actualizar",    value: preview.to_update,       color: "text-amber-400" }
+                          ? { label: "A actualizar", value: preview.to_update, color: "text-amber-400" }
                           : { label: "Se pondrán en 0", value: preview.set_zero_count ?? 0, color: "text-red-400" },
                         feedKind === "catalog"
-                          ? { label: "Sin acción",      value: preview.to_skip,         color: "text-zinc-500" }
+                          ? { label: "Sin acción", value: preview.to_skip, color: "text-zinc-500" }
                           : null,
                         feedKind === "catalog"
-                          ? { label: "Nuevos detectados (no creados)", value: preview.new_detected, color: "text-blue-400" }
+                          ? {
+                              label: "Nuevos detectados (no creados)",
+                              value: preview.new_detected,
+                              color: "text-blue-400",
+                            }
                           : null,
-                      ].filter(Boolean).map((stat, i) => (
-                        <div key={i} className="rounded-md border border-border bg-background p-3">
-                          <p className="text-xs text-muted-foreground">{stat!.label}</p>
-                          <p className={`text-lg font-bold font-mono mt-0.5 ${stat!.color}`}>{fmt(stat!.value)}</p>
-                        </div>
-                      ))}
+                      ]
+                        .filter(Boolean)
+                        .map((stat, i) => (
+                          <div key={i} className="rounded-md border border-border bg-background p-3">
+                            <p className="text-xs text-muted-foreground">{stat!.label}</p>
+                            <p className={`text-lg font-bold font-mono mt-0.5 ${stat!.color}`}>{fmt(stat!.value)}</p>
+                          </div>
+                        ))}
                     </div>
 
                     {/* New detected EANs */}
@@ -574,18 +715,30 @@ export default function SuppliersPage() {
                       <div className="rounded-md border border-blue-500/20 bg-blue-500/5 p-3">
                         <button
                           className="flex items-center gap-2 text-xs text-blue-400 font-medium w-full text-left"
-                          onClick={() => setShowNewEans(v => !v)}
+                          onClick={() => setShowNewEans((v) => !v)}
                         >
-                          {showNewEans ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                          {preview.new_detected} EAN nuevos detectados (mode={catalogMode}, no se crearán en update_only)
+                          {showNewEans ? (
+                            <ChevronUp className="h-3.5 w-3.5" />
+                          ) : (
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          )}
+                          {preview.new_detected} EAN nuevos detectados (mode={catalogMode}, no se crearán en
+                          update_only)
                         </button>
                         {showNewEans && preview.new_detected_eans && (
                           <div className="mt-2 flex flex-wrap gap-1.5">
-                            {preview.new_detected_eans.map(ean => (
-                              <span key={ean} className="text-[10px] font-mono bg-blue-500/10 text-blue-300 px-1.5 py-0.5 rounded">{ean}</span>
+                            {preview.new_detected_eans.map((ean) => (
+                              <span
+                                key={ean}
+                                className="text-[10px] font-mono bg-blue-500/10 text-blue-300 px-1.5 py-0.5 rounded"
+                              >
+                                {ean}
+                              </span>
                             ))}
                             {preview.new_detected > 20 && (
-                              <span className="text-[10px] text-muted-foreground">...y {preview.new_detected - 20} más</span>
+                              <span className="text-[10px] text-muted-foreground">
+                                ...y {preview.new_detected - 20} más
+                              </span>
                             )}
                           </div>
                         )}
@@ -595,13 +748,17 @@ export default function SuppliersPage() {
                     {/* Sample rows */}
                     {preview.sample_rows && preview.sample_rows.length > 0 && (
                       <div className="space-y-1.5">
-                        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Muestra (primeras 5 filas)</p>
+                        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
+                          Muestra (primeras 5 filas)
+                        </p>
                         <div className="overflow-x-auto rounded-md border border-border">
                           <table className="w-full text-xs">
                             <thead className="bg-muted/30">
                               <tr>
-                                {["EAN","Título","Autor","Editorial","Precio"].map(h => (
-                                  <th key={h} className="px-3 py-2 text-left font-medium text-muted-foreground">{h}</th>
+                                {["EAN", "Título", "Autor", "Editorial", "Precio"].map((h) => (
+                                  <th key={h} className="px-3 py-2 text-left font-medium text-muted-foreground">
+                                    {h}
+                                  </th>
                                 ))}
                               </tr>
                             </thead>
@@ -612,7 +769,9 @@ export default function SuppliersPage() {
                                   <td className="px-3 py-1.5 max-w-[200px] truncate">{r.title}</td>
                                   <td className="px-3 py-1.5 text-muted-foreground truncate">{r.author}</td>
                                   <td className="px-3 py-1.5 text-muted-foreground truncate">{r.publisher}</td>
-                                  <td className="px-3 py-1.5 text-muted-foreground">{r.price != null ? `$${r.price}` : "—"}</td>
+                                  <td className="px-3 py-1.5 text-muted-foreground">
+                                    {r.price != null ? `$${r.price}` : "—"}
+                                  </td>
                                 </tr>
                               ))}
                             </tbody>
@@ -624,10 +783,17 @@ export default function SuppliersPage() {
                     {/* Apply button */}
                     <div className="flex items-center gap-3 pt-1">
                       <Button onClick={applyImport} disabled={applying} className="gap-2">
-                        {applying
-                          ? <><RefreshCw className="h-4 w-4 animate-spin" />Aplicando...</>
-                          : <><Play className="h-4 w-4" />Aplicar importación</>
-                        }
+                        {applying ? (
+                          <>
+                            <RefreshCw className="h-4 w-4 animate-spin" />
+                            Aplicando...
+                          </>
+                        ) : (
+                          <>
+                            <Play className="h-4 w-4" />
+                            Aplicar importación
+                          </>
+                        )}
                       </Button>
                       <p className="text-xs text-muted-foreground">
                         Esta acción modifica la base de datos. Revisá el preview antes de confirmar.
@@ -640,15 +806,16 @@ export default function SuppliersPage() {
 
             {/* Apply result */}
             {applyResult && (
-              <div className={`rounded-lg border p-4 flex items-start gap-3 ${
-                applyResult.ok
-                  ? "border-emerald-500/30 bg-emerald-500/5"
-                  : "border-red-500/30 bg-red-500/5"
-              }`}>
-                {applyResult.ok
-                  ? <CheckCircle2 className="h-5 w-5 text-emerald-400 flex-shrink-0 mt-0.5" />
-                  : <XCircle className="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
-                }
+              <div
+                className={`rounded-lg border p-4 flex items-start gap-3 ${
+                  applyResult.ok ? "border-emerald-500/30 bg-emerald-500/5" : "border-red-500/30 bg-red-500/5"
+                }`}
+              >
+                {applyResult.ok ? (
+                  <CheckCircle2 className="h-5 w-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                ) : (
+                  <XCircle className="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
+                )}
                 <div className="space-y-1">
                   <p className="text-sm font-semibold">
                     {applyResult.ok ? "Importación completada" : `Error: ${applyResult.error}`}
@@ -657,14 +824,12 @@ export default function SuppliersPage() {
                     <p className="text-xs text-muted-foreground">
                       {feedKind === "catalog"
                         ? `${fmt(applyResult.created)} creados · ${fmt(applyResult.updated)} actualizados · ${fmt(applyResult.skipped)} sin acción · ${fmt(applyResult.new_detected)} nuevos detectados`
-                        : `${fmt(applyResult.unique_eans)} EAN procesados · ${fmt(applyResult.set_zero_count)} puestos en 0`
-                      }
+                        : `${fmt(applyResult.unique_eans)} EAN procesados · ${fmt(applyResult.set_zero_count)} puestos en 0`}
                     </p>
                   )}
                 </div>
               </div>
             )}
-
           </TabsContent>
 
           {/* ── Catalogs tab ── */}
@@ -683,38 +848,48 @@ export default function SuppliersPage() {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {catalogs.length === 0 && (
-                    <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground text-sm">Sin archivos importados aún.</td></tr>
-                  )}
-                  {catalogs.map(cat => {
-                    // Buscar el ultimo run de este catálogo en importRuns
-                    const lastRun = importRuns.find(r => r.catalog_id === cat.id)
-                    return (
-                    <tr key={cat.id} className="hover:bg-muted/20">
-                      <td className="px-4 py-3 font-medium max-w-[180px] truncate">{cat.name}</td>
-                      <td className="px-4 py-3"><StatusBadge status={cat.import_status ?? "pending"} /></td>
-                      <td className="px-4 py-3">
-                        <span className="text-xs text-muted-foreground">
-                          {cat.catalog_mode ?? "—"} / {cat.overwrite_mode ?? "—"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono text-xs">
-                        {fmt(cat.matched_items)}/{fmt(cat.total_items)}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        {lastRun ? (
-                          <span className="text-xs font-mono space-x-1.5">
-                            <span className="text-emerald-400">+{fmt(lastRun.created_count)}</span>
-                            <span className="text-amber-400">~{fmt(lastRun.updated_count)}</span>
-                            {lastRun.error_count > 0 && <span className="text-red-400">!{fmt(lastRun.error_count)}</span>}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                        {cat.imported_at ? new Date(cat.imported_at).toLocaleString("es-AR") : new Date(cat.created_at).toLocaleDateString("es-AR")}
+                    <tr>
+                      <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground text-sm">
+                        Sin archivos importados aún.
                       </td>
                     </tr>
+                  )}
+                  {catalogs.map((cat) => {
+                    // Buscar el ultimo run de este catálogo en importRuns
+                    const lastRun = importRuns.find((r) => r.catalog_id === cat.id)
+                    return (
+                      <tr key={cat.id} className="hover:bg-muted/20">
+                        <td className="px-4 py-3 font-medium max-w-[180px] truncate">{cat.name}</td>
+                        <td className="px-4 py-3">
+                          <StatusBadge status={cat.import_status ?? "pending"} />
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-xs text-muted-foreground">
+                            {cat.catalog_mode ?? "—"} / {cat.overwrite_mode ?? "—"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono text-xs">
+                          {fmt(cat.matched_items)}/{fmt(cat.total_items)}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {lastRun ? (
+                            <span className="text-xs font-mono space-x-1.5">
+                              <span className="text-emerald-400">+{fmt(lastRun.created_count)}</span>
+                              <span className="text-amber-400">~{fmt(lastRun.updated_count)}</span>
+                              {lastRun.error_count > 0 && (
+                                <span className="text-red-400">!{fmt(lastRun.error_count)}</span>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                          {cat.imported_at
+                            ? new Date(cat.imported_at).toLocaleString("es-AR")
+                            : new Date(cat.created_at).toLocaleDateString("es-AR")}
+                        </td>
+                      </tr>
                     )
                   })}
                 </tbody>
@@ -743,47 +918,71 @@ export default function SuppliersPage() {
                 </thead>
                 <tbody className="divide-y divide-border">
                   {importRuns.length === 0 && (
-                    <tr><td colSpan={11} className="px-4 py-8 text-center text-muted-foreground text-sm">Sin corridas registradas.</td></tr>
+                    <tr>
+                      <td colSpan={11} className="px-4 py-8 text-center text-muted-foreground text-sm">
+                        Sin corridas registradas.
+                      </td>
+                    </tr>
                   )}
-                  {importRuns.map(run => {
+                  {importRuns.map((run) => {
                     const durMs = run.finished_at
                       ? new Date(run.finished_at).getTime() - new Date(run.started_at).getTime()
                       : null
-                    const durLabel = durMs == null ? "—"
-                      : durMs < 60000 ? `${Math.round(durMs / 1000)}s`
-                      : `${Math.round(durMs / 60000)}m ${Math.round((durMs % 60000) / 1000)}s`
+                    const durLabel =
+                      durMs == null
+                        ? "—"
+                        : durMs < 60000
+                          ? `${Math.round(durMs / 1000)}s`
+                          : `${Math.round(durMs / 60000)}m ${Math.round((durMs % 60000) / 1000)}s`
 
                     return (
-                    <tr key={run.id} className={`hover:bg-muted/20 ${run.error_count > 0 ? "bg-red-500/3" : ""}`}>
-                      <td className="px-4 py-3">
-                        <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
-                          run.feed_kind === "stock"
-                            ? "bg-blue-500/15 text-blue-400"
-                            : "bg-purple-500/15 text-purple-400"
-                        }`}>
-                          {run.feed_kind === "stock" ? "STOCK" : "CAT"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3"><StatusBadge status={run.status} /></td>
-                      <td className="px-4 py-3 text-right font-mono text-xs">{fmt(run.total_rows)}</td>
-                      <td className="px-4 py-3 text-right font-mono text-xs text-emerald-400">{fmt(run.created_count)}</td>
-                      <td className="px-4 py-3 text-right font-mono text-xs text-amber-400">{fmt(run.updated_count)}</td>
-                      <td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">{fmt(run.skipped_count)}</td>
-                      <td className="px-4 py-3 text-right font-mono text-xs text-red-400">{fmt(run.set_zero_stock_count)}</td>
-                      <td className="px-4 py-3 text-right font-mono text-xs text-sky-400">
-                        {run.new_detected_count > 0 ? fmt(run.new_detected_count) : <span className="text-muted-foreground">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono text-xs">
-                        {run.error_count > 0
-                          ? <span className="text-red-400 font-semibold">{fmt(run.error_count)}</span>
-                          : <span className="text-muted-foreground">—</span>
-                        }
-                      </td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
-                        {new Date(run.started_at).toLocaleString("es-AR")}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground font-mono">{durLabel}</td>
-                    </tr>
+                      <tr key={run.id} className={`hover:bg-muted/20 ${run.error_count > 0 ? "bg-red-500/3" : ""}`}>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                              run.feed_kind === "stock"
+                                ? "bg-blue-500/15 text-blue-400"
+                                : "bg-purple-500/15 text-purple-400"
+                            }`}
+                          >
+                            {run.feed_kind === "stock" ? "STOCK" : "CAT"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <StatusBadge status={run.status} />
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono text-xs">{fmt(run.total_rows)}</td>
+                        <td className="px-4 py-3 text-right font-mono text-xs text-emerald-400">
+                          {fmt(run.created_count)}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono text-xs text-amber-400">
+                          {fmt(run.updated_count)}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono text-xs text-muted-foreground">
+                          {fmt(run.skipped_count)}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono text-xs text-red-400">
+                          {fmt(run.set_zero_stock_count)}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono text-xs text-sky-400">
+                          {run.new_detected_count > 0 ? (
+                            fmt(run.new_detected_count)
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right font-mono text-xs">
+                          {run.error_count > 0 ? (
+                            <span className="text-red-400 font-semibold">{fmt(run.error_count)}</span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                          {new Date(run.started_at).toLocaleString("es-AR")}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground font-mono">{durLabel}</td>
+                      </tr>
                     )
                   })}
                 </tbody>
@@ -797,122 +996,146 @@ export default function SuppliersPage() {
               <div className="rounded-lg border border-border bg-card p-8 text-center text-muted-foreground text-sm">
                 No se encontraron fuentes automáticas para este proveedor.
               </div>
-            ) : importSources.map(src => {
-              const isExpanded = expandedSources.has(src.id)
-              const history = sourcesHistory[src.id] ?? []
-              const loadingHist = loadingSourceHistory[src.id] ?? false
+            ) : (
+              importSources.map((src) => {
+                const isExpanded = expandedSources.has(src.id)
+                const history = sourcesHistory[src.id] ?? []
+                const loadingHist = loadingSourceHistory[src.id] ?? false
 
-              const isRunning = runningImports[src.id] ?? false
+                const isRunning = runningImports[src.id] ?? false
 
-              return (
-                <div key={src.id} className="rounded-lg border border-border bg-card overflow-hidden">
-                  {/* Source header row */}
-                  <div className="flex items-center gap-3 px-5 py-4">
-                    <button
-                      className="flex items-center gap-3 flex-1 min-w-0 text-left hover:opacity-80 transition-opacity"
-                      onClick={() => toggleSource(src.id)}
-                    >
-                      <div className={`h-2 w-2 rounded-full flex-shrink-0 ${src.is_active ? "bg-emerald-400" : "bg-zinc-600"}`} />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-semibold">{src.name}</span>
-                          <span className="text-[10px] font-mono bg-muted/50 text-muted-foreground px-1.5 py-0.5 rounded">
-                            {src.feed_type}
-                          </span>
-                          {src.source_key && (
-                            <span className="text-[10px] font-mono text-muted-foreground">key: {src.source_key}</span>
+                return (
+                  <div key={src.id} className="rounded-lg border border-border bg-card overflow-hidden">
+                    {/* Source header row */}
+                    <div className="flex items-center gap-3 px-5 py-4">
+                      <button
+                        className="flex items-center gap-3 flex-1 min-w-0 text-left hover:opacity-80 transition-opacity"
+                        onClick={() => toggleSource(src.id)}
+                      >
+                        <div
+                          className={`h-2 w-2 rounded-full flex-shrink-0 ${src.is_active ? "bg-emerald-400" : "bg-zinc-600"}`}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-semibold">{src.name}</span>
+                            <span className="text-[10px] font-mono bg-muted/50 text-muted-foreground px-1.5 py-0.5 rounded">
+                              {src.feed_type}
+                            </span>
+                            {src.source_key && (
+                              <span className="text-[10px] font-mono text-muted-foreground">key: {src.source_key}</span>
+                            )}
+                          </div>
+                          {src.last_import_at && (
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              Última importación: {new Date(src.last_import_at).toLocaleString("es-AR")}
+                            </p>
                           )}
                         </div>
-                        {src.last_import_at && (
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            Última importación: {new Date(src.last_import_at).toLocaleString("es-AR")}
-                          </p>
-                        )}
-                      </div>
-                      <ChevronRight className={`h-4 w-4 text-muted-foreground flex-shrink-0 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
-                    </button>
-                    {src.is_active && src.url_template && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5 shrink-0 text-xs h-7 px-2.5"
-                        disabled={isRunning}
-                        onClick={e => { e.stopPropagation(); runImport(src.id) }}
-                      >
-                        {isRunning
-                          ? <><RefreshCw className="h-3 w-3 animate-spin" />Corriendo...</>
-                          : <><Play className="h-3 w-3" />Correr ahora</>
-                        }
-                      </Button>
-                    )}
-                  </div>
-
-                  {/* Expanded history */}
-                  {isExpanded && (
-                    <div className="border-t border-border">
-                      {loadingHist ? (
-                        <div className="flex items-center gap-2 text-muted-foreground text-sm px-5 py-4">
-                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />Cargando historial...
-                        </div>
-                      ) : history.length === 0 ? (
-                        <p className="px-5 py-4 text-sm text-muted-foreground">Sin historial de importaciones.</p>
-                      ) : (
-                        <table className="w-full text-xs">
-                          <thead className="bg-muted/20 text-muted-foreground uppercase tracking-wide">
-                            <tr>
-                              <th className="px-5 py-2 text-left">Estado</th>
-                              <th className="px-4 py-2 text-right">Importados</th>
-                              <th className="px-4 py-2 text-right">Actualizados</th>
-                              <th className="px-4 py-2 text-right">Errores</th>
-                              <th className="px-4 py-2 text-left">Inicio</th>
-                              <th className="px-4 py-2 text-left">Duración</th>
-                              <th className="px-4 py-2 text-left">Mensaje</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-border">
-                            {history.map(h => {
-                              const durMs = h.completed_at
-                                ? new Date(h.completed_at).getTime() - new Date(h.started_at).getTime()
-                                : null
-                              const durLabel = durMs == null ? "—"
-                                : durMs < 60000 ? `${Math.round(durMs / 1000)}s`
-                                : `${Math.round(durMs / 60000)}m ${Math.round((durMs % 60000) / 1000)}s`
-
-                              const imported = h.products_imported ?? h.created_count ?? 0
-                              const updated = h.products_updated ?? h.updated_count ?? 0
-                              const errors = h.products_failed ?? h.error_count ?? 0
-
-                              return (
-                                <tr key={h.id} className="hover:bg-muted/10">
-                                  <td className="px-5 py-2.5"><StatusBadge status={h.status} /></td>
-                                  <td className="px-4 py-2.5 text-right font-mono text-emerald-400">{fmt(imported)}</td>
-                                  <td className="px-4 py-2.5 text-right font-mono text-amber-400">{fmt(updated)}</td>
-                                  <td className="px-4 py-2.5 text-right font-mono">
-                                    {errors > 0
-                                      ? <span className="text-red-400">{fmt(errors)}</span>
-                                      : <span className="text-muted-foreground">—</span>
-                                    }
-                                  </td>
-                                  <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">
-                                    {new Date(h.started_at).toLocaleString("es-AR")}
-                                  </td>
-                                  <td className="px-4 py-2.5 text-muted-foreground font-mono">{durLabel}</td>
-                                  <td className="px-4 py-2.5 text-muted-foreground max-w-[240px] truncate">
-                                    {h.error_message ?? "—"}
-                                  </td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
+                        <ChevronRight
+                          className={`h-4 w-4 text-muted-foreground flex-shrink-0 transition-transform ${isExpanded ? "rotate-90" : ""}`}
+                        />
+                      </button>
+                      {src.is_active && src.url_template && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5 shrink-0 text-xs h-7 px-2.5"
+                          disabled={isRunning}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            runImport(src.id)
+                          }}
+                        >
+                          {isRunning ? (
+                            <>
+                              <RefreshCw className="h-3 w-3 animate-spin" />
+                              Corriendo...
+                            </>
+                          ) : (
+                            <>
+                              <Play className="h-3 w-3" />
+                              Correr ahora
+                            </>
+                          )}
+                        </Button>
                       )}
                     </div>
-                  )}
-                </div>
-              )
-            })}
-          </TabsContent>
 
+                    {/* Expanded history */}
+                    {isExpanded && (
+                      <div className="border-t border-border">
+                        {loadingHist ? (
+                          <div className="flex items-center gap-2 text-muted-foreground text-sm px-5 py-4">
+                            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                            Cargando historial...
+                          </div>
+                        ) : history.length === 0 ? (
+                          <p className="px-5 py-4 text-sm text-muted-foreground">Sin historial de importaciones.</p>
+                        ) : (
+                          <table className="w-full text-xs">
+                            <thead className="bg-muted/20 text-muted-foreground uppercase tracking-wide">
+                              <tr>
+                                <th className="px-5 py-2 text-left">Estado</th>
+                                <th className="px-4 py-2 text-right">Importados</th>
+                                <th className="px-4 py-2 text-right">Actualizados</th>
+                                <th className="px-4 py-2 text-right">Errores</th>
+                                <th className="px-4 py-2 text-left">Inicio</th>
+                                <th className="px-4 py-2 text-left">Duración</th>
+                                <th className="px-4 py-2 text-left">Mensaje</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                              {history.map((h) => {
+                                const durMs = h.completed_at
+                                  ? new Date(h.completed_at).getTime() - new Date(h.started_at).getTime()
+                                  : null
+                                const durLabel =
+                                  durMs == null
+                                    ? "—"
+                                    : durMs < 60000
+                                      ? `${Math.round(durMs / 1000)}s`
+                                      : `${Math.round(durMs / 60000)}m ${Math.round((durMs % 60000) / 1000)}s`
+
+                                const imported = h.products_imported ?? h.created_count ?? 0
+                                const updated = h.products_updated ?? h.updated_count ?? 0
+                                const errors = h.products_failed ?? h.error_count ?? 0
+
+                                return (
+                                  <tr key={h.id} className="hover:bg-muted/10">
+                                    <td className="px-5 py-2.5">
+                                      <StatusBadge status={h.status} />
+                                    </td>
+                                    <td className="px-4 py-2.5 text-right font-mono text-emerald-400">
+                                      {fmt(imported)}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-right font-mono text-amber-400">{fmt(updated)}</td>
+                                    <td className="px-4 py-2.5 text-right font-mono">
+                                      {errors > 0 ? (
+                                        <span className="text-red-400">{fmt(errors)}</span>
+                                      ) : (
+                                        <span className="text-muted-foreground">—</span>
+                                      )}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">
+                                      {new Date(h.started_at).toLocaleString("es-AR")}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-muted-foreground font-mono">{durLabel}</td>
+                                    <td className="px-4 py-2.5 text-muted-foreground max-w-[240px] truncate">
+                                      {h.error_message ?? "—"}
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })
+            )}
+          </TabsContent>
         </Tabs>
       )}
 
@@ -921,7 +1144,7 @@ export default function SuppliersPage() {
         open={showAddSupplierDialog}
         onClose={() => setShowAddSupplierDialog(false)}
         onCreated={(newSupplier) => {
-          setSuppliers(prev => [...prev, newSupplier])
+          setSuppliers((prev) => [...prev, newSupplier])
           setSelectedSupplier(newSupplier.id)
           setShowAddSupplierDialog(false)
         }}
@@ -945,7 +1168,7 @@ function AddSupplierDialog({
   const [form, setForm] = useState({ name: "", code: "", country: "", email: "", type: "distributor" })
 
   function set(field: string, value: string) {
-    setForm(prev => ({ ...prev, [field]: value }))
+    setForm((prev) => ({ ...prev, [field]: value }))
   }
 
   async function handleSubmit() {
@@ -981,7 +1204,12 @@ function AddSupplierDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={v => { if (!v) onClose() }}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) onClose()
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Agregar proveedor</DialogTitle>
@@ -993,7 +1221,7 @@ function AddSupplierDialog({
               <Input
                 placeholder="Ej: Libral Argentina"
                 value={form.name}
-                onChange={e => set("name", e.target.value)}
+                onChange={(e) => set("name", e.target.value)}
               />
             </div>
             <div className="space-y-1.5">
@@ -1001,13 +1229,13 @@ function AddSupplierDialog({
               <Input
                 placeholder="Ej: LIBRAL"
                 value={form.code}
-                onChange={e => set("code", e.target.value.toUpperCase())}
+                onChange={(e) => set("code", e.target.value.toUpperCase())}
                 className="font-mono uppercase"
               />
             </div>
             <div className="space-y-1.5">
               <label className="text-xs text-muted-foreground">País</label>
-              <Select value={form.country} onValueChange={v => set("country", v)}>
+              <Select value={form.country} onValueChange={(v) => set("country", v)}>
                 <SelectTrigger className="h-9 text-sm">
                   <SelectValue placeholder="Seleccionar..." />
                 </SelectTrigger>
@@ -1035,12 +1263,12 @@ function AddSupplierDialog({
                 type="email"
                 placeholder="contacto@proveedor.com"
                 value={form.email}
-                onChange={e => set("email", e.target.value)}
+                onChange={(e) => set("email", e.target.value)}
               />
             </div>
             <div className="space-y-1.5">
               <label className="text-xs text-muted-foreground">Tipo</label>
-              <Select value={form.type} onValueChange={v => set("type", v)}>
+              <Select value={form.type} onValueChange={(v) => set("type", v)}>
                 <SelectTrigger className="h-9 text-sm">
                   <SelectValue />
                 </SelectTrigger>
@@ -1055,9 +1283,21 @@ function AddSupplierDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>Cancelar</Button>
+          <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>
+            Cancelar
+          </Button>
           <Button size="sm" onClick={handleSubmit} disabled={saving} className="gap-1.5">
-            {saving ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" />Guardando...</> : <><Plus className="h-3.5 w-3.5" />Crear proveedor</>}
+            {saving ? (
+              <>
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                Guardando...
+              </>
+            ) : (
+              <>
+                <Plus className="h-3.5 w-3.5" />
+                Crear proveedor
+              </>
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

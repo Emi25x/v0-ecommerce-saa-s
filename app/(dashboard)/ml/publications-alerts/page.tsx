@@ -1,19 +1,12 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import { Badge }  from "@/components/ui/badge"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input }  from "@/components/ui/input"
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select"
-import {
-  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
-} from "@/components/ui/tooltip"
-import {
-  ChevronLeft, ChevronRight, Copy, ExternalLink,
-  Loader2, Pause, RefreshCw, Search, Zap,
-} from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { ChevronLeft, ChevronRight, Copy, ExternalLink, Loader2, Pause, RefreshCw, Search, Zap } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -21,60 +14,60 @@ import { useToast } from "@/hooks/use-toast"
 type Tab = "con_stock" | "sin_stock" | "eligible_catalog"
 
 interface Account {
-  id:          string
-  nickname:    string
+  id: string
+  nickname: string
   ml_user_id?: string
 }
 
 interface Publication {
-  id:                       string
-  ml_item_id:               string
-  title:                    string
-  status:                   string
-  price:                    number | null
-  current_stock:            number | null
-  sku:                      string | null
-  ean:                      string | null
-  isbn:                     string | null
+  id: string
+  ml_item_id: string
+  title: string
+  status: string
+  price: number | null
+  current_stock: number | null
+  sku: string | null
+  ean: string | null
+  isbn: string | null
   catalog_listing_eligible: boolean | null
-  catalog_listing:          boolean | null
-  product_id:               string | null
-  permalink:                string | null
+  catalog_listing: boolean | null
+  product_id: string | null
+  permalink: string | null
 }
 
 // ── Tab config ───────────────────────────────────────────────────────────────
 
 const TABS: {
-  value:    Tab
-  label:    string
-  bg:       string
-  color:    string
+  value: Tab
+  label: string
+  bg: string
+  color: string
   badgeCls: string
-  params:   Record<string, string>
+  params: Record<string, string>
 }[] = [
   {
-    value:    "con_stock",
-    label:    "Con stock",
-    bg:       "bg-emerald-500/10",
-    color:    "text-emerald-400",
+    value: "con_stock",
+    label: "Con stock",
+    bg: "bg-emerald-500/10",
+    color: "text-emerald-400",
     badgeCls: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-    params:   { con_stock: "1" },
+    params: { con_stock: "1" },
   },
   {
-    value:    "sin_stock",
-    label:    "Sin stock",
-    bg:       "bg-rose-500/10",
-    color:    "text-rose-400",
+    value: "sin_stock",
+    label: "Sin stock",
+    bg: "bg-rose-500/10",
+    color: "text-rose-400",
     badgeCls: "bg-rose-500/10 text-rose-400 border-rose-500/20",
-    params:   { sin_stock: "1" },
+    params: { sin_stock: "1" },
   },
   {
-    value:    "eligible_catalog",
-    label:    "Elegibles catálogo",
-    bg:       "bg-violet-500/10",
-    color:    "text-violet-400",
+    value: "eligible_catalog",
+    label: "Elegibles catálogo",
+    bg: "bg-violet-500/10",
+    color: "text-violet-400",
     badgeCls: "bg-violet-500/10 text-violet-400 border-violet-500/20",
-    params:   { solo_elegibles: "1", status: "active" },
+    params: { solo_elegibles: "1", status: "active" },
   },
 ]
 
@@ -88,9 +81,9 @@ function buildUrl(params: Record<string, string>) {
 }
 
 function statusColor(s: string) {
-  if (s === "active")  return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-  if (s === "paused")  return "bg-yellow-500/10 text-yellow-400 border-yellow-500/20"
-  if (s === "closed")  return "bg-rose-500/10 text-rose-400 border-rose-500/20"
+  if (s === "active") return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+  if (s === "paused") return "bg-yellow-500/10 text-yellow-400 border-yellow-500/20"
+  if (s === "closed") return "bg-rose-500/10 text-rose-400 border-rose-500/20"
   return "bg-muted text-muted-foreground border-border"
 }
 
@@ -103,10 +96,10 @@ function PublicationRow({
   onPause,
   enqueueing,
 }: {
-  row:        Publication
-  tab:        Tab
-  onOptin:    (id: string) => void
-  onPause:    (id: string) => void
+  row: Publication
+  tab: Tab
+  onOptin: (id: string) => void
+  onPause: (id: string) => void
   enqueueing: string | null
 }) {
   const { toast } = useToast()
@@ -134,25 +127,21 @@ function PublicationRow({
         <p className="text-sm font-medium truncate">{row.title}</p>
         <div className="flex items-center gap-3 mt-0.5 text-[11px] text-muted-foreground">
           <span className="font-mono">{row.ml_item_id}</span>
-          {row.sku  && <span>SKU: {row.sku}</span>}
+          {row.sku && <span>SKU: {row.sku}</span>}
           {(row.ean || row.isbn) && <span>EAN: {row.ean ?? row.isbn}</span>}
         </div>
       </div>
 
       {/* Stock */}
       <div className="text-right w-16 shrink-0">
-        <p className="text-sm font-mono font-medium">
-          {row.current_stock ?? 0}
-        </p>
+        <p className="text-sm font-mono font-medium">{row.current_stock ?? 0}</p>
         <p className="text-[10px] text-muted-foreground">stock</p>
       </div>
 
       {/* Price */}
       {row.price != null && (
         <div className="text-right w-20 shrink-0">
-          <p className="text-sm font-mono">
-            ${row.price.toLocaleString("es-AR")}
-          </p>
+          <p className="text-sm font-mono">${row.price.toLocaleString("es-AR")}</p>
         </div>
       )}
 
@@ -200,9 +189,7 @@ function PublicationRow({
                   disabled={isBusy}
                   onClick={() => onPause(row.ml_item_id)}
                 >
-                  {isBusy
-                    ? <Loader2 className="h-3 w-3 animate-spin" />
-                    : <Pause className="h-3 w-3" />}
+                  {isBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Pause className="h-3 w-3" />}
                   <span className="ml-1">Pausar</span>
                 </Button>
               </TooltipTrigger>
@@ -224,9 +211,7 @@ function PublicationRow({
                     disabled={!canOptin || isBusy}
                     onClick={() => canOptin && onOptin(row.ml_item_id)}
                   >
-                    {isBusy
-                      ? <Loader2 className="h-3 w-3 animate-spin" />
-                      : <Zap className="h-3 w-3" />}
+                    {isBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
                     <span className="ml-1">Opt-in</span>
                   </Button>
                 </div>
@@ -249,25 +234,27 @@ function PublicationRow({
 export default function PublicationsAlertsPage() {
   const { toast } = useToast()
 
-  const [accounts,  setAccounts]  = useState<Account[]>([])
+  const [accounts, setAccounts] = useState<Account[]>([])
   const [accountId, setAccountId] = useState<string>("")
   const [activeTab, setActiveTab] = useState<Tab>("con_stock")
 
   // Tab counts (from parallel HEAD queries)
-  const [tabCounts,     setTabCounts]     = useState<Record<Tab, number | null>>({
-    con_stock: null, sin_stock: null, eligible_catalog: null,
+  const [tabCounts, setTabCounts] = useState<Record<Tab, number | null>>({
+    con_stock: null,
+    sin_stock: null,
+    eligible_catalog: null,
   })
   const [countsLoading, setCountsLoading] = useState(false)
 
   // Table state
-  const [rows,    setRows]    = useState<Publication[]>([])
-  const [total,   setTotal]   = useState(0)
-  const [page,    setPage]    = useState(0)
+  const [rows, setRows] = useState<Publication[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(false)
 
   // Search
-  const [search,    setSearch]    = useState("")
-  const searchRef   = useRef(search)
+  const [search, setSearch] = useState("")
+  const searchRef = useRef(search)
   searchRef.current = search
 
   // Actions
@@ -276,8 +263,8 @@ export default function PublicationsAlertsPage() {
   // ── Load accounts ──────────────────────────────────────────────────────────
   useEffect(() => {
     fetch("/api/ml/accounts")
-      .then(r => r.json())
-      .then(d => {
+      .then((r) => r.json())
+      .then((d) => {
         const list: Account[] = d.accounts ?? []
         setAccounts(list)
         if (list.length === 1) setAccountId(list[0].id)
@@ -291,8 +278,9 @@ export default function PublicationsAlertsPage() {
     setCountsLoading(true)
     try {
       const make = (extra: Record<string, string>) =>
-        fetch(`/api/ml/publications?counts_only=1&account_id=${accId}&${new URLSearchParams(extra)}`)
-          .then(r => r.json())
+        fetch(`/api/ml/publications?counts_only=1&account_id=${accId}&${new URLSearchParams(extra)}`).then((r) =>
+          r.json(),
+        )
 
       const [conD, sinD, eligD] = await Promise.all([
         make({ con_stock: "1" }),
@@ -301,41 +289,48 @@ export default function PublicationsAlertsPage() {
       ])
 
       setTabCounts({
-        con_stock:        conD.ok  ? (conD.counts?.total  ?? null) : null,
-        sin_stock:        sinD.ok  ? (sinD.counts?.total  ?? null) : null,
+        con_stock: conD.ok ? (conD.counts?.total ?? null) : null,
+        sin_stock: sinD.ok ? (sinD.counts?.total ?? null) : null,
         eligible_catalog: eligD.ok ? (eligD.counts?.total ?? null) : null,
       })
-    } catch { /* silent */ } finally {
+    } catch {
+      /* silent */
+    } finally {
       setCountsLoading(false)
     }
   }, [])
 
   // ── Load rows ──────────────────────────────────────────────────────────────
-  const load = useCallback(async (p = 0) => {
-    if (!accountId) return
-    setLoading(true)
-    try {
-      const tab    = TABS.find(t => t.value === activeTab)!
-      const params: Record<string, string> = {
-        account_id: accountId,
-        page:       String(p),
-        limit:      String(PAGE_SIZE),
-        ...tab.params,
-      }
-      const q = searchRef.current.trim()
-      if (q) params.q = q
+  const load = useCallback(
+    async (p = 0) => {
+      if (!accountId) return
+      setLoading(true)
+      try {
+        const tab = TABS.find((t) => t.value === activeTab)!
+        const params: Record<string, string> = {
+          account_id: accountId,
+          page: String(p),
+          limit: String(PAGE_SIZE),
+          ...tab.params,
+        }
+        const q = searchRef.current.trim()
+        if (q) params.q = q
 
-      const res  = await fetch(buildUrl(params))
-      const data = await res.json()
-      if (data.ok) {
-        setRows(data.rows ?? [])
-        setTotal(data.total ?? 0)
-        setPage(p)
+        const res = await fetch(buildUrl(params))
+        const data = await res.json()
+        if (data.ok) {
+          setRows(data.rows ?? [])
+          setTotal(data.total ?? 0)
+          setPage(p)
+        }
+      } catch {
+        /* silent */
+      } finally {
+        setLoading(false)
       }
-    } catch { /* silent */ } finally {
-      setLoading(false)
-    }
-  }, [accountId, activeTab])
+    },
+    [accountId, activeTab],
+  )
 
   // ── Effects ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -349,7 +344,10 @@ export default function PublicationsAlertsPage() {
   // Debounce search
   useEffect(() => {
     if (!accountId) return
-    const t = setTimeout(() => { setPage(0); load(0) }, 400)
+    const t = setTimeout(() => {
+      setPage(0)
+      load(0)
+    }, 400)
     return () => clearTimeout(t)
   }, [search]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -364,10 +362,10 @@ export default function PublicationsAlertsPage() {
   async function handleOptin(mlItemId: string) {
     setEnqueueing(mlItemId)
     try {
-      const res  = await fetch("/api/ml/jobs/enqueue", {
-        method:  "POST",
+      const res = await fetch("/api/ml/jobs/enqueue", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ job_type: "catalog_optin", ml_item_id: mlItemId, account_id: accountId }),
+        body: JSON.stringify({ job_type: "catalog_optin", ml_item_id: mlItemId, account_id: accountId }),
       })
       const data = await res.json()
       if (data.ok) {
@@ -385,10 +383,10 @@ export default function PublicationsAlertsPage() {
   async function handlePause(mlItemId: string) {
     setEnqueueing(mlItemId)
     try {
-      const res  = await fetch("/api/ml/jobs/enqueue", {
-        method:  "POST",
+      const res = await fetch("/api/ml/jobs/enqueue", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ job_type: "pause_item", ml_item_id: mlItemId, account_id: accountId }),
+        body: JSON.stringify({ job_type: "pause_item", ml_item_id: mlItemId, account_id: accountId }),
       })
       const data = await res.json()
       if (data.ok) {
@@ -413,9 +411,7 @@ export default function PublicationsAlertsPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-semibold">Alertas de publicaciones</h1>
-          <p className="text-sm text-muted-foreground">
-            Publicaciones agrupadas por stock y elegibilidad de catálogo
-          </p>
+          <p className="text-sm text-muted-foreground">Publicaciones agrupadas por stock y elegibilidad de catálogo</p>
         </div>
 
         {/* Account selector */}
@@ -425,8 +421,10 @@ export default function PublicationsAlertsPage() {
               <SelectValue placeholder="Seleccionar cuenta" />
             </SelectTrigger>
             <SelectContent>
-              {accounts.map(a => (
-                <SelectItem key={a.id} value={a.id}>{a.nickname}</SelectItem>
+              {accounts.map((a) => (
+                <SelectItem key={a.id} value={a.id}>
+                  {a.nickname}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -437,7 +435,7 @@ export default function PublicationsAlertsPage() {
       <div className="flex items-center gap-2 flex-wrap">
         {/* Tabs */}
         <div className="flex gap-2 flex-wrap">
-          {TABS.map(tab => {
+          {TABS.map((tab) => {
             const count = tabCounts[tab.value]
             return (
               <button
@@ -450,20 +448,17 @@ export default function PublicationsAlertsPage() {
                 }`}
               >
                 {tab.label}
-                {count != null
-                  ? (
-                    <span className={`text-[11px] font-mono px-1.5 py-0 rounded-full border ${
-                      activeTab === tab.value
-                        ? tab.badgeCls
-                        : "bg-muted/40 text-muted-foreground border-border"
-                    }`}>
-                      {count.toLocaleString("es-AR")}
-                    </span>
-                  )
-                  : countsLoading && (
-                    <span className="h-3.5 w-5 rounded-full bg-muted animate-pulse inline-block" />
-                  )
-                }
+                {count != null ? (
+                  <span
+                    className={`text-[11px] font-mono px-1.5 py-0 rounded-full border ${
+                      activeTab === tab.value ? tab.badgeCls : "bg-muted/40 text-muted-foreground border-border"
+                    }`}
+                  >
+                    {count.toLocaleString("es-AR")}
+                  </span>
+                ) : (
+                  countsLoading && <span className="h-3.5 w-5 rounded-full bg-muted animate-pulse inline-block" />
+                )}
               </button>
             )
           })}
@@ -478,7 +473,7 @@ export default function PublicationsAlertsPage() {
             className="pl-8 h-9 text-sm bg-transparent"
             placeholder="Buscar título o ID…"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={(e) => setSearch(e.target.value)}
           />
         </div>
 
@@ -488,7 +483,11 @@ export default function PublicationsAlertsPage() {
           size="sm"
           className="h-9 bg-transparent"
           disabled={loading || !accountId}
-          onClick={() => { setPage(0); load(0); loadCounts(accountId) }}
+          onClick={() => {
+            setPage(0)
+            load(0)
+            loadCounts(accountId)
+          }}
         >
           <RefreshCw className={`h-4 w-4 mr-2 ${loading || countsLoading ? "animate-spin" : ""}`} />
           Refrescar
@@ -521,7 +520,7 @@ export default function PublicationsAlertsPage() {
             No hay publicaciones en esta categoría
           </div>
         ) : (
-          rows.map(row => (
+          rows.map((row) => (
             <PublicationRow
               key={row.id}
               row={row}
@@ -538,12 +537,12 @@ export default function PublicationsAlertsPage() {
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>
-            {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} de{" "}
-            {total.toLocaleString("es-AR")}
+            {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} de {total.toLocaleString("es-AR")}
           </span>
           <div className="flex gap-1">
             <Button
-              variant="outline" size="icon"
+              variant="outline"
+              size="icon"
               className="h-8 w-8 bg-transparent"
               disabled={page === 0 || loading}
               onClick={() => load(page - 1)}
@@ -551,7 +550,8 @@ export default function PublicationsAlertsPage() {
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <Button
-              variant="outline" size="icon"
+              variant="outline"
+              size="icon"
               className="h-8 w-8 bg-transparent"
               disabled={page >= totalPages - 1 || loading}
               onClick={() => load(page + 1)}

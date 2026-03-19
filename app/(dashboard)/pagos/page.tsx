@@ -16,7 +16,18 @@ import { MLConnectionStatus } from "@/components/mercadolibre/connection-status"
 import { LastUpdated } from "@/components/shared/last-updated"
 import { SortSelector } from "@/components/shared/sort-selector"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { Check, ChevronDown, ExternalLink, RefreshCw, Download, Eye, CreditCard, DollarSign, Clock, TrendingUp } from "lucide-react"
+import {
+  Check,
+  ChevronDown,
+  ExternalLink,
+  RefreshCw,
+  Download,
+  Eye,
+  CreditCard,
+  DollarSign,
+  Clock,
+  TrendingUp,
+} from "lucide-react"
 
 interface Payment {
   id: number
@@ -431,9 +442,7 @@ export default function PagosPage() {
               {selectedAccount !== "all" && mlAccounts[selectedAccount] && (
                 <span className="ml-2">
                   •{" "}
-                  <span className="font-medium">
-                    {mlAccounts[selectedAccount]?.nickname || "Cuenta seleccionada"}
-                  </span>
+                  <span className="font-medium">{mlAccounts[selectedAccount]?.nickname || "Cuenta seleccionada"}</span>
                 </span>
               )}
             </p>

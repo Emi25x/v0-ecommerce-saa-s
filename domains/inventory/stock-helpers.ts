@@ -13,7 +13,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 export function mergeStockBySource(
   existing: Record<string, number> | null | undefined,
   sourceId: string,
-  newQty: number
+  newQty: number,
 ): { stock_by_source: Record<string, number>; stock: number } {
   const merged = { ...(existing || {}), [sourceId]: newQty }
   const stock = Object.values(merged).reduce((s, v) => s + (Number(v) || 0), 0)
@@ -27,13 +27,10 @@ export function mergeStockBySource(
 export async function fetchStockBySourceBatch(
   supabase: SupabaseClient,
   matchField: "sku" | "ean",
-  matchValues: string[]
+  matchValues: string[],
 ): Promise<Map<string, Record<string, number>>> {
   if (matchValues.length === 0) return new Map()
-  const { data } = await supabase
-    .from("products")
-    .select(`${matchField}, stock_by_source`)
-    .in(matchField, matchValues)
+  const { data } = await supabase.from("products").select(`${matchField}, stock_by_source`).in(matchField, matchValues)
   const map = new Map<string, Record<string, number>>()
   for (const p of (data as any[]) ?? []) {
     const key = p[matchField]

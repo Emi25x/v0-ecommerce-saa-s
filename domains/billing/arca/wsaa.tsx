@@ -5,7 +5,7 @@
  * a funciones sincrónicas.
  */
 
-import { createClient }               from "@/lib/db/server"
+import { createClient } from "@/lib/db/server"
 import { buildTRA, signTRA, callWSAA } from "@/domains/billing/arca/wsaa-utils"
 
 // Re-exportar para que los importadores existentes no rompan
@@ -37,7 +37,7 @@ export async function getWSAATicket(config: ArcaConfig): Promise<{ token: string
   }
 
   const certPem = config.cert_pem || config.certificado_pem
-  const keyPem  = config.private_key_pem || config.clave_pem
+  const keyPem = config.private_key_pem || config.clave_pem
 
   if (!certPem || !keyPem) {
     throw new Error("Faltan certificado o clave privada en la configuración ARCA. Completá los datos en Configuración.")
@@ -67,7 +67,7 @@ export async function getWSAATicket(config: ArcaConfig): Promise<{ token: string
         return { token: fresh.wsaa_token, sign: fresh.wsaa_sign }
       }
 
-      await new Promise(r => setTimeout(r, 2000))
+      await new Promise((r) => setTimeout(r, 2000))
       ;({ token, sign, expiresAt } = await callWSAA(cms, config.ambiente))
     } else {
       throw err
@@ -78,10 +78,10 @@ export async function getWSAATicket(config: ArcaConfig): Promise<{ token: string
   await supabase
     .from("arca_config")
     .update({
-      wsaa_token:      token!,
-      wsaa_sign:       sign!,
+      wsaa_token: token!,
+      wsaa_sign: sign!,
       wsaa_expires_at: expiresAt!.toISOString(),
-      updated_at:      new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     })
     .eq("id", config.id)
 

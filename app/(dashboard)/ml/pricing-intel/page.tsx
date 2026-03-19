@@ -74,7 +74,8 @@ export default function PricingIntelPage() {
 
   const filtered = rows.filter((r) => {
     const matchSearch = !search || r.title?.toLowerCase().includes(search.toLowerCase()) || r.ean?.includes(search)
-    const matchFilter = filterSuggestion === "all" || r.suggestion === filterSuggestion || (filterSuggestion === "zona33k" && r.zona33k)
+    const matchFilter =
+      filterSuggestion === "all" || r.suggestion === filterSuggestion || (filterSuggestion === "zona33k" && r.zona33k)
     return matchSearch && matchFilter
   })
 
@@ -103,7 +104,9 @@ export default function PricingIntelPage() {
               className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground"
             >
               {accounts.map((a) => (
-                <option key={a.id} value={a.id}>{a.nickname}</option>
+                <option key={a.id} value={a.id}>
+                  {a.nickname}
+                </option>
               ))}
             </select>
           )}
@@ -168,7 +171,9 @@ export default function PricingIntelPage() {
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-2">
             <Search className="h-8 w-8 opacity-30" />
-            <p className="text-sm">{rows.length === 0 ? "No hay datos — ejecuta un scan primero desde Centro Diario" : "Sin resultados"}</p>
+            <p className="text-sm">
+              {rows.length === 0 ? "No hay datos — ejecuta un scan primero desde Centro Diario" : "Sin resultados"}
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -210,25 +215,19 @@ export default function PricingIntelPage() {
                       <td className="px-4 py-3 text-right font-mono font-medium text-foreground">
                         {fmt(row.my_price)}
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-muted-foreground">
-                        {fmt(row.min_market)}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono text-muted-foreground">
-                        {fmt(row.median_market)}
-                      </td>
-                      <td className="px-4 py-3 text-center text-muted-foreground">
-                        {row.sellers_count ?? "—"}
-                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-muted-foreground">{fmt(row.min_market)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-muted-foreground">{fmt(row.median_market)}</td>
+                      <td className="px-4 py-3 text-center text-muted-foreground">{row.sellers_count ?? "—"}</td>
                       <td className="px-4 py-3 text-center">
                         {row.full_pct !== null ? (
                           <span className={row.full_pct > 50 ? "text-amber-400 font-medium" : "text-muted-foreground"}>
                             {row.full_pct}%
                           </span>
-                        ) : "—"}
+                        ) : (
+                          "—"
+                        )}
                       </td>
-                      <td className="px-4 py-3 text-center text-muted-foreground">
-                        {row.sold_proxy ?? "—"}
-                      </td>
+                      <td className="px-4 py-3 text-center text-muted-foreground">{row.sold_proxy ?? "—"}</td>
                       <td className="px-4 py-3 text-center">
                         <Badge variant="outline" className={`gap-1 text-xs ${cfg.className}`}>
                           <Icon className="h-3 w-3" />
@@ -236,7 +235,9 @@ export default function PricingIntelPage() {
                         </Badge>
                       </td>
                       <td className="px-4 py-3 text-xs text-muted-foreground max-w-[200px]">
-                        <span title={row.motivo}>{row.motivo ? (row.motivo.length > 50 ? row.motivo.slice(0, 50) + "…" : row.motivo) : "—"}</span>
+                        <span title={row.motivo}>
+                          {row.motivo ? (row.motivo.length > 50 ? row.motivo.slice(0, 50) + "…" : row.motivo) : "—"}
+                        </span>
                       </td>
                       <td className="px-4 py-3">
                         {row.ml_item_id && (

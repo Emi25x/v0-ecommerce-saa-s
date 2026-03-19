@@ -19,10 +19,10 @@ export const dynamic = "force-dynamic"
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl
-  const limit     = Math.min(Number(searchParams.get("limit")  ?? 50), 200)
-  const offset    = Number(searchParams.get("offset") ?? 0)
-  const sort      = searchParams.get("sort") ?? "sold"
-  const search    = searchParams.get("search")?.trim() ?? ""
+  const limit = Math.min(Number(searchParams.get("limit") ?? 50), 200)
+  const offset = Number(searchParams.get("offset") ?? 0)
+  const sort = searchParams.get("sort") ?? "sold"
+  const search = searchParams.get("search")?.trim() ?? ""
   const accountId = searchParams.get("account_id")?.trim() ?? ""
 
   const supabase = createAdminClient()
@@ -44,14 +44,10 @@ export async function GET(req: NextRequest) {
   }
 
   if (search) {
-    query = query.or(
-      `title.ilike.%${search}%,sku.ilike.%${search}%,isbn.ilike.%${search}%`,
-    )
+    query = query.or(`title.ilike.%${search}%,sku.ilike.%${search}%,isbn.ilike.%${search}%`)
   }
 
-  query = query
-    .order("sold_quantity", { ascending: false, nullsFirst: false })
-    .range(offset, offset + limit - 1)
+  query = query.order("sold_quantity", { ascending: false, nullsFirst: false }).range(offset, offset + limit - 1)
 
   const { data, error, count } = await query
 
@@ -68,10 +64,7 @@ export async function GET(req: NextRequest) {
   const brandMap: Record<string, string> = {}
 
   if (productIds.length > 0) {
-    const { data: prods } = await supabase
-      .from("products")
-      .select("id, brand")
-      .in("id", productIds)
+    const { data: prods } = await supabase.from("products").select("id, brand").in("id", productIds)
 
     for (const p of prods ?? []) {
       if (p.brand) brandMap[p.id] = p.brand
@@ -80,18 +73,18 @@ export async function GET(req: NextRequest) {
 
   // ── 3. Mapear resultado ───────────────────────────────────────────────────
   let result = rows.map((pub: any) => ({
-    id:            pub.id,
-    ml_item_id:    pub.ml_item_id,
-    title:         pub.title,
-    sku:           pub.sku   ?? null,
-    isbn:          pub.isbn  ?? null,
-    price:         pub.price ? Number(pub.price) : null,
+    id: pub.id,
+    ml_item_id: pub.ml_item_id,
+    title: pub.title,
+    sku: pub.sku ?? null,
+    isbn: pub.isbn ?? null,
+    price: pub.price ? Number(pub.price) : null,
     current_stock: pub.current_stock ?? 0,
-    sold_quantity: pub.sold_quantity  ? Number(pub.sold_quantity) : 0,
-    editorial:     pub.product_id ? (brandMap[pub.product_id] ?? null) : null,
-    status:        pub.status,
-    account_id:    pub.account_id,
-    permalink:     pub.permalink ?? null,
+    sold_quantity: pub.sold_quantity ? Number(pub.sold_quantity) : 0,
+    editorial: pub.product_id ? (brandMap[pub.product_id] ?? null) : null,
+    status: pub.status,
+    account_id: pub.account_id,
+    permalink: pub.permalink ?? null,
   }))
 
   // Sort editorial client-side
@@ -100,7 +93,7 @@ export async function GET(req: NextRequest) {
       const ea = (a.editorial ?? "").toLowerCase()
       const eb = (b.editorial ?? "").toLowerCase()
       if (ea < eb) return -1
-      if (ea > eb) return  1
+      if (ea > eb) return 1
       return b.sold_quantity - a.sold_quantity
     })
   }

@@ -21,10 +21,10 @@ export async function GET(request: NextRequest) {
     }
 
     // El state puede contener token=<uuid> (verifier en BD) o from=billing (origen)
-    const stateRaw   = request.nextUrl.searchParams.get("state") || ""
+    const stateRaw = request.nextUrl.searchParams.get("state") || ""
     const stateParam = decodeURIComponent(stateRaw)
     const tokenMatch = stateParam.match(/token=([0-9a-f-]{36})/)
-    const tokenId    = tokenMatch?.[1] || null
+    const tokenId = tokenMatch?.[1] || null
 
     let codeVerifier: string | undefined
 
@@ -38,8 +38,8 @@ export async function GET(request: NextRequest) {
         .single()
 
       if (!tokenRow || tokenRow.used || new Date(tokenRow.expires_at) < new Date()) {
-      return NextResponse.redirect(`${origin}/integrations?error=token_expired`)
-    }
+        return NextResponse.redirect(`${origin}/integrations?error=token_expired`)
+      }
 
       // Marcar como usado (un solo uso)
       await supabaseForToken.from("ml_auth_tokens").update({ used: true }).eq("id", tokenId)
@@ -76,28 +76,30 @@ export async function GET(request: NextRequest) {
       .single()
 
     // Obtener el user_id de Supabase para asociar la cuenta ML al usuario autenticado
-    const { data: { user: authUser } } = await supabase.auth.getUser()
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser()
 
     if (existingAccount) {
       await supabase
         .from("ml_accounts")
         .update({
-          access_token:     tokens.access_token,
-          refresh_token:    tokens.refresh_token,
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token,
           token_expires_at: tokenExpiresAt,
-          nickname:         user.nickname,
-          user_id:          authUser?.id || null,
-          updated_at:       new Date().toISOString(),
+          nickname: user.nickname,
+          user_id: authUser?.id || null,
+          updated_at: new Date().toISOString(),
         })
         .eq("id", existingAccount.id)
     } else {
       await supabase.from("ml_accounts").insert({
-        ml_user_id:       user.id.toString(),
-        nickname:         user.nickname,
-        access_token:     tokens.access_token,
-        refresh_token:    tokens.refresh_token,
+        ml_user_id: user.id.toString(),
+        nickname: user.nickname,
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
         token_expires_at: tokenExpiresAt,
-        user_id:          authUser?.id || null,
+        user_id: authUser?.id || null,
       })
     }
 
@@ -134,8 +136,6 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[v0] Mercado Libre callback error:", error)
     const errorMessage = error instanceof Error ? error.message : "Unknown error"
-    return NextResponse.redirect(
-      `${origin}/integrations?error=auth_failed&message=${encodeURIComponent(errorMessage)}`,
-    )
+    return NextResponse.redirect(`${origin}/integrations?error=auth_failed&message=${encodeURIComponent(errorMessage)}`)
   }
 }

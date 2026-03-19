@@ -11,7 +11,7 @@ import { PLATFORMS } from "@/domains/marketing/platforms"
 import Link from "next/link"
 
 const EMAIL_PLATFORMS = ["klaviyo", "mailchimp", "brevo", "hubspot", "activecampaign", "whatsapp"] as const
-type EmailPlatform = typeof EMAIL_PLATFORMS[number]
+type EmailPlatform = (typeof EMAIL_PLATFORMS)[number]
 
 function fmtPct(v: number) {
   if (!v && v !== 0) return "-"
@@ -71,29 +71,31 @@ export default function EmailMarketingPage() {
   }
 
   async function fetchPlatformData(platform: EmailPlatform) {
-    setLoading(p => ({ ...p, [platform]: true }))
+    setLoading((p) => ({ ...p, [platform]: true }))
     try {
       const res = await fetch(`/api/marketing/email/${platform}`)
       if (!res.ok) throw new Error(`Error al cargar ${platform}`)
       const json = await res.json()
-      setData(p => ({ ...p, [platform]: json }))
+      setData((p) => ({ ...p, [platform]: json }))
     } catch (e: any) {
       toast({ title: `Error ${platform}`, description: e.message, variant: "destructive" })
     } finally {
-      setLoading(p => ({ ...p, [platform]: false }))
+      setLoading((p) => ({ ...p, [platform]: false }))
     }
   }
 
   function getPlatformDef(id: string) {
-    return PLATFORMS.find(p => p.id === id)
+    return PLATFORMS.find((p) => p.id === id)
   }
 
   function NotConnected({ platform }: { platform: string }) {
     const def = getPlatformDef(platform)
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
-        <div className="w-14 h-14 rounded-full flex items-center justify-center mb-4"
-          style={{ backgroundColor: `${def?.color ?? "#666"}20` }}>
+        <div
+          className="w-14 h-14 rounded-full flex items-center justify-center mb-4"
+          style={{ backgroundColor: `${def?.color ?? "#666"}20` }}
+        >
           <div className="w-7 h-7 rounded-full" style={{ backgroundColor: def?.color ?? "#666" }} />
         </div>
         <h3 className="text-lg font-semibold mb-1">{def?.name ?? platform} no conectado</h3>
@@ -129,7 +131,10 @@ export default function EmailMarketingPage() {
               <tr key={c.id} className="border-b hover:bg-muted/30">
                 <td className="py-2 pr-4 font-medium max-w-[180px] truncate">{c.name || c.subject || "Sin nombre"}</td>
                 <td className="py-2 px-4">
-                  <Badge variant="outline" className={`text-xs ${STATUS_COLORS[c.status] ?? "text-gray-500 border-gray-400"}`}>
+                  <Badge
+                    variant="outline"
+                    className={`text-xs ${STATUS_COLORS[c.status] ?? "text-gray-500 border-gray-400"}`}
+                  >
                     {c.status}
                   </Badge>
                 </td>
@@ -174,13 +179,19 @@ export default function EmailMarketingPage() {
         </div>
 
         <Card>
-          <CardHeader><CardTitle>Campañas</CardTitle></CardHeader>
-          <CardContent><CampaignTable campaigns={d.campaigns ?? []} /></CardContent>
+          <CardHeader>
+            <CardTitle>Campañas</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CampaignTable campaigns={d.campaigns ?? []} />
+          </CardContent>
         </Card>
 
         {d.lists && d.lists.length > 0 && (
           <Card>
-            <CardHeader><CardTitle>Listas de Suscriptores</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle>Listas de Suscriptores</CardTitle>
+            </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {d.lists.map((l: any) => (
@@ -196,7 +207,9 @@ export default function EmailMarketingPage() {
 
         {d.flows && d.flows.length > 0 && (
           <Card>
-            <CardHeader><CardTitle>Flows de Automatización</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle>Flows de Automatización</CardTitle>
+            </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -240,12 +253,14 @@ export default function EmailMarketingPage() {
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center">
                   <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
                   </svg>
                 </div>
                 <div>
                   <div className="font-semibold">{d.phone.verified_name}</div>
-                  <div className="text-sm text-muted-foreground">{d.phone.display_phone_number} · Quality: {d.phone.quality_rating}</div>
+                  <div className="text-sm text-muted-foreground">
+                    {d.phone.display_phone_number} · Quality: {d.phone.quality_rating}
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -274,11 +289,16 @@ export default function EmailMarketingPage() {
                     <tr key={t.id} className="border-b hover:bg-muted/30">
                       <td className="py-2 pr-4 font-medium font-mono text-xs">{t.name}</td>
                       <td className="py-2 px-4">
-                        <Badge variant="outline" className="text-xs">{t.category}</Badge>
+                        <Badge variant="outline" className="text-xs">
+                          {t.category}
+                        </Badge>
                       </td>
                       <td className="py-2 px-4 text-muted-foreground">{t.language}</td>
                       <td className="py-2 px-4">
-                        <Badge variant="outline" className={`text-xs ${t.status === "APPROVED" ? "text-green-600 border-green-600" : t.status === "REJECTED" ? "text-red-600 border-red-600" : ""}`}>
+                        <Badge
+                          variant="outline"
+                          className={`text-xs ${t.status === "APPROVED" ? "text-green-600 border-green-600" : t.status === "REJECTED" ? "text-red-600 border-red-600" : ""}`}
+                        >
                           {t.status}
                         </Badge>
                       </td>
@@ -309,7 +329,9 @@ export default function EmailMarketingPage() {
         )}
         {d.lists && (
           <Card>
-            <CardHeader><CardTitle>Audiencias</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle>Audiencias</CardTitle>
+            </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {d.lists.map((l: any) => (
@@ -323,8 +345,12 @@ export default function EmailMarketingPage() {
           </Card>
         )}
         <Card>
-          <CardHeader><CardTitle>Campañas</CardTitle></CardHeader>
-          <CardContent><CampaignTable campaigns={d.campaigns ?? []} /></CardContent>
+          <CardHeader>
+            <CardTitle>Campañas</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CampaignTable campaigns={d.campaigns ?? []} />
+          </CardContent>
         </Card>
       </div>
     )
@@ -347,31 +373,36 @@ export default function EmailMarketingPage() {
           <h1 className="text-2xl font-bold">Email & CRM</h1>
         </div>
 
-        <Tabs value={activeTab} onValueChange={v => setActiveTab(v as EmailPlatform)}>
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as EmailPlatform)}>
           <TabsList className="mb-6 flex-wrap h-auto gap-1">
-            {EMAIL_PLATFORMS.map(platform => {
+            {EMAIL_PLATFORMS.map((platform) => {
               const def = getPlatformDef(platform)
               const isConnected = connections[platform]
               return (
                 <TabsTrigger key={platform} value={platform} className="flex items-center gap-1.5">
                   <div className="w-2 h-2 rounded-full" style={{ backgroundColor: def?.color ?? "#666" }} />
                   {def?.name ?? platform}
-                  {isConnected && (
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 ml-0.5" />
-                  )}
+                  {isConnected && <div className="w-1.5 h-1.5 rounded-full bg-green-500 ml-0.5" />}
                 </TabsTrigger>
               )
             })}
           </TabsList>
 
-          {EMAIL_PLATFORMS.map(platform => (
+          {EMAIL_PLATFORMS.map((platform) => (
             <TabsContent key={platform} value={platform}>
               {!connections[platform] ? (
                 <NotConnected platform={platform} />
               ) : loading[platform] ? (
                 <div className="space-y-4">
                   <div className="grid grid-cols-3 gap-4">
-                    {[1,2,3].map(i => <Card key={i}><CardContent className="pt-6"><Skeleton className="h-8 w-16 mb-2" /><Skeleton className="h-4 w-20" /></CardContent></Card>)}
+                    {[1, 2, 3].map((i) => (
+                      <Card key={i}>
+                        <CardContent className="pt-6">
+                          <Skeleton className="h-8 w-16 mb-2" />
+                          <Skeleton className="h-4 w-20" />
+                        </CardContent>
+                      </Card>
+                    ))}
                   </div>
                   <Skeleton className="h-64 w-full" />
                 </div>

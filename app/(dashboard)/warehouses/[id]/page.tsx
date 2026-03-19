@@ -61,7 +61,7 @@ export default function WarehouseDetailPage() {
         setLoading(false)
       }
     },
-    [warehouseId, router]
+    [warehouseId, router],
   )
 
   useEffect(() => {
@@ -71,27 +71,27 @@ export default function WarehouseDetailPage() {
   // Load suppliers + import sources when panel opens
   useEffect(() => {
     if (!showSourcePanel) return
-    Promise.all([
-      fetch("/api/inventory/sources").then(r => r.json()),
-      fetch("/api/suppliers").then(r => r.json()),
-    ]).then(([srcData, supData]) => {
-      const srcs = Array.isArray(srcData) ? srcData : srcData.sources ?? srcData.data ?? []
-      const sups = supData.suppliers ?? []
-      setAllSources(srcs)
-      setAllSuppliers(sups)
-      // Pre-select suppliers whose sources are already linked to this warehouse
-      const linkedSourceIds = new Set(srcs.filter((s: any) => s.warehouse_id === warehouseId).map((s: any) => s.id))
-      const preSelected = sups
-        .filter((sup: any) => {
-          const code = (sup.code ?? sup.name ?? "").toLowerCase()
-          return srcs.some((s: any) =>
-            linkedSourceIds.has(s.id) &&
-            (s.name?.toLowerCase().includes(code) || s.source_key?.toLowerCase().includes(code))
-          )
-        })
-        .map((sup: any) => sup.id)
-      setSelectedSupplierIds(preSelected)
-    }).catch(() => {})
+    Promise.all([fetch("/api/inventory/sources").then((r) => r.json()), fetch("/api/suppliers").then((r) => r.json())])
+      .then(([srcData, supData]) => {
+        const srcs = Array.isArray(srcData) ? srcData : (srcData.sources ?? srcData.data ?? [])
+        const sups = supData.suppliers ?? []
+        setAllSources(srcs)
+        setAllSuppliers(sups)
+        // Pre-select suppliers whose sources are already linked to this warehouse
+        const linkedSourceIds = new Set(srcs.filter((s: any) => s.warehouse_id === warehouseId).map((s: any) => s.id))
+        const preSelected = sups
+          .filter((sup: any) => {
+            const code = (sup.code ?? sup.name ?? "").toLowerCase()
+            return srcs.some(
+              (s: any) =>
+                linkedSourceIds.has(s.id) &&
+                (s.name?.toLowerCase().includes(code) || s.source_key?.toLowerCase().includes(code)),
+            )
+          })
+          .map((sup: any) => sup.id)
+        setSelectedSupplierIds(preSelected)
+      })
+      .catch(() => {})
   }, [showSourcePanel, warehouseId])
 
   async function handleAssignSources() {
@@ -106,7 +106,7 @@ export default function WarehouseDetailPage() {
             if (!sup) return false
             const code = (sup.code ?? sup.name ?? "").toLowerCase()
             return s.name?.toLowerCase().includes(code) || s.source_key?.toLowerCase().includes(code)
-          })
+          }),
         )
         .map((s: any) => s.id)
 
@@ -156,25 +156,23 @@ export default function WarehouseDetailPage() {
         </Link>
         <div className="flex-1">
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold">
-              {warehouse?.name ?? "Almacén"}
-            </h1>
+            <h1 className="text-2xl font-semibold">{warehouse?.name ?? "Almacén"}</h1>
             {warehouse?.is_default && (
               <Badge variant="default" className="gap-1">
                 <CheckCircle2 className="h-3 w-3" />
                 Por defecto
               </Badge>
             )}
-            {warehouse?.code && (
-              <Badge variant="secondary">{warehouse.code}</Badge>
-            )}
+            {warehouse?.code && <Badge variant="secondary">{warehouse.code}</Badge>}
           </div>
           <div className="flex items-center gap-2 mt-0.5">
             <p className="text-sm text-muted-foreground">Contenido del almacén</p>
             {linkedSources.length > 0 && (
               <div className="flex gap-1">
                 {linkedSources.map((s) => (
-                  <Badge key={s} variant="outline" className="text-xs">{s}</Badge>
+                  <Badge key={s} variant="outline" className="text-xs">
+                    {s}
+                  </Badge>
                 ))}
               </div>
             )}
@@ -191,7 +189,8 @@ export default function WarehouseDetailPage() {
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-600 dark:text-amber-400 flex items-start gap-2">
           <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
           <span>
-            Mostrando todos los productos con stock. Para ver solo los productos de este almacén, hacé clic en <strong>Vincular fuentes</strong> y asigná las fuentes de importación correspondientes.
+            Mostrando todos los productos con stock. Para ver solo los productos de este almacén, hacé clic en{" "}
+            <strong>Vincular fuentes</strong> y asigná las fuentes de importación correspondientes.
           </span>
         </div>
       )}
@@ -211,8 +210,8 @@ export default function WarehouseDetailPage() {
             <div className="space-y-2 max-h-48 overflow-y-auto">
               {allSuppliers.map((sup: any) => {
                 const code = (sup.code ?? sup.name ?? "").toLowerCase()
-                const matchingSources = allSources.filter((s: any) =>
-                  s.name?.toLowerCase().includes(code) || s.source_key?.toLowerCase().includes(code)
+                const matchingSources = allSources.filter(
+                  (s: any) => s.name?.toLowerCase().includes(code) || s.source_key?.toLowerCase().includes(code),
                 )
                 const linkedCount = matchingSources.filter((s: any) => s.warehouse_id === warehouseId).length
                 return (
@@ -223,7 +222,7 @@ export default function WarehouseDetailPage() {
                       checked={selectedSupplierIds.includes(sup.id)}
                       onChange={(e) =>
                         setSelectedSupplierIds((prev) =>
-                          e.target.checked ? [...prev, sup.id] : prev.filter((id) => id !== sup.id)
+                          e.target.checked ? [...prev, sup.id] : prev.filter((id) => id !== sup.id),
                         )
                       }
                     />
@@ -232,16 +231,16 @@ export default function WarehouseDetailPage() {
                       {matchingSources.length} fuente{matchingSources.length !== 1 ? "s" : ""}
                     </span>
                     {linkedCount > 0 && (
-                      <Badge variant="outline" className="text-xs text-green-600 border-green-300">vinculado</Badge>
+                      <Badge variant="outline" className="text-xs text-green-600 border-green-300">
+                        vinculado
+                      </Badge>
                     )}
                   </label>
                 )
               })}
             </div>
           )}
-          {assignResult && (
-            <p className="text-sm text-muted-foreground">{assignResult}</p>
-          )}
+          {assignResult && <p className="text-sm text-muted-foreground">{assignResult}</p>}
           <div className="flex gap-2">
             <Button size="sm" onClick={handleAssignSources} disabled={assigning}>
               {assigning ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <RefreshCw className="h-4 w-4 mr-2" />}
@@ -332,11 +331,7 @@ export default function WarehouseDetailPage() {
                     <tr key={item.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-3">
                         <p className="font-medium line-clamp-1">{title}</p>
-                        {product && (
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            Vinculado al catálogo
-                          </p>
-                        )}
+                        {product && <p className="text-xs text-muted-foreground mt-0.5">Vinculado al catálogo</p>}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">
                         <p className="font-mono text-xs">{ean}</p>
@@ -348,8 +343,8 @@ export default function WarehouseDetailPage() {
                             (item.stock_quantity ?? 0) === 0
                               ? "text-muted-foreground"
                               : (item.stock_quantity ?? 0) <= 3
-                              ? "text-amber-600 dark:text-amber-400"
-                              : "text-foreground"
+                                ? "text-amber-600 dark:text-amber-400"
+                                : "text-foreground"
                           }`}
                         >
                           {(item.stock_quantity ?? 0).toLocaleString("es-AR")}
@@ -388,12 +383,18 @@ export default function WarehouseDetailPage() {
                       </td>
                       <td className="px-4 py-3 text-center">
                         {item.product_id ? (
-                          <Badge variant="outline" className="gap-1 text-green-700 border-green-300 dark:text-green-400">
+                          <Badge
+                            variant="outline"
+                            className="gap-1 text-green-700 border-green-300 dark:text-green-400"
+                          >
                             <CheckCircle2 className="h-3 w-3" />
                             Vinculado
                           </Badge>
                         ) : (
-                          <Badge variant="outline" className="gap-1 text-amber-700 border-amber-300 dark:text-amber-400">
+                          <Badge
+                            variant="outline"
+                            className="gap-1 text-amber-700 border-amber-300 dark:text-amber-400"
+                          >
                             <AlertCircle className="h-3 w-3" />
                             Sin vincular
                           </Badge>
@@ -416,12 +417,7 @@ export default function WarehouseDetailPage() {
               {pagination.total.toLocaleString("es-AR")}
             </span>
             <div className="flex gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-              >
+              <Button variant="ghost" size="icon" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
                 <ChevronLeft className="h-4 w-4" />
               </Button>
               <Button

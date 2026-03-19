@@ -12,11 +12,10 @@ export const dynamic = "force-dynamic"
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient()
-    const body     = await req.json()
+    const body = await req.json()
     const { price_list_id } = body
 
-    if (!price_list_id)
-      return NextResponse.json({ ok: false, error: "price_list_id required" }, { status: 400 })
+    if (!price_list_id) return NextResponse.json({ ok: false, error: "price_list_id required" }, { status: 400 })
 
     // Load price list config — join warehouse to get base_currency
     const { data: listRow, error: listErr } = await supabase
@@ -25,11 +24,10 @@ export async function POST(req: NextRequest) {
       .eq("id", price_list_id)
       .single()
 
-    if (listErr || !listRow)
-      return NextResponse.json({ ok: false, error: "price list not found" }, { status: 404 })
+    if (listErr || !listRow) return NextResponse.json({ ok: false, error: "price list not found" }, { status: 404 })
 
     const fromCurrency: string | null = listRow.warehouse?.base_currency ?? null
-    const toCurrency:   string        = listRow.currency
+    const toCurrency: string = listRow.currency
 
     // Auto-resolve FX rate from exchange_rates when currencies differ
     let resolvedFxRate: number | null = null
@@ -46,14 +44,14 @@ export async function POST(req: NextRequest) {
     }
 
     const list: PriceListConfig = {
-      id:               listRow.id,
-      name:             listRow.name,
-      pricing_base:     listRow.pricing_base,
-      currency:         toCurrency,
-      from_currency:    fromCurrency,
+      id: listRow.id,
+      name: listRow.name,
+      pricing_base: listRow.pricing_base,
+      currency: toCurrency,
+      from_currency: fromCurrency,
       resolved_fx_rate: resolvedFxRate,
-      rules:            listRow.rules?.[0] ?? null,
-      fee_rules:        listRow.fee_rules ?? [],
+      rules: listRow.rules?.[0] ?? null,
+      fee_rules: listRow.fee_rules ?? [],
     }
 
     // Resolve product inputs
@@ -67,18 +65,18 @@ export async function POST(req: NextRequest) {
       ])
 
       product = {
-        product_id:           body.product_id,
-        supplier_cost:        costRow?.supplier_cost ?? null,
+        product_id: body.product_id,
+        supplier_cost: costRow?.supplier_cost ?? null,
         import_shipping_cost: costRow?.import_shipping_cost ?? list.rules?.default_import_shipping_cost ?? 0,
-        pvp_editorial:        (prodRow as any)?.pvp_editorial ?? null,
+        pvp_editorial: (prodRow as any)?.pvp_editorial ?? null,
       }
     } else {
       // Manual override
       product = {
-        product_id:           "manual",
-        supplier_cost:        body.supplier_cost != null ? Number(body.supplier_cost) : null,
+        product_id: "manual",
+        supplier_cost: body.supplier_cost != null ? Number(body.supplier_cost) : null,
         import_shipping_cost: Number(body.import_shipping_cost ?? 0),
-        pvp_editorial:        body.pvp_editorial != null ? Number(body.pvp_editorial) : null,
+        pvp_editorial: body.pvp_editorial != null ? Number(body.pvp_editorial) : null,
       }
     }
 

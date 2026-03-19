@@ -34,21 +34,21 @@ interface TrackingEvent {
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string; icon: any }> = {
-  pending:    { label: "Pendiente",   color: "text-yellow-600", icon: Clock },
-  in_transit: { label: "En tránsito", color: "text-blue-600",   icon: Truck },
-  delivered:  { label: "Entregado",   color: "text-green-600",  icon: CheckCircle },
-  failed:     { label: "Fallido",     color: "text-red-600",    icon: XCircle },
-  returned:   { label: "Devuelto",    color: "text-orange-600", icon: XCircle },
+  pending: { label: "Pendiente", color: "text-yellow-600", icon: Clock },
+  in_transit: { label: "En tránsito", color: "text-blue-600", icon: Truck },
+  delivered: { label: "Entregado", color: "text-green-600", icon: CheckCircle },
+  failed: { label: "Fallido", color: "text-red-600", icon: XCircle },
+  returned: { label: "Devuelto", color: "text-orange-600", icon: XCircle },
 }
 
 export default function ShipmentDetailPage() {
   const params = useParams()
   const id = params?.id as string
 
-  const [shipment, setShipment]   = useState<Shipment | null>(null)
-  const [events, setEvents]       = useState<TrackingEvent[]>([])
-  const [loading, setLoading]     = useState(true)
-  const [tracking, setTracking]   = useState(false)
+  const [shipment, setShipment] = useState<Shipment | null>(null)
+  const [events, setEvents] = useState<TrackingEvent[]>([])
+  const [loading, setLoading] = useState(true)
+  const [tracking, setTracking] = useState(false)
   const [trackError, setTrackError] = useState<string | null>(null)
 
   async function loadShipment() {
@@ -73,7 +73,9 @@ export default function ShipmentDetailPage() {
     setTracking(false)
   }
 
-  useEffect(() => { loadShipment() }, [id])
+  useEffect(() => {
+    loadShipment()
+  }, [id])
 
   if (loading) return <div className="p-6 text-sm text-muted-foreground">Cargando…</div>
   if (!shipment) return <div className="p-6 text-sm text-muted-foreground">Envío no encontrado.</div>
@@ -86,7 +88,9 @@ export default function ShipmentDetailPage() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" asChild>
-            <Link href="/envios"><ArrowLeft className="h-4 w-4" /></Link>
+            <Link href="/envios">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
           </Button>
           <div>
             <h1 className="text-2xl font-bold font-mono">{shipment.tracking_number ?? "Sin guía"}</h1>
@@ -95,7 +99,9 @@ export default function ShipmentDetailPage() {
         </div>
         <div className="flex items-center gap-2">
           <StatusIcon className={`h-5 w-5 ${st.color}`} />
-          <Badge variant="outline" className={st.color}>{st.label}</Badge>
+          <Badge variant="outline" className={st.color}>
+            {st.label}
+          </Badge>
         </div>
       </div>
 
@@ -138,7 +144,9 @@ export default function ShipmentDetailPage() {
             <CardContent className="text-sm space-y-0.5">
               <p className="font-medium">{shipment.origin.nombre}</p>
               <p className="text-muted-foreground">{shipment.origin.direccion}</p>
-              <p className="text-muted-foreground">{shipment.origin.localidad}, {shipment.origin.provincia} ({shipment.origin.cp})</p>
+              <p className="text-muted-foreground">
+                {shipment.origin.localidad}, {shipment.origin.provincia} ({shipment.origin.cp})
+              </p>
               {shipment.origin.telefono && <p className="text-muted-foreground">{shipment.origin.telefono}</p>}
             </CardContent>
           </Card>
@@ -156,8 +164,12 @@ export default function ShipmentDetailPage() {
             <CardContent className="text-sm space-y-0.5">
               <p className="font-medium">{shipment.destination.nombre}</p>
               <p className="text-muted-foreground">{shipment.destination.direccion}</p>
-              <p className="text-muted-foreground">{shipment.destination.localidad}, {shipment.destination.provincia} ({shipment.destination.cp})</p>
-              {shipment.destination.telefono && <p className="text-muted-foreground">{shipment.destination.telefono}</p>}
+              <p className="text-muted-foreground">
+                {shipment.destination.localidad}, {shipment.destination.provincia} ({shipment.destination.cp})
+              </p>
+              {shipment.destination.telefono && (
+                <p className="text-muted-foreground">{shipment.destination.telefono}</p>
+              )}
             </CardContent>
           </Card>
         )}
@@ -178,7 +190,9 @@ export default function ShipmentDetailPage() {
           </div>
           <div>
             <p className="text-muted-foreground text-xs">Valor declarado</p>
-            <p className="font-medium">{shipment.declared_value ? `$${shipment.declared_value.toLocaleString("es-AR")}` : "—"}</p>
+            <p className="font-medium">
+              {shipment.declared_value ? `$${shipment.declared_value.toLocaleString("es-AR")}` : "—"}
+            </p>
           </div>
           <div>
             <p className="text-muted-foreground text-xs">Costo envío</p>
@@ -202,17 +216,21 @@ export default function ShipmentDetailPage() {
             <p className="text-sm text-muted-foreground py-4 text-center">Sin movimientos registrados.</p>
           ) : (
             <ol className="relative border-l border-muted ml-3 space-y-4">
-              {[...events].sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime()).map((ev, i) => (
-                <li key={ev.id ?? i} className="ml-4">
-                  <div className="absolute -left-1.5 mt-1.5 h-3 w-3 rounded-full border border-background bg-muted-foreground" />
-                  <p className="text-xs text-muted-foreground">
-                    {new Date(ev.occurred_at).toLocaleString("es-AR")}
-                    {ev.location && ` — ${ev.location}`}
-                  </p>
-                  <p className="text-sm font-medium">{ev.description}</p>
-                  <Badge variant="outline" className="text-xs mt-0.5">{ev.status}</Badge>
-                </li>
-              ))}
+              {[...events]
+                .sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime())
+                .map((ev, i) => (
+                  <li key={ev.id ?? i} className="ml-4">
+                    <div className="absolute -left-1.5 mt-1.5 h-3 w-3 rounded-full border border-background bg-muted-foreground" />
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(ev.occurred_at).toLocaleString("es-AR")}
+                      {ev.location && ` — ${ev.location}`}
+                    </p>
+                    <p className="text-sm font-medium">{ev.description}</p>
+                    <Badge variant="outline" className="text-xs mt-0.5">
+                      {ev.status}
+                    </Badge>
+                  </li>
+                ))}
             </ol>
           )}
         </CardContent>

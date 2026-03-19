@@ -37,7 +37,11 @@ async function handleTick(request: Request) {
     const result = await executeSingleTick(supabase)
 
     if (!result.ok) {
-      return NextResponse.json({ ok: true, ranAt, message: result.reason === "no_active_job" ? "No active jobs" : result.reason })
+      return NextResponse.json({
+        ok: true,
+        ranAt,
+        message: result.reason === "no_active_job" ? "No active jobs" : result.reason,
+      })
     }
 
     return NextResponse.json({

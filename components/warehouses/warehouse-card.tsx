@@ -4,12 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
 import { MapPin, MoreVertical, Edit, Trash2, CheckCircle2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
@@ -97,10 +92,7 @@ export function WarehouseCard({ warehouse, onEdit, onDelete }: WarehouseCardProp
               <Edit className="mr-2 h-4 w-4" />
               Editar
             </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={handleDelete}
-              className="text-destructive"
-            >
+            <DropdownMenuItem onClick={handleDelete} className="text-destructive">
               <Trash2 className="mr-2 h-4 w-4" />
               Eliminar
             </DropdownMenuItem>
@@ -114,12 +106,8 @@ export function WarehouseCard({ warehouse, onEdit, onDelete }: WarehouseCardProp
             <span>{warehouse.address}</span>
           </div>
         )}
-        {warehouse.notes && (
-          <p className="text-sm text-muted-foreground">{warehouse.notes}</p>
-        )}
-        <p className="text-xs text-muted-foreground">
-          Creado: {new Date(warehouse.created_at).toLocaleDateString()}
-        </p>
+        {warehouse.notes && <p className="text-sm text-muted-foreground">{warehouse.notes}</p>}
+        <p className="text-xs text-muted-foreground">Creado: {new Date(warehouse.created_at).toLocaleDateString()}</p>
       </CardContent>
     </Card>
   )

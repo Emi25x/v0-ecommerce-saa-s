@@ -11,9 +11,10 @@ import { startRun } from "@/lib/process-runs"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 // ML API hard limits
-const ML_SCAN_PAGE_SIZE   = 50   // search_type=scan: máximo real permitido
-const ML_MULTIGET_MAX_IDS = 20   // /items?ids=...: máximo REAL = 20 (ML devuelve 400 si se envían más)
-const ML_ATTRIBUTES       = "id,title,price,available_quantity,sold_quantity,status,permalink,thumbnail,listing_type_id,seller_custom_field,attributes,variations,shipping,tags,catalog_listing,catalog_listing_eligible"
+const ML_SCAN_PAGE_SIZE = 50 // search_type=scan: máximo real permitido
+const ML_MULTIGET_MAX_IDS = 20 // /items?ids=...: máximo REAL = 20 (ML devuelve 400 si se envían más)
+const ML_ATTRIBUTES =
+  "id,title,price,available_quantity,sold_quantity,status,permalink,thumbnail,listing_type_id,seller_custom_field,attributes,variations,shipping,tags,catalog_listing,catalog_listing_eligible"
 
 // ── Retry con backoff exponencial ────────────────────────────────────────────
 async function fetchWithRetry(
@@ -35,8 +36,8 @@ async function fetchWithRetry(
       }
 
       if (res.status >= 500 && attempt < maxRetries - 1) {
-        const wait = 300 * 2 ** attempt  // 300ms, 600ms, 1200ms
-        await new Promise(r => setTimeout(r, wait))
+        const wait = 300 * 2 ** attempt // 300ms, 600ms, 1200ms
+        await new Promise((r) => setTimeout(r, wait))
         attempt++
         continue
       }
@@ -45,7 +46,7 @@ async function fetchWithRetry(
     } catch {
       if (attempt < maxRetries - 1) {
         const wait = 300 * 2 ** attempt
-        await new Promise(r => setTimeout(r, wait))
+        await new Promise((r) => setTimeout(r, wait))
         attempt++
         continue
       }
@@ -56,10 +57,7 @@ async function fetchWithRetry(
 }
 
 // ── Pool de concurrencia ─────────────────────────────────────────────────────
-async function runPool<T>(
-  tasks: (() => Promise<T>)[],
-  concurrency: number,
-): Promise<PromiseSettledResult<T>[]> {
+async function runPool<T>(tasks: (() => Promise<T>)[], concurrency: number): Promise<PromiseSettledResult<T>[]> {
   const results: PromiseSettledResult<T>[] = new Array(tasks.length)
   let idx = 0
 
@@ -109,10 +107,7 @@ export interface ProImportResult {
 export async function validateImportPreconditions(
   supabase: SupabaseClient,
   accountId: string,
-): Promise<
-  | { ok: true; account: any; progress: any }
-  | { ok: false; status: number; body: Record<string, any> }
-> {
+): Promise<{ ok: true; account: any; progress: any } | { ok: false; status: number; body: Record<string, any> }> {
   // ── Verificar cuenta ─────────────────────────────────────────────────────
   const { data: account, error: accountError } = await supabase
     .from("ml_accounts")
@@ -170,10 +165,7 @@ export async function validateImportPreconditions(
       }
     }
     // Desbloquear
-    await supabase
-      .from("ml_import_progress")
-      .update({ status: "idle", paused_until: null })
-      .eq("account_id", accountId)
+    await supabase.from("ml_import_progress").update({ status: "idle", paused_until: null }).eq("account_id", accountId)
   }
 
   return { ok: true, account, progress }
@@ -204,21 +196,20 @@ export async function runProImport(
   // ── Audit trail via process_runs ──────────────────────────────────────
   const run = await startRun(supabase, "ml_import_pro", "ML Import Pro")
 
-  const accessToken  = await getValidAccessToken(accountId)
-  const authHeader   = { Authorization: `Bearer ${accessToken}` }
+  const accessToken = await getValidAccessToken(accountId)
+  const authHeader = { Authorization: `Bearer ${accessToken}` }
   const publicationsScope = progress.publications_scope || "all"
 
-  let importedCount   = 0   // filas realmente persistidas en DB en esta corrida
-  let mlSeenCount     = 0   // IDs vistos en ML en esta corrida
-  let errorsCount     = 0
-  let rateLimited     = false
-  let hasMore         = true
+  let importedCount = 0 // filas realmente persistidas en DB en esta corrida
+  let mlSeenCount = 0 // IDs vistos en ML en esta corrida
+  let errorsCount = 0
+  let rateLimited = false
+  let hasMore = true
   let lastScrollId: string | null = progress.scroll_id || null
-  let consecutiveZeroRuns = 0  // contador de runs consecutivos con 0 items de ML
+  let consecutiveZeroRuns = 0 // contador de runs consecutivos con 0 items de ML
 
   // ── Loop principal por tiempo ─────────────────────────────────────────────
   while (Date.now() - startTime < maxSeconds * 1000) {
-
     // Reload progress para leer el scroll_id actualizado
     const { data: cur } = await supabase
       .from("ml_import_progress")
@@ -228,7 +219,7 @@ export async function runProImport(
 
     if (!cur) break
     const scrollId = cur.scroll_id as string | null
-    const offset   = cur.publications_offset as number
+    const offset = cur.publications_offset as number
 
     // ── Paso 1: Obtener IDs de publicaciones via search_type=scan ────────
     // pageSize siempre = ML_SCAN_PAGE_SIZE (50). No pedir más.
@@ -251,7 +242,7 @@ export async function runProImport(
     if (!searchRes || !searchRes.ok) {
       errorsCount++
       const errStatus = searchRes?.status ?? 0
-      const errBody   = searchRes ? await searchRes.text().catch(() => "") : "no response"
+      const errBody = searchRes ? await searchRes.text().catch(() => "") : "no response"
 
       // 401 = token expirado — renovar y reintentar una vez antes de abortar
       if (errStatus === 401) {
@@ -272,14 +263,14 @@ export async function runProImport(
       await supabase
         .from("ml_import_progress")
         .update({
-          last_error:    `Search scan falló (HTTP ${errStatus}): ${errBody.slice(0, 300)}`,
+          last_error: `Search scan falló (HTTP ${errStatus}): ${errBody.slice(0, 300)}`,
           last_error_at: new Date().toISOString(),
         })
         .eq("account_id", accountId)
       break
     }
 
-    const searchData  = await searchRes.json()
+    const searchData = await searchRes.json()
     const itemIds: string[] = searchData.results || []
     const newScrollId: string | null = searchData.scroll_id || null
     const totalFromApi: number = searchData.paging?.total || 0
@@ -297,18 +288,18 @@ export async function runProImport(
         await supabase
           .from("ml_import_progress")
           .update({
-            status:               "idle",
-            scroll_id:            null,
-            publications_offset:  0,
-            ml_items_seen_count:  0,
-            last_error:          "3 scans consecutivos sin items: cursor reiniciado — items en DB preservados.",
-            last_error_at:       new Date().toISOString(),
+            status: "idle",
+            scroll_id: null,
+            publications_offset: 0,
+            ml_items_seen_count: 0,
+            last_error: "3 scans consecutivos sin items: cursor reiniciado — items en DB preservados.",
+            last_error_at: new Date().toISOString(),
           })
           .eq("account_id", accountId)
         break
       }
     } else {
-      consecutiveZeroRuns = 0  // Reset el contador si hay items
+      consecutiveZeroRuns = 0 // Reset el contador si hay items
     }
 
     // scan termina cuando results vacío — pero hay que distinguir entre
@@ -321,10 +312,10 @@ export async function runProImport(
         .eq("account_id", accountId)
         .single()
 
-      const totalSeen     = auditRow?.ml_items_seen_count    ?? 0
+      const totalSeen = auditRow?.ml_items_seen_count ?? 0
       const totalUpserted = auditRow?.db_rows_upserted_count ?? 0
-      const mlTotal       = auditRow?.publications_total ?? totalFromApi ?? 0  // fallback a totalFromApi si es null
-      const currentOffset = auditRow?.publications_offset    ?? 0
+      const mlTotal = auditRow?.publications_total ?? totalFromApi ?? 0 // fallback a totalFromApi si es null
+      const currentOffset = auditRow?.publications_offset ?? 0
 
       // ── Guardar totalFromApi si mlTotal estaba null ──────────────────────────
       // Esto asegura que publications_total NUNCA queda en null
@@ -341,7 +332,7 @@ export async function runProImport(
       // En ese caso, limpiar el scroll_id para que la próxima invocación
       // comience un scan nuevo desde el principio — el upsert con onConflict
       // garantiza que no se duplican registros.
-      const pctCovered = mlTotal > 0 ? (totalSeen / mlTotal) : 1
+      const pctCovered = mlTotal > 0 ? totalSeen / mlTotal : 1
       const scrollExpired = mlTotal > 0 && pctCovered < 0.95
 
       if (scrollExpired) {
@@ -354,13 +345,13 @@ export async function runProImport(
         await supabase
           .from("ml_import_progress")
           .update({
-            status:               "idle",
-            scroll_id:            null,   // nuevo scan desde ML posición 0
-            publications_offset:  0,      // reiniciar posición de scan (honesto)
-            ml_items_seen_count:  0,      // reiniciar contador de "vistos en esta sesión"
+            status: "idle",
+            scroll_id: null, // nuevo scan desde ML posición 0
+            publications_offset: 0, // reiniciar posición de scan (honesto)
+            ml_items_seen_count: 0, // reiniciar contador de "vistos en esta sesión"
             // publications_total y db_rows_upserted_count se PRESERVAN
-            last_error:          `Scroll ML expirado al ${Math.round(pctCovered * 100)}% (${totalSeen}/${mlTotal} vistos). Reiniciando scan — items ya importados permanecen en DB.`,
-            last_error_at:       new Date().toISOString(),
+            last_error: `Scroll ML expirado al ${Math.round(pctCovered * 100)}% (${totalSeen}/${mlTotal} vistos). Reiniciando scan — items ya importados permanecen en DB.`,
+            last_error_at: new Date().toISOString(),
           })
           .eq("account_id", accountId)
         hasMore = true
@@ -371,16 +362,16 @@ export async function runProImport(
       hasMore = false
 
       // Solo marcar done si persistimos ≥90% de lo visto
-      const upsertHealthy = totalSeen === 0 || (totalUpserted / totalSeen) >= 0.9
-      const finalStatus   = upsertHealthy ? "done" : "scan_complete_pending_verification"
+      const upsertHealthy = totalSeen === 0 || totalUpserted / totalSeen >= 0.9
+      const finalStatus = upsertHealthy ? "done" : "scan_complete_pending_verification"
 
       await supabase
         .from("ml_import_progress")
         .update({
-          status:      finalStatus,
-          scroll_id:   null,
+          status: finalStatus,
+          scroll_id: null,
           finished_at: new Date().toISOString(),
-          last_error:  null,
+          last_error: null,
         })
         .eq("account_id", accountId)
       break
@@ -389,10 +380,7 @@ export async function runProImport(
     // Guardar nuevo scroll_id inmediatamente
     if (newScrollId && newScrollId !== scrollId) {
       lastScrollId = newScrollId
-      await supabase
-        .from("ml_import_progress")
-        .update({ scroll_id: newScrollId })
-        .eq("account_id", accountId)
+      await supabase.from("ml_import_progress").update({ scroll_id: newScrollId }).eq("account_id", accountId)
     }
 
     // Fijar publications_total SOLO en la primera página del scan (sin scroll cursor).
@@ -400,10 +388,7 @@ export async function runProImport(
     // Ejemplo: offset=16000, total sube de 42000→43500 → 38%→37% (parece ir para atrás).
     if (!scrollId && totalFromApi > 0) {
       // Primera página — fijar el total para toda la sesión de scan
-      await supabase
-        .from("ml_import_progress")
-        .update({ publications_total: totalFromApi })
-        .eq("account_id", accountId)
+      await supabase.from("ml_import_progress").update({ publications_total: totalFromApi }).eq("account_id", accountId)
     }
     // Si scrollId !== null (páginas siguientes) NO actualizamos publications_total,
     // para que el porcentaje avance monotónicamente durante el scan.
@@ -416,15 +401,15 @@ export async function runProImport(
     }
 
     // Construir tareas de multiget
-    const multigetTasks = batches.map(batch => async () => {
-      const idsParam   = batch.join(",")
+    const multigetTasks = batches.map((batch) => async () => {
+      const idsParam = batch.join(",")
       const detailsUrl = `https://api.mercadolibre.com/items?ids=${idsParam}&attributes=${ML_ATTRIBUTES}`
       const { res, rateLimited: rl } = await fetchWithRetry(detailsUrl, authHeader)
 
       if (rl) return { rateLimited: true, items: [], errorMsg: null }
       if (!res || !res.ok) {
         const errStatus = res?.status ?? 0
-        const errBody   = res ? await res.text().catch(() => "") : "no response"
+        const errBody = res ? await res.text().catch(() => "") : "no response"
         return { rateLimited: false, items: [], errorMsg: `multiget HTTP ${errStatus}: ${errBody.slice(0, 200)}` }
       }
 
@@ -443,11 +428,17 @@ export async function runProImport(
     const multigetErrors: string[] = []
 
     for (const result of multigetResults) {
-      if (result.status !== "fulfilled") { errorsCount++; continue }
+      if (result.status !== "fulfilled") {
+        errorsCount++
+        continue
+      }
       const { rateLimited: batchRl, items, errorMsg } = result.value
 
       if (errorMsg) multigetErrors.push(errorMsg)
-      if (batchRl) { rateLimited = true; continue }
+      if (batchRl) {
+        rateLimited = true
+        continue
+      }
 
       for (const item of items) {
         const b = item.body
@@ -465,14 +456,22 @@ export async function runProImport(
             const val = attr.value_name ?? null
             if (!val) continue
             switch (attr.id) {
-              case "SELLER_SKU": if (!sku)  sku  = val; break
-              case "ISBN":       if (!isbn) isbn = val; break
+              case "SELLER_SKU":
+                if (!sku) sku = val
+                break
+              case "ISBN":
+                if (!isbn) isbn = val
+                break
               // ML usa tanto "GTIN" como "GTIN_CODE" según la categoría
               case "GTIN":
-              case "GTIN_CODE":  if (!gtin) gtin = val; break
-              case "EAN":        if (!ean)  ean  = val; break
+              case "GTIN_CODE":
+                if (!gtin) gtin = val
+                break
+              case "EAN":
+                if (!ean) ean = val
+                break
               case "WEIGHT": {
-                if (weightG != null) break   // ya tenemos un valor
+                if (weightG != null) break // ya tenemos un valor
                 const vs = attr.value_struct
                 if (vs?.number != null && isFinite(vs.number) && vs.number > 0) {
                   const unit = (vs.unit ?? "g").toLowerCase()
@@ -481,9 +480,7 @@ export async function runProImport(
                   const m = val.match(/^([\d.]+)\s*(g|kg)?/i)
                   if (m) {
                     const n = parseFloat(m[1])
-                    weightG = (m[2] ?? "g").toLowerCase() === "kg"
-                      ? Math.round(n * 1000)
-                      : Math.round(n)
+                    weightG = (m[2] ?? "g").toLowerCase() === "kg" ? Math.round(n * 1000) : Math.round(n)
                   }
                 }
                 break
@@ -531,38 +528,38 @@ export async function runProImport(
         const catalogListing: boolean = b.catalog_listing ?? false
 
         toUpsert.push({
-          account_id:               accountId,
-          ml_item_id:               b.id,
-          title:                    b.title,
-          price:                    b.price,
-          current_stock:            b.available_quantity ?? 0,
-          sold_quantity:            b.sold_quantity      ?? 0,
-          status:                   b.status,
-          permalink:                b.permalink,
-          listing_type_id:          b.listing_type_id ?? null,
-          thumbnail:                b.thumbnail       ?? null,
+          account_id: accountId,
+          ml_item_id: b.id,
+          title: b.title,
+          price: b.price,
+          current_stock: b.available_quantity ?? 0,
+          sold_quantity: b.sold_quantity ?? 0,
+          status: b.status,
+          permalink: b.permalink,
+          listing_type_id: b.listing_type_id ?? null,
+          thumbnail: b.thumbnail ?? null,
           sku,
           isbn,
           gtin,
           ean,
-          catalog_listing:          catalogListing,
+          catalog_listing: catalogListing,
           catalog_listing_eligible: catalogEligible,
           ...(weightG != null ? { meli_weight_g: weightG } : {}),
-          last_sync_at:             now,
-          updated_at:               now,
+          last_sync_at: now,
+          updated_at: now,
         })
       }
     }
 
     // ── Paso 4: Upsert en Supabase (un solo batch) ───────────────────────
-    let batchUpserted = 0  // filas realmente guardadas en DB en este batch
+    let batchUpserted = 0 // filas realmente guardadas en DB en este batch
 
     // Si el multiget falló y no tenemos nada para guardar, registrar el error
     if (toUpsert.length === 0 && multigetErrors.length > 0) {
       await supabase
         .from("ml_import_progress")
         .update({
-          last_error:    `Multiget falló (${multigetErrors.length} batch/es): ${multigetErrors[0]}`,
+          last_error: `Multiget falló (${multigetErrors.length} batch/es): ${multigetErrors[0]}`,
           last_error_at: new Date().toISOString(),
         })
         .eq("account_id", accountId)
@@ -579,7 +576,7 @@ export async function runProImport(
         await supabase
           .from("ml_import_progress")
           .update({
-            last_error:    `Upsert falló (${toUpsert.length} filas no guardadas): ${upsertError.message}`,
+            last_error: `Upsert falló (${toUpsert.length} filas no guardadas): ${upsertError.message}`,
             last_error_at: new Date().toISOString(),
           })
           .eq("account_id", accountId)
@@ -588,7 +585,7 @@ export async function runProImport(
         // Usar el count real devuelto por Supabase cuando está disponible.
         // Si count es null (driver no lo soporta), usar toUpsert.length como fallback
         // ya que la ausencia de error significa que todas las filas se procesaron.
-        batchUpserted  = upsertCount ?? toUpsert.length
+        batchUpserted = upsertCount ?? toUpsert.length
         importedCount += batchUpserted
 
         // Si el count real es menor que lo enviado, registrar la discrepancia
@@ -598,7 +595,7 @@ export async function runProImport(
           await supabase
             .from("ml_import_progress")
             .update({
-              last_error:    `Upsert parcial: ${upsertCount}/${toUpsert.length} filas guardadas (${missing} sin confirmar)`,
+              last_error: `Upsert parcial: ${upsertCount}/${toUpsert.length} filas guardadas (${missing} sin confirmar)`,
               last_error_at: new Date().toISOString(),
             })
             .eq("account_id", accountId)
@@ -622,7 +619,9 @@ export async function runProImport(
     // (el loop puede ejecutar múltiples iteraciones con el mismo `progress` snapshot)
     const { data: curCounts } = await supabase
       .from("ml_import_progress")
-      .select("upsert_new_count, fetched_count, discovered_count, request_count, ml_items_seen_count, db_rows_upserted_count, upsert_errors_count")
+      .select(
+        "upsert_new_count, fetched_count, discovered_count, request_count, ml_items_seen_count, db_rows_upserted_count, upsert_errors_count",
+      )
       .eq("account_id", accountId)
       .single()
 
@@ -630,28 +629,25 @@ export async function runProImport(
     const batchErrors = Math.max(0, toUpsert.length - batchUpserted)
 
     const progressUpdate: Record<string, any> = {
-      publications_offset:    newOffset,
-      upsert_new_count:       (curCounts?.upsert_new_count    ?? 0) + batchUpserted,
-      fetched_count:          (curCounts?.fetched_count       ?? 0) + toUpsert.length,
-      discovered_count:       (curCounts?.discovered_count    ?? 0) + itemIds.length,
-      request_count:          (curCounts?.request_count       ?? 0) + 1,
+      publications_offset: newOffset,
+      upsert_new_count: (curCounts?.upsert_new_count ?? 0) + batchUpserted,
+      fetched_count: (curCounts?.fetched_count ?? 0) + toUpsert.length,
+      discovered_count: (curCounts?.discovered_count ?? 0) + itemIds.length,
+      request_count: (curCounts?.request_count ?? 0) + 1,
       // audit columns — track seen vs actually persisted
-      ml_items_seen_count:    (curCounts?.ml_items_seen_count    ?? 0) + itemIds.length,
+      ml_items_seen_count: (curCounts?.ml_items_seen_count ?? 0) + itemIds.length,
       db_rows_upserted_count: (curCounts?.db_rows_upserted_count ?? 0) + batchUpserted,
-      upsert_errors_count:    (curCounts?.upsert_errors_count    ?? 0) + batchErrors,
-      last_sync_batch_at:     new Date().toISOString(),
+      upsert_errors_count: (curCounts?.upsert_errors_count ?? 0) + batchErrors,
+      last_sync_batch_at: new Date().toISOString(),
     }
 
     // Si el batch fue exitoso y sin errores, limpiar el último error
     if (batchErrors === 0 && toUpsert.length > 0) {
-      progressUpdate.last_error    = null
+      progressUpdate.last_error = null
       progressUpdate.last_error_at = null
     }
 
-    await supabase
-      .from("ml_import_progress")
-      .update(progressUpdate)
-      .eq("account_id", accountId)
+    await supabase.from("ml_import_progress").update(progressUpdate).eq("account_id", accountId)
 
     if (rateLimited) break
 
@@ -667,14 +663,11 @@ export async function runProImport(
     .single()
 
   const finalScrollId = finalProg?.scroll_id ?? null
-  const isDone        = finalProg?.status === "done"
+  const isDone = finalProg?.status === "done"
 
   // Marcar idle si no terminó con done/paused
   if (!isDone && !rateLimited) {
-    await supabase
-      .from("ml_import_progress")
-      .update({ status: "idle" })
-      .eq("account_id", accountId)
+    await supabase.from("ml_import_progress").update({ status: "idle" }).eq("account_id", accountId)
   }
 
   const elapsed_ms = Date.now() - startTime
@@ -689,36 +682,36 @@ export async function runProImport(
   // ── Registrar run exitoso en process_runs ─────────────────────────────
   await run.complete({
     rows_processed: mlSeenCount,
-    rows_updated:   importedCount,
-    rows_failed:    errorsCount,
+    rows_updated: importedCount,
+    rows_failed: errorsCount,
     log_json: {
-      account_id:    accountId,
-      ml_seen:       mlSeenCount,
-      db_upserted:   importedCount,
-      errors:        errorsCount,
-      rate_limited:  rateLimited,
-      has_more:      hasMore && !isDone,
-      total_seen:    finalCounts?.ml_items_seen_count    ?? 0,
+      account_id: accountId,
+      ml_seen: mlSeenCount,
+      db_upserted: importedCount,
+      errors: errorsCount,
+      rate_limited: rateLimited,
+      has_more: hasMore && !isDone,
+      total_seen: finalCounts?.ml_items_seen_count ?? 0,
       total_upserted: finalCounts?.db_rows_upserted_count ?? 0,
-      ml_total:      finalCounts?.publications_total     ?? 0,
+      ml_total: finalCounts?.publications_total ?? 0,
     },
   })
 
   return {
-    ok:                     true,
-    imported_count:         importedCount,
-    ml_items_seen_count:    mlSeenCount,
-    db_rows_upserted:       importedCount,
-    total_seen:             finalCounts?.ml_items_seen_count    ?? 0,
-    total_upserted:         finalCounts?.db_rows_upserted_count ?? 0,
-    total_upsert_errors:    finalCounts?.upsert_errors_count    ?? 0,
-    ml_total:               finalCounts?.publications_total     ?? 0,
-    db_gap:                 (finalCounts?.publications_total ?? 0) - (finalCounts?.db_rows_upserted_count ?? 0),
+    ok: true,
+    imported_count: importedCount,
+    ml_items_seen_count: mlSeenCount,
+    db_rows_upserted: importedCount,
+    total_seen: finalCounts?.ml_items_seen_count ?? 0,
+    total_upserted: finalCounts?.db_rows_upserted_count ?? 0,
+    total_upsert_errors: finalCounts?.upsert_errors_count ?? 0,
+    ml_total: finalCounts?.publications_total ?? 0,
+    db_gap: (finalCounts?.publications_total ?? 0) - (finalCounts?.db_rows_upserted_count ?? 0),
     elapsed_ms,
-    has_more:               hasMore && !isDone,
-    last_scroll_id:         finalScrollId,
-    errors_count:           errorsCount,
-    rate_limited:           rateLimited,
+    has_more: hasMore && !isDone,
+    last_scroll_id: finalScrollId,
+    errors_count: errorsCount,
+    rate_limited: rateLimited,
   }
 }
 
@@ -736,7 +729,9 @@ export async function handleImportError(
       .from("ml_import_progress")
       .update({ status: "error", last_error: error.message })
       .eq("account_id", accountId)
-  } catch { /* ignorar */ }
+  } catch {
+    /* ignorar */
+  }
   // run.fail es best-effort — si run es noop (tabla no existe) no falla
   if (run) await run.fail(error).catch(() => {})
 }

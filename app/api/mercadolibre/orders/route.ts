@@ -41,54 +41,60 @@ export async function GET(request: Request) {
 
     // Consultar ML directamente
     const mlUrl = `https://api.mercadolibre.com/orders/search?seller=${account.ml_user_id}&sort=date_desc&limit=${limit}&offset=${offset}`
-    
+
     const mlResponse = await fetch(mlUrl, {
-      headers: { Authorization: `Bearer ${account.access_token}` }
+      headers: { Authorization: `Bearer ${account.access_token}` },
     })
 
     if (!mlResponse.ok) {
       console.error("[v0] ML API error:", mlResponse.status)
-      return NextResponse.json({ 
-        orders: [], 
+      return NextResponse.json({
+        orders: [],
         paging: { total: 0, limit, offset },
-        error: "Error al consultar MercadoLibre"
+        error: "Error al consultar MercadoLibre",
       })
     }
 
     const mlData = await mlResponse.json()
     console.log("[v0] Got", mlData.results?.length || 0, "orders from ML")
-    
+
     // Debug: mostrar estructura completa de la primera orden
     if (mlData.results && mlData.results.length > 0) {
       const firstOrder = mlData.results[0]
-      console.log("[v0] ESTRUCTURA DE ORDEN COMPLETA:", JSON.stringify({
-        id: firstOrder.id,
-        buyer: firstOrder.buyer,
-        shipping: firstOrder.shipping,
-        order_items: firstOrder.order_items?.map((item: any) => ({
-          item: {
-            id: item.item?.id,
-            title: item.item?.title,
-            seller_sku: item.item?.seller_sku,
-            seller_custom_field: item.item?.seller_custom_field,
-            variation_attributes: item.item?.variation_attributes
+      console.log(
+        "[v0] ESTRUCTURA DE ORDEN COMPLETA:",
+        JSON.stringify(
+          {
+            id: firstOrder.id,
+            buyer: firstOrder.buyer,
+            shipping: firstOrder.shipping,
+            order_items: firstOrder.order_items?.map((item: any) => ({
+              item: {
+                id: item.item?.id,
+                title: item.item?.title,
+                seller_sku: item.item?.seller_sku,
+                seller_custom_field: item.item?.seller_custom_field,
+                variation_attributes: item.item?.variation_attributes,
+              },
+              quantity: item.quantity,
+              unit_price: item.unit_price,
+            })),
           },
-          quantity: item.quantity,
-          unit_price: item.unit_price
-        }))
-      }, null, 2))
+          null,
+          2,
+        ),
+      )
     }
 
     return NextResponse.json({
       orders: mlData.results || [],
-      paging: mlData.paging || { total: 0, limit, offset }
+      paging: mlData.paging || { total: 0, limit, offset },
     })
-
   } catch (error) {
     console.error("[v0] Error in orders endpoint:", error)
     return NextResponse.json(
       { error: "Internal server error", orders: [], paging: { total: 0, limit: 50, offset: 0 } },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }

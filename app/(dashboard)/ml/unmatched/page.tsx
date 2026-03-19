@@ -5,28 +5,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, Search, Link as LinkIcon, ExternalLink } from "lucide-react"
 
@@ -66,7 +47,7 @@ export default function UnmatchedPublicationsPage() {
     page: 1,
     pageSize: 50,
     total: 0,
-    totalPages: 0
+    totalPages: 0,
   })
 
   // Filtros
@@ -120,7 +101,7 @@ export default function UnmatchedPublicationsPage() {
       }
 
       const response = await fetch(`/api/ml/publications/unmatched?${params}`)
-      
+
       if (!response.ok) {
         console.error(`[v0] Fetch publications failed with status ${response.status}`)
         setPublications([])
@@ -130,9 +111,9 @@ export default function UnmatchedPublicationsPage() {
       const data = await response.json()
 
       setPublications(data.items || [])
-      
+
       // Safe update: solo actualizar si pagination existe y tiene las propiedades esperadas
-      if (data.pagination && typeof data.pagination.page === 'number') {
+      if (data.pagination && typeof data.pagination.page === "number") {
         setPagination(data.pagination)
       }
     } catch (error) {
@@ -145,7 +126,7 @@ export default function UnmatchedPublicationsPage() {
 
   const handleSearch = () => {
     setSearchQuery(searchInput)
-    setPagination(prev => ({ ...prev, page: 1 }))
+    setPagination((prev) => ({ ...prev, page: 1 }))
   }
 
   const handleOpenModal = (publication: UnmatchedPublication) => {
@@ -195,8 +176,8 @@ export default function UnmatchedPublicationsPage() {
           account_id: selectedPublication.account_id,
           ml_item_id: selectedPublication.ml_item_id,
           product_id: selectedProduct.id,
-          matched_value: selectedProduct.sku
-        })
+          matched_value: selectedProduct.sku,
+        }),
       })
 
       const data = await response.json()
@@ -252,7 +233,7 @@ export default function UnmatchedPublicationsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todas las cuentas</SelectItem>
-                  {accounts.map(account => (
+                  {accounts.map((account) => (
                     <SelectItem key={account.id} value={account.id}>
                       {account.nickname}
                     </SelectItem>
@@ -265,7 +246,9 @@ export default function UnmatchedPublicationsPage() {
           {/* Estadísticas */}
           <div className="flex items-center justify-between text-sm text-muted-foreground">
             <span>Total: {pagination.total} publicaciones sin vincular</span>
-            <span>Página {pagination.page} de {pagination.totalPages}</span>
+            <span>
+              Página {pagination.page} de {pagination.totalPages}
+            </span>
           </div>
 
           {/* Tabla */}
@@ -274,9 +257,7 @@ export default function UnmatchedPublicationsPage() {
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           ) : publications.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              No se encontraron publicaciones sin vincular
-            </div>
+            <div className="text-center py-12 text-muted-foreground">No se encontraron publicaciones sin vincular</div>
           ) : (
             <>
               <div className="border rounded-lg">
@@ -293,7 +274,7 @@ export default function UnmatchedPublicationsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {publications.map(pub => (
+                    {publications.map((pub) => (
                       <TableRow key={pub.ml_item_id}>
                         <TableCell>
                           <Badge variant="outline">{pub.account_nickname}</Badge>
@@ -301,9 +282,7 @@ export default function UnmatchedPublicationsPage() {
                         <TableCell className="font-mono text-xs">{pub.ml_item_id}</TableCell>
                         <TableCell className="max-w-md truncate">{pub.title}</TableCell>
                         <TableCell>
-                          <Badge variant={pub.status === "active" ? "default" : "secondary"}>
-                            {pub.status}
-                          </Badge>
+                          <Badge variant={pub.status === "active" ? "default" : "secondary"}>{pub.status}</Badge>
                         </TableCell>
                         <TableCell>${pub.price?.toFixed(2) || "0.00"}</TableCell>
                         <TableCell>{pub.current_stock || 0}</TableCell>
@@ -327,7 +306,7 @@ export default function UnmatchedPublicationsPage() {
               {/* Paginación */}
               <div className="flex justify-between items-center">
                 <Button
-                  onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
+                  onClick={() => setPagination((prev) => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
                   disabled={pagination.page === 1}
                   variant="outline"
                   className="bg-transparent"
@@ -338,7 +317,7 @@ export default function UnmatchedPublicationsPage() {
                   Página {pagination.page} de {pagination.totalPages}
                 </span>
                 <Button
-                  onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.totalPages, prev.page + 1) }))}
+                  onClick={() => setPagination((prev) => ({ ...prev, page: Math.min(prev.totalPages, prev.page + 1) }))}
                   disabled={pagination.page >= pagination.totalPages}
                   variant="outline"
                   className="bg-transparent"
@@ -398,7 +377,7 @@ export default function UnmatchedPublicationsPage() {
                 <div className="space-y-2">
                   <Label>Resultados ({products.length})</Label>
                   <div className="border rounded-lg divide-y max-h-80 overflow-y-auto">
-                    {products.map(product => (
+                    {products.map((product) => (
                       <div
                         key={product.id}
                         className={`p-3 cursor-pointer hover:bg-muted transition-colors ${
@@ -439,10 +418,7 @@ export default function UnmatchedPublicationsPage() {
                 >
                   Cancelar
                 </Button>
-                <Button
-                  onClick={handleMatch}
-                  disabled={!selectedProduct || matching}
-                >
+                <Button onClick={handleMatch} disabled={!selectedProduct || matching}>
                   {matching ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin mr-2" />

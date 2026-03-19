@@ -17,7 +17,7 @@ export function normalizeHeader(header: string): string {
 /** Auto-detect CSV delimiter by counting occurrences in the first line */
 export function detectDelimiter(firstLine: string): string {
   const candidates = ["|", ";", "\t", ","]
-  const counts = candidates.map(d => ({
+  const counts = candidates.map((d) => ({
     delimiter: d,
     count: (firstLine.match(new RegExp(`\\${d === "\t" ? "t" : d}`, "g")) || []).length,
   }))

@@ -29,17 +29,8 @@ export interface SyncUpdatesResult {
   error?: string
 }
 
-export async function executeSyncUpdates(
-  supabase: any,
-  params: SyncUpdatesParams,
-): Promise<SyncUpdatesResult> {
-  const {
-    account_id,
-    sync_type,
-    warehouse_id,
-    price_list_id,
-    zero_missing_stock = false,
-  } = params
+export async function executeSyncUpdates(supabase: any, params: SyncUpdatesParams): Promise<SyncUpdatesResult> {
+  const { account_id, sync_type, warehouse_id, price_list_id, zero_missing_stock = false } = params
 
   const syncStock = sync_type === "stock" || sync_type === "both"
   const syncPrice = sync_type === "price" || sync_type === "both"
@@ -49,7 +40,16 @@ export async function executeSyncUpdates(
   try {
     accessToken = await getValidAccessToken(account_id)
   } catch (e: any) {
-    return { success: false, updated: 0, skipped: 0, errors: 0, zeroed: 0, total_linked: 0, total_unlinked: 0, error: `Token refresh failed: ${e.message}` }
+    return {
+      success: false,
+      updated: 0,
+      skipped: 0,
+      errors: 0,
+      zeroed: 0,
+      total_linked: 0,
+      total_unlinked: 0,
+      error: `Token refresh failed: ${e.message}`,
+    }
   }
 
   // Get all publications for the account
@@ -59,7 +59,16 @@ export async function executeSyncUpdates(
     .eq("account_id", account_id)
 
   if (pubError) {
-    return { success: false, updated: 0, skipped: 0, errors: 0, zeroed: 0, total_linked: 0, total_unlinked: 0, error: "Error fetching publications" }
+    return {
+      success: false,
+      updated: 0,
+      skipped: 0,
+      errors: 0,
+      zeroed: 0,
+      total_linked: 0,
+      total_unlinked: 0,
+      error: "Error fetching publications",
+    }
   }
 
   const linkedPubs = (publications || []).filter((p: any) => p.product_id)
@@ -85,10 +94,9 @@ export async function executeSyncUpdates(
     }
 
     // Fallback to products.stock
-    const missingIds = productIds.filter(id => !(id in stockMap))
+    const missingIds = productIds.filter((id) => !(id in stockMap))
     if (missingIds.length > 0) {
-      const { data: products } = await supabase
-        .from("products").select("id, stock").in("id", missingIds)
+      const { data: products } = await supabase.from("products").select("id, stock").in("id", missingIds)
       for (const p of products ?? []) {
         stockMap[p.id] = p.stock ?? 0
       }
@@ -114,7 +122,10 @@ export async function executeSyncUpdates(
     Authorization: `Bearer ${accessToken}`,
   }
 
-  let updated = 0, skipped = 0, errors = 0, zeroed = 0
+  let updated = 0,
+    skipped = 0,
+    errors = 0,
+    zeroed = 0
 
   // Update linked publications
   for (const pub of linkedPubs) {
@@ -130,7 +141,10 @@ export async function executeSyncUpdates(
       if (newPrice !== undefined && newPrice !== pub.price) updateBody.price = newPrice
     }
 
-    if (Object.keys(updateBody).length === 0) { skipped++; continue }
+    if (Object.keys(updateBody).length === 0) {
+      skipped++
+      continue
+    }
 
     try {
       const res = await fetch(`https://api.mercadolibre.com/items/${pub.ml_item_id}`, {
@@ -144,17 +158,33 @@ export async function executeSyncUpdates(
         const localUpdate: Record<string, any> = { updated_at: new Date().toISOString() }
         if (updateBody.available_quantity !== undefined) localUpdate.current_stock = updateBody.available_quantity
         if (updateBody.price !== undefined) localUpdate.price = updateBody.price
-        await supabase.from("ml_publications").update(localUpdate).eq("account_id", account_id).eq("ml_item_id", pub.ml_item_id)
+        await supabase
+          .from("ml_publications")
+          .update(localUpdate)
+          .eq("account_id", account_id)
+          .eq("ml_item_id", pub.ml_item_id)
         updated++
       } else {
         if (res.status === 429) {
-          return { success: false, rate_limited: true, updated, skipped, errors, zeroed, total_linked: linkedPubs.length, total_unlinked: unlinkedPubs.length, message: "ML rate limit reached." }
+          return {
+            success: false,
+            rate_limited: true,
+            updated,
+            skipped,
+            errors,
+            zeroed,
+            total_linked: linkedPubs.length,
+            total_unlinked: unlinkedPubs.length,
+            message: "ML rate limit reached.",
+          }
         }
         errors++
       }
-    } catch { errors++ }
+    } catch {
+      errors++
+    }
 
-    await new Promise(r => setTimeout(r, 200))
+    await new Promise((r) => setTimeout(r, 200))
   }
 
   // Zero out unlinked publications if requested
@@ -169,11 +199,19 @@ export async function executeSyncUpdates(
           signal: AbortSignal.timeout(10_000),
         })
         if (res.ok) {
-          await supabase.from("ml_publications").update({ current_stock: 0, updated_at: new Date().toISOString() }).eq("account_id", account_id).eq("ml_item_id", pub.ml_item_id)
+          await supabase
+            .from("ml_publications")
+            .update({ current_stock: 0, updated_at: new Date().toISOString() })
+            .eq("account_id", account_id)
+            .eq("ml_item_id", pub.ml_item_id)
           zeroed++
-        } else { errors++ }
-      } catch { errors++ }
-      await new Promise(r => setTimeout(r, 200))
+        } else {
+          errors++
+        }
+      } catch {
+        errors++
+      }
+      await new Promise((r) => setTimeout(r, 200))
     }
   }
 
@@ -182,5 +220,13 @@ export async function executeSyncUpdates(
     await supabase.from("ml_accounts").update({ last_stock_sync_at: new Date().toISOString() }).eq("id", account_id)
   }
 
-  return { success: true, updated, skipped, errors, zeroed, total_linked: linkedPubs.length, total_unlinked: unlinkedPubs.length }
+  return {
+    success: true,
+    updated,
+    skipped,
+    errors,
+    zeroed,
+    total_linked: linkedPubs.length,
+    total_unlinked: unlinkedPubs.length,
+  }
 }

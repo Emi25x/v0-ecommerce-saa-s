@@ -46,7 +46,10 @@ const WAREHOUSE_COLORS = [
   { header: "bg-blue-500/10 border-blue-500/20", badge: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
   { header: "bg-orange-500/10 border-orange-500/20", badge: "bg-orange-500/15 text-orange-400 border-orange-500/30" },
   { header: "bg-purple-500/10 border-purple-500/20", badge: "bg-purple-500/15 text-purple-400 border-purple-500/30" },
-  { header: "bg-emerald-500/10 border-emerald-500/20", badge: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
+  {
+    header: "bg-emerald-500/10 border-emerald-500/20",
+    badge: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+  },
 ]
 
 function fmt(n: number | null | undefined): string {
@@ -62,13 +65,13 @@ function sumKeys(obj: Record<string, number> | null, keys: string[]): number {
 type ViewMode = "warehouse" | "source"
 
 export default function StockOverviewPage() {
-  const [data, setData]       = useState<ApiResponse | null>(null)
+  const [data, setData] = useState<ApiResponse | null>(null)
   const [loading, setLoading] = useState(true)
-  const [search, setSearch]   = useState("")
+  const [search, setSearch] = useState("")
   const [zeroOnly, setZeroOnly] = useState(false)
-  const [page, setPage]       = useState(1)
-  const [view, setView]       = useState<ViewMode>("warehouse")
-  const searchTimeout         = useRef<ReturnType<typeof setTimeout>>()
+  const [page, setPage] = useState(1)
+  const [view, setView] = useState<ViewMode>("warehouse")
+  const searchTimeout = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const load = useCallback(async (s: string, z: boolean, p: number) => {
     setLoading(true)
@@ -83,12 +86,17 @@ export default function StockOverviewPage() {
     }
   }, [])
 
-  useEffect(() => { load("", false, 1) }, [])  // eslint-disable-line
+  useEffect(() => {
+    load("", false, 1)
+  }, []) // eslint-disable-line
 
   const handleSearch = (val: string) => {
     setSearch(val)
     clearTimeout(searchTimeout.current)
-    searchTimeout.current = setTimeout(() => { setPage(1); load(val, zeroOnly, 1) }, 350)
+    searchTimeout.current = setTimeout(() => {
+      setPage(1)
+      load(val, zeroOnly, 1)
+    }, 350)
   }
 
   const handleZero = (val: boolean) => {
@@ -97,22 +105,23 @@ export default function StockOverviewPage() {
     load(search, val, 1)
   }
 
-  const goPage = (p: number) => { setPage(p); load(search, zeroOnly, p) }
+  const goPage = (p: number) => {
+    setPage(p)
+    load(search, zeroOnly, p)
+  }
 
-  const sourceKeys    = data?.source_keys ?? []
-  const warehouses    = data?.warehouses ?? []
-  const noWhKeys      = data?.no_warehouse_keys ?? []
-  const sourceLabel   = data?.source_label ?? {}
-  const totalPages    = data ? Math.ceil(data.total / data.limit) : 0
+  const sourceKeys = data?.source_keys ?? []
+  const warehouses = data?.warehouses ?? []
+  const noWhKeys = data?.no_warehouse_keys ?? []
+  const sourceLabel = data?.source_label ?? {}
+  const totalPages = data ? Math.ceil(data.total / data.limit) : 0
   const hasWarehouses = warehouses.length > 0
 
   // For "by warehouse" view: columns are warehouses (summing their sources),
   // plus a column for unassigned sources if any
   const warehouseCols = [
     ...warehouses,
-    ...(noWhKeys.length > 0
-      ? [{ id: "__none__", name: "Sin almacén", code: "–", source_keys: noWhKeys }]
-      : []),
+    ...(noWhKeys.length > 0 ? [{ id: "__none__", name: "Sin almacén", code: "–", source_keys: noWhKeys }] : []),
   ]
 
   return (
@@ -157,7 +166,7 @@ export default function StockOverviewPage() {
               className="pl-8 h-8 text-sm"
               placeholder="Buscar por título, SKU o EAN..."
               value={search}
-              onChange={e => handleSearch(e.target.value)}
+              onChange={(e) => handleSearch(e.target.value)}
             />
           </div>
           <button
@@ -190,7 +199,9 @@ export default function StockOverviewPage() {
                 {warehouseCols.map((wh, i) => (
                   <th key={wh.id} className={`text-right px-3 py-2.5 text-xs w-28 border-l border-border/30`}>
                     <div className={`inline-flex flex-col items-end gap-0.5`}>
-                      <span className={`font-medium px-1.5 py-0.5 rounded text-xs ${WAREHOUSE_COLORS[i % WAREHOUSE_COLORS.length].badge}`}>
+                      <span
+                        className={`font-medium px-1.5 py-0.5 rounded text-xs ${WAREHOUSE_COLORS[i % WAREHOUSE_COLORS.length].badge}`}
+                      >
                         {wh.name}
                       </span>
                       <span className="text-zinc-600 font-mono text-[10px]">{wh.code}</span>
@@ -201,9 +212,13 @@ export default function StockOverviewPage() {
             </thead>
             <tbody className="divide-y divide-border/30">
               {!data?.products.length && (
-                <tr><td colSpan={4 + warehouseCols.length} className="text-center py-12 text-muted-foreground text-xs">No se encontraron productos</td></tr>
+                <tr>
+                  <td colSpan={4 + warehouseCols.length} className="text-center py-12 text-muted-foreground text-xs">
+                    No se encontraron productos
+                  </td>
+                </tr>
               )}
-              {data?.products.map(p => {
+              {data?.products.map((p) => {
                 const isZero = (p.stock ?? 0) === 0
                 return (
                   <tr key={p.id} className={`hover:bg-muted/20 transition-colors ${loading ? "opacity-50" : ""}`}>
@@ -212,7 +227,9 @@ export default function StockOverviewPage() {
                         <div>{p.sku || "—"}</div>
                       </div>
                     </td>
-                    <td className="px-4 py-2.5 align-middle"><span className="line-clamp-2 leading-tight">{p.title}</span></td>
+                    <td className="px-4 py-2.5 align-middle">
+                      <span className="line-clamp-2 leading-tight">{p.title}</span>
+                    </td>
                     <td className="px-4 py-2.5 align-middle text-right text-muted-foreground">{fmt(p.price)}</td>
                     <td className="px-4 py-2.5 align-middle text-right font-semibold">
                       <span className={isZero ? "text-red-400" : ""}>{p.stock ?? 0}</span>
@@ -221,7 +238,10 @@ export default function StockOverviewPage() {
                       const qty = sumKeys(p.stock_by_source, wh.source_keys)
                       return (
                         <td key={wh.id} className="px-3 py-2.5 align-middle text-right border-l border-border/20">
-                          <Badge variant="outline" className={`font-mono text-xs ${qty === 0 ? "text-red-400 border-red-500/30" : WAREHOUSE_COLORS[i % WAREHOUSE_COLORS.length].badge}`}>
+                          <Badge
+                            variant="outline"
+                            className={`font-mono text-xs ${qty === 0 ? "text-red-400 border-red-500/30" : WAREHOUSE_COLORS[i % WAREHOUSE_COLORS.length].badge}`}
+                          >
                             {qty}
                           </Badge>
                         </td>
@@ -244,8 +264,14 @@ export default function StockOverviewPage() {
                 {sourceKeys.map((k, i) => (
                   <th key={k} className="text-right px-3 py-2.5 font-medium text-muted-foreground text-xs w-24">
                     <div className="flex flex-col items-end gap-0.5">
-                      <span className={`px-1.5 py-0.5 rounded font-mono text-xs ${SOURCE_COLORS[i % SOURCE_COLORS.length]}`}>{k}</span>
-                      {sourceLabel[k] && <span className="text-zinc-600 text-[10px] truncate max-w-20">{sourceLabel[k]}</span>}
+                      <span
+                        className={`px-1.5 py-0.5 rounded font-mono text-xs ${SOURCE_COLORS[i % SOURCE_COLORS.length]}`}
+                      >
+                        {k}
+                      </span>
+                      {sourceLabel[k] && (
+                        <span className="text-zinc-600 text-[10px] truncate max-w-20">{sourceLabel[k]}</span>
+                      )}
                     </div>
                   </th>
                 ))}
@@ -253,9 +279,13 @@ export default function StockOverviewPage() {
             </thead>
             <tbody className="divide-y divide-border/30">
               {!data?.products.length && (
-                <tr><td colSpan={4 + sourceKeys.length} className="text-center py-12 text-muted-foreground text-xs">No se encontraron productos</td></tr>
+                <tr>
+                  <td colSpan={4 + sourceKeys.length} className="text-center py-12 text-muted-foreground text-xs">
+                    No se encontraron productos
+                  </td>
+                </tr>
               )}
-              {data?.products.map(p => {
+              {data?.products.map((p) => {
                 const isZero = (p.stock ?? 0) === 0
                 return (
                   <tr key={p.id} className={`hover:bg-muted/20 transition-colors ${loading ? "opacity-50" : ""}`}>
@@ -264,7 +294,9 @@ export default function StockOverviewPage() {
                         <div>{p.sku || "—"}</div>
                       </div>
                     </td>
-                    <td className="px-4 py-2.5 align-middle"><span className="line-clamp-2 leading-tight">{p.title}</span></td>
+                    <td className="px-4 py-2.5 align-middle">
+                      <span className="line-clamp-2 leading-tight">{p.title}</span>
+                    </td>
                     <td className="px-4 py-2.5 align-middle text-right text-muted-foreground">{fmt(p.price)}</td>
                     <td className="px-4 py-2.5 align-middle text-right font-semibold">
                       <span className={isZero ? "text-red-400" : ""}>{p.stock ?? 0}</span>
@@ -276,7 +308,10 @@ export default function StockOverviewPage() {
                           {qty === null ? (
                             <span className="text-zinc-700">–</span>
                           ) : (
-                            <Badge variant="outline" className={`font-mono text-xs ${qty === 0 ? "text-red-400 border-red-500/30" : SOURCE_COLORS[i % SOURCE_COLORS.length]}`}>
+                            <Badge
+                              variant="outline"
+                              className={`font-mono text-xs ${qty === 0 ? "text-red-400 border-red-500/30" : SOURCE_COLORS[i % SOURCE_COLORS.length]}`}
+                            >
                               {qty}
                             </Badge>
                           )}

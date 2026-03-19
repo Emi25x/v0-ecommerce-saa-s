@@ -20,7 +20,8 @@ export async function GET(request: NextRequest) {
 
   try {
     const rows = await getSearchConsoleData(conn.credentials, {
-      startDate, endDate,
+      startDate,
+      endDate,
       dimensions: [dimension],
     })
     return NextResponse.json({ rows, dimension, startDate, endDate })

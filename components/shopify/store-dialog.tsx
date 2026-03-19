@@ -12,13 +12,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { Loader2 } from "lucide-react"
 
@@ -107,9 +101,10 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
     if (!shopDomain || (!hasToken && !hasApiKey)) {
       toast({
         title: "Error",
-        description: authMode === "token"
-          ? "Ingresá el dominio y el access token"
-          : "Ingresá el dominio, la clave API y el secreto",
+        description:
+          authMode === "token"
+            ? "Ingresá el dominio y el access token"
+            : "Ingresá el dominio, la clave API y el secreto",
         variant: "destructive",
       })
       return
@@ -231,17 +226,13 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
         <DialogHeader>
           <DialogTitle>{store ? "Editar" : "Agregar"} Tienda Shopify</DialogTitle>
           <DialogDescription>
-            {store
-              ? "Actualiza las credenciales de tu tienda"
-              : "Conecta una nueva tienda de Shopify"}
+            {store ? "Actualiza las credenciales de tu tienda" : "Conecta una nueva tienda de Shopify"}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="shop_domain">
-              Dominio de la Tienda *
-            </Label>
+            <Label htmlFor="shop_domain">Dominio de la Tienda *</Label>
             <Input
               id="shop_domain"
               value={shopDomain}
@@ -250,24 +241,18 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
               disabled={!!store}
               required
             />
-            <p className="text-xs text-muted-foreground">
-              Ejemplo: mitienda.myshopify.com
-            </p>
+            <p className="text-xs text-muted-foreground">Ejemplo: mitienda.myshopify.com</p>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="store_name">
-              Nombre de la Conexión
-            </Label>
+            <Label htmlFor="store_name">Nombre de la Conexión</Label>
             <Input
               id="store_name"
               value={storeName}
               onChange={(e) => setStoreName(e.target.value)}
               placeholder="Ej: Tienda Principal, Mayorista, etc."
             />
-            <p className="text-xs text-muted-foreground">
-              Nombre para identificar esta conexión (opcional)
-            </p>
+            <p className="text-xs text-muted-foreground">Nombre para identificar esta conexión (opcional)</p>
           </div>
 
           {!store && (
@@ -296,9 +281,7 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
 
           {(!store || store) && authMode === "token" && (
             <div className="space-y-2">
-              <Label htmlFor="access_token">
-                Access Token {store ? "(dejar vacío para no cambiar)" : "*"}
-              </Label>
+              <Label htmlFor="access_token">Access Token {store ? "(dejar vacío para no cambiar)" : "*"}</Label>
               <Input
                 id="access_token"
                 type="password"
@@ -308,7 +291,8 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
                 required={!store}
               />
               <p className="text-xs text-muted-foreground">
-                Empieza con <code>shpat_</code> — se obtiene desde Shopify → Configuración → Aplicaciones → Desarrollar aplicaciones → instalar app
+                Empieza con <code>shpat_</code> — se obtiene desde Shopify → Configuración → Aplicaciones → Desarrollar
+                aplicaciones → instalar app
               </p>
             </div>
           )}
@@ -341,8 +325,8 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
                   Requisito: La app debe estar INSTALADA
                 </p>
                 <p className="text-xs text-blue-700 dark:text-blue-400">
-                  En Shopify → Configuración → Aplicaciones → Desarrollar apps → tu app →
-                  hacé click en <strong>&quot;Instalar&quot;</strong>. Después volvé acá y probá la conexión.
+                  En Shopify → Configuración → Aplicaciones → Desarrollar apps → tu app → hacé click en{" "}
+                  <strong>&quot;Instalar&quot;</strong>. Después volvé acá y probá la conexión.
                 </p>
               </div>
             </div>
@@ -352,13 +336,7 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="location">Ubicación por Defecto</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={loadLocations}
-                  disabled={loadingLocations}
-                >
+                <Button type="button" variant="outline" size="sm" onClick={loadLocations} disabled={loadingLocations}>
                   {loadingLocations ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />

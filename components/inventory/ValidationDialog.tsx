@@ -1,11 +1,6 @@
 "use client"
 
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import type { ValidationResults } from "@/components/inventory/types"
 
 interface ValidationDialogProps {
@@ -15,12 +10,7 @@ interface ValidationDialogProps {
   validationResults: ValidationResults | null
 }
 
-export function ValidationDialog({
-  open,
-  onOpenChange,
-  validating,
-  validationResults,
-}: ValidationDialogProps) {
+export function ValidationDialog({ open, onOpenChange, validating, validationResults }: ValidationDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">

@@ -4,10 +4,10 @@ import { createAdminClient } from "@/lib/db/admin"
 export async function GET(req: NextRequest) {
   const supabase = createAdminClient()
   const { searchParams } = new URL(req.url)
-  const status   = searchParams.get("status")
+  const status = searchParams.get("status")
   const priority = searchParams.get("priority")
-  const page     = parseInt(searchParams.get("page") ?? "0")
-  const limit    = Math.min(parseInt(searchParams.get("limit") ?? "50"), 200)
+  const page = parseInt(searchParams.get("page") ?? "0")
+  const limit = Math.min(parseInt(searchParams.get("limit") ?? "50"), 200)
 
   try {
     let qb = supabase
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
       .order("created_at", { ascending: false })
       .range(page * limit, (page + 1) * limit - 1)
 
-    if (status)   qb = qb.eq("status", status)
+    if (status) qb = qb.eq("status", status)
     if (priority) qb = qb.eq("priority", priority)
 
     const { data, error, count } = await qb

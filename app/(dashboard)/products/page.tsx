@@ -90,7 +90,7 @@ export default function ProductsPage() {
       if (filters.catalog_listing && filters.catalog_listing !== "all")
         params.append("catalog_listing", filters.catalog_listing)
       if (filters.listing_type && filters.listing_type !== "all") params.append("listing_type", filters.listing_type)
-      
+
       // Manejar filtros de categoría ML (filtros de BD, no de API)
       if (filters.category && filters.category !== "all") {
         params.append("health_filter", filters.category)

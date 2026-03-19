@@ -5,40 +5,49 @@ import { Calculator, Loader2, TrendingUp, AlertTriangle, RefreshCw } from "lucid
 import { Button } from "@/components/ui/button"
 
 interface CalcResult {
-  final_price:    number
-  margin_pct:     number
-  markup_pct:     number
+  final_price: number
+  margin_pct: number
+  markup_pct: number
   total_fees_pct: number
   breakdown: {
-    step:   string
-    label:  string
+    step: string
+    label: string
     amount: number
-    type:   "add" | "sub" | "base"
+    type: "add" | "sub" | "base"
   }[]
   warnings: string[]
 }
 
 interface PriceList {
-  id: string; name: string; channel: string; currency: string; pricing_base: string
+  id: string
+  name: string
+  channel: string
+  currency: string
+  pricing_base: string
 }
 
 const ars = (n: number) => n.toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 })
 const pct = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`
 
 export default function CalculatorPage() {
-  const [lists,    setLists]    = useState<PriceList[]>([])
-  const [listId,   setListId]   = useState("")
-  const [cost,     setCost]     = useState("")
-  const [pvp,      setPvp]      = useState("")
-  const [sku,      setSku]      = useState("")
-  const [loading,  setLoading]  = useState(false)
-  const [result,   setResult]   = useState<CalcResult | null>(null)
-  const [error,    setError]    = useState<string | null>(null)
+  const [lists, setLists] = useState<PriceList[]>([])
+  const [listId, setListId] = useState("")
+  const [cost, setCost] = useState("")
+  const [pvp, setPvp] = useState("")
+  const [sku, setSku] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [result, setResult] = useState<CalcResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     fetch("/api/pricing/lists")
-      .then(r => r.json())
-      .then(d => { if (d.ok) { setLists(d.lists ?? []); if (d.lists?.length) setListId(d.lists[0].id) } })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.ok) {
+          setLists(d.lists ?? [])
+          if (d.lists?.length) setListId(d.lists[0].id)
+        }
+      })
       .catch(() => {})
   }, [])
 
@@ -48,14 +57,14 @@ export default function CalculatorPage() {
     setError(null)
     setResult(null)
     try {
-      const res  = await fetch("/api/pricing/calculator", {
-        method:  "POST",
+      const res = await fetch("/api/pricing/calculator", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
-          list_id:  listId,
+        body: JSON.stringify({
+          list_id: listId,
           cost_ars: cost ? Number(cost) : undefined,
-          pvp_ars:  pvp  ? Number(pvp)  : undefined,
-          sku:      sku  || undefined,
+          pvp_ars: pvp ? Number(pvp) : undefined,
+          sku: sku || undefined,
         }),
       })
       const data = await res.json()
@@ -68,7 +77,7 @@ export default function CalculatorPage() {
     }
   }, [listId, cost, pvp, sku])
 
-  const currentList = lists.find(l => l.id === listId)
+  const currentList = lists.find((l) => l.id === listId)
 
   return (
     <div className="flex flex-col gap-6 p-6 max-w-3xl mx-auto">
@@ -80,16 +89,15 @@ export default function CalculatorPage() {
       </div>
 
       <div className="rounded-xl border border-border bg-card p-6 flex flex-col gap-5">
-
         {/* Lista */}
         <div className="flex flex-col gap-1.5">
           <label className="text-sm font-medium">Lista de precios</label>
           <select
             className="bg-background border border-border rounded-lg px-3 py-2 text-sm"
             value={listId}
-            onChange={e => setListId(e.target.value)}
+            onChange={(e) => setListId(e.target.value)}
           >
-            {lists.map(l => (
+            {lists.map((l) => (
               <option key={l.id} value={l.id}>
                 {l.name} ({l.channel} · {l.currency})
               </option>
@@ -107,47 +115,46 @@ export default function CalculatorPage() {
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium">Costo (ARS)</label>
             <input
-              type="number" min={0} step={1}
+              type="number"
+              min={0}
+              step={1}
               className="bg-background border border-border rounded-lg px-3 py-2 text-sm font-mono"
               placeholder="ej: 8500"
               value={cost}
-              onChange={e => setCost(e.target.value)}
+              onChange={(e) => setCost(e.target.value)}
             />
             <p className="text-[10px] text-muted-foreground">Costo de compra neto</p>
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium">PVP (ARS)</label>
             <input
-              type="number" min={0} step={1}
+              type="number"
+              min={0}
+              step={1}
               className="bg-background border border-border rounded-lg px-3 py-2 text-sm font-mono"
               placeholder="ej: 15000"
               value={pvp}
-              onChange={e => setPvp(e.target.value)}
+              onChange={(e) => setPvp(e.target.value)}
             />
             <p className="text-[10px] text-muted-foreground">Precio sugerido de lista</p>
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium">SKU <span className="text-muted-foreground font-normal">(opcional)</span></label>
+            <label className="text-sm font-medium">
+              SKU <span className="text-muted-foreground font-normal">(opcional)</span>
+            </label>
             <input
               type="text"
               className="bg-background border border-border rounded-lg px-3 py-2 text-sm font-mono"
               placeholder="ej: ABC-001"
               value={sku}
-              onChange={e => setSku(e.target.value)}
+              onChange={(e) => setSku(e.target.value)}
             />
             <p className="text-[10px] text-muted-foreground">Para cargar costo desde DB</p>
           </div>
         </div>
 
-        <Button
-          onClick={calculate}
-          disabled={loading || !listId || (!cost && !pvp && !sku)}
-          className="self-start"
-        >
-          {loading
-            ? <Loader2 className="h-4 w-4 animate-spin mr-2" />
-            : <Calculator className="h-4 w-4 mr-2" />
-          }
+        <Button onClick={calculate} disabled={loading || !listId || (!cost && !pvp && !sku)} className="self-start">
+          {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Calculator className="h-4 w-4 mr-2" />}
           Calcular precio
         </Button>
 
@@ -175,17 +182,21 @@ export default function CalculatorPage() {
             </div>
             <div className="px-6 py-5 text-center">
               <p className="text-xs text-muted-foreground mb-1">Margen neto</p>
-              <p className={`text-2xl font-bold font-mono ${
-                result.margin_pct < 10 ? "text-red-400" : result.margin_pct < 20 ? "text-amber-400" : "text-emerald-400"
-              }`}>
+              <p
+                className={`text-2xl font-bold font-mono ${
+                  result.margin_pct < 10
+                    ? "text-red-400"
+                    : result.margin_pct < 20
+                      ? "text-amber-400"
+                      : "text-emerald-400"
+                }`}
+              >
                 {result.margin_pct.toFixed(1)}%
               </p>
             </div>
             <div className="px-6 py-5 text-center">
               <p className="text-xs text-muted-foreground mb-1">Total fees</p>
-              <p className="text-2xl font-bold font-mono text-muted-foreground">
-                {result.total_fees_pct.toFixed(1)}%
-              </p>
+              <p className="text-2xl font-bold font-mono text-muted-foreground">{result.total_fees_pct.toFixed(1)}%</p>
             </div>
           </div>
 
@@ -194,14 +205,18 @@ export default function CalculatorPage() {
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Desglose</h3>
             <div className="flex flex-col gap-1">
               {result.breakdown.map((b, i) => (
-                <div key={i} className="flex items-center justify-between text-sm py-1.5 border-b border-border/50 last:border-0">
+                <div
+                  key={i}
+                  className="flex items-center justify-between text-sm py-1.5 border-b border-border/50 last:border-0"
+                >
                   <span className="text-muted-foreground">{b.label}</span>
-                  <span className={`font-mono font-medium ${
-                    b.type === "base" ? "text-foreground"
-                    : b.type === "add" ? "text-red-400"
-                    : "text-emerald-400"
-                  }`}>
-                    {b.type !== "base" && (b.type === "add" ? "+" : "-")}{ars(Math.abs(b.amount))}
+                  <span
+                    className={`font-mono font-medium ${
+                      b.type === "base" ? "text-foreground" : b.type === "add" ? "text-red-400" : "text-emerald-400"
+                    }`}
+                  >
+                    {b.type !== "base" && (b.type === "add" ? "+" : "-")}
+                    {ars(Math.abs(b.amount))}
                   </span>
                 </div>
               ))}

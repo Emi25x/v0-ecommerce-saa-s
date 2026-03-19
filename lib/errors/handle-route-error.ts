@@ -21,8 +21,5 @@ export function handleRouteError(error: unknown): NextResponse {
   const message = error instanceof Error ? error.message : "Internal server error"
   console.error("[UNHANDLED]", error)
 
-  return NextResponse.json(
-    { error: message, code: "INTERNAL_ERROR" },
-    { status: 500 },
-  )
+  return NextResponse.json({ error: message, code: "INTERNAL_ERROR" }, { status: 500 })
 }

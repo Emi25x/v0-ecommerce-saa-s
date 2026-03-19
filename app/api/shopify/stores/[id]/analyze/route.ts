@@ -112,15 +112,15 @@ const CORE_FIELD_TO_DB: Record<string, string> = {
   "image.url": "image_url",
 }
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: storeId } = await params
     const supabase = await createClient()
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
@@ -162,16 +162,13 @@ export async function GET(
       const text = await gqlRes.text()
       return NextResponse.json(
         { error: `Shopify API error: ${gqlRes.status} — ${text.slice(0, 200)}` },
-        { status: 502 }
+        { status: 502 },
       )
     }
 
     const gqlData = await gqlRes.json()
     if (gqlData.errors) {
-      return NextResponse.json(
-        { error: `GraphQL error: ${JSON.stringify(gqlData.errors)}` },
-        { status: 502 }
-      )
+      return NextResponse.json({ error: `GraphQL error: ${JSON.stringify(gqlData.errors)}` }, { status: 502 })
     }
 
     const edges = gqlData.data?.products?.edges ?? []
@@ -239,12 +236,14 @@ export async function GET(
         tags: product.tags,
         status: product.status,
         variant_count: variants.length,
-        first_variant: variants[0] ? {
-          sku: variants[0].sku,
-          barcode: variants[0].barcode,
-          price: variants[0].price,
-          inventory_quantity: variants[0].inventoryQuantity,
-        } : null,
+        first_variant: variants[0]
+          ? {
+              sku: variants[0].sku,
+              barcode: variants[0].barcode,
+              price: variants[0].price,
+              inventory_quantity: variants[0].inventoryQuantity,
+            }
+          : null,
         image_count: images.length,
         metafield_count: metafields.length,
         metafields: metafields.map((mf: any) => ({
@@ -283,14 +282,16 @@ export async function GET(
     // Build fields_detected summary
     const fieldsDetected = {
       core: Array.from(coreFieldsUsed).sort(),
-      metafields: Array.from(metafieldKeys.entries()).map(([key, info]) => ({
-        key,
-        type: info.type,
-        usage_count: info.count,
-        usage_pct: Math.round((info.count / edges.length) * 100),
-        sample_values: info.sample_values,
-        suggested_db_column: METAFIELD_TO_DB[key] || null,
-      })).sort((a, b) => b.usage_count - a.usage_count),
+      metafields: Array.from(metafieldKeys.entries())
+        .map(([key, info]) => ({
+          key,
+          type: info.type,
+          usage_count: info.count,
+          usage_pct: Math.round((info.count / edges.length) * 100),
+          sample_values: info.sample_values,
+          suggested_db_column: METAFIELD_TO_DB[key] || null,
+        }))
+        .sort((a, b) => b.usage_count - a.usage_count),
     }
 
     return NextResponse.json({

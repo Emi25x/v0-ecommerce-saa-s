@@ -52,21 +52,15 @@ export async function POST(req: NextRequest) {
     // Obtener token fresco (refresca si está por vencer)
     const accessToken = await getValidAccessToken(account_id!)
 
-    const res = await fetch(
-      `https://api.mercadolibre.com/items/${item_id}/price_to_win?siteId=MLA&version=v2`,
-      {
-        headers:  { Authorization: `Bearer ${accessToken}` },
-        signal:   AbortSignal.timeout(10_000),
-      },
-    )
+    const res = await fetch(`https://api.mercadolibre.com/items/${item_id}/price_to_win?siteId=MLA&version=v2`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(10_000),
+    })
 
     if (!res.ok) {
       const errText = await res.text()
       console.error(`[competition/analyze] price_to_win error: ${res.status} ${errText}`)
-      return NextResponse.json(
-        { success: false, error: `ML API error: ${res.status}` },
-        { status: res.status },
-      )
+      return NextResponse.json({ success: false, error: `ML API error: ${res.status}` }, { status: res.status })
     }
 
     const d = await res.json()
@@ -74,24 +68,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       competition: {
-        status:                         d.status,
-        current_price:                  d.current_price,
-        price_to_win:                   d.price_to_win,
-        currency_id:                    d.currency_id,
-        visit_share:                    d.visit_share,
+        status: d.status,
+        current_price: d.current_price,
+        price_to_win: d.price_to_win,
+        currency_id: d.currency_id,
+        visit_share: d.visit_share,
         competitors_sharing_first_place: d.competitors_sharing_first_place || 0,
-        boosts:                         d.boosts || [],
-        winner_item_id:                 d.winner?.item_id   || null,
-        winner_price:                   d.winner?.price     || null,
-        winner_stock:                   d.winner?.available_quantity ?? null,
-        catalog_product_id:             d.catalog_product_id || null,
+        boosts: d.boosts || [],
+        winner_item_id: d.winner?.item_id || null,
+        winner_price: d.winner?.price || null,
+        winner_stock: d.winner?.available_quantity ?? null,
+        catalog_product_id: d.catalog_product_id || null,
         winner: d.winner
           ? {
-              seller_id:  d.winner.seller_id || null,
-              nickname:   d.winner.nickname  || "Desconocido",
-              price:      d.winner.price     || null,
-              stock:      d.winner.available_quantity ?? null,
-              advantages: d.winner.boosts    || [],
+              seller_id: d.winner.seller_id || null,
+              nickname: d.winner.nickname || "Desconocido",
+              price: d.winner.price || null,
+              stock: d.winner.available_quantity ?? null,
+              advantages: d.winner.boosts || [],
             }
           : null,
       },

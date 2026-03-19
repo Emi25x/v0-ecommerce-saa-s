@@ -22,14 +22,7 @@ export async function POST(request: Request) {
     const supabase = await createClient()
     const body = await request.json()
 
-    const {
-      account_id,
-      url,
-      ean_col,
-      stock_col,
-      delimiter,
-      dry_run = false,
-    } = body
+    const { account_id, url, ean_col, stock_col, delimiter, dry_run = false } = body
 
     if (!account_id || !url) {
       return NextResponse.json({ error: "account_id y url son requeridos" }, { status: 400 })
@@ -61,10 +54,7 @@ export async function POST(request: Request) {
     console.log(`[update-stock-from-url] Descargando: ${url}`)
     const fileRes = await fetch(url, { signal: AbortSignal.timeout(60_000) })
     if (!fileRes.ok) {
-      return NextResponse.json(
-        { error: `Error descargando archivo: HTTP ${fileRes.status}` },
-        { status: 502 }
-      )
+      return NextResponse.json({ error: `Error descargando archivo: HTTP ${fileRes.status}` }, { status: 502 })
     }
 
     // Detectar encoding (Libral usa latin1)
@@ -84,32 +74,46 @@ export async function POST(request: Request) {
     const detectedDelimiter = delimiter ?? detectDelimiter(firstLine)
     console.log(`[update-stock-from-url] Delimitador: "${detectedDelimiter === "\t" ? "TAB" : detectedDelimiter}"`)
 
-    const headers = firstLine.split(detectedDelimiter).map((h) => h.trim().replace(/^["']|["']$/g, "").toLowerCase())
+    const headers = firstLine.split(detectedDelimiter).map((h) =>
+      h
+        .trim()
+        .replace(/^["']|["']$/g, "")
+        .toLowerCase(),
+    )
     console.log(`[update-stock-from-url] Columnas: ${headers.join(", ")}`)
 
     // Detectar columnas EAN y stock
     const resolvedEanCol = ean_col?.toLowerCase() ?? findColumn(headers, ["ean", "isbn", "gtin", "codigo", "code"])
-    const resolvedStockCol = stock_col?.toLowerCase() ?? findColumn(headers, ["stock", "cantidad", "qty", "quantity", "disponible"])
+    const resolvedStockCol =
+      stock_col?.toLowerCase() ?? findColumn(headers, ["stock", "cantidad", "qty", "quantity", "disponible"])
 
     if (!resolvedEanCol) {
-      return NextResponse.json({
-        error: "No se encontró columna EAN",
-        headers,
-        hint: "Pasá ean_col en el body con el nombre exacto de la columna",
-      }, { status: 400 })
+      return NextResponse.json(
+        {
+          error: "No se encontró columna EAN",
+          headers,
+          hint: "Pasá ean_col en el body con el nombre exacto de la columna",
+        },
+        { status: 400 },
+      )
     }
     if (!resolvedStockCol) {
-      return NextResponse.json({
-        error: "No se encontró columna stock",
-        headers,
-        hint: "Pasá stock_col en el body con el nombre exacto de la columna",
-      }, { status: 400 })
+      return NextResponse.json(
+        {
+          error: "No se encontró columna stock",
+          headers,
+          hint: "Pasá stock_col en el body con el nombre exacto de la columna",
+        },
+        { status: 400 },
+      )
     }
 
     const eanIdx = headers.indexOf(resolvedEanCol)
     const stockIdx = headers.indexOf(resolvedStockCol)
 
-    console.log(`[update-stock-from-url] EAN col: "${resolvedEanCol}" (idx ${eanIdx}), Stock col: "${resolvedStockCol}" (idx ${stockIdx})`)
+    console.log(
+      `[update-stock-from-url] EAN col: "${resolvedEanCol}" (idx ${eanIdx}), Stock col: "${resolvedStockCol}" (idx ${stockIdx})`,
+    )
 
     // Parsear EAN → stock del archivo
     const fileStockMap: Record<string, number> = {}
@@ -122,7 +126,10 @@ export async function POST(request: Request) {
       if (!rawEan) continue
       const ean = normalizeEan(rawEan)
       const stock = parseInt(rawStock ?? "0", 10)
-      if (isNaN(stock)) { parseErrors++; continue }
+      if (isNaN(stock)) {
+        parseErrors++
+        continue
+      }
       fileStockMap[ean] = stock
     }
 
@@ -211,10 +218,7 @@ export async function POST(request: Request) {
     }
 
     if (!dry_run) {
-      await supabase
-        .from("ml_accounts")
-        .update({ last_stock_sync_at: new Date().toISOString() })
-        .eq("id", account.id)
+      await supabase.from("ml_accounts").update({ last_stock_sync_at: new Date().toISOString() }).eq("id", account.id)
     }
 
     return NextResponse.json({
@@ -233,10 +237,7 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     console.error("[update-stock-from-url] Error:", error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Error interno" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Error interno" }, { status: 500 })
   }
 }
 

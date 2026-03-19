@@ -9,51 +9,53 @@
  * and normalizes whitespace.
  */
 export function sanitizeToPlainText(text: string): string {
-  return text
-    // Quitar tags HTML
-    .replace(/<[^>]*>/g, ' ')
-    // Convertir entidades HTML comunes
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&aacute;/gi, 'a')
-    .replace(/&eacute;/gi, 'e')
-    .replace(/&iacute;/gi, 'i')
-    .replace(/&oacute;/gi, 'o')
-    .replace(/&uacute;/gi, 'u')
-    .replace(/&ntilde;/gi, 'n')
-    .replace(/&#\d+;/g, '') // Quitar entidades numéricas
-    // Quitar cualquier otra entidad HTML
-    .replace(/&[a-zA-Z]+;/g, '')
-    // Reemplazar caracteres Unicode problemáticos
-    .replace(/[""]/g, '"') // Comillas tipográficas
-    .replace(/['']/g, "'") // Apóstrofes tipográficos
-    .replace(/[–—]/g, '-') // Guiones largos
-    .replace(/[…]/g, '...') // Puntos suspensivos
-    .replace(/[•·]/g, '-') // Viñetas
-    .replace(/[©®™]/g, '') // Símbolos de copyright
-    .replace(/[€£¥]/g, '$') // Símbolos de moneda
-    .replace(/[°]/g, ' grados ') // Símbolo de grados
-    .replace(/[½¼¾]/g, '') // Fracciones
-    .replace(/[←→↑↓↔]/g, '') // Flechas
-    .replace(/[★☆♠♣♥♦]/g, '') // Símbolos especiales
-    // Quitar caracteres de control y no imprimibles
-    .replace(/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '')
-    // Quitar caracteres Unicode fuera del rango latino básico extendido
-    .replace(/[^\x20-\x7E\xA0-\xFF\n]/g, '')
-    // Normalizar saltos de linea
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    // Quitar espacios múltiples
-    .replace(/[ \t]+/g, ' ')
-    // Quitar lineas vacias multiples
-    .replace(/\n{3,}/g, '\n\n')
-    // Quitar espacios al inicio/fin de líneas
-    .replace(/^[ \t]+|[ \t]+$/gm, '')
-    .trim()
+  return (
+    text
+      // Quitar tags HTML
+      .replace(/<[^>]*>/g, " ")
+      // Convertir entidades HTML comunes
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&aacute;/gi, "a")
+      .replace(/&eacute;/gi, "e")
+      .replace(/&iacute;/gi, "i")
+      .replace(/&oacute;/gi, "o")
+      .replace(/&uacute;/gi, "u")
+      .replace(/&ntilde;/gi, "n")
+      .replace(/&#\d+;/g, "") // Quitar entidades numéricas
+      // Quitar cualquier otra entidad HTML
+      .replace(/&[a-zA-Z]+;/g, "")
+      // Reemplazar caracteres Unicode problemáticos
+      .replace(/[""]/g, '"') // Comillas tipográficas
+      .replace(/['']/g, "'") // Apóstrofes tipográficos
+      .replace(/[–—]/g, "-") // Guiones largos
+      .replace(/[…]/g, "...") // Puntos suspensivos
+      .replace(/[•·]/g, "-") // Viñetas
+      .replace(/[©®™]/g, "") // Símbolos de copyright
+      .replace(/[€£¥]/g, "$") // Símbolos de moneda
+      .replace(/[°]/g, " grados ") // Símbolo de grados
+      .replace(/[½¼¾]/g, "") // Fracciones
+      .replace(/[←→↑↓↔]/g, "") // Flechas
+      .replace(/[★☆♠♣♥♦]/g, "") // Símbolos especiales
+      // Quitar caracteres de control y no imprimibles
+      .replace(/[\x00-\x09\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, "")
+      // Quitar caracteres Unicode fuera del rango latino básico extendido
+      .replace(/[^\x20-\x7E\xA0-\xFF\n]/g, "")
+      // Normalizar saltos de linea
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n")
+      // Quitar espacios múltiples
+      .replace(/[ \t]+/g, " ")
+      // Quitar lineas vacias multiples
+      .replace(/\n{3,}/g, "\n\n")
+      // Quitar espacios al inicio/fin de líneas
+      .replace(/^[ \t]+|[ \t]+$/gm, "")
+      .trim()
+  )
 }
 
 /**
@@ -62,7 +64,7 @@ export function sanitizeToPlainText(text: string): string {
  */
 export function buildMlTitle(
   titleTemplate: string | null,
-  product: { title?: string; author?: string; brand?: string; ean?: string }
+  product: { title?: string; author?: string; brand?: string; ean?: string },
 ): string {
   const defaultTitle = product.title || "Libro"
   let mlTitle = titleTemplate || defaultTitle
@@ -71,7 +73,7 @@ export function buildMlTitle(
   mlTitle = mlTitle.replace(/{brand}/g, product.brand || "")
   mlTitle = mlTitle.replace(/{ean}/g, product.ean || "")
   // Limpiar espacios múltiples y truncar a 60 caracteres (límite de ML para family_name)
-  mlTitle = mlTitle.replace(/\s+/g, ' ').trim().substring(0, 60)
+  mlTitle = mlTitle.replace(/\s+/g, " ").trim().substring(0, 60)
   return mlTitle
 }
 
@@ -79,10 +81,7 @@ export function buildMlTitle(
  * Applies template variable substitution for ML description.
  * Replaces all product field placeholders and sanitizes the result.
  */
-export function buildMlDescription(
-  descriptionTemplate: string | null,
-  product: Record<string, any>
-): string {
+export function buildMlDescription(descriptionTemplate: string | null, product: Record<string, any>): string {
   const defaultDescription = `${product.title || "Libro"}
 
 Autor: ${product.author || "No especificado"}

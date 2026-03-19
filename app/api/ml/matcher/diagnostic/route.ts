@@ -85,9 +85,7 @@ export async function GET(request: NextRequest) {
       .limit(5)
 
     // ── Métricas de products ────────────────────────────────────────────────
-    const { count: totalProducts } = await supabase
-      .from("products")
-      .select("*", { count: "exact", head: true })
+    const { count: totalProducts } = await supabase.from("products").select("*", { count: "exact", head: true })
 
     const { count: productsWithEan } = await supabase
       .from("products")
@@ -152,7 +150,8 @@ export async function GET(request: NextRequest) {
         with_ean: productsWithEan ?? 0,
         with_isbn: productsWithIsbn ?? 0,
         with_sku: productsWithSku ?? 0,
-        missing_any_identifier: (totalProducts ?? 0) - Math.max(productsWithEan ?? 0, productsWithIsbn ?? 0, productsWithSku ?? 0),
+        missing_any_identifier:
+          (totalProducts ?? 0) - Math.max(productsWithEan ?? 0, productsWithIsbn ?? 0, productsWithSku ?? 0),
         sample: sampleProducts ?? [],
       },
     })

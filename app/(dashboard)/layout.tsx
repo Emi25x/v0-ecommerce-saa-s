@@ -8,9 +8,7 @@ import { AppSidebar } from "@/components/layout/app-sidebar"
  * Dashboard layout — sidebar + main content area.
  * All authenticated routes use this layout.
  */
-export default function DashboardLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
+export default function DashboardLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <>
       <AppSidebar />

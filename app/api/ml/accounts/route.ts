@@ -8,15 +8,14 @@ import { NextResponse } from "next/server"
 export async function GET() {
   try {
     const supabase = await createClient()
-    
-    // Obtener user_id del usuario autenticado si existe
-    const { data: { user } } = await supabase.auth.getUser()
 
-    let query = supabase
-      .from("ml_accounts")
-      .select("id, nickname, ml_user_id")
-      .order("nickname", { ascending: true })
-    
+    // Obtener user_id del usuario autenticado si existe
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    let query = supabase.from("ml_accounts").select("id, nickname, ml_user_id").order("nickname", { ascending: true })
+
     // Filtrar por user_id si el usuario está autenticado (cuentas propias)
     // Si no hay user_id guardado en ml_accounts (cuentas viejas), igual las muestra
     if (user?.id) {

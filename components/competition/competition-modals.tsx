@@ -52,9 +52,7 @@ export function EditProductModal({
 
           {editingProduct.competition?.price_to_win && (
             <div className="bg-green-50 border-2 border-green-300 rounded-lg p-4">
-              <Label className="text-sm font-semibold text-green-900 mb-2 block">
-                💰 Precio Sugerido para Ganar
-              </Label>
+              <Label className="text-sm font-semibold text-green-900 mb-2 block">💰 Precio Sugerido para Ganar</Label>
               <div className="text-3xl font-bold text-green-700">
                 ${editingProduct.competition.price_to_win.toFixed(2)}
               </div>
@@ -166,11 +164,21 @@ export function RepricingModal({
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <h4 className="font-semibold text-sm mb-2">Cómo funciona el repricing</h4>
             <ul className="text-xs space-y-1 text-gray-700">
-              <li>• <strong>Con competidor:</strong> ajusta según la estrategia elegida, nunca debajo del mínimo</li>
-              <li>• <strong>Sin competidor / sin stock:</strong> sube al precio objetivo o máximo</li>
-              <li>• <strong>price_to_win &lt; mínimo:</strong> se queda en precio mínimo</li>
-              <li>• <strong>Sin datos de ML:</strong> no toca el precio</li>
-              <li>• <strong>Umbral:</strong> solo actúa si la diferencia es ≥ $1</li>
+              <li>
+                • <strong>Con competidor:</strong> ajusta según la estrategia elegida, nunca debajo del mínimo
+              </li>
+              <li>
+                • <strong>Sin competidor / sin stock:</strong> sube al precio objetivo o máximo
+              </li>
+              <li>
+                • <strong>price_to_win &lt; mínimo:</strong> se queda en precio mínimo
+              </li>
+              <li>
+                • <strong>Sin datos de ML:</strong> no toca el precio
+              </li>
+              <li>
+                • <strong>Umbral:</strong> solo actúa si la diferencia es ≥ $1
+              </li>
             </ul>
           </div>
 
@@ -197,26 +205,27 @@ export function RepricingModal({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="win_buybox">
-                  🏆 Ganar Buybox — usar price_to_win de ML
-                </SelectItem>
-                <SelectItem value="follow_competitor">
-                  🤝 Igualar Competidor — mismo precio que el ganador
-                </SelectItem>
+                <SelectItem value="win_buybox">🏆 Ganar Buybox — usar price_to_win de ML</SelectItem>
+                <SelectItem value="follow_competitor">🤝 Igualar Competidor — mismo precio que el ganador</SelectItem>
                 <SelectItem value="maximize_margin_if_alone">
                   💰 Maximizar Margen — sube a precio máximo cuando estoy solo
                 </SelectItem>
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              {trackingForm.strategy === "win_buybox" && "Usa el precio calculado por ML para ganar el buybox (puede ser ligeramente menor al competidor)"}
-              {trackingForm.strategy === "follow_competitor" && "Iguala el precio exacto del vendedor ganador actual, sin necesariamente ganar el buybox"}
-              {trackingForm.strategy === "maximize_margin_if_alone" && "Gana el buybox cuando hay competencia; sube directo al precio máximo cuando no hay competidores con stock"}
+              {trackingForm.strategy === "win_buybox" &&
+                "Usa el precio calculado por ML para ganar el buybox (puede ser ligeramente menor al competidor)"}
+              {trackingForm.strategy === "follow_competitor" &&
+                "Iguala el precio exacto del vendedor ganador actual, sin necesariamente ganar el buybox"}
+              {trackingForm.strategy === "maximize_margin_if_alone" &&
+                "Gana el buybox cuando hay competencia; sube directo al precio máximo cuando no hay competidores con stock"}
             </p>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="min-price">Precio Mínimo <span className="text-red-500">*</span></Label>
+            <Label htmlFor="min-price">
+              Precio Mínimo <span className="text-red-500">*</span>
+            </Label>
             <Input
               id="min-price"
               type="number"
@@ -225,13 +234,13 @@ export function RepricingModal({
               onChange={(e) => setTrackingForm({ ...trackingForm, min_price: e.target.value })}
               placeholder="0.00"
             />
-            <p className="text-xs text-muted-foreground">
-              Piso de rentabilidad — nunca se bajará de este valor
-            </p>
+            <p className="text-xs text-muted-foreground">Piso de rentabilidad — nunca se bajará de este valor</p>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="max-price">Precio Máximo <span className="text-gray-400">(opcional)</span></Label>
+            <Label htmlFor="max-price">
+              Precio Máximo <span className="text-gray-400">(opcional)</span>
+            </Label>
             <Input
               id="max-price"
               type="number"
@@ -246,7 +255,9 @@ export function RepricingModal({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="target-price">Precio Objetivo <span className="text-gray-400">(opcional)</span></Label>
+            <Label htmlFor="target-price">
+              Precio Objetivo <span className="text-gray-400">(opcional)</span>
+            </Label>
             <Input
               id="target-price"
               type="number"
@@ -274,10 +285,7 @@ export function RepricingModal({
           {priceTrackings[trackingProduct.id] && (
             <div className="text-xs text-muted-foreground space-y-1 bg-gray-50 rounded p-3">
               {priceTrackings[trackingProduct.id].last_run_at && (
-                <div>
-                  Última ejecución:{" "}
-                  {new Date(priceTrackings[trackingProduct.id].last_run_at).toLocaleString()}
-                </div>
+                <div>Última ejecución: {new Date(priceTrackings[trackingProduct.id].last_run_at).toLocaleString()}</div>
               )}
               {priceTrackings[trackingProduct.id].last_status && (
                 <div>

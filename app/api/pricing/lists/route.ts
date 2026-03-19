@@ -5,9 +5,9 @@ export const dynamic = "force-dynamic"
 
 export async function GET(req: NextRequest) {
   try {
-    const supabase    = await createClient()
+    const supabase = await createClient()
     const { searchParams } = req.nextUrl
-    const activeOnly  = searchParams.get("active_only") === "1"
+    const activeOnly = searchParams.get("active_only") === "1"
 
     const FULL_SELECT = `
         *,
@@ -23,10 +23,7 @@ export async function GET(req: NextRequest) {
         warehouse:warehouses(id,name,base_currency,code)
       `
 
-    let q = supabase
-      .from("price_lists")
-      .select(FULL_SELECT)
-      .order("created_at", { ascending: false })
+    let q = supabase.from("price_lists").select(FULL_SELECT).order("created_at", { ascending: false })
 
     if (activeOnly) q = q.eq("is_active", true)
 
@@ -34,10 +31,7 @@ export async function GET(req: NextRequest) {
 
     // Si falla por tabla assignments inexistente, reintentar sin ella
     if (error && error.message?.includes("assignments")) {
-      let q2 = supabase
-        .from("price_lists")
-        .select(SAFE_SELECT)
-        .order("created_at", { ascending: false })
+      let q2 = supabase.from("price_lists").select(SAFE_SELECT).order("created_at", { ascending: false })
       if (activeOnly) q2 = q2.eq("is_active", true)
       const retry = await q2
       data = retry.data
@@ -54,10 +48,17 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient()
-    const body     = await req.json()
-    const { name, channel = "ml", country_code = "AR", currency = "ARS",
-            pricing_base = "cost", description = "", is_active = true,
-            warehouse_id = null } = body
+    const body = await req.json()
+    const {
+      name,
+      channel = "ml",
+      country_code = "AR",
+      currency = "ARS",
+      pricing_base = "cost",
+      description = "",
+      is_active = true,
+      warehouse_id = null,
+    } = body
 
     if (!name) return NextResponse.json({ ok: false, error: "name required" }, { status: 400 })
 

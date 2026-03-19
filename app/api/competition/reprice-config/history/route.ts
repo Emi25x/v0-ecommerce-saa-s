@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
     const ml_item_id = searchParams.get("ml_item_id")
-    const limit      = Math.min(Number(searchParams.get("limit") || "50"), 200)
+    const limit = Math.min(Number(searchParams.get("limit") || "50"), 200)
 
     if (!ml_item_id) {
       return NextResponse.json({ ok: false, error: "ml_item_id requerido" }, { status: 400 })

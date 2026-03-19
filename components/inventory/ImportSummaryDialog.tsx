@@ -20,12 +20,7 @@ interface ImportSummaryDialogProps {
   onSearchSku: (sku: string) => void
 }
 
-export function ImportSummaryDialog({
-  open,
-  onOpenChange,
-  importSummary,
-  onSearchSku,
-}: ImportSummaryDialogProps) {
+export function ImportSummaryDialog({ open, onOpenChange, importSummary, onSearchSku }: ImportSummaryDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
@@ -46,10 +41,10 @@ export function ImportSummaryDialog({
                 </div>
               </div>
               <div className="bg-gray-50 dark:bg-gray-950/30 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
-                <div className="text-sm text-gray-600 dark:text-gray-400 font-medium">Ya Exist&iacute;an (Saltados)</div>
-                <div className="text-3xl font-bold text-gray-700 dark:text-gray-300">
-                  {importSummary.updated || 0}
+                <div className="text-sm text-gray-600 dark:text-gray-400 font-medium">
+                  Ya Exist&iacute;an (Saltados)
                 </div>
+                <div className="text-3xl font-bold text-gray-700 dark:text-gray-300">{importSummary.updated || 0}</div>
                 <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
                   Productos con SKU existente que no se importaron
                 </div>
@@ -65,9 +60,7 @@ export function ImportSummaryDialog({
               </div>
               <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg p-4">
                 <div className="text-sm text-red-600 dark:text-red-400 font-medium">Errores</div>
-                <div className="text-3xl font-bold text-red-700 dark:text-red-300">
-                  {importSummary.failed || 0}
-                </div>
+                <div className="text-3xl font-bold text-red-700 dark:text-red-300">{importSummary.failed || 0}</div>
                 <div className="text-xs text-red-600 dark:text-red-400 mt-1">
                   Productos que no pudieron ser procesados
                 </div>
@@ -111,11 +104,7 @@ export function ImportSummaryDialog({
                               ? "\u2298 Ya exist\u00eda"
                               : "\u2717 Error"}
                         </Badge>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => onSearchSku(item.sku)}
-                        >
+                        <Button variant="outline" size="sm" onClick={() => onSearchSku(item.sku)}>
                           <Search className="h-3 w-3 mr-1" />
                           Buscar
                         </Button>
@@ -154,10 +143,14 @@ export function ImportSummaryDialog({
               <h3 className="font-semibold mb-2 text-blue-800 dark:text-blue-200">Resumen:</h3>
               <ul className="text-sm text-blue-800 dark:text-blue-200 space-y-1">
                 {(importSummary.imported || 0) > 0 && (
-                  <li>{"\u2713"} Se importaron {importSummary.imported} productos nuevos a la base de datos</li>
+                  <li>
+                    {"\u2713"} Se importaron {importSummary.imported} productos nuevos a la base de datos
+                  </li>
                 )}
                 {(importSummary.updated || 0) > 0 && (
-                  <li>{"\u2298"} Se saltaron {importSummary.updated} productos porque ya exist&iacute;an (mismo SKU)</li>
+                  <li>
+                    {"\u2298"} Se saltaron {importSummary.updated} productos porque ya exist&iacute;an (mismo SKU)
+                  </li>
                 )}
                 {(importSummary.skipped || 0) > 0 && (
                   <li>
@@ -166,7 +159,9 @@ export function ImportSummaryDialog({
                   </li>
                 )}
                 {(importSummary.failed || 0) > 0 && (
-                  <li>{"\u2717"} {importSummary.failed} productos no pudieron ser procesados (ver errores arriba)</li>
+                  <li>
+                    {"\u2717"} {importSummary.failed} productos no pudieron ser procesados (ver errores arriba)
+                  </li>
                 )}
                 {(importSummary.imported || 0) === 0 &&
                   (importSummary.updated || 0) === 0 &&

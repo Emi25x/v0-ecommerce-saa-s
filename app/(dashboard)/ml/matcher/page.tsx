@@ -82,7 +82,7 @@ export default function MLMatcherPage() {
     last_error: progress?.last_error || null,
     last_run_at: progress?.last_run_at || null,
     started_at: progress?.started_at || null,
-    finished_at: progress?.finished_at || null
+    finished_at: progress?.finished_at || null,
   }
 
   // Cargar cuentas ML
@@ -106,13 +106,13 @@ export default function MLMatcherPage() {
   // Cargar estado de importación y estadísticas
   useEffect(() => {
     if (!selectedAccountId) return
-    
+
     const loadData = async () => {
       try {
         const statusRes = await fetch(`/api/ml/matcher/status?account_id=${selectedAccountId}`)
-        
+
         const statusData = await statusRes.json()
-        
+
         if (statusData.ok) {
           setProgress(statusData.progress)
         }
@@ -120,7 +120,7 @@ export default function MLMatcherPage() {
         console.error("[IMPORTER] Error loading data:", err)
       }
     }
-    
+
     loadData()
   }, [selectedAccountId])
 
@@ -134,12 +134,14 @@ export default function MLMatcherPage() {
       return
     }
 
-    if (safeProgress.status === 'completed' || safeProgress.status === 'failed') {
+    if (safeProgress.status === "completed" || safeProgress.status === "failed") {
       setAutoMode(false)
       return
     }
 
-    const interval = setInterval(() => { handleRun() }, 15000)
+    const interval = setInterval(() => {
+      handleRun()
+    }, 15000)
     return () => clearInterval(interval)
   }, [autoMode, selectedAccountId, running, progress])
 
@@ -147,7 +149,7 @@ export default function MLMatcherPage() {
     if (!selectedAccountId || running) return
     setRunning(true)
     const startTime = Date.now()
-    
+
     try {
       const res = await fetch("/api/ml/matcher/run", {
         method: "POST",
@@ -158,7 +160,7 @@ export default function MLMatcherPage() {
           batch_size: 200,
         }),
       })
-      
+
       const data = await res.json()
       setRunResult(data)
 
@@ -179,7 +181,7 @@ export default function MLMatcherPage() {
       // Agregar a log de ejecución
       const logEntry = {
         ranAt: new Date().toISOString(),
-        action: data.ok ? (data.paused ? 'paused' : 'success') : 'error',
+        action: data.ok ? (data.paused ? "paused" : "success") : "error",
         processed: data.processed || 0,
         matched: data.matched || 0,
         retry_after: data.paused ? data.wait_seconds : null,
@@ -188,14 +190,14 @@ export default function MLMatcherPage() {
         metrics: data.metrics || null,
         sample_unmatched: data.sample_unmatched || null,
       }
-      
-      setExecutionLog(prev => [logEntry, ...prev].slice(0, 10))
+
+      setExecutionLog((prev) => [logEntry, ...prev].slice(0, 10))
 
       // Recargar progress del matcher (NO usar endpoints del importador)
       const statusRes = await fetch(`/api/ml/matcher/status?account_id=${selectedAccountId}`)
-      
+
       const statusData = await statusRes.json()
-      
+
       if (statusData.ok) {
         setProgress(statusData.progress)
       }
@@ -207,19 +209,21 @@ export default function MLMatcherPage() {
     } catch (error: any) {
       const logEntry = {
         ranAt: new Date().toISOString(),
-        action: 'network_error',
+        action: "network_error",
         imported_delta: 0,
         matched_delta: 0,
         retry_after: null,
         elapsed: ((Date.now() - startTime) / 1000).toFixed(1),
-        error_details: `Network error: ${error.message}`
+        error_details: `Network error: ${error.message}`,
       }
-      
-      setExecutionLog(prev => [logEntry, ...prev].slice(0, 10))
+
+      setExecutionLog((prev) => [logEntry, ...prev].slice(0, 10))
       setRunResult({ ok: false, error: error.message, network_error: true })
-      
+
       // Mostrar alerta diferenciada para errores de red
-      alert(`Error de red o timeout:\n${error.message}\n\nEsto suele ser temporal. El auto-mode reintentará automáticamente.`)
+      alert(
+        `Error de red o timeout:\n${error.message}\n\nEsto suele ser temporal. El auto-mode reintentará automáticamente.`,
+      )
     } finally {
       setRunning(false)
     }
@@ -238,9 +242,7 @@ export default function MLMatcherPage() {
   const handleReset = async () => {
     if (!selectedAccountId) return
     if (
-      !confirm(
-        "¿Reiniciar importación desde cero? Esto no borra publicaciones ya importadas ni desconecta la cuenta."
-      )
+      !confirm("¿Reiniciar importación desde cero? Esto no borra publicaciones ya importadas ni desconecta la cuenta.")
     )
       return
 
@@ -261,7 +263,7 @@ export default function MLMatcherPage() {
       // Recargar progreso
       const statusRes = await fetch(`/api/ml/import-pro/status?account_id=${selectedAccountId}`)
       const statusData = await statusRes.json()
-      
+
       if (statusData.ok) {
         setProgress(statusData.progress)
       }
@@ -274,15 +276,15 @@ export default function MLMatcherPage() {
 
   const handleAccountDebug = async () => {
     if (!selectedAccountId) return
-    
+
     setLoadingAccountDebug(true)
-    
+
     try {
       const response = await fetch(`/api/debug/ml-account?account_id=${selectedAccountId}`)
       const data = await response.json()
-      
+
       if (!response.ok) {
-        setAccountDebug({ error: data.error || 'Failed to fetch account debug' })
+        setAccountDebug({ error: data.error || "Failed to fetch account debug" })
       } else {
         setAccountDebug(data)
       }
@@ -299,7 +301,7 @@ export default function MLMatcherPage() {
     setLoadingDiagnostic(true)
     setShowDiagnostic(true)
     try {
-      const res  = await fetch(`/api/ml/matcher/diagnostic?account_id=${selectedAccountId}`)
+      const res = await fetch(`/api/ml/matcher/diagnostic?account_id=${selectedAccountId}`)
       const data = await res.json()
       setDiagnosticData(data)
     } catch (error: any) {
@@ -333,7 +335,7 @@ export default function MLMatcherPage() {
     running: "bg-blue-100 text-blue-700",
     done: "bg-green-100 text-green-700",
     paused: "bg-yellow-100 text-yellow-700",
-    error: "bg-red-100 text-red-700"
+    error: "bg-red-100 text-red-700",
   }
 
   return (
@@ -383,21 +385,14 @@ export default function MLMatcherPage() {
           <div className="mt-4 p-3 bg-gray-50 border rounded-md">
             <div className="flex items-center justify-between mb-2">
               <h4 className="text-xs font-medium">Diagnóstico de cuenta</h4>
-              <Button
-                onClick={() => setAccountDebug(null)}
-                size="sm"
-                variant="ghost"
-                className="h-6 px-2 text-xs"
-              >
+              <Button onClick={() => setAccountDebug(null)} size="sm" variant="ghost" className="h-6 px-2 text-xs">
                 Cerrar
               </Button>
             </div>
             {accountDebug.error ? (
               <div className="text-xs text-red-600">{accountDebug.error}</div>
             ) : (
-              <pre className="text-xs overflow-auto">
-                {JSON.stringify(accountDebug, null, 2)}
-              </pre>
+              <pre className="text-xs overflow-auto">{JSON.stringify(accountDebug, null, 2)}</pre>
             )}
           </div>
         )}
@@ -407,12 +402,7 @@ export default function MLMatcherPage() {
       <Card className="p-5 mb-6">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-semibold">Alcance</h3>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="h-8 text-xs"
-          >
+          <Button variant="ghost" size="sm" onClick={() => setShowAdvanced(!showAdvanced)} className="h-8 text-xs">
             {showAdvanced ? (
               <>
                 <ChevronUp className="h-4 w-4 mr-1" />
@@ -426,7 +416,7 @@ export default function MLMatcherPage() {
             )}
           </Button>
         </div>
-        
+
         <div className="space-y-2">
           <div>
             <span className="text-xs text-muted-foreground block mb-1">Publicaciones a vincular</span>
@@ -435,7 +425,8 @@ export default function MLMatcherPage() {
             </Badge>
           </div>
           <p className="text-xs text-muted-foreground">
-            El matcher procesa únicamente publicaciones sin <code className="bg-muted px-1 rounded">product_id</code> para vincularlas con productos del catálogo usando identificadores como ISBN, EAN y SKU.
+            El matcher procesa únicamente publicaciones sin <code className="bg-muted px-1 rounded">product_id</code>{" "}
+            para vincularlas con productos del catálogo usando identificadores como ISBN, EAN y SKU.
           </p>
         </div>
 
@@ -455,10 +446,15 @@ export default function MLMatcherPage() {
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold">Progreso</h3>
             <Badge className={statusColors[progress.status as keyof typeof statusColors] || statusColors.idle}>
-              {progress.status === "running" ? "Ejecutando" :
-               progress.status === "done" ? "Completado" :
-               progress.status === "paused" ? "Pausado" :
-               progress.status === "error" ? "Error" : "Listo"}
+              {progress.status === "running"
+                ? "Ejecutando"
+                : progress.status === "done"
+                  ? "Completado"
+                  : progress.status === "paused"
+                    ? "Pausado"
+                    : progress.status === "error"
+                      ? "Error"
+                      : "Listo"}
             </Badge>
           </div>
 
@@ -471,15 +467,11 @@ export default function MLMatcherPage() {
                 </span>
               </div>
               <Progress value={safeProgress.percent} className="h-2" />
-              <p className="text-xs text-muted-foreground mt-1">
-                {formatPercent(safeProgress.percent)}% completado
-              </p>
+              <p className="text-xs text-muted-foreground mt-1">{formatPercent(safeProgress.percent)}% completado</p>
             </div>
 
             {safeProgress.last_run_at && (
-              <p className="text-xs text-muted-foreground">
-                Última ejecución: {formatDate(safeProgress.last_run_at)}
-              </p>
+              <p className="text-xs text-muted-foreground">Última ejecución: {formatDate(safeProgress.last_run_at)}</p>
             )}
 
             {safeProgress.speed_per_sec > 0 && (
@@ -493,33 +485,29 @@ export default function MLMatcherPage() {
                 <AlertCircle className="h-4 w-4 text-yellow-600 mt-0.5" />
                 <div>
                   <p className="text-sm text-yellow-800 font-medium">Pausado por límite de API</p>
-                  <p className="text-xs text-yellow-700">
-                    Reinicio automático: {formatDate(progress.paused_until)}
-                  </p>
+                  <p className="text-xs text-yellow-700">Reinicio automático: {formatDate(progress.paused_until)}</p>
                 </div>
               </div>
             )}
 
             {/* Mostrar error solo si: status === 'error' o (status !== 'running' && last_error existe) */}
-            {progress.last_error && (
-              progress.status === 'error' || 
-              (progress.status !== 'running' && progress.status !== 'done')
-            ) && (
-              <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-md">
-                <AlertCircle className="h-4 w-4 text-red-600 mt-0.5" />
-                <div>
-                  <p className="text-sm text-red-800 font-medium">
-                    {progress.status === 'error' ? 'Error activo' : 'Error anterior'}
-                  </p>
-                  <p className="text-xs text-red-700">{progress.last_error}</p>
-                  {progress.status !== 'error' && (
-                    <p className="text-xs text-red-600 mt-1 italic">
-                      Este error ocurrió previamente. Inicia el matching para reintentar.
+            {progress.last_error &&
+              (progress.status === "error" || (progress.status !== "running" && progress.status !== "done")) && (
+                <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-md">
+                  <AlertCircle className="h-4 w-4 text-red-600 mt-0.5" />
+                  <div>
+                    <p className="text-sm text-red-800 font-medium">
+                      {progress.status === "error" ? "Error activo" : "Error anterior"}
                     </p>
-                  )}
+                    <p className="text-xs text-red-700">{progress.last_error}</p>
+                    {progress.status !== "error" && (
+                      <p className="text-xs text-red-600 mt-1 italic">
+                        Este error ocurrió previamente. Inicia el matching para reintentar.
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
           </div>
         </Card>
       )}
@@ -527,7 +515,7 @@ export default function MLMatcherPage() {
       {/* Card Acciones */}
       <Card className="p-5 mb-6">
         <h3 className="font-semibold mb-4">Acciones</h3>
-        
+
         {progress?.status !== "done" && (
           <div className="flex flex-wrap gap-3">
             {!autoMode && (
@@ -561,7 +549,12 @@ export default function MLMatcherPage() {
             )}
 
             {!autoMode && !running && safeProgress.processed_count > 0 && (
-              <Button onClick={handleReset} size="lg" variant="outline" className="bg-transparent border-red-600 text-red-700 hover:bg-red-50">
+              <Button
+                onClick={handleReset}
+                size="lg"
+                variant="outline"
+                className="bg-transparent border-red-600 text-red-700 hover:bg-red-50"
+              >
                 <RotateCcw className="mr-2 h-4 w-4" />
                 Reiniciar desde cero
               </Button>
@@ -577,7 +570,12 @@ export default function MLMatcherPage() {
                 Se importaron {progress.publications_total || 0} publicaciones de MercadoLibre.
               </p>
               <div className="mt-3">
-                <Button onClick={handleReset} size="sm" variant="outline" className="bg-transparent border-green-600 text-green-700 hover:bg-green-100">
+                <Button
+                  onClick={handleReset}
+                  size="sm"
+                  variant="outline"
+                  className="bg-transparent border-green-600 text-green-700 hover:bg-green-100"
+                >
                   <RotateCcw className="mr-2 h-3 w-3" />
                   Reiniciar importación
                 </Button>
@@ -606,9 +604,7 @@ export default function MLMatcherPage() {
 
         {autoMode && progress?.status !== "completed" && (
           <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
-            <p className="text-sm text-blue-700 font-medium mb-1">
-              Modo automático activo
-            </p>
+            <p className="text-sm text-blue-700 font-medium mb-1">Modo automático activo</p>
             <p className="text-xs text-blue-600">
               El matching avanza automáticamente mientras esta página esté abierta. Podés cerrar y reanudar luego.
             </p>
@@ -637,8 +633,8 @@ export default function MLMatcherPage() {
             <p className="text-xs text-muted-foreground">Sin identificador</p>
           </div>
         </div>
-        
-        {safeProgress.last_error && safeProgress.status === 'failed' && (
+
+        {safeProgress.last_error && safeProgress.status === "failed" && (
           <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
             <p className="text-sm font-medium text-red-800">Error:</p>
             <p className="text-xs text-red-600 mt-1">{safeProgress.last_error}</p>
@@ -654,39 +650,47 @@ export default function MLMatcherPage() {
             {executionLog.map((log, i) => (
               <div key={i} className="p-3 bg-gray-50 border rounded-md text-sm space-y-2">
                 <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Badge variant={log.action === 'success' ? 'default' : log.action === 'error' ? 'destructive' : 'secondary'} className="font-normal">
-                    {log.action}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">
-                    {new Date(log.ranAt).toLocaleTimeString()}
-                  </span>
-                </div>
-                <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                  {log.action === 'success' && (
-                    <>
-                      <span>{log.processed || 0} procesadas</span>
-                      <span className={log.matched > 0 ? "text-green-600 font-medium" : ""}>{log.matched || 0} vinculadas</span>
-                      {log.metrics && (
-                        <span className={log.metrics.products_loaded === 0 ? "text-red-500 font-medium" : "text-muted-foreground"}>
-                          {log.metrics.products_loaded} productos · {log.metrics.ean_index_size} EANs · {log.metrics.sku_index_size} SKUs
+                  <div className="flex items-center gap-3">
+                    <Badge
+                      variant={
+                        log.action === "success" ? "default" : log.action === "error" ? "destructive" : "secondary"
+                      }
+                      className="font-normal"
+                    >
+                      {log.action}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">{new Date(log.ranAt).toLocaleTimeString()}</span>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    {log.action === "success" && (
+                      <>
+                        <span>{log.processed || 0} procesadas</span>
+                        <span className={log.matched > 0 ? "text-green-600 font-medium" : ""}>
+                          {log.matched || 0} vinculadas
                         </span>
-                      )}
-                    </>
-                  )}
-                  {log.retry_after && (
-                    <span className="text-yellow-600">Retry en {log.retry_after}s</span>
-                  )}
-                  {log.error && (
-                    <span className="text-red-600">{log.error}</span>
-                  )}
-                  <span>{log.elapsed}s</span>
-                </div>
+                        {log.metrics && (
+                          <span
+                            className={
+                              log.metrics.products_loaded === 0 ? "text-red-500 font-medium" : "text-muted-foreground"
+                            }
+                          >
+                            {log.metrics.products_loaded} productos · {log.metrics.ean_index_size} EANs ·{" "}
+                            {log.metrics.sku_index_size} SKUs
+                          </span>
+                        )}
+                      </>
+                    )}
+                    {log.retry_after && <span className="text-yellow-600">Retry en {log.retry_after}s</span>}
+                    {log.error && <span className="text-red-600">{log.error}</span>}
+                    <span>{log.elapsed}s</span>
+                  </div>
                 </div>
                 {/* Muestra diagnóstica cuando hay 0 matches */}
-                {log.action === 'success' && log.matched === 0 && log.sample_unmatched?.length > 0 && (
+                {log.action === "success" && log.matched === 0 && log.sample_unmatched?.length > 0 && (
                   <details className="mt-1">
-                    <summary className="text-xs text-amber-600 cursor-pointer">Ver muestra sin match ({log.sample_unmatched.length} pubs)</summary>
+                    <summary className="text-xs text-amber-600 cursor-pointer">
+                      Ver muestra sin match ({log.sample_unmatched.length} pubs)
+                    </summary>
                     <pre className="text-[10px] bg-white border rounded p-2 mt-1 overflow-auto max-h-32">
                       {JSON.stringify(log.sample_unmatched, null, 2)}
                     </pre>
@@ -700,8 +704,8 @@ export default function MLMatcherPage() {
 
       {/* Botón diagnóstico */}
       <div className="flex justify-end">
-        <Button 
-          onClick={handleDiagnostic} 
+        <Button
+          onClick={handleDiagnostic}
           variant="outline"
           size="sm"
           disabled={loadingDiagnostic}
@@ -721,7 +725,9 @@ export default function MLMatcherPage() {
         <Card className="mt-6 p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold">Diagnóstico Técnico</h3>
-            <Button onClick={() => setShowDiagnostic(false)} size="sm" variant="ghost">Cerrar</Button>
+            <Button onClick={() => setShowDiagnostic(false)} size="sm" variant="ghost">
+              Cerrar
+            </Button>
           </div>
 
           {loadingDiagnostic ? (
@@ -740,7 +746,10 @@ export default function MLMatcherPage() {
               {diagnosticData.warnings?.length > 0 && (
                 <div className="space-y-2">
                   {diagnosticData.warnings.map((w: string, i: number) => (
-                    <div key={i} className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                    <div
+                      key={i}
+                      className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2"
+                    >
                       <AlertCircle className="h-4 w-4 text-amber-400 flex-shrink-0 mt-0.5" />
                       <p className="text-xs text-amber-300">{w}</p>
                     </div>
@@ -750,7 +759,9 @@ export default function MLMatcherPage() {
 
               {/* Resumen publicaciones */}
               <div>
-                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Publicaciones</h4>
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                  Publicaciones
+                </h4>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[
                     { label: "Total", value: diagnosticData.publications?.total },
@@ -822,7 +833,9 @@ export default function MLMatcherPage() {
               {/* Progreso raw */}
               {diagnosticData.progress && (
                 <div>
-                  <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Estado matcher_progress</h4>
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                    Estado matcher_progress
+                  </h4>
                   <pre className="rounded-md border border-border bg-muted/30 p-3 text-xs text-foreground overflow-auto max-h-48 leading-relaxed">
                     {JSON.stringify(diagnosticData.progress, null, 2)}
                   </pre>

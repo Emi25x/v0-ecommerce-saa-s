@@ -38,12 +38,12 @@ export async function POST(_request: NextRequest) {
     return NextResponse.json({
       success: true,
       stats: {
-        processed:      result.processed,
-        updated:        result.updated,
-        not_found:      result.not_found,
-        zeroed:         result.zeroed,
-        skipped:        result.skipped,
-        duration_ms:    result.elapsed_ms,
+        processed: result.processed,
+        updated: result.updated,
+        not_found: result.not_found,
+        zeroed: result.zeroed,
+        skipped: result.skipped,
+        duration_ms: result.elapsed_ms,
       },
     })
   } catch (error: any) {

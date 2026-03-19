@@ -22,17 +22,10 @@ export interface SyncOrdersResult {
  * Sincroniza una página de órdenes de ML para una cuenta dada.
  * Extrae lógica de negocio para ser llamada desde la route y desde el cron.
  */
-export async function executeSyncOrdersBatch(
-  supabase: any,
-  params: SyncOrdersParams
-): Promise<SyncOrdersResult> {
+export async function executeSyncOrdersBatch(supabase: any, params: SyncOrdersParams): Promise<SyncOrdersResult> {
   const { account_id, offset = 0, limit = ML_ORDERS_LIMIT } = params
 
-  const { data: account } = await supabase
-    .from("ml_accounts")
-    .select("id, ml_user_id")
-    .eq("id", account_id)
-    .single()
+  const { data: account } = await supabase.from("ml_accounts").select("id, ml_user_id").eq("id", account_id).single()
 
   if (!account) {
     return { ok: false, error: "Account not found" }
@@ -89,18 +82,13 @@ export async function executeSyncOrdersBatch(
     updated_at: now,
   }))
 
-  const { error: upsertErr } = await supabase
-    .from("ml_orders")
-    .upsert(batch, { onConflict: "account_id,ml_order_id" })
+  const { error: upsertErr } = await supabase.from("ml_orders").upsert(batch, { onConflict: "account_id,ml_order_id" })
 
   if (upsertErr) {
     return { ok: false, error: upsertErr.message }
   }
 
-  await supabase
-    .from("ml_accounts")
-    .update({ last_order_sync_at: now })
-    .eq("id", account_id)
+  await supabase.from("ml_accounts").update({ last_order_sync_at: now }).eq("id", account_id)
 
   return {
     ok: true,

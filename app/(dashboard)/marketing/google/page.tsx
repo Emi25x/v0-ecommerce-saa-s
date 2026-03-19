@@ -12,9 +12,15 @@ import Link from "next/link"
 function formatCurrency(v: number) {
   return new Intl.NumberFormat("es-AR", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(v)
 }
-function fmt(v: number) { return v.toLocaleString("es-AR") }
-function fmtPct(v: number) { return `${v.toFixed(1)}%` }
-function fmtRoas(v: number) { return `${v.toFixed(2)}x` }
+function fmt(v: number) {
+  return v.toLocaleString("es-AR")
+}
+function fmtPct(v: number) {
+  return `${v.toFixed(1)}%`
+}
+function fmtRoas(v: number) {
+  return `${v.toFixed(2)}x`
+}
 function fmtDuration(secs: number) {
   const m = Math.floor(secs / 60)
   const s = Math.round(secs % 60)
@@ -62,58 +68,70 @@ export default function GoogleMarketingPage() {
   }
 
   async function fetchAnalytics() {
-    setLoading(p => ({ ...p, analytics: true }))
+    setLoading((p) => ({ ...p, analytics: true }))
     try {
       const res = await fetch("/api/marketing/google/analytics")
-      if (res.status === 404) { setAnalyticsData({ notConnected: true }); return }
+      if (res.status === 404) {
+        setAnalyticsData({ notConnected: true })
+        return
+      }
       const data = await res.json()
       setAnalyticsData(data)
     } catch (e: any) {
       toast({ title: "Error GA4", description: e.message, variant: "destructive" })
     } finally {
-      setLoading(p => ({ ...p, analytics: false }))
+      setLoading((p) => ({ ...p, analytics: false }))
     }
   }
 
   async function fetchAds() {
-    setLoading(p => ({ ...p, ads: true }))
+    setLoading((p) => ({ ...p, ads: true }))
     try {
       const res = await fetch("/api/marketing/google/ads")
-      if (res.status === 404) { setAdsData({ notConnected: true }); return }
+      if (res.status === 404) {
+        setAdsData({ notConnected: true })
+        return
+      }
       const data = await res.json()
       setAdsData(data)
     } catch (e: any) {
       toast({ title: "Error Google Ads", description: e.message, variant: "destructive" })
     } finally {
-      setLoading(p => ({ ...p, ads: false }))
+      setLoading((p) => ({ ...p, ads: false }))
     }
   }
 
   async function fetchSearch() {
-    setLoading(p => ({ ...p, search: true }))
+    setLoading((p) => ({ ...p, search: true }))
     try {
       const res = await fetch("/api/marketing/google/search-console")
-      if (res.status === 404) { setSearchData({ notConnected: true }); return }
+      if (res.status === 404) {
+        setSearchData({ notConnected: true })
+        return
+      }
       const data = await res.json()
       setSearchData(data)
     } catch (e: any) {
       toast({ title: "Error Search Console", description: e.message, variant: "destructive" })
     } finally {
-      setLoading(p => ({ ...p, search: false }))
+      setLoading((p) => ({ ...p, search: false }))
     }
   }
 
   async function fetchMerchant() {
-    setLoading(p => ({ ...p, merchant: true }))
+    setLoading((p) => ({ ...p, merchant: true }))
     try {
       const res = await fetch("/api/marketing/google/merchant")
-      if (res.status === 404) { setMerchantData({ notConnected: true }); return }
+      if (res.status === 404) {
+        setMerchantData({ notConnected: true })
+        return
+      }
       const data = await res.json()
       setMerchantData(data)
     } catch (e: any) {
       toast({ title: "Error Merchant", description: e.message, variant: "destructive" })
     } finally {
-      setLoading(p => ({ ...p, merchant: false }))
+      setLoading((p) => ({ ...p, merchant: false }))
     }
   }
 
@@ -121,7 +139,13 @@ export default function GoogleMarketingPage() {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
         <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-          <svg className="w-8 h-8 text-muted-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            className="w-8 h-8 text-muted-foreground"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
           </svg>
@@ -136,13 +160,18 @@ export default function GoogleMarketingPage() {
   }
 
   // Calculate analytics totals
-  const analyticsTotals = analyticsData?.report ? analyticsData.report.reduce((acc: any, r: any) => ({
-    sessions: acc.sessions + r.sessions,
-    users: acc.users + r.users,
-    pageviews: acc.pageviews + r.pageviews,
-    conversions: acc.conversions + r.conversions,
-    revenue: acc.revenue + r.revenue,
-  }), { sessions: 0, users: 0, pageviews: 0, conversions: 0, revenue: 0 }) : null
+  const analyticsTotals = analyticsData?.report
+    ? analyticsData.report.reduce(
+        (acc: any, r: any) => ({
+          sessions: acc.sessions + r.sessions,
+          users: acc.users + r.users,
+          pageviews: acc.pageviews + r.pageviews,
+          conversions: acc.conversions + r.conversions,
+          revenue: acc.revenue + r.revenue,
+        }),
+        { sessions: 0, users: 0, pageviews: 0, conversions: 0, revenue: 0 },
+      )
+    : null
 
   return (
     <div className="min-h-screen bg-background">
@@ -186,7 +215,14 @@ export default function GoogleMarketingPage() {
             {loading.analytics ? (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {[1,2,3,4].map(i => <Card key={i}><CardContent className="pt-6"><Skeleton className="h-8 w-20 mb-2" /><Skeleton className="h-4 w-24" /></CardContent></Card>)}
+                  {[1, 2, 3, 4].map((i) => (
+                    <Card key={i}>
+                      <CardContent className="pt-6">
+                        <Skeleton className="h-8 w-20 mb-2" />
+                        <Skeleton className="h-4 w-24" />
+                      </CardContent>
+                    </Card>
+                  ))}
                 </div>
               </div>
             ) : analyticsData?.notConnected ? (
@@ -244,17 +280,21 @@ export default function GoogleMarketingPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {(analyticsData.report ?? []).slice().reverse().slice(0, 30).map((row: any) => (
-                            <tr key={row.date} className="border-b hover:bg-muted/30">
-                              <td className="py-2 pr-4 font-mono text-xs">{row.date}</td>
-                              <td className="text-right py-2 px-4">{fmt(row.sessions)}</td>
-                              <td className="text-right py-2 px-4">{fmt(row.users)}</td>
-                              <td className="text-right py-2 px-4">{fmt(row.pageviews)}</td>
-                              <td className="text-right py-2 px-4">{fmtPct(row.bounce_rate * 100)}</td>
-                              <td className="text-right py-2 px-4">{fmtDuration(row.avg_session_duration)}</td>
-                              <td className="text-right py-2 pl-4">{row.conversions.toFixed(0)}</td>
-                            </tr>
-                          ))}
+                          {(analyticsData.report ?? [])
+                            .slice()
+                            .reverse()
+                            .slice(0, 30)
+                            .map((row: any) => (
+                              <tr key={row.date} className="border-b hover:bg-muted/30">
+                                <td className="py-2 pr-4 font-mono text-xs">{row.date}</td>
+                                <td className="text-right py-2 px-4">{fmt(row.sessions)}</td>
+                                <td className="text-right py-2 px-4">{fmt(row.users)}</td>
+                                <td className="text-right py-2 px-4">{fmt(row.pageviews)}</td>
+                                <td className="text-right py-2 px-4">{fmtPct(row.bounce_rate * 100)}</td>
+                                <td className="text-right py-2 px-4">{fmtDuration(row.avg_session_duration)}</td>
+                                <td className="text-right py-2 pl-4">{row.conversions.toFixed(0)}</td>
+                              </tr>
+                            ))}
                         </tbody>
                       </table>
                     </div>
@@ -271,7 +311,14 @@ export default function GoogleMarketingPage() {
             {loading.ads ? (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {[1,2,3,4].map(i => <Card key={i}><CardContent className="pt-6"><Skeleton className="h-8 w-20 mb-2" /><Skeleton className="h-4 w-24" /></CardContent></Card>)}
+                  {[1, 2, 3, 4].map((i) => (
+                    <Card key={i}>
+                      <CardContent className="pt-6">
+                        <Skeleton className="h-8 w-20 mb-2" />
+                        <Skeleton className="h-4 w-24" />
+                      </CardContent>
+                    </Card>
+                  ))}
                 </div>
                 <Skeleton className="h-64 w-full" />
               </div>
@@ -317,7 +364,9 @@ export default function GoogleMarketingPage() {
                 <Card>
                   <CardHeader>
                     <CardTitle>Campañas</CardTitle>
-                    <CardDescription>{adsData.startDate} → {adsData.endDate}</CardDescription>
+                    <CardDescription>
+                      {adsData.startDate} → {adsData.endDate}
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="overflow-x-auto">
@@ -372,7 +421,9 @@ export default function GoogleMarketingPage() {
               <Card>
                 <CardHeader>
                   <CardTitle>Top Queries SEO</CardTitle>
-                  <CardDescription>{searchData.startDate} → {searchData.endDate}</CardDescription>
+                  <CardDescription>
+                    {searchData.startDate} → {searchData.endDate}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="overflow-x-auto">
@@ -438,8 +489,12 @@ export default function GoogleMarketingPage() {
                             <div className="text-sm text-muted-foreground">{p.brand}</div>
                           </div>
                           <div className="text-right flex-shrink-0">
-                            <div className="font-medium">{p.currency} {p.price}</div>
-                            <Badge variant="outline" className="text-xs">{p.availability}</Badge>
+                            <div className="font-medium">
+                              {p.currency} {p.price}
+                            </div>
+                            <Badge variant="outline" className="text-xs">
+                              {p.availability}
+                            </Badge>
                           </div>
                         </div>
                       ))}

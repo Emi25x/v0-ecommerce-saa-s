@@ -913,8 +913,7 @@ export default function ShipmentsPage() {
                       const stateName = shipment.receiver_address?.state?.name || ""
                       const dateCreated = shipment.date_created || shipment.last_updated
                       const isValidDate = dateCreated && !isNaN(new Date(dateCreated).getTime())
-                      const labelPending =
-                        !hasLabel && shipment.status !== "cancelled" && shipment.status !== "pending"
+                      const labelPending = !hasLabel && shipment.status !== "cancelled" && shipment.status !== "pending"
 
                       return (
                         <TableRow key={shipment.id}>

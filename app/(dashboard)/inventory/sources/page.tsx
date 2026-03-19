@@ -39,7 +39,12 @@ export default function SourcesPage() {
             {s.runningCron ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
             Ejecutar Cron
           </Button>
-          <Button variant="outline" size="sm" onClick={() => s.setShowDiagnosticDialog(true)} disabled={s.loadingDiagnostic}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => s.setShowDiagnosticDialog(true)}
+            disabled={s.loadingDiagnostic}
+          >
             {s.loadingDiagnostic ? <Loader2 className="h-4 w-4 animate-spin" /> : <Database className="h-4 w-4" />}
             Diagnóstico
           </Button>
@@ -96,7 +101,9 @@ export default function SourcesPage() {
               onRunImportPro={(source) => {
                 const encodedName = encodeURIComponent(source.name)
                 const defaultMode = source.feed_type === "catalog" ? "upsert" : "update"
-                s.router.push(`/inventory/sources/import-pro?sourceId=${source.id}&name=${encodedName}&mode=${defaultMode}`)
+                s.router.push(
+                  `/inventory/sources/import-pro?sourceId=${source.id}&name=${encodedName}&mode=${defaultMode}`,
+                )
               }}
               onDelete={s.handleDeleteSource}
               onCancelImport={s.cancelImport}

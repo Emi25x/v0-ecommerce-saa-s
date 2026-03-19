@@ -120,8 +120,8 @@ export function useInventory() {
         console.log("[v0] Datos recibidos:", {
           productos: data.products?.length || 0,
           total: data.total,
-          p\u00e1gina: data.page,
-          totalP\u00e1ginas: data.totalPages,
+          página: data.page,
+          totalPáginas: data.totalPages,
         })
 
         if (data.products && data.products.length > 0) {
@@ -139,7 +139,9 @@ export function useInventory() {
         const errorData = await response.json()
         console.error("[v0] Error al cargar productos:", errorData)
         if (errorData.timeout) {
-          setErrorMessage("La b\u00fasqueda tard\u00f3 demasiado tiempo. Intenta buscar por SKU/ISBN/EAN exacto o un t\u00e9rmino m\u00e1s espec\u00edfico.")
+          setErrorMessage(
+            "La b\u00fasqueda tard\u00f3 demasiado tiempo. Intenta buscar por SKU/ISBN/EAN exacto o un t\u00e9rmino m\u00e1s espec\u00edfico.",
+          )
         } else if (errorData.message) {
           setErrorMessage(errorData.message)
         } else {

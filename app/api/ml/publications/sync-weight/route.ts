@@ -5,9 +5,9 @@ import { protectAPI } from "@/lib/auth/protect-api"
 
 export const maxDuration = 60
 
-const ML_API          = "https://api.mercadolibre.com"
-const MULTIGET_MAX    = 20 // keep requests small; ML multiget max is 20 items
-const INTER_REQ_MS    = 120
+const ML_API = "https://api.mercadolibre.com"
+const MULTIGET_MAX = 20 // keep requests small; ML multiget max is 20 items
+const INTER_REQ_MS = 120
 const RATE_LIMIT_WAIT = 60_000
 
 // ── Weight extraction ────────────────────────────────────────────────────────
@@ -22,7 +22,7 @@ const RATE_LIMIT_WAIT = 60_000
  *
  * Returns null if no weight can be determined.
  */
-export function extractWeightGramsFromItem(item: any): number | null {
+function extractWeightGramsFromItem(item: any): number | null {
   // 1. shipping.dimensions.weight (already in grams as a number or string)
   const dimWeight = item?.shipping?.dimensions?.weight
   if (dimWeight != null) {
@@ -32,15 +32,13 @@ export function extractWeightGramsFromItem(item: any): number | null {
 
   // 2. attributes[] — look for WEIGHT attribute
   const attrs: any[] = item?.attributes ?? []
-  const weightAttr = attrs.find(
-    (a: any) => a.id === "WEIGHT" || a.id === "ITEM_CONDITION",
-  )
+  const weightAttr = attrs.find((a: any) => a.id === "WEIGHT" || a.id === "ITEM_CONDITION")
   if (weightAttr) {
     // value_struct: { number, unit }
     const vs = weightAttr.value_struct
     if (vs?.number != null && isFinite(vs.number) && vs.number > 0) {
       const unit: string = (vs.unit ?? "g").toLowerCase()
-      if (unit === "g")  return Math.round(vs.number)
+      if (unit === "g") return Math.round(vs.number)
       if (unit === "kg") return Math.round(vs.number * 1000)
       if (unit === "lb") return Math.round(vs.number * 453.592)
       if (unit === "oz") return Math.round(vs.number * 28.3495)
@@ -50,10 +48,10 @@ export function extractWeightGramsFromItem(item: any): number | null {
     if (raw) {
       const m = raw.match(/^([\d.]+)\s*(g|kg|lb|oz)?/i)
       if (m) {
-        const num  = parseFloat(m[1])
+        const num = parseFloat(m[1])
         const unit = (m[2] ?? "g").toLowerCase()
         if (isFinite(num) && num > 0) {
-          if (unit === "g")  return Math.round(num)
+          if (unit === "g") return Math.round(num)
           if (unit === "kg") return Math.round(num * 1000)
           if (unit === "lb") return Math.round(num * 453.592)
           if (unit === "oz") return Math.round(num * 28.3495)
@@ -69,10 +67,8 @@ export function extractWeightGramsFromItem(item: any): number | null {
 
 async function consumeRateLimit(supabase: any, accountId: string, cost = 1) {
   const WINDOW_MS = 60_000
-  const LIMIT     = 500
-  const windowStart = new Date(
-    Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS,
-  ).toISOString()
+  const LIMIT = 500
+  const windowStart = new Date(Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS).toISOString()
 
   const { data: row } = await supabase
     .from("ml_rate_limits")
@@ -81,23 +77,20 @@ async function consumeRateLimit(supabase: any, accountId: string, cost = 1) {
     .maybeSingle()
 
   const sameWindow = row?.window_start === windowStart
-  const used       = sameWindow ? (row?.tokens_used ?? 0) : 0
+  const used = sameWindow ? (row?.tokens_used ?? 0) : 0
 
   if (used + cost > LIMIT) {
-    const nextWindow =
-      Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS + WINDOW_MS
-    await new Promise((r) =>
-      setTimeout(r, Math.max(0, nextWindow - Date.now()) + 100),
-    )
+    const nextWindow = Math.floor(Date.now() / WINDOW_MS) * WINDOW_MS + WINDOW_MS
+    await new Promise((r) => setTimeout(r, Math.max(0, nextWindow - Date.now()) + 100))
   }
 
   await supabase.from("ml_rate_limits").upsert(
     {
-      account_id:   accountId,
+      account_id: accountId,
       window_start: windowStart,
-      tokens_used:  used + cost,
+      tokens_used: used + cost,
       tokens_limit: LIMIT,
-      updated_at:   new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     },
     { onConflict: "account_id" },
   )
@@ -128,7 +121,7 @@ export async function POST(request: NextRequest) {
     const {
       account_id,
       batch_size = 50,
-      force      = false,
+      force = false,
     } = body as {
       account_id: string
       batch_size?: number
@@ -140,7 +133,7 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = await createClient()
-    const token    = await getValidAccessToken(account_id)
+    const token = await getValidAccessToken(account_id)
 
     // ── Query publications ─────────────────────────────────────────────────
     // Join with products to check canonical_weight_g
@@ -161,24 +154,24 @@ export async function POST(request: NextRequest) {
 
     if (!pubs || pubs.length === 0) {
       return NextResponse.json({
-        ok:        true,
+        ok: true,
         processed: 0,
-        updated:   0,
-        missing:   0,
-        elapsed:   ((Date.now() - start) / 1000).toFixed(1),
-        message:   "No hay publicaciones pendientes de sincronizar.",
+        updated: 0,
+        missing: 0,
+        elapsed: ((Date.now() - start) / 1000).toFixed(1),
+        message: "No hay publicaciones pendientes de sincronizar.",
       })
     }
 
     console.log(`[WEIGHT-SYNC] Starting sync for ${pubs.length} publications, account=${account_id}`)
 
     let processed = 0
-    let updated   = 0
-    let missing   = 0
-    let errors    = 0
+    let updated = 0
+    let missing = 0
+    let errors = 0
 
     // ── Process in multiget chunks ─────────────────────────────────────────
-    const chunks: typeof pubs[] = []
+    const chunks: (typeof pubs)[] = []
     for (let i = 0; i < pubs.length; i += MULTIGET_MAX) {
       chunks.push(pubs.slice(i, i + MULTIGET_MAX))
     }
@@ -193,7 +186,7 @@ export async function POST(request: NextRequest) {
       try {
         res = await fetch(url, {
           headers: { Authorization: `Bearer ${token}` },
-          signal:  AbortSignal.timeout(20_000),
+          signal: AbortSignal.timeout(20_000),
         })
       } catch (e: any) {
         console.warn(`[WEIGHT-SYNC] Fetch error for chunk: ${e.message}`)
@@ -222,7 +215,10 @@ export async function POST(request: NextRequest) {
       for (const entry of results) {
         // ML multiget wraps each item as { code, body }
         const item = entry?.body ?? entry
-        if (!item?.id) { missing++; continue }
+        if (!item?.id) {
+          missing++
+          continue
+        }
 
         const weightG = extractWeightGramsFromItem(item)
 
@@ -238,7 +234,7 @@ export async function POST(request: NextRequest) {
             .from("ml_publications")
             .update({
               weight_last_synced_at: new Date().toISOString(),
-              weight_source:         "meli",
+              weight_source: "meli",
             })
             .eq("id", pub.id)
           continue
@@ -248,8 +244,8 @@ export async function POST(request: NextRequest) {
         const { error: pubErr } = await supabase
           .from("ml_publications")
           .update({
-            meli_weight_g:         weightG,
-            weight_source:         "meli",
+            meli_weight_g: weightG,
+            weight_source: "meli",
             weight_last_synced_at: new Date().toISOString(),
           })
           .eq("id", pub.id)
@@ -298,12 +294,12 @@ export async function POST(request: NextRequest) {
     console.log(`[WEIGHT-SYNC] Done. processed=${processed} updated=${updated} missing=${missing} errors=${errors}`)
 
     return NextResponse.json({
-      ok:        true,
+      ok: true,
       processed,
       updated,
       missing,
       errors,
-      elapsed:   ((Date.now() - start) / 1000).toFixed(1),
+      elapsed: ((Date.now() - start) / 1000).toFixed(1),
     })
   } catch (err: any) {
     console.error("[WEIGHT-SYNC] Unexpected error:", err)

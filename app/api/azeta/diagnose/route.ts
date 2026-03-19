@@ -27,7 +27,12 @@ export async function GET() {
       signal: AbortSignal.timeout(10000),
     })
     const body = await r.text()
-    results.push({ method: "GET", status: r.status, contentType: r.headers.get("content-type"), bodyPreview: body.substring(0, 200) })
+    results.push({
+      method: "GET",
+      status: r.status,
+      contentType: r.headers.get("content-type"),
+      bodyPreview: body.substring(0, 200),
+    })
   } catch (e: any) {
     results.push({ method: "GET", error: e.message })
   }
@@ -44,7 +49,12 @@ export async function GET() {
       signal: AbortSignal.timeout(10000),
     })
     const body = await r.text()
-    results.push({ method: "POST", status: r.status, contentType: r.headers.get("content-type"), bodyPreview: body.substring(0, 200) })
+    results.push({
+      method: "POST",
+      status: r.status,
+      contentType: r.headers.get("content-type"),
+      bodyPreview: body.substring(0, 200),
+    })
   } catch (e: any) {
     results.push({ method: "POST", error: e.message })
   }
@@ -56,7 +66,12 @@ export async function GET() {
       headers: { "User-Agent": "curl/7.88.1" },
       signal: AbortSignal.timeout(10000),
     })
-    results.push({ method: "HEAD", status: r.status, contentType: r.headers.get("content-type"), contentLength: r.headers.get("content-length") })
+    results.push({
+      method: "HEAD",
+      status: r.status,
+      contentType: r.headers.get("content-type"),
+      contentLength: r.headers.get("content-length"),
+    })
   } catch (e: any) {
     results.push({ method: "HEAD", error: e.message })
   }

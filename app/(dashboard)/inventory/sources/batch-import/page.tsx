@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 
-
 export default function BatchImportPage() {
   const searchParams = useSearchParams()
   const [isRunning, setIsRunning] = useState(false)
@@ -33,7 +32,7 @@ export default function BatchImportPage() {
   const logsEndRef = useRef<HTMLDivElement>(null)
 
   const addLog = (message: string) => {
-    setLogs(prev => [...prev.slice(-100), `${new Date().toLocaleTimeString()} - ${message}`])
+    setLogs((prev) => [...prev.slice(-100), `${new Date().toLocaleTimeString()} - ${message}`])
   }
 
   useEffect(() => {
@@ -101,7 +100,9 @@ export default function BatchImportPage() {
           setTotalProcessed(s.processed ?? 0)
           setTotalUpdated(s.updated ?? 0)
           setProgress(100)
-          addLog(`Completado: ${s.updated ?? 0} actualizados, ${s.not_found ?? 0} no encontrados, ${s.zeroed ?? 0} puestos a 0`)
+          addLog(
+            `Completado: ${s.updated ?? 0} actualizados, ${s.not_found ?? 0} no encontrados, ${s.zeroed ?? 0} puestos a 0`,
+          )
           setStatus("Importacion completada")
           setIsRunning(false)
           return
@@ -119,7 +120,7 @@ export default function BatchImportPage() {
             credentials: "include",
             headers: {
               "Content-Type": "application/json",
-              "Accept": "text/event-stream",
+              Accept: "text/event-stream",
             },
             body: JSON.stringify({ source_id: urlSourceId }),
           })
@@ -166,7 +167,9 @@ export default function BatchImportPage() {
                   setTotalProcessed(evt.total_rows ?? 0)
                   setProgress(100)
                   setStatus("Importacion completada")
-                  addLog(`Completado en ${evt.elapsed_seconds}s: ${evt.created} creados, ${evt.updated} actualizados, ${evt.errors ?? 0} errores`)
+                  addLog(
+                    `Completado en ${evt.elapsed_seconds}s: ${evt.created} creados, ${evt.updated} actualizados, ${evt.errors ?? 0} errores`,
+                  )
                 } else if (evt.type === "error") {
                   addLog(`Error del servidor: ${evt.error}`)
                   setStatus("Error")
@@ -218,7 +221,9 @@ export default function BatchImportPage() {
 
         if (!response.ok) {
           let msg = `Error ${response.status}`
-          try { msg = JSON.parse(responseText).error || msg } catch {}
+          try {
+            msg = JSON.parse(responseText).error || msg
+          } catch {}
           addLog(`Error: ${msg}`)
           setStatus(`Error: ${msg}`)
           break
@@ -273,15 +278,15 @@ export default function BatchImportPage() {
         if (totalRows > 0) {
           setProgress(Math.min(99, Math.round((accProcessed / totalRows) * 100)))
         } else if (!result.done) {
-          setProgress(prev => Math.min(90, prev + 5))
+          setProgress((prev) => Math.min(90, prev + 5))
         }
 
         const skipped = (result.missing_ean || 0) + (result.invalid_ean || 0)
         addLog(
           `Lote: ${result.rows_seen} vistas, ${result.rows_processed} validas, ` +
-          `${result.created || 0} creadas, ${result.updated || 0} actualizadas, ` +
-          `${skipped} saltadas, ${result.failed_rows || 0} fallidas, ` +
-          `${result.duration_ms}ms, batch=${result.batch_size}`
+            `${result.created || 0} creadas, ${result.updated || 0} actualizadas, ` +
+            `${skipped} saltadas, ${result.failed_rows || 0} fallidas, ` +
+            `${result.duration_ms}ms, batch=${result.batch_size}`,
         )
 
         if (result.timeout_count > 0) {
@@ -297,11 +302,11 @@ export default function BatchImportPage() {
           setStatus(`Importacion completada`)
           addLog(
             `Finalizado. Procesadas: ${accProcessed}, Creadas: ${accCreated}, ` +
-            `Actualizadas: ${accUpdated}, Fallidas: ${accFailed}, Timeouts: ${accTimeouts}`
+              `Actualizadas: ${accUpdated}, Fallidas: ${accFailed}, Timeouts: ${accTimeouts}`,
           )
         } else {
           offset = result.next_offset ?? offset + result.rows_seen
-          await new Promise(r => setTimeout(r, 300))
+          await new Promise((r) => setTimeout(r, 300))
         }
       } catch (error: any) {
         addLog(`Error de conexion: ${error.message || error}`)
@@ -331,12 +336,11 @@ export default function BatchImportPage() {
         <CardHeader>
           <CardTitle>Importacion por Lotes - {sourceName}</CardTitle>
           <CardDescription>
-            Importa productos procesando en lotes. Mantene esta pagina abierta durante el proceso.
-            El proceso puede tardar varios minutos pero no se interrumpira si cambias de pagina.
+            Importa productos procesando en lotes. Mantene esta pagina abierta durante el proceso. El proceso puede
+            tardar varios minutos pero no se interrumpira si cambias de pagina.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-
           {/* Barra progreso superior */}
           <div className="space-y-1">
             <div className="flex justify-between text-sm">
@@ -352,7 +356,9 @@ export default function BatchImportPage() {
               {isRunning ? "Ejecutando..." : "Iniciar Importacion"}
             </Button>
             {isRunning && (
-              <Button variant="destructive" onClick={stopImport}>Cancelar</Button>
+              <Button variant="destructive" onClick={stopImport}>
+                Cancelar
+              </Button>
             )}
           </div>
 
@@ -361,7 +367,9 @@ export default function BatchImportPage() {
             <div className="space-y-4">
               <div className="flex justify-between text-sm">
                 <span>Progreso: {progress}%</span>
-                <span>{fmt(totalProcessed)} / {fmt(totalRows || 0)} filas</span>
+                <span>
+                  {fmt(totalProcessed)} / {fmt(totalRows || 0)} filas
+                </span>
               </div>
               <Progress value={progress} />
 
@@ -403,7 +411,9 @@ export default function BatchImportPage() {
                   </div>
                   <div>
                     <span className="text-muted-foreground">Duracion:</span>{" "}
-                    <span className="font-mono font-bold">{lastDurationMs > 0 ? `${(lastDurationMs / 1000).toFixed(1)}s` : "-"}</span>
+                    <span className="font-mono font-bold">
+                      {lastDurationMs > 0 ? `${(lastDurationMs / 1000).toFixed(1)}s` : "-"}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -422,7 +432,6 @@ export default function BatchImportPage() {
               </div>
             </div>
           )}
-
         </CardContent>
       </Card>
     </div>

@@ -6,38 +6,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  RefreshCw,
-  Search,
-  Send,
-  ShoppingBag,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
-} from "lucide-react"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { RefreshCw, Search, Send, ShoppingBag, Clock, CheckCircle2, AlertCircle, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatDistanceToNow } from "date-fns"
 import { es } from "date-fns/locale"
@@ -75,26 +47,26 @@ interface MLAccount {
 
 export default function MLPreguntasPage() {
   const [conversations, setConversations] = useState<Conversation[]>([])
-  const [loading, setLoading]             = useState(false)
-  const [syncing, setSyncing]             = useState(false)
-  const [searchQ, setSearchQ]             = useState("")
-  const [statusFilter, setStatusFilter]   = useState("pending_reply")
-  const [mlAccounts, setMlAccounts]       = useState<MLAccount[]>([])
+  const [loading, setLoading] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [searchQ, setSearchQ] = useState("")
+  const [statusFilter, setStatusFilter] = useState("pending_reply")
+  const [mlAccounts, setMlAccounts] = useState<MLAccount[]>([])
   const [accountFilter, setAccountFilter] = useState("all")
 
-  const [selected, setSelected]           = useState<Conversation | null>(null)
-  const [messages, setMessages]           = useState<Message[]>([])
-  const [templates, setTemplates]         = useState<Template[]>([])
-  const [replyText, setReplyText]         = useState("")
-  const [sending, setSending]             = useState(false)
-  const [sendError, setSendError]         = useState<string | null>(null)
+  const [selected, setSelected] = useState<Conversation | null>(null)
+  const [messages, setMessages] = useState<Message[]>([])
+  const [templates, setTemplates] = useState<Template[]>([])
+  const [replyText, setReplyText] = useState("")
+  const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
   const [loadingMessages, setLoadingMessages] = useState(false)
-  const [syncErrors, setSyncErrors]       = useState<string[]>([])
+  const [syncErrors, setSyncErrors] = useState<string[]>([])
 
   useEffect(() => {
     fetch("/api/mercadolibre/accounts")
-      .then(r => r.json())
-      .then(d => setMlAccounts(d.accounts ?? []))
+      .then((r) => r.json())
+      .then((d) => setMlAccounts(d.accounts ?? []))
       .catch(() => {})
   }, [])
 
@@ -113,12 +85,14 @@ export default function MLPreguntasPage() {
     }
   }, [statusFilter, searchQ, accountFilter])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+  }, [load])
 
   useEffect(() => {
     fetch("/api/cs/templates?category=ml_question")
-      .then(r => r.json())
-      .then(d => setTemplates(d.templates ?? []))
+      .then((r) => r.json())
+      .then((d) => setTemplates(d.templates ?? []))
       .catch(() => {})
   }, [])
 
@@ -128,7 +102,7 @@ export default function MLPreguntasPage() {
     try {
       const params = new URLSearchParams({ sync: "1" })
       if (accountFilter !== "all") params.set("account_id", accountFilter)
-      const res  = await fetch(`/api/cs/ml-questions?${params}`)
+      const res = await fetch(`/api/cs/ml-questions?${params}`)
       const data = await res.json()
       if (data.errors?.length) setSyncErrors(data.errors)
       await load()
@@ -179,7 +153,7 @@ export default function MLPreguntasPage() {
     }
   }
 
-  const pendingCount = conversations.filter(c => c.status === "pending_reply").length
+  const pendingCount = conversations.filter((c) => c.status === "pending_reply").length
 
   return (
     <div className="flex flex-col h-full p-4 gap-4 overflow-hidden">
@@ -210,7 +184,7 @@ export default function MLPreguntasPage() {
             className="pl-8 h-8 text-sm"
             placeholder="Buscar pregunta..."
             value={searchQ}
-            onChange={e => setSearchQ(e.target.value)}
+            onChange={(e) => setSearchQ(e.target.value)}
           />
         </div>
         {mlAccounts.length > 1 && (
@@ -220,8 +194,10 @@ export default function MLPreguntasPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todas las cuentas</SelectItem>
-              {mlAccounts.map(acc => (
-                <SelectItem key={acc.id} value={acc.id}>{acc.nickname}</SelectItem>
+              {mlAccounts.map((acc) => (
+                <SelectItem key={acc.id} value={acc.id}>
+                  {acc.nickname}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -268,12 +244,12 @@ export default function MLPreguntasPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {conversations.map(conv => (
+              {conversations.map((conv) => (
                 <TableRow
                   key={conv.id}
                   className={cn(
                     "cursor-pointer hover:bg-muted/50",
-                    conv.status === "pending_reply" && "bg-amber-50/50 dark:bg-amber-950/10"
+                    conv.status === "pending_reply" && "bg-amber-50/50 dark:bg-amber-950/10",
                   )}
                   onClick={() => openConversation(conv)}
                 >
@@ -292,16 +268,12 @@ export default function MLPreguntasPage() {
                       <Badge variant="secondary">{conv.status}</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="font-medium text-sm">
-                    {conv.customer_name ?? "—"}
-                  </TableCell>
+                  <TableCell className="font-medium text-sm">{conv.customer_name ?? "—"}</TableCell>
                   <TableCell className="max-w-xs">
                     <p className="truncate text-sm">{conv.subject ?? "—"}</p>
                   </TableCell>
                   <TableCell className="max-w-[180px]">
-                    <p className="truncate text-xs text-muted-foreground">
-                      {conv.product_title ?? "—"}
-                    </p>
+                    <p className="truncate text-xs text-muted-foreground">{conv.product_title ?? "—"}</p>
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                     {formatDistanceToNow(new Date(conv.last_message_at), { locale: es, addSuffix: true })}
@@ -319,7 +291,12 @@ export default function MLPreguntasPage() {
       </div>
 
       {/* Reply Dialog */}
-      <Dialog open={!!selected} onOpenChange={open => { if (!open) setSelected(null) }}>
+      <Dialog
+        open={!!selected}
+        onOpenChange={(open) => {
+          if (!open) setSelected(null)
+        }}
+      >
         <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="text-base">
@@ -335,32 +312,32 @@ export default function MLPreguntasPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {messages.map(msg => (
+                {messages.map((msg) => (
                   <div
                     key={msg.id}
-                    className={cn(
-                      "flex",
-                      msg.direction === "outbound" ? "justify-end" : "justify-start"
-                    )}
+                    className={cn("flex", msg.direction === "outbound" ? "justify-end" : "justify-start")}
                   >
                     <div
                       className={cn(
                         "max-w-[80%] rounded-xl px-3 py-2 text-sm",
-                        msg.direction === "outbound"
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted"
+                        msg.direction === "outbound" ? "bg-primary text-primary-foreground" : "bg-muted",
                       )}
                     >
                       {msg.direction === "inbound" && msg.author_name && (
                         <p className="text-[10px] font-semibold mb-0.5 opacity-60">{msg.author_name}</p>
                       )}
                       <p className="whitespace-pre-wrap">{msg.content}</p>
-                      <p className={cn(
-                        "text-[10px] mt-1 text-right",
-                        msg.direction === "outbound" ? "opacity-70" : "text-muted-foreground"
-                      )}>
+                      <p
+                        className={cn(
+                          "text-[10px] mt-1 text-right",
+                          msg.direction === "outbound" ? "opacity-70" : "text-muted-foreground",
+                        )}
+                      >
                         {new Date(msg.created_at).toLocaleString("es-AR", {
-                          day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"
+                          day: "2-digit",
+                          month: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
                         })}
                       </p>
                     </div>
@@ -374,7 +351,7 @@ export default function MLPreguntasPage() {
           {templates.length > 0 && (
             <div className="flex gap-1.5 flex-wrap">
               <span className="text-xs text-muted-foreground self-center">Plantillas:</span>
-              {templates.map(t => (
+              {templates.map((t) => (
                 <button
                   key={t.id}
                   className="rounded-full border px-2 py-0.5 text-xs hover:bg-muted transition-colors"
@@ -398,16 +375,25 @@ export default function MLPreguntasPage() {
             className="min-h-[80px] resize-none text-sm"
             placeholder="Escribí tu respuesta..."
             value={replyText}
-            onChange={e => setReplyText(e.target.value)}
+            onChange={(e) => setReplyText(e.target.value)}
           />
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSelected(null)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => setSelected(null)}>
+              Cancelar
+            </Button>
             <Button onClick={sendReply} disabled={sending || !replyText.trim()}>
-              {sending
-                ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Enviando...</>
-                : <><Send className="mr-2 h-4 w-4" />Enviar respuesta</>
-              }
+              {sending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                <>
+                  <Send className="mr-2 h-4 w-4" />
+                  Enviar respuesta
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

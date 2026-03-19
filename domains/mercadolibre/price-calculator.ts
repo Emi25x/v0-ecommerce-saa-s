@@ -38,10 +38,7 @@ export async function getEurExchangeRate(): Promise<number> {
 /**
  * Determina costos ML (cargo fijo + shipping) según tramo de precio.
  */
-export function getMlCostsByPrice(
-  price: number,
-  estimatedShippingCost = 5500
-): { fixedFee: number; shipping: number } {
+export function getMlCostsByPrice(price: number, estimatedShippingCost = 5500): { fixedFee: number; shipping: number } {
   if (price < 15000) return { fixedFee: 1115, shipping: 0 }
   if (price < 25000) return { fixedFee: 2300, shipping: 0 }
   if (price < 33000) return { fixedFee: 2810, shipping: 0 }
@@ -73,15 +70,8 @@ export interface CalculatePriceResult {
  *
  * Itera hasta que el precio se estabilice en un tramo.
  */
-export async function calculateMlPrice(
-  params: CalculatePriceParams
-): Promise<CalculatePriceResult> {
-  const {
-    costPriceEur,
-    marginPercent,
-    mlFeePercent = 0.13,
-    shippingCost: estimatedShipping = 5500,
-  } = params
+export async function calculateMlPrice(params: CalculatePriceParams): Promise<CalculatePriceResult> {
+  const { costPriceEur, marginPercent, mlFeePercent = 0.13, shippingCost: estimatedShipping = 5500 } = params
 
   const exchangeRate = params.exchangeRate ?? (await getEurExchangeRate())
 

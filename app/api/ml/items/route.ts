@@ -23,7 +23,7 @@ async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3)
       lastError = error as Error
       console.log(`[v0] Fetch attempt ${i + 1} failed:`, lastError.message)
       if (i < maxRetries - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))) // Espera exponencial
+        await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1))) // Espera exponencial
       }
     }
   }
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
 
   // Generar clave de cache única
   const cacheKey = `${limit}-${offset}-${accountId}-${status}-${sort}`
-  
+
   // Verificar cache (solo para consultas básicas sin forzar refresh)
   if (!noCache && itemsCache && itemsCache.key === cacheKey && Date.now() - itemsCache.timestamp < CACHE_TTL) {
     console.log("[v0] Returning cached items data")
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
 
     console.log(`[v0] Found ${accounts.length} account(s)`)
     let account = accounts[0]
-    
+
     // Verificar si el token está expirado y refrescarlo automáticamente
     const expiresAt = new Date(account.token_expires_at)
     const now = new Date()
@@ -92,18 +92,21 @@ export async function GET(request: NextRequest) {
             refresh_token: account.refresh_token,
           }),
         })
-        
+
         if (refreshResponse.ok) {
           const tokens = await refreshResponse.json()
           const newExpiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString()
-          
-          await supabase.from("ml_accounts").update({
-            access_token: tokens.access_token,
-            refresh_token: tokens.refresh_token,
-            token_expires_at: newExpiresAt,
-            updated_at: new Date().toISOString(),
-          }).eq("id", account.id)
-          
+
+          await supabase
+            .from("ml_accounts")
+            .update({
+              access_token: tokens.access_token,
+              refresh_token: tokens.refresh_token,
+              token_expires_at: newExpiresAt,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", account.id)
+
           account = { ...account, access_token: tokens.access_token }
           console.log("[v0] Token refrescado exitosamente")
         } else {
@@ -113,7 +116,7 @@ export async function GET(request: NextRequest) {
         console.error("[v0] Error en refresh:", refreshError)
       }
     }
-    
+
     const accessToken = account.access_token
 
     if (!accessToken) {
@@ -124,53 +127,54 @@ export async function GET(request: NextRequest) {
     // Si hay health_filter, consultar desde BD en lugar de API de ML
     if (healthFilter && healthFilter !== "all") {
       console.log("[v0] Using database query for health filter:", healthFilter)
-      
+
       let dbQuery = supabase
         .from("ml_publications")
         .select("*")
         .eq("account_id", account.id)
         .range(offset, offset + limit - 1)
-      
+
       if (healthFilter === "para_ganar_competencia") {
         dbQuery = dbQuery.eq("is_competing", true)
       } else if (healthFilter === "elegibles_para_competir") {
         dbQuery = dbQuery.eq("catalog_listing_eligible", true)
       }
-      
+
       const { data: publications, error: dbError } = await dbQuery
-      
+
       if (dbError) {
         console.error("[v0] DB query error:", dbError)
         return NextResponse.json({ error: "Database query failed" }, { status: 500 })
       }
-      
+
       // Contar total para paginación
       let countQuery = supabase
         .from("ml_publications")
         .select("id", { count: "exact", head: true })
         .eq("account_id", account.id)
-      
+
       if (healthFilter === "para_ganar_competencia") {
         countQuery = countQuery.eq("is_competing", true)
       } else if (healthFilter === "elegibles_para_competir") {
         countQuery = countQuery.eq("catalog_listing_eligible", true)
       }
-      
+
       const { count } = await countQuery
-      
-      const formattedProducts = publications?.map((pub: any) => ({
-        id: pub.ml_item_id,
-        title: pub.title,
-        price: pub.price,
-        available_quantity: pub.current_stock,
-        status: pub.status,
-        permalink: pub.permalink,
-        catalog_listing: pub.catalog_listing_eligible,
-        thumbnail: null,
-        account_id: pub.account_id,
-        account_nickname: account.nickname,
-      })) || []
-      
+
+      const formattedProducts =
+        publications?.map((pub: any) => ({
+          id: pub.ml_item_id,
+          title: pub.title,
+          price: pub.price,
+          available_quantity: pub.current_stock,
+          status: pub.status,
+          permalink: pub.permalink,
+          catalog_listing: pub.catalog_listing_eligible,
+          thumbnail: null,
+          account_id: pub.account_id,
+          account_nickname: account.nickname,
+        })) || []
+
       return NextResponse.json({
         products: formattedProducts,
         paging: { total: count || 0, limit, offset },
@@ -195,15 +199,18 @@ export async function GET(request: NextRequest) {
     if (!searchResponse.ok) {
       const errorText = await searchResponse.text()
       console.error("[v0] ML API error:", searchResponse.status, errorText)
-      
+
       // Si es rate limit, devolver error claro
       if (searchResponse.status === 429 || errorText.includes("Too Many Requests")) {
-        return NextResponse.json({ 
-          error: "Límite de API excedido. Intenta en unos minutos.",
-          rate_limited: true 
-        }, { status: 429 })
+        return NextResponse.json(
+          {
+            error: "Límite de API excedido. Intenta en unos minutos.",
+            rate_limited: true,
+          },
+          { status: 429 },
+        )
       }
-      
+
       return NextResponse.json({ error: "Failed to fetch from MercadoLibre" }, { status: searchResponse.status })
     }
 
@@ -212,13 +219,10 @@ export async function GET(request: NextRequest) {
 
     console.log("[v0] ML Search Response - total:", searchData.paging?.total, "results:", itemIds.length)
     console.log("[v0] Found", itemIds.length, "product IDs")
-    
+
     // Actualizar el total de publicaciones en ML automáticamente
     if (searchData.paging?.total && accountId) {
-      await supabase
-        .from("ml_accounts")
-        .update({ total_ml_publications: searchData.paging.total })
-        .eq("id", accountId)
+      await supabase.from("ml_accounts").update({ total_ml_publications: searchData.paging.total }).eq("id", accountId)
       console.log("[v0] Updated total_ml_publications to:", searchData.paging.total)
     }
 
@@ -265,91 +269,89 @@ export async function GET(request: NextRequest) {
       }))
 
       // Guardar productos en ml_publications en background (sin esperar)
-      Promise.all(products.map(async (product: any) => {
-        try {
-          // Buscar SKU/GTIN en attributes
-          let sku = product.seller_custom_field || ""
-          if (!sku && product.attributes) {
-            const isbnAttr = product.attributes.find((attr: any) => 
-              attr.id === 'ISBN' || attr.id === 'GTIN' || attr.id === 'EAN'
-            )
-            if (isbnAttr) sku = isbnAttr.value_name || ""
-          }
-          
-          // Buscar product_id por SKU
-          let product_id = null
-          if (sku) {
-            const { data: productMatch } = await supabase
-              .from("products")
-              .select("id")
-              .eq("ean", sku)
-              .maybeSingle()
-            product_id = productMatch?.id || null
-          }
-          
-          // Verificar si existe
-          const { data: existing } = await supabase
-            .from("ml_publications")
-            .select("id, health_checked_at")
-            .eq("ml_item_id", product.id)
-            .maybeSingle()
-          
-          const pubData: any = {
-            account_id: account.id,
-            ml_item_id: product.id,
-            product_id,
-            title: product.title,
-            price: product.price,
-            current_stock: product.available_quantity,
-            status: product.status,
-            permalink: product.permalink,
-            updated_at: new Date().toISOString()
-          }
-          
-          // Consultar elegibilidad de catálogo y competencia (max 1 vez por día por publicación)
-          const shouldCheckHealth = !existing || 
-            !existing.health_checked_at || 
-            new Date(existing.health_checked_at).getTime() < Date.now() - 24 * 60 * 60 * 1000
-          
-          if (shouldCheckHealth && product.catalog_listing === true) {
-            try {
-              // Verificar elegibilidad para competir
-              const eligibilityResponse = await fetch(
-                `https://api.mercadolibre.com/items/${product.id}/catalog_listing_eligibility`,
-                { headers: { Authorization: `Bearer ${account.access_token}` } }
+      Promise.all(
+        products.map(async (product: any) => {
+          try {
+            // Buscar SKU/GTIN en attributes
+            let sku = product.seller_custom_field || ""
+            if (!sku && product.attributes) {
+              const isbnAttr = product.attributes.find(
+                (attr: any) => attr.id === "ISBN" || attr.id === "GTIN" || attr.id === "EAN",
               )
-              if (eligibilityResponse.ok) {
-                const eligibility = await eligibilityResponse.json()
-                pubData.catalog_listing_eligible = eligibility.eligible === true
-              }
-              
-              // Verificar si está compitiendo
-              const priceResponse = await fetch(
-                `https://api.mercadolibre.com/items/${product.id}/price_to_win`,
-                { headers: { Authorization: `Bearer ${account.access_token}` } }
-              )
-              if (priceResponse.ok) {
-                const priceData = await priceResponse.json()
-                pubData.is_competing = priceData.is_winning === false
-                pubData.price_to_win = priceData.price_to_win?.amount || null
-              }
-              
-              pubData.health_checked_at = new Date().toISOString()
-            } catch (healthErr) {
-              console.error("[v0] Error checking health for", product.id, healthErr)
+              if (isbnAttr) sku = isbnAttr.value_name || ""
             }
+
+            // Buscar product_id por SKU
+            let product_id = null
+            if (sku) {
+              const { data: productMatch } = await supabase.from("products").select("id").eq("ean", sku).maybeSingle()
+              product_id = productMatch?.id || null
+            }
+
+            // Verificar si existe
+            const { data: existing } = await supabase
+              .from("ml_publications")
+              .select("id, health_checked_at")
+              .eq("ml_item_id", product.id)
+              .maybeSingle()
+
+            const pubData: any = {
+              account_id: account.id,
+              ml_item_id: product.id,
+              product_id,
+              title: product.title,
+              price: product.price,
+              current_stock: product.available_quantity,
+              status: product.status,
+              permalink: product.permalink,
+              updated_at: new Date().toISOString(),
+            }
+
+            // Consultar elegibilidad de catálogo y competencia (max 1 vez por día por publicación)
+            const shouldCheckHealth =
+              !existing ||
+              !existing.health_checked_at ||
+              new Date(existing.health_checked_at).getTime() < Date.now() - 24 * 60 * 60 * 1000
+
+            if (shouldCheckHealth && product.catalog_listing === true) {
+              try {
+                // Verificar elegibilidad para competir
+                const eligibilityResponse = await fetch(
+                  `https://api.mercadolibre.com/items/${product.id}/catalog_listing_eligibility`,
+                  { headers: { Authorization: `Bearer ${account.access_token}` } },
+                )
+                if (eligibilityResponse.ok) {
+                  const eligibility = await eligibilityResponse.json()
+                  pubData.catalog_listing_eligible = eligibility.eligible === true
+                }
+
+                // Verificar si está compitiendo
+                const priceResponse = await fetch(`https://api.mercadolibre.com/items/${product.id}/price_to_win`, {
+                  headers: { Authorization: `Bearer ${account.access_token}` },
+                })
+                if (priceResponse.ok) {
+                  const priceData = await priceResponse.json()
+                  pubData.is_competing = priceData.is_winning === false
+                  pubData.price_to_win = priceData.price_to_win?.amount || null
+                }
+
+                pubData.health_checked_at = new Date().toISOString()
+              } catch (healthErr) {
+                console.error("[v0] Error checking health for", product.id, healthErr)
+              }
+            }
+
+            if (existing) {
+              await supabase.from("ml_publications").update(pubData).eq("id", existing.id)
+            } else {
+              await supabase.from("ml_publications").insert(pubData)
+            }
+          } catch (err) {
+            // Silenciar errores para no romper la consulta principal
+            console.error("[v0] Error guardando publicación:", err)
           }
-          
-          if (existing) {
-            await supabase.from("ml_publications").update(pubData).eq("id", existing.id)
-          } else {
-            await supabase.from("ml_publications").insert(pubData)
-          }
-        } catch (err) {
-          // Silenciar errores para no romper la consulta principal
-          console.error("[v0] Error guardando publicación:", err)
-        }
-      })).catch(() => {}) // Ignorar errores en background
+        }),
+      ).catch(() => {}) // Ignorar errores en background
 
       allProducts = allProducts.concat(productsWithAccount)
       console.log("[v0] Total products so far:", allProducts.length)
@@ -383,7 +385,7 @@ export async function GET(request: NextRequest) {
     itemsCache = {
       data: responseData,
       timestamp: Date.now(),
-      key: cacheKey
+      key: cacheKey,
     }
 
     return NextResponse.json(responseData)

@@ -132,35 +132,61 @@ export function AppSidebar() {
         {/* ── Mercado Libre ── */}
         <SidebarSection label="Mercado Libre" icon={MLLogo}>
           {/* Principal */}
-          <SidebarLink href="/ml/publications" label="Publicaciones" icon={ShoppingCart} badge={notifications?.products} badgeColor="bg-blue-500" />
+          <SidebarLink
+            href="/ml/publications"
+            label="Publicaciones"
+            icon={ShoppingCart}
+            badge={notifications?.products}
+            badgeColor="bg-blue-500"
+          />
           <SidebarLink href="/ml/publications-alerts" label="Alertas" icon={Bell} match="exact" />
-          <SidebarLink href="/ml/orders" label="Ventas" icon={ShoppingBag} badge={notifications?.orders} badgeColor="bg-green-500" />
-          <SidebarLink href="/ml/shipments" label="Envíos" icon={Truck} badge={notifications?.shipments} badgeColor="bg-orange-500" />
+          <SidebarLink
+            href="/ml/orders"
+            label="Ventas"
+            icon={ShoppingBag}
+            badge={notifications?.orders}
+            badgeColor="bg-green-500"
+          />
+          <SidebarLink
+            href="/ml/shipments"
+            label="Envíos"
+            icon={Truck}
+            badge={notifications?.shipments}
+            badgeColor="bg-orange-500"
+          />
           <SidebarLink href="/ml/payments" label="Pagos" icon={CreditCard} />
           <SidebarLink href="/ml/accounts" label="Cuentas" icon={Settings} />
 
           {/* Sincronización */}
           <div className="my-2 border-t border-sidebar-border" />
-          <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">Sincronización</p>
+          <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
+            Sincronización
+          </p>
           <SidebarLink href="/ml/importer" label="Importación inicial" icon={Database} />
           <SidebarLink href="/ml/import-pro" label="Import Pro" icon={Upload} />
           <SidebarLink href="/ml/sync" label="Sincronización" icon={RefreshCw} />
 
           {/* Catálogo */}
           <div className="my-2 border-t border-sidebar-border" />
-          <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">Catálogo</p>
+          <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
+            Catálogo
+          </p>
           <SidebarLink href="/ml/catalog/eligibility" label="Elegibilidad" icon={CheckCircle2} />
           <SidebarLink href="/ml/catalog/optin" label="Opt-in" icon={Plus} />
           <SidebarLink href="/ml/catalog/migration" label="Migración" icon={ArrowRight} />
 
           {/* Inteligencia */}
           <div className="my-2 border-t border-sidebar-border" />
-          <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">Inteligencia</p>
+          <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
+            Inteligencia
+          </p>
           <SidebarLink href="/ml/priorities" label="Prioridades de publicación" icon={BarChart3} />
 
           {/* Operativo */}
           <div className="my-2 border-t border-sidebar-border" />
-          <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">Operativo</p>
+          <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
+            Operativo
+          </p>
           <SidebarLink href="/ml/matcher" label="Vinculación" icon={Link2} />
           <SidebarLink href="/ml/products/build" label="Crear productos" icon={PlusSquare} />
           <SidebarLink href="/ml/products/unmatched" label="Sin vincular" icon={XCircle} />
@@ -259,7 +285,6 @@ export function AppSidebar() {
             <SidebarLink href="/marketing/config" label="Configuración" icon={Settings} />
           </SidebarSection>
         </div>
-
       </nav>
 
       {/* Usuario y logout al final del sidebar */}

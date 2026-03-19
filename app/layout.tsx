@@ -19,9 +19,7 @@ export default function RootLayout({
     <html lang="es" className="dark">
       <body className="font-sans antialiased">
         <MigrationProvider>
-          <div className="flex min-h-screen">
-            {children}
-          </div>
+          <div className="flex min-h-screen">{children}</div>
         </MigrationProvider>
         <Toaster />
       </body>

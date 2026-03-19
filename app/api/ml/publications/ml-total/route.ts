@@ -21,7 +21,9 @@ export async function GET(req: NextRequest) {
   }
 
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
 
   // 1. Total en DB (HEAD query — no lee filas)
@@ -31,11 +33,7 @@ export async function GET(req: NextRequest) {
     .eq("account_id", account_id)
 
   // 2. Total en ML via items/search?search_type=scan&limit=1 (solo lee paging.total)
-  const { data: account } = await supabase
-    .from("ml_accounts")
-    .select("ml_user_id")
-    .eq("id", account_id)
-    .single()
+  const { data: account } = await supabase.from("ml_accounts").select("ml_user_id").eq("id", account_id).single()
 
   if (!account) {
     return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
@@ -46,10 +44,10 @@ export async function GET(req: NextRequest) {
 
   try {
     const token = await getValidAccessToken(account_id)
-    const url   = `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?search_type=scan&limit=1`
-    const res   = await fetch(url, {
+    const url = `https://api.mercadolibre.com/users/${account.ml_user_id}/items/search?search_type=scan&limit=1`
+    const res = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
-      signal:  AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(8000),
     })
     if (res.ok) {
       const data = await res.json()
@@ -64,8 +62,8 @@ export async function GET(req: NextRequest) {
   const diff = total_ml != null && total_db != null ? total_ml - total_db : null
 
   return NextResponse.json({
-    ok:       true,
-    total_db: total_db  ?? 0,
+    ok: true,
+    total_db: total_db ?? 0,
     total_ml,
     diff,
     ml_error,

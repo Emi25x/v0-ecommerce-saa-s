@@ -13,12 +13,14 @@ export async function GET(req: NextRequest) {
     const supabase = await createClient()
     const { data: product } = await supabase
       .from("products")
-      .select(`
+      .select(
+        `
         id, title, description, brand, category, author, sku, ean, isbn,
         price, canonical_weight_g, image_url, language, binding, pages,
         year_edition, ibic_subjects, subject, course, height, width,
         thickness, condition, custom_fields, ml_item_id
-      `)
+      `,
+      )
       .or(`ean.eq.${ean},isbn.eq.${ean}`)
       .limit(1)
       .maybeSingle()

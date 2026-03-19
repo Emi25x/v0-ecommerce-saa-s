@@ -2,11 +2,7 @@
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import {
   ExternalLink,
   Copy,
@@ -38,20 +34,24 @@ interface PublicationDialogsProps {
 
 export function PublicationDialogs({ hook }: PublicationDialogsProps) {
   const {
-    detail, setDetail,
+    detail,
+    setDetail,
     copied,
     copiedLink,
     copyId,
-    historialItem, setHistorialItem,
+    historialItem,
+    setHistorialItem,
     historialLoading,
     historialData,
     importProgress,
     counts,
     refreshProgress,
-    selected, setSelected,
+    selected,
+    setSelected,
     batchEnqueueing,
     batchOptIn,
-    showDuplicates, setShowDuplicates,
+    showDuplicates,
+    setShowDuplicates,
     duplicateGroups,
     loadingDuplicates,
     loadDuplicates,
@@ -65,17 +65,15 @@ export function PublicationDialogs({ hook }: PublicationDialogsProps) {
     <>
       {/* ── Import progress indicator ───────────────────────────────────── */}
       {importProgress && (
-        <ImportProgressPanel
-          importProgress={importProgress}
-          counts={counts}
-          refreshProgress={refreshProgress}
-        />
+        <ImportProgressPanel importProgress={importProgress} counts={counts} refreshProgress={refreshProgress} />
       )}
 
       {/* ── Barra accion masiva ─────────────────────────────────────────── */}
       {selected.size > 0 && (
         <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-4 py-2.5 flex items-center gap-3 text-sm">
-          <span className="font-medium text-emerald-300">{selected.size} seleccionada{selected.size !== 1 ? "s" : ""}</span>
+          <span className="font-medium text-emerald-300">
+            {selected.size} seleccionada{selected.size !== 1 ? "s" : ""}
+          </span>
           <Button
             size="sm"
             variant="outline"
@@ -109,14 +107,7 @@ export function PublicationDialogs({ hook }: PublicationDialogsProps) {
       )}
 
       {/* ── Modal detalle ────────────────────────────────────────────────── */}
-      {detail && (
-        <DetailModal
-          detail={detail}
-          onClose={() => setDetail(null)}
-          copied={copied}
-          copyId={copyId}
-        />
-      )}
+      {detail && <DetailModal detail={detail} onClose={() => setDetail(null)} copied={copied} copyId={copyId} />}
 
       {/* ── Modal Historial ───────────────────────────────────────────────── */}
       {historialItem && (
@@ -143,28 +134,40 @@ function ImportProgressPanel({
   refreshProgress: () => void
 }) {
   return (
-    <div className={`rounded-lg border px-4 py-3 text-sm space-y-2 ${
-      importProgress.status === "error" || importProgress.last_error
-        ? "border-red-500/30 bg-red-500/5"
-        : importProgress.publications_scope === "active_only"
-          ? "border-amber-500/30 bg-amber-500/5"
-          : "border-border bg-muted/20"
-    }`}>
+    <div
+      className={`rounded-lg border px-4 py-3 text-sm space-y-2 ${
+        importProgress.status === "error" || importProgress.last_error
+          ? "border-red-500/30 bg-red-500/5"
+          : importProgress.publications_scope === "active_only"
+            ? "border-amber-500/30 bg-amber-500/5"
+            : "border-border bg-muted/20"
+      }`}
+    >
       <div className="flex items-center gap-3 flex-wrap">
         <span className="text-muted-foreground font-medium">
           Importacion{" "}
-          <span className={
-            importProgress.status === "running"                           ? "text-blue-400"
-            : importProgress.status === "done"                            ? "text-green-400"
-            : importProgress.status === "error"                           ? "text-red-400"
-            : importProgress.status === "paused"                          ? "text-yellow-400"
-            : importProgress.status === "scan_complete_pending_verification" ? "text-amber-400"
-            : "text-muted-foreground"
-          }>
-            {importProgress.status === "running"                              ? "en curso"
-             : importProgress.status === "done"                               ? "completada"
-             : importProgress.status === "scan_complete_pending_verification" ? "scan completo \u2014 verificar"
-             : importProgress.status}
+          <span
+            className={
+              importProgress.status === "running"
+                ? "text-blue-400"
+                : importProgress.status === "done"
+                  ? "text-green-400"
+                  : importProgress.status === "error"
+                    ? "text-red-400"
+                    : importProgress.status === "paused"
+                      ? "text-yellow-400"
+                      : importProgress.status === "scan_complete_pending_verification"
+                        ? "text-amber-400"
+                        : "text-muted-foreground"
+            }
+          >
+            {importProgress.status === "running"
+              ? "en curso"
+              : importProgress.status === "done"
+                ? "completada"
+                : importProgress.status === "scan_complete_pending_verification"
+                  ? "scan completo \u2014 verificar"
+                  : importProgress.status}
           </span>
         </span>
 
@@ -180,7 +183,9 @@ function ImportProgressPanel({
           className="ml-auto text-muted-foreground hover:text-foreground"
           title="Actualizar estado"
         >
-          <RefreshCw className={`h-3.5 w-3.5 ${importProgress.status === "running" ? "animate-spin text-blue-400" : ""}`} />
+          <RefreshCw
+            className={`h-3.5 w-3.5 ${importProgress.status === "running" ? "animate-spin text-blue-400" : ""}`}
+          />
         </button>
       </div>
 
@@ -222,27 +227,41 @@ function ImportProgressPanel({
       <div className="space-y-1">
         <div className="flex items-center justify-between text-xs text-muted-foreground tabular-nums">
           <span className="flex items-center gap-3 flex-wrap">
-            <span>Status: <span className={
-              importProgress.status === "running" ? "text-blue-400 font-semibold"
-              : importProgress.status === "done"  ? "text-green-400 font-semibold"
-              : importProgress.status === "error" ? "text-red-400 font-semibold"
-              : importProgress.status === "paused" ? "text-yellow-400 font-semibold"
-              : importProgress.status === "scan_complete_pending_verification" ? "text-amber-400 font-semibold"
-              : "text-muted-foreground"
-            }>{importProgress.status}</span></span>
+            <span>
+              Status:{" "}
+              <span
+                className={
+                  importProgress.status === "running"
+                    ? "text-blue-400 font-semibold"
+                    : importProgress.status === "done"
+                      ? "text-green-400 font-semibold"
+                      : importProgress.status === "error"
+                        ? "text-red-400 font-semibold"
+                        : importProgress.status === "paused"
+                          ? "text-yellow-400 font-semibold"
+                          : importProgress.status === "scan_complete_pending_verification"
+                            ? "text-amber-400 font-semibold"
+                            : "text-muted-foreground"
+                }
+              >
+                {importProgress.status}
+              </span>
+            </span>
           </span>
-          {importProgress.last_sync_batch_at && (
-            <span>Ultimo batch: {relDate(importProgress.last_sync_batch_at)}</span>
-          )}
+          {importProgress.last_sync_batch_at && <span>Ultimo batch: {relDate(importProgress.last_sync_batch_at)}</span>}
         </div>
         <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
           <div
             className={`h-full rounded-full transition-all ${
-              importProgress.status === "running" ? "bg-blue-500 animate-pulse"
-              : importProgress.status === "done"  ? "bg-green-500"
-              : importProgress.status === "scan_complete_pending_verification" ? "bg-amber-500"
-              : importProgress.status === "error" ? "bg-red-500"
-              : "bg-muted-foreground/50"
+              importProgress.status === "running"
+                ? "bg-blue-500 animate-pulse"
+                : importProgress.status === "done"
+                  ? "bg-green-500"
+                  : importProgress.status === "scan_complete_pending_verification"
+                    ? "bg-amber-500"
+                    : importProgress.status === "error"
+                      ? "bg-red-500"
+                      : "bg-muted-foreground/50"
             }`}
             style={{
               width: importProgress.publications_total
@@ -255,8 +274,12 @@ function ImportProgressPanel({
 
       {/* Alerta de import incompleto */}
       {(() => {
-        const seen    = importProgress.ml_items_seen_count ?? importProgress.discovered_count ?? 0
-        const saved   = importProgress.db_rows_upserted_count ?? importProgress.upsert_new_count ?? importProgress.publications_offset ?? 0
+        const seen = importProgress.ml_items_seen_count ?? importProgress.discovered_count ?? 0
+        const saved =
+          importProgress.db_rows_upserted_count ??
+          importProgress.upsert_new_count ??
+          importProgress.publications_offset ??
+          0
         const missing = seen - saved
         if (seen > 0 && missing > 10) {
           return (
@@ -264,9 +287,9 @@ function ImportProgressPanel({
               <AlertCircle className="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
               <p className="text-xs text-red-300">
                 <span className="font-semibold">Import incompleto:</span> ML envio {seen.toLocaleString("es-AR")} IDs
-                pero solo {saved.toLocaleString("es-AR")} filas quedaron persistidas en DB.
-                Faltan <span className="font-bold">{missing.toLocaleString("es-AR")}</span> filas.
-                Usa "Sincronizar con ML" para reintentar.
+                pero solo {saved.toLocaleString("es-AR")} filas quedaron persistidas en DB. Faltan{" "}
+                <span className="font-bold">{missing.toLocaleString("es-AR")}</span> filas. Usa "Sincronizar con ML"
+                para reintentar.
               </p>
             </div>
           )
@@ -276,9 +299,7 @@ function ImportProgressPanel({
 
       {/* Error de ultima corrida */}
       {importProgress.last_error && (
-        <p className="text-xs text-red-400 font-mono truncate">
-          Error: {importProgress.last_error}
-        </p>
+        <p className="text-xs text-red-400 font-mono truncate">Error: {importProgress.last_error}</p>
       )}
     </div>
   )
@@ -299,10 +320,10 @@ function DiagStat({
 }) {
   const valueColor = {
     default: "text-foreground",
-    blue:    "text-blue-400",
-    green:   "text-green-400",
-    red:     "text-red-400",
-    yellow:  "text-yellow-400",
+    blue: "text-blue-400",
+    green: "text-green-400",
+    red: "text-red-400",
+    yellow: "text-yellow-400",
   }[color]
 
   return (
@@ -311,11 +332,19 @@ function DiagStat({
         <div className="rounded-md border border-border bg-muted/20 px-3 py-2 cursor-default">
           <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">{label}</p>
           <p className={`text-base font-semibold tabular-nums ${valueColor}`}>
-            {value != null ? value.toLocaleString("es-AR") : <span className="text-muted-foreground text-sm">\u2014</span>}
+            {value != null ? (
+              value.toLocaleString("es-AR")
+            ) : (
+              <span className="text-muted-foreground text-sm">\u2014</span>
+            )}
           </p>
         </div>
       </TooltipTrigger>
-      {tooltip && <TooltipContent side="bottom" className="max-w-xs text-xs">{tooltip}</TooltipContent>}
+      {tooltip && (
+        <TooltipContent side="bottom" className="max-w-xs text-xs">
+          {tooltip}
+        </TooltipContent>
+      )}
     </Tooltip>
   )
 }
@@ -348,7 +377,8 @@ function DuplicatesPanel({
           <span className="font-medium text-sm">Publicaciones duplicadas por SKU</span>
           {!loadingDuplicates && (
             <span className="text-xs text-muted-foreground">
-              \u2014 {duplicateGroups.length === 0
+              \u2014{" "}
+              {duplicateGroups.length === 0
                 ? "sin duplicados"
                 : `${duplicateGroups.length} SKU${duplicateGroups.length !== 1 ? "s" : ""} con duplicados`}
             </span>
@@ -362,10 +392,7 @@ function DuplicatesPanel({
           >
             {loadingDuplicates ? "Buscando..." : "Recargar"}
           </button>
-          <button
-            onClick={() => setShowDuplicates(false)}
-            className="text-muted-foreground hover:text-foreground p-1"
-          >
+          <button onClick={() => setShowDuplicates(false)} className="text-muted-foreground hover:text-foreground p-1">
             \u2715
           </button>
         </div>
@@ -380,7 +407,7 @@ function DuplicatesPanel({
         </div>
       ) : (
         <div className="divide-y divide-orange-500/10 max-h-[600px] overflow-y-auto">
-          {duplicateGroups.map(group => (
+          {duplicateGroups.map((group) => (
             <div key={group.sku} className="p-4 space-y-3">
               {/* Grupo header */}
               <div className="flex items-center gap-2">
@@ -440,14 +467,12 @@ function DuplicateGroupSection({
         <div
           key={pub.ml_item_id}
           className={`flex items-center gap-3 rounded-lg border px-3 py-2 text-sm ${
-            i === 0
-              ? "bg-muted/10 border-border"
-              : "bg-orange-500/5 border-orange-500/20"
+            i === 0 ? "bg-muted/10 border-border" : "bg-orange-500/5 border-orange-500/20"
           }`}
         >
           <span className="font-mono text-xs text-muted-foreground w-28 shrink-0">{pub.ml_item_id}</span>
           {i === 0 && <span className="text-[10px] text-green-400 font-medium shrink-0">conservar</span>}
-          {i > 0  && <span className="text-[10px] text-orange-400 font-medium shrink-0">duplicado</span>}
+          {i > 0 && <span className="text-[10px] text-orange-400 font-medium shrink-0">duplicado</span>}
           <Badge variant="outline" className={`text-xs shrink-0 ${STATUS_COLOR[pub.status] ?? ""}`}>
             {STATUS_LABEL[pub.status] ?? pub.status}
           </Badge>
@@ -456,16 +481,17 @@ function DuplicateGroupSection({
             Stock: {pub.current_stock ?? "\u2014"}
           </span>
           {mlStats[pub.ml_item_id] != null && (
-            <span className="text-xs text-blue-400 shrink-0">
-              {mlStats[pub.ml_item_id].sold_quantity} ventas
-            </span>
+            <span className="text-xs text-blue-400 shrink-0">{mlStats[pub.ml_item_id].sold_quantity} ventas</span>
           )}
           {mlStats[pub.ml_item_id]?.listing_type_id && (
             <span className="text-[10px] text-muted-foreground shrink-0 border border-muted-foreground/20 rounded px-1 py-0.5">
-              {mlStats[pub.ml_item_id].listing_type_id === "gold_premium" ? "Gold Premium \u00b7 cuotas"
-               : mlStats[pub.ml_item_id].listing_type_id === "gold_special" ? "Gold Especial"
-               : mlStats[pub.ml_item_id].listing_type_id === "gold_pro"     ? "Catalogo"
-               : mlStats[pub.ml_item_id].listing_type_id}
+              {mlStats[pub.ml_item_id].listing_type_id === "gold_premium"
+                ? "Gold Premium \u00b7 cuotas"
+                : mlStats[pub.ml_item_id].listing_type_id === "gold_special"
+                  ? "Gold Especial"
+                  : mlStats[pub.ml_item_id].listing_type_id === "gold_pro"
+                    ? "Catalogo"
+                    : mlStats[pub.ml_item_id].listing_type_id}
             </span>
           )}
           <span className="flex-1 text-xs text-muted-foreground truncate">{pub.title}</span>
@@ -489,8 +515,8 @@ function DuplicateGroupSection({
             {closingItem === pub.ml_item_id
               ? "Eliminando..."
               : pub.status === "closed"
-              ? "Eliminada"
-              : "Eliminar en ML"}
+                ? "Eliminada"
+                : "Eliminar en ML"}
           </Button>
         </div>
       ))}
@@ -512,21 +538,15 @@ function DetailModal({
   copyId: (id: string) => void
 }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
       <div
         className="bg-background border rounded-xl p-6 max-w-lg w-full space-y-4 shadow-2xl"
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
             <h2 className="font-semibold leading-snug text-balance">{detail.title}</h2>
-            <Badge
-              variant="outline"
-              className={`text-xs ${STATUS_COLOR[detail.status] ?? ""}`}
-            >
+            <Badge variant="outline" className={`text-xs ${STATUS_COLOR[detail.status] ?? ""}`}>
               {STATUS_LABEL[detail.status] ?? detail.status}
             </Badge>
           </div>
@@ -539,21 +559,26 @@ function DetailModal({
         </div>
 
         <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-          {([
-            ["Item ID",              detail.ml_item_id],
-            ["Precio",               fmt(detail.price)],
-            ["Stock",                detail.current_stock ?? "\u2014"],
-            ["SKU",                  detail.sku ?? "\u2014"],
-            ["EAN",                  detail.ean ?? "\u2014"],
-            ["ISBN",                 detail.isbn ?? "\u2014"],
-            ["GTIN",                 detail.gtin ?? "\u2014"],
-            ["Elegible catalogo",    detail.catalog_listing_eligible ? "Si" : "No"],
-            ["En catalogo",          detail.catalog_listing ? "Si" : "No"],
-            ["Peso (g)",             detail.meli_weight_g != null ? `${detail.meli_weight_g} g` : "\u2014"],
-            ["Producto vinculado",   detail.product_id ? "Si" : "No"],
-            ["Ultima sync ML",       detail.last_sync_at ? new Date(detail.last_sync_at).toLocaleString("es-AR") : "\u2014"],
-            ["Actualizado",          detail.updated_at ? new Date(detail.updated_at).toLocaleString("es-AR") : "\u2014"],
-          ] as [string, string | number][]).map(([label, value]) => (
+          {(
+            [
+              ["Item ID", detail.ml_item_id],
+              ["Precio", fmt(detail.price)],
+              ["Stock", detail.current_stock ?? "\u2014"],
+              ["SKU", detail.sku ?? "\u2014"],
+              ["EAN", detail.ean ?? "\u2014"],
+              ["ISBN", detail.isbn ?? "\u2014"],
+              ["GTIN", detail.gtin ?? "\u2014"],
+              ["Elegible catalogo", detail.catalog_listing_eligible ? "Si" : "No"],
+              ["En catalogo", detail.catalog_listing ? "Si" : "No"],
+              ["Peso (g)", detail.meli_weight_g != null ? `${detail.meli_weight_g} g` : "\u2014"],
+              ["Producto vinculado", detail.product_id ? "Si" : "No"],
+              [
+                "Ultima sync ML",
+                detail.last_sync_at ? new Date(detail.last_sync_at).toLocaleString("es-AR") : "\u2014",
+              ],
+              ["Actualizado", detail.updated_at ? new Date(detail.updated_at).toLocaleString("es-AR") : "\u2014"],
+            ] as [string, string | number][]
+          ).map(([label, value]) => (
             <div key={label}>
               <p className="text-xs text-muted-foreground">{label}</p>
               <p className="font-medium break-all">{String(value)}</p>
@@ -577,10 +602,11 @@ function DetailModal({
             onClick={() => copyId(detail.ml_item_id)}
             className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground ml-auto"
           >
-            {copied === detail.ml_item_id
-              ? <CheckCircle2 className="h-4 w-4 text-green-400" />
-              : <Copy className="h-4 w-4" />
-            }
+            {copied === detail.ml_item_id ? (
+              <CheckCircle2 className="h-4 w-4 text-green-400" />
+            ) : (
+              <Copy className="h-4 w-4" />
+            )}
             Copiar ID
           </button>
         </div>
@@ -603,13 +629,10 @@ function HistorialModal({
   onClose: () => void
 }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
       <div
         className="bg-background border rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col"
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-start justify-between gap-4 p-5 border-b shrink-0">
@@ -618,14 +641,9 @@ function HistorialModal({
               <History className="h-4 w-4 text-muted-foreground shrink-0" />
               <h2 className="font-semibold truncate">{historialItem.title}</h2>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {historialItem.ml_item_id} \u00b7 ultimos 7 dias
-            </p>
+            <p className="text-xs text-muted-foreground">{historialItem.ml_item_id} \u00b7 ultimos 7 dias</p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-muted-foreground hover:text-foreground shrink-0 p-1"
-          >
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground shrink-0 p-1">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -633,9 +651,7 @@ function HistorialModal({
         {/* Body */}
         <div className="overflow-y-auto flex-1 p-5 space-y-6">
           {historialLoading ? (
-            <div className="text-center text-sm text-muted-foreground py-10">
-              Cargando historial...
-            </div>
+            <div className="text-center text-sm text-muted-foreground py-10">Cargando historial...</div>
           ) : (
             <>
               {/* Snapshot actual desde ML */}
@@ -643,11 +659,11 @@ function HistorialModal({
                 <section className="bg-muted/40 rounded-lg px-4 py-3 flex items-center justify-between gap-4">
                   <div className="text-xs text-muted-foreground">Stock actual en ML</div>
                   <div className="flex items-center gap-4 text-sm">
-                    <span className={`font-semibold ${
-                      (historialData.ml_snapshot.available_quantity ?? 0) === 0
-                        ? "text-red-400"
-                        : "text-foreground"
-                    }`}>
+                    <span
+                      className={`font-semibold ${
+                        (historialData.ml_snapshot.available_quantity ?? 0) === 0 ? "text-red-400" : "text-foreground"
+                      }`}
+                    >
                       {historialData.ml_snapshot.available_quantity ?? "\u2013"} u.
                     </span>
                     {historialData.ml_snapshot.price != null && (
@@ -667,12 +683,14 @@ function HistorialModal({
                 <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
                   <TrendingDown className="h-4 w-4 text-blue-400" />
                   Cambios de stock
-                  <span className="text-xs text-muted-foreground font-normal">(ultimos 7 dias \u2014 capturados via webhook ML)</span>
+                  <span className="text-xs text-muted-foreground font-normal">
+                    (ultimos 7 dias \u2014 capturados via webhook ML)
+                  </span>
                 </h3>
                 {!historialData?.stock_history?.length ? (
                   <p className="text-xs text-muted-foreground">
-                    Sin cambios registrados en los ultimos 7 dias.
-                    Los cambios futuros se capturaran automaticamente via webhooks de ML.
+                    Sin cambios registrados en los ultimos 7 dias. Los cambios futuros se capturaran automaticamente via
+                    webhooks de ML.
                   </p>
                 ) : (
                   <div className="space-y-2">
@@ -687,21 +705,15 @@ function HistorialModal({
                               {SOURCE_LABEL[entry.source] ?? entry.source}
                             </span>
                             {entry.notes && (
-                              <span className="text-xs text-muted-foreground truncate">
-                                {entry.notes}
-                              </span>
+                              <span className="text-xs text-muted-foreground truncate">{entry.notes}</span>
                             )}
                           </div>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <span>
-                              {entry.old_quantity != null
-                                ? `${entry.old_quantity} \u2192 `
-                                : ""}
+                              {entry.old_quantity != null ? `${entry.old_quantity} \u2192 ` : ""}
                               <span
                                 className={
-                                  entry.new_quantity === 0
-                                    ? "text-red-400 font-medium"
-                                    : "text-foreground font-medium"
+                                  entry.new_quantity === 0 ? "text-red-400 font-medium" : "text-foreground font-medium"
                                 }
                               >
                                 {entry.new_quantity}
@@ -711,9 +723,9 @@ function HistorialModal({
                         </div>
                         <time className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
                           {new Date(entry.created_at).toLocaleString("es-AR", {
-                            day:    "2-digit",
-                            month:  "2-digit",
-                            hour:   "2-digit",
+                            day: "2-digit",
+                            month: "2-digit",
+                            hour: "2-digit",
                             minute: "2-digit",
                           })}
                         </time>
@@ -730,15 +742,13 @@ function HistorialModal({
                   Ventas
                   {historialData?.sales?.length ? (
                     <span className="text-xs text-muted-foreground font-normal">
-                      ({historialData.sales.reduce((s, o) => s + o.qty_sold, 0)} unidades
-                      {" "}\u00b7 {historialData.sales.length} orden{historialData.sales.length !== 1 ? "es" : ""})
+                      ({historialData.sales.reduce((s, o) => s + o.qty_sold, 0)} unidades \u00b7{" "}
+                      {historialData.sales.length} orden{historialData.sales.length !== 1 ? "es" : ""})
                     </span>
                   ) : null}
                 </h3>
                 {!historialData?.sales?.length ? (
-                  <p className="text-xs text-muted-foreground">
-                    Sin ventas registradas en los ultimos 7 dias.
-                  </p>
+                  <p className="text-xs text-muted-foreground">Sin ventas registradas en los ultimos 7 dias.</p>
                 ) : (
                   <div className="space-y-2">
                     {historialData.sales.map((sale) => (
@@ -751,23 +761,23 @@ function HistorialModal({
                             <span className="font-medium">{sale.qty_sold} u.</span>
                             <span className="text-muted-foreground">\u00d7</span>
                             <span>{fmt(sale.unit_price)}</span>
-                            <span className={`text-xs px-1.5 py-0.5 rounded ${
-                              sale.status === "paid"
-                                ? "bg-green-500/15 text-green-400"
-                                : "bg-yellow-500/15 text-yellow-400"
-                            }`}>
+                            <span
+                              className={`text-xs px-1.5 py-0.5 rounded ${
+                                sale.status === "paid"
+                                  ? "bg-green-500/15 text-green-400"
+                                  : "bg-yellow-500/15 text-yellow-400"
+                              }`}
+                            >
                               {ORDER_STATUS_LABEL[sale.status] ?? sale.status}
                             </span>
                           </div>
-                          <p className="text-xs text-muted-foreground">
-                            Orden #{sale.order_id}
-                          </p>
+                          <p className="text-xs text-muted-foreground">Orden #{sale.order_id}</p>
                         </div>
                         <time className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
                           {new Date(sale.date).toLocaleString("es-AR", {
-                            day:    "2-digit",
-                            month:  "2-digit",
-                            hour:   "2-digit",
+                            day: "2-digit",
+                            month: "2-digit",
+                            hour: "2-digit",
                             minute: "2-digit",
                           })}
                         </time>

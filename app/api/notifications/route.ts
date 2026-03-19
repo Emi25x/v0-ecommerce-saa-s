@@ -4,9 +4,12 @@ import { createClient } from "@/lib/db/server"
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
-    
+
     // Verificar autenticación - si no hay usuario, retornar 0s silenciosamente
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ orders: 0, products: 0, shipments: 0 })
     }

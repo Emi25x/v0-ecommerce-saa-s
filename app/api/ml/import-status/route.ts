@@ -27,19 +27,20 @@ export async function GET(request: NextRequest) {
         is_complete: false,
         offset: 0,
         total: null,
-        status: "not_started"
+        status: "not_started",
       })
     }
 
-    const isComplete = progress.status === 'done' || 
-                      (progress.publications_total && progress.publications_offset >= progress.publications_total)
+    const isComplete =
+      progress.status === "done" ||
+      (progress.publications_total && progress.publications_offset >= progress.publications_total)
 
     return NextResponse.json({
       is_complete: isComplete,
       offset: progress.publications_offset || 0,
       total: progress.publications_total || null,
       status: progress.status,
-      pending: progress.publications_total ? progress.publications_total - (progress.publications_offset || 0) : null
+      pending: progress.publications_total ? progress.publications_total - (progress.publications_offset || 0) : null,
     })
   } catch (error: any) {
     console.error("[IMPORT-STATUS] Error:", error)

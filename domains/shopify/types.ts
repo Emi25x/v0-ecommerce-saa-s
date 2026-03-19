@@ -177,17 +177,20 @@ export async function getShopifyProducts(credentials?: ShopifyStoreCredentials):
 /**
  * Create a new product on Shopify
  */
-export async function createShopifyProduct(product: {
-  title: string
-  body_html: string
-  vendor: string
-  product_type: string
-  variants: Array<{
-    price: string
-    sku?: string
-    inventory_quantity?: number
-  }>
-}, credentials?: ShopifyStoreCredentials) {
+export async function createShopifyProduct(
+  product: {
+    title: string
+    body_html: string
+    vendor: string
+    product_type: string
+    variants: Array<{
+      price: string
+      sku?: string
+      inventory_quantity?: number
+    }>
+  },
+  credentials?: ShopifyStoreCredentials,
+) {
   const mutation = `
     mutation CreateProduct($input: ProductInput!) {
       productCreate(input: $input) {
@@ -236,7 +239,7 @@ export async function updateShopifyProduct(
     vendor?: string
     product_type?: string
   },
-  credentials?: ShopifyStoreCredentials
+  credentials?: ShopifyStoreCredentials,
 ) {
   const mutation = `
     mutation UpdateProduct($input: ProductInput!) {
@@ -273,7 +276,11 @@ export async function updateShopifyProduct(
 /**
  * Update variant inventory
  */
-export async function updateShopifyVariantInventory(variantId: string, quantity: number, credentials?: ShopifyStoreCredentials) {
+export async function updateShopifyVariantInventory(
+  variantId: string,
+  quantity: number,
+  credentials?: ShopifyStoreCredentials,
+) {
   const mutation = `
     mutation UpdateInventory($input: InventoryAdjustQuantityInput!) {
       inventoryAdjustQuantity(input: $input) {
@@ -320,7 +327,11 @@ export async function updateShopifyVariantInventory(variantId: string, quantity:
 /**
  * Update variant price
  */
-export async function updateShopifyVariantPrice(variantId: string, price: string, credentials?: ShopifyStoreCredentials) {
+export async function updateShopifyVariantPrice(
+  variantId: string,
+  price: string,
+  credentials?: ShopifyStoreCredentials,
+) {
   const mutation = `
     mutation UpdateVariant($input: ProductVariantInput!) {
       productVariantUpdate(input: $input) {

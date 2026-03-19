@@ -16,18 +16,15 @@ export interface ImageUploadResult {
  * This avoids Cloudflare issues by uploading the binary directly to ML.
  * ML requires minimum 500px on one side.
  */
-export async function uploadImageToML(
-  imageUrl: string,
-  accessToken: string
-): Promise<ImageUploadResult> {
+export async function uploadImageToML(imageUrl: string, accessToken: string): Promise<ImageUploadResult> {
   try {
     // Descargar imagen con headers de navegador (timeout 10s)
     const response = await fetch(imageUrl, {
       signal: AbortSignal.timeout(10000),
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
-      }
+        Accept: "image/webp,image/apng,image/*,*/*;q=0.8",
+      },
     })
 
     if (!response.ok) {
@@ -53,7 +50,7 @@ export async function uploadImageToML(
     const uploadResponse = await fetch("https://api.mercadolibre.com/pictures/items/upload", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${accessToken}`,
+        Authorization: `Bearer ${accessToken}`,
       },
       body: formData,
     })
@@ -84,12 +81,12 @@ export async function uploadFallbackImageToML(accessToken: string): Promise<stri
     const imageBuffer = await generateFallbackImage()
 
     const formData = new FormData()
-    const blob = new Blob([imageBuffer], { type: "image/png" })
+    const blob = new Blob([imageBuffer as unknown as BlobPart], { type: "image/png" })
     formData.append("file", blob, "libroide-fallback.png")
 
     const uploadResponse = await fetch("https://api.mercadolibre.com/pictures/items/upload", {
       method: "POST",
-      headers: { "Authorization": `Bearer ${accessToken}` },
+      headers: { Authorization: `Bearer ${accessToken}` },
       body: formData,
     })
 
@@ -114,7 +111,7 @@ export async function uploadFallbackImageToML(accessToken: string): Promise<stri
  */
 export async function resolveProductImage(
   imageUrl: string | null | undefined,
-  accessToken: string
+  accessToken: string,
 ): Promise<{ mlPictureId: string | null; imageWarning: string | null }> {
   let mlPictureId: string | null = null
   let imageWarning: string | null = null

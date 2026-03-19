@@ -11,11 +11,7 @@ export async function POST(req: NextRequest) {
 
   const supabase = createAdminClient()
 
-  const { data: job } = await supabase
-    .from("ml_catalog_migration_jobs")
-    .select("*")
-    .eq("id", jobId)
-    .single()
+  const { data: job } = await supabase.from("ml_catalog_migration_jobs").select("*").eq("id", jobId).single()
 
   if (!job) return NextResponse.json({ error: "Job no encontrado" }, { status: 404 })
   if (job.status === "canceled") return NextResponse.json({ error: "Job cancelado" }, { status: 400 })
@@ -32,11 +28,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, jobId, pending: 0, message: "No hay candidatos pendientes de resolver" })
   }
 
-  await supabase.from("ml_catalog_migration_jobs").update({
-    phase: "resolve_catalog_product",
-    status: "idle",
-    last_heartbeat_at: new Date().toISOString(),
-  }).eq("id", jobId)
+  await supabase
+    .from("ml_catalog_migration_jobs")
+    .update({
+      phase: "resolve_catalog_product",
+      status: "idle",
+      last_heartbeat_at: new Date().toISOString(),
+    })
+    .eq("id", jobId)
 
   return NextResponse.json({ ok: true, jobId, pending })
 }

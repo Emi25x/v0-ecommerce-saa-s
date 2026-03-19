@@ -7,13 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   MessageSquare,
   RefreshCw,
@@ -73,32 +67,32 @@ interface Template {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const CHANNEL_ICONS: Record<string, React.ReactNode> = {
   ml_question: <ShoppingBag className="h-3.5 w-3.5" />,
-  ml_message:  <MessageSquare className="h-3.5 w-3.5" />,
-  whatsapp:    <Phone className="h-3.5 w-3.5" />,
-  instagram:   <Instagram className="h-3.5 w-3.5" />,
-  email:       <Mail className="h-3.5 w-3.5" />,
+  ml_message: <MessageSquare className="h-3.5 w-3.5" />,
+  whatsapp: <Phone className="h-3.5 w-3.5" />,
+  instagram: <Instagram className="h-3.5 w-3.5" />,
+  email: <Mail className="h-3.5 w-3.5" />,
 }
 
 const CHANNEL_LABELS: Record<string, string> = {
   ml_question: "ML Pregunta",
-  ml_message:  "ML Mensaje",
-  whatsapp:    "WhatsApp",
-  instagram:   "Instagram",
-  email:       "Email",
+  ml_message: "ML Mensaje",
+  whatsapp: "WhatsApp",
+  instagram: "Instagram",
+  email: "Email",
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  open:          "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+  open: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
   pending_reply: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
-  answered:      "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
-  closed:        "bg-muted text-muted-foreground",
+  answered: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+  closed: "bg-muted text-muted-foreground",
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  open:          "Abierto",
+  open: "Abierto",
   pending_reply: "Sin responder",
-  answered:      "Respondido",
-  closed:        "Cerrado",
+  answered: "Respondido",
+  closed: "Cerrado",
 }
 
 function ChannelBadge({ channel }: { channel: string }) {
@@ -113,25 +107,25 @@ function ChannelBadge({ channel }: { channel: string }) {
 // ─── Main Component ────────────────────────────────────────────────────────────
 export default function InboxPage() {
   const [conversations, setConversations] = useState<Conversation[]>([])
-  const [selectedId, setSelectedId]       = useState<string | null>(null)
-  const [messages, setMessages]           = useState<Message[]>([])
-  const [selectedConv, setSelectedConv]   = useState<Conversation | null>(null)
-  const [templates, setTemplates]         = useState<Template[]>([])
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [messages, setMessages] = useState<Message[]>([])
+  const [selectedConv, setSelectedConv] = useState<Conversation | null>(null)
+  const [templates, setTemplates] = useState<Template[]>([])
 
   // Filters
   const [channelFilter, setChannelFilter] = useState<string>("all")
-  const [statusFilter, setStatusFilter]   = useState<string>("open")
-  const [searchQ, setSearchQ]             = useState("")
+  const [statusFilter, setStatusFilter] = useState<string>("open")
+  const [searchQ, setSearchQ] = useState("")
 
   // Reply
-  const [replyText, setReplyText]         = useState("")
-  const [sending, setSending]             = useState(false)
-  const [sendError, setSendError]         = useState<string | null>(null)
+  const [replyText, setReplyText] = useState("")
+  const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
 
   // Loading
-  const [loadingList, setLoadingList]     = useState(false)
-  const [loadingConv, setLoadingConv]     = useState(false)
-  const [syncing, setSyncing]             = useState(false)
+  const [loadingList, setLoadingList] = useState(false)
+  const [loadingConv, setLoadingConv] = useState(false)
+  const [syncing, setSyncing] = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -141,7 +135,7 @@ export default function InboxPage() {
     try {
       const params = new URLSearchParams({ limit: "50" })
       if (channelFilter !== "all") params.set("channel", channelFilter)
-      if (statusFilter  !== "all") params.set("status", statusFilter)
+      if (statusFilter !== "all") params.set("status", statusFilter)
       if (searchQ.trim()) params.set("q", searchQ.trim())
 
       const res = await fetch(`/api/cs/conversations?${params}`)
@@ -152,22 +146,27 @@ export default function InboxPage() {
     }
   }, [channelFilter, statusFilter, searchQ])
 
-  useEffect(() => { loadConversations() }, [loadConversations])
+  useEffect(() => {
+    loadConversations()
+  }, [loadConversations])
 
   // ── Load conversation detail ────────────────────────────────────────────────
-  const loadConversation = useCallback(async (id: string) => {
-    setLoadingConv(true)
-    try {
-      const res = await fetch(`/api/cs/conversations/${id}`)
-      const data = await res.json()
-      setSelectedConv(data.conversation ?? null)
-      setMessages(data.messages ?? [])
-      // Refresh list to clear unread badge
-      loadConversations()
-    } finally {
-      setLoadingConv(false)
-    }
-  }, [loadConversations])
+  const loadConversation = useCallback(
+    async (id: string) => {
+      setLoadingConv(true)
+      try {
+        const res = await fetch(`/api/cs/conversations/${id}`)
+        const data = await res.json()
+        setSelectedConv(data.conversation ?? null)
+        setMessages(data.messages ?? [])
+        // Refresh list to clear unread badge
+        loadConversations()
+      } finally {
+        setLoadingConv(false)
+      }
+    },
+    [loadConversations],
+  )
 
   useEffect(() => {
     if (selectedId) loadConversation(selectedId)
@@ -181,8 +180,8 @@ export default function InboxPage() {
   // ── Load templates ──────────────────────────────────────────────────────────
   useEffect(() => {
     fetch("/api/cs/templates")
-      .then(r => r.json())
-      .then(d => setTemplates(d.templates ?? []))
+      .then((r) => r.json())
+      .then((d) => setTemplates(d.templates ?? []))
       .catch(() => {})
   }, [])
 
@@ -242,8 +241,11 @@ export default function InboxPage() {
         <div className="flex items-center justify-between px-3 py-2.5 border-b">
           <h1 className="text-base font-semibold">Centro de Mensajes</h1>
           <Button
-            variant="ghost" size="icon" className="h-7 w-7"
-            onClick={syncML} disabled={syncing}
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={syncML}
+            disabled={syncing}
             title="Sincronizar preguntas ML"
           >
             <RefreshCw className={cn("h-4 w-4", syncing && "animate-spin")} />
@@ -258,7 +260,7 @@ export default function InboxPage() {
               className="h-7 pl-7 text-xs"
               placeholder="Buscar..."
               value={searchQ}
-              onChange={e => setSearchQ(e.target.value)}
+              onChange={(e) => setSearchQ(e.target.value)}
             />
           </div>
         </div>
@@ -308,20 +310,18 @@ export default function InboxPage() {
               </Button>
             </div>
           ) : (
-            conversations.map(conv => (
+            conversations.map((conv) => (
               <button
                 key={conv.id}
                 onClick={() => setSelectedId(conv.id)}
                 className={cn(
                   "w-full text-left px-3 py-2.5 border-b hover:bg-muted/50 transition-colors",
                   selectedId === conv.id && "bg-muted",
-                  conv.unread_count > 0 && "bg-blue-50/50 dark:bg-blue-950/20"
+                  conv.unread_count > 0 && "bg-blue-50/50 dark:bg-blue-950/20",
                 )}
               >
                 <div className="flex items-start justify-between gap-1 mb-0.5">
-                  <span className="text-xs font-medium truncate leading-tight">
-                    {conv.customer_name ?? "Cliente"}
-                  </span>
+                  <span className="text-xs font-medium truncate leading-tight">{conv.customer_name ?? "Cliente"}</span>
                   <span className="text-[10px] text-muted-foreground shrink-0">
                     {formatDistanceToNow(new Date(conv.last_message_at), { locale: es, addSuffix: false })}
                   </span>
@@ -331,7 +331,12 @@ export default function InboxPage() {
                 </p>
                 <div className="flex items-center gap-1 flex-wrap">
                   <ChannelBadge channel={conv.channel} />
-                  <span className={cn("inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium", STATUS_COLORS[conv.status])}>
+                  <span
+                    className={cn(
+                      "inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                      STATUS_COLORS[conv.status],
+                    )}
+                  >
                     {STATUS_LABELS[conv.status] ?? conv.status}
                   </span>
                   {conv.unread_count > 0 && (
@@ -359,20 +364,14 @@ export default function InboxPage() {
             <div className="flex items-center justify-between px-4 py-2.5 border-b bg-background">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-semibold truncate">
-                    {selectedConv.customer_name ?? "Cliente"}
-                  </h2>
+                  <h2 className="text-sm font-semibold truncate">{selectedConv.customer_name ?? "Cliente"}</h2>
                   <ChannelBadge channel={selectedConv.channel} />
                 </div>
                 {selectedConv.subject && (
-                  <p className="text-xs text-muted-foreground truncate mt-0.5">
-                    {selectedConv.subject}
-                  </p>
+                  <p className="text-xs text-muted-foreground truncate mt-0.5">{selectedConv.subject}</p>
                 )}
                 {selectedConv.product_title && (
-                  <p className="text-xs text-muted-foreground/70 truncate">
-                    Producto: {selectedConv.product_title}
-                  </p>
+                  <p className="text-xs text-muted-foreground/70 truncate">Producto: {selectedConv.product_title}</p>
                 )}
               </div>
               <div className="flex items-center gap-2 shrink-0">
@@ -400,26 +399,21 @@ export default function InboxPage() {
                 <p className="text-center text-sm text-muted-foreground py-8">Sin mensajes</p>
               ) : (
                 <div className="space-y-3">
-                  {messages.map(msg => (
+                  {messages.map((msg) => (
                     <div
                       key={msg.id}
-                      className={cn(
-                        "flex",
-                        msg.direction === "outbound" ? "justify-end" : "justify-start"
-                      )}
+                      className={cn("flex", msg.direction === "outbound" ? "justify-end" : "justify-start")}
                     >
                       <div
                         className={cn(
                           "max-w-[70%] rounded-2xl px-3.5 py-2 text-sm shadow-sm",
                           msg.direction === "outbound"
                             ? "bg-primary text-primary-foreground rounded-br-sm"
-                            : "bg-muted rounded-bl-sm"
+                            : "bg-muted rounded-bl-sm",
                         )}
                       >
                         {msg.direction === "inbound" && msg.author_name && (
-                          <p className="text-[10px] font-semibold mb-0.5 opacity-70">
-                            {msg.author_name}
-                          </p>
+                          <p className="text-[10px] font-semibold mb-0.5 opacity-70">{msg.author_name}</p>
                         )}
                         <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
                         <div className="flex items-center justify-end gap-1 mt-1 opacity-60">
@@ -429,9 +423,7 @@ export default function InboxPage() {
                               minute: "2-digit",
                             })}
                           </span>
-                          {msg.direction === "outbound" && (
-                            <CheckCheck className="h-3 w-3" />
-                          )}
+                          {msg.direction === "outbound" && <CheckCheck className="h-3 w-3" />}
                         </div>
                       </div>
                     </div>
@@ -455,7 +447,7 @@ export default function InboxPage() {
               {/* Quick templates */}
               {templates.length > 0 && (
                 <div className="mb-2 flex gap-1 flex-wrap">
-                  {templates.slice(0, 4).map(t => (
+                  {templates.slice(0, 4).map((t) => (
                     <button
                       key={t.id}
                       className="rounded-full border px-2 py-0.5 text-[11px] hover:bg-muted transition-colors"
@@ -473,8 +465,8 @@ export default function InboxPage() {
                   className="min-h-[60px] max-h-32 resize-none text-sm flex-1"
                   placeholder="Escribí tu respuesta..."
                   value={replyText}
-                  onChange={e => setReplyText(e.target.value)}
-                  onKeyDown={e => {
+                  onChange={(e) => setReplyText(e.target.value)}
+                  onKeyDown={(e) => {
                     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                       e.preventDefault()
                       sendReply()
@@ -487,15 +479,10 @@ export default function InboxPage() {
                   size="icon"
                   className="h-full w-10 shrink-0"
                 >
-                  {sending
-                    ? <Loader2 className="h-4 w-4 animate-spin" />
-                    : <Send className="h-4 w-4" />
-                  }
+                  {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 </Button>
               </div>
-              <p className="mt-1 text-[10px] text-muted-foreground">
-                Ctrl+Enter para enviar
-              </p>
+              <p className="mt-1 text-[10px] text-muted-foreground">Ctrl+Enter para enviar</p>
             </div>
           </>
         )}

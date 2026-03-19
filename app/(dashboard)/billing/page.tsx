@@ -48,9 +48,18 @@ export default function BillingPage() {
       {/* Tabs */}
       <Tabs value={billing.activeTab} onValueChange={billing.setActiveTab}>
         <TabsList className="mb-4">
-          <TabsTrigger value="facturas" className="gap-2"><Receipt className="h-4 w-4" />Facturas</TabsTrigger>
-          <TabsTrigger value="config" className="gap-2"><Settings className="h-4 w-4" />Configuraci&oacute;n ARCA</TabsTrigger>
-          <TabsTrigger value="ayuda" className="gap-2"><HelpCircle className="h-4 w-4" />C&oacute;mo tramitar el certificado</TabsTrigger>
+          <TabsTrigger value="facturas" className="gap-2">
+            <Receipt className="h-4 w-4" />
+            Facturas
+          </TabsTrigger>
+          <TabsTrigger value="config" className="gap-2">
+            <Settings className="h-4 w-4" />
+            Configuraci&oacute;n ARCA
+          </TabsTrigger>
+          <TabsTrigger value="ayuda" className="gap-2">
+            <HelpCircle className="h-4 w-4" />
+            C&oacute;mo tramitar el certificado
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="facturas">

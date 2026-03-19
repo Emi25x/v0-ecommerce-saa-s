@@ -25,7 +25,9 @@ export async function GET() {
   // Return recent news for UI polling
   const { data, error } = await supabase
     .from("editorial_radar_news")
-    .select("id, title, source, url, published_at, detected_book, detected_author, project_type, project_status, confidence_score, opportunity_id, created_at")
+    .select(
+      "id, title, source, url, published_at, detected_book, detected_author, project_type, project_status, confidence_score, opportunity_id, created_at",
+    )
     .order("published_at", { ascending: false })
     .limit(100)
 

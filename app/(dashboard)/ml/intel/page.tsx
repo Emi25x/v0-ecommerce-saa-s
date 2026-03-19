@@ -4,7 +4,18 @@ import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, ScanLine, TrendingUp, RefreshCw, Eye, EyeOff, CheckCircle2, XCircle, ChevronUp, ChevronDown } from "lucide-react"
+import {
+  Loader2,
+  ScanLine,
+  TrendingUp,
+  RefreshCw,
+  Eye,
+  EyeOff,
+  CheckCircle2,
+  XCircle,
+  ChevronUp,
+  ChevronDown,
+} from "lucide-react"
 
 const STATUS_LABELS: Record<string, string> = {
   new: "Nueva",
@@ -38,8 +49,8 @@ export default function MLIntelPage() {
   // Cargar cuentas
   useEffect(() => {
     fetch("/api/ml/accounts")
-      .then(r => r.json())
-      .then(d => {
+      .then((r) => r.json())
+      .then((d) => {
         const accs = d.accounts || []
         setAccounts(accs)
         if (accs.length > 0) setSelectedAccountId(accs[0].id)
@@ -66,7 +77,9 @@ export default function MLIntelPage() {
     }
   }, [selectedAccountId, filterStatus])
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => {
+    loadData()
+  }, [loadData])
 
   // Ejecutar scan de mercado
   async function runScan() {
@@ -109,7 +122,7 @@ export default function MLIntelPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, status }),
     })
-    setOpportunities(prev => prev.map(o => o.id === id ? { ...o, status } : o))
+    setOpportunities((prev) => prev.map((o) => (o.id === id ? { ...o, status } : o)))
   }
 
   // Ordenar oportunidades
@@ -120,8 +133,11 @@ export default function MLIntelPage() {
   })
 
   function toggleSort(field: typeof sortField) {
-    if (sortField === field) setSortDir(d => d === "desc" ? "asc" : "desc")
-    else { setSortField(field); setSortDir("desc") }
+    if (sortField === field) setSortDir((d) => (d === "desc" ? "asc" : "desc"))
+    else {
+      setSortField(field)
+      setSortDir("desc")
+    }
   }
 
   function SortIcon({ field }: { field: typeof sortField }) {
@@ -154,11 +170,13 @@ export default function MLIntelPage() {
         {accounts.length > 1 && (
           <select
             value={selectedAccountId || ""}
-            onChange={e => setSelectedAccountId(e.target.value)}
+            onChange={(e) => setSelectedAccountId(e.target.value)}
             className="bg-card border border-border rounded-md px-3 py-2 text-sm text-foreground"
           >
-            {accounts.map(a => (
-              <option key={a.id} value={a.id}>{a.nickname}</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.nickname}
+              </option>
             ))}
           </select>
         )}
@@ -178,13 +196,18 @@ export default function MLIntelPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Button
-              onClick={runScan}
-              disabled={scanning || !selectedAccountId}
-              size="sm"
-              className="w-full"
-            >
-              {scanning ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Escaneando...</> : <><ScanLine className="h-4 w-4 mr-2" />Iniciar Scan</>}
+            <Button onClick={runScan} disabled={scanning || !selectedAccountId} size="sm" className="w-full">
+              {scanning ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Escaneando...
+                </>
+              ) : (
+                <>
+                  <ScanLine className="h-4 w-4 mr-2" />
+                  Iniciar Scan
+                </>
+              )}
             </Button>
             {lastScanResult && (
               <div className="text-xs text-muted-foreground space-y-1 border border-border rounded-md p-3 bg-muted/30">
@@ -192,10 +215,22 @@ export default function MLIntelPage() {
                   <span className="text-red-400">{lastScanResult.error}</span>
                 ) : (
                   <>
-                    <div className="flex justify-between"><span>Escaneados</span><span className="text-foreground font-medium">{lastScanResult.scanned}</span></div>
-                    <div className="flex justify-between"><span>En cache</span><span className="text-foreground font-medium">{lastScanResult.cached}</span></div>
-                    <div className="flex justify-between"><span>Errores</span><span className="text-foreground font-medium">{lastScanResult.errors}</span></div>
-                    <div className="flex justify-between"><span>Tiempo</span><span className="text-foreground font-medium">{lastScanResult.elapsed_seconds}s</span></div>
+                    <div className="flex justify-between">
+                      <span>Escaneados</span>
+                      <span className="text-foreground font-medium">{lastScanResult.scanned}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>En cache</span>
+                      <span className="text-foreground font-medium">{lastScanResult.cached}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Errores</span>
+                      <span className="text-foreground font-medium">{lastScanResult.errors}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Tiempo</span>
+                      <span className="text-foreground font-medium">{lastScanResult.elapsed_seconds}s</span>
+                    </div>
                   </>
                 )}
               </div>
@@ -222,7 +257,17 @@ export default function MLIntelPage() {
               variant="outline"
               className="w-full"
             >
-              {scanningOpp ? <><Loader2 className="h-4 w-4 animate-spin mr-2" />Buscando...</> : <><TrendingUp className="h-4 w-4 mr-2" />Buscar Oportunidades</>}
+              {scanningOpp ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Buscando...
+                </>
+              ) : (
+                <>
+                  <TrendingUp className="h-4 w-4 mr-2" />
+                  Buscar Oportunidades
+                </>
+              )}
             </Button>
             {lastOppResult && (
               <div className="text-xs text-muted-foreground space-y-1 border border-border rounded-md p-3 bg-muted/30">
@@ -230,10 +275,22 @@ export default function MLIntelPage() {
                   <span className="text-red-400">{lastOppResult.error}</span>
                 ) : (
                   <>
-                    <div className="flex justify-between"><span>Categorias</span><span className="text-foreground font-medium">{lastOppResult.categories_scanned}</span></div>
-                    <div className="flex justify-between"><span>Items analizados</span><span className="text-foreground font-medium">{lastOppResult.items_found}</span></div>
-                    <div className="flex justify-between"><span>Oportunidades</span><span className="text-foreground font-medium">{lastOppResult.opportunities_upserted}</span></div>
-                    <div className="flex justify-between"><span>Tiempo</span><span className="text-foreground font-medium">{lastOppResult.elapsed_seconds}s</span></div>
+                    <div className="flex justify-between">
+                      <span>Categorias</span>
+                      <span className="text-foreground font-medium">{lastOppResult.categories_scanned}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Items analizados</span>
+                      <span className="text-foreground font-medium">{lastOppResult.items_found}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Oportunidades</span>
+                      <span className="text-foreground font-medium">{lastOppResult.opportunities_upserted}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Tiempo</span>
+                      <span className="text-foreground font-medium">{lastOppResult.elapsed_seconds}s</span>
+                    </div>
                   </>
                 )}
               </div>
@@ -292,7 +349,7 @@ export default function MLIntelPage() {
               </Button>
               {/* Filtro status */}
               <div className="flex gap-1">
-                {["new", "reviewed", "ignored", "published"].map(s => (
+                {["new", "reviewed", "ignored", "published"].map((s) => (
                   <button
                     key={s}
                     onClick={() => setFilterStatus(s)}
@@ -325,19 +382,25 @@ export default function MLIntelPage() {
                       className="text-right py-2 px-3 font-medium cursor-pointer hover:text-foreground select-none"
                       onClick={() => toggleSort("min_price")}
                     >
-                      <span className="inline-flex items-center gap-1">Precio <SortIcon field="min_price" /></span>
+                      <span className="inline-flex items-center gap-1">
+                        Precio <SortIcon field="min_price" />
+                      </span>
                     </th>
                     <th
                       className="text-right py-2 px-3 font-medium cursor-pointer hover:text-foreground select-none"
                       onClick={() => toggleSort("sold_qty_proxy")}
                     >
-                      <span className="inline-flex items-center gap-1">Vendidos <SortIcon field="sold_qty_proxy" /></span>
+                      <span className="inline-flex items-center gap-1">
+                        Vendidos <SortIcon field="sold_qty_proxy" />
+                      </span>
                     </th>
                     <th
                       className="text-right py-2 px-3 font-medium cursor-pointer hover:text-foreground select-none"
                       onClick={() => toggleSort("opportunity_score")}
                     >
-                      <span className="inline-flex items-center gap-1">Score <SortIcon field="opportunity_score" /></span>
+                      <span className="inline-flex items-center gap-1">
+                        Score <SortIcon field="opportunity_score" />
+                      </span>
                     </th>
                     <th className="text-center py-2 pl-3 font-medium">Estado</th>
                     <th className="text-center py-2 pl-3 font-medium">Accion</th>
@@ -346,17 +409,23 @@ export default function MLIntelPage() {
                 <tbody>
                   {sortedOpportunities.map((opp: any) => (
                     <tr key={opp.id} className="border-b border-border/50 hover:bg-muted/20">
-                      <td className="py-2 pr-3 text-foreground max-w-[220px] truncate" title={opp.title}>{opp.title || "-"}</td>
+                      <td className="py-2 pr-3 text-foreground max-w-[220px] truncate" title={opp.title}>
+                        {opp.title || "-"}
+                      </td>
                       <td className="py-2 pr-3 font-mono text-muted-foreground">{opp.ean}</td>
                       <td className="text-right py-2 px-3 text-foreground">{formatPrice(opp.min_price)}</td>
                       <td className="text-right py-2 px-3 text-muted-foreground">{opp.sold_qty_proxy ?? "-"}</td>
                       <td className="text-right py-2 px-3">
-                        <span className={`font-medium ${opp.opportunity_score >= 50 ? "text-green-400" : opp.opportunity_score >= 20 ? "text-yellow-400" : "text-muted-foreground"}`}>
+                        <span
+                          className={`font-medium ${opp.opportunity_score >= 50 ? "text-green-400" : opp.opportunity_score >= 20 ? "text-yellow-400" : "text-muted-foreground"}`}
+                        >
                           {opp.opportunity_score?.toFixed(0) ?? "-"}
                         </span>
                       </td>
                       <td className="text-center py-2 px-3">
-                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] border ${STATUS_COLORS[opp.status] || STATUS_COLORS.new}`}>
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded-full text-[10px] border ${STATUS_COLORS[opp.status] || STATUS_COLORS.new}`}
+                        >
                           {STATUS_LABELS[opp.status] || opp.status}
                         </span>
                       </td>

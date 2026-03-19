@@ -36,14 +36,14 @@ export async function fetchWithRetry(
         return { res, rateLimited: true, retryAfter: parseInt(res.headers.get("retry-after") || "60") }
       }
       if (res.status >= 500 && attempt < maxRetries - 1) {
-        await new Promise(r => setTimeout(r, 300 * 2 ** attempt))
+        await new Promise((r) => setTimeout(r, 300 * 2 ** attempt))
         attempt++
         continue
       }
       return { res, rateLimited: false, retryAfter: 0 }
     } catch {
       if (attempt < maxRetries - 1) {
-        await new Promise(r => setTimeout(r, 300 * 2 ** attempt))
+        await new Promise((r) => setTimeout(r, 300 * 2 ** attempt))
         attempt++
         continue
       }
@@ -59,8 +59,11 @@ async function runPool<T>(tasks: (() => Promise<T>)[], concurrency: number): Pro
   async function worker() {
     while (idx < tasks.length) {
       const i = idx++
-      try { results[i] = { status: "fulfilled", value: await tasks[i]() } }
-      catch (e: any) { results[i] = { status: "rejected", reason: e } }
+      try {
+        results[i] = { status: "fulfilled", value: await tasks[i]() }
+      } catch (e: any) {
+        results[i] = { status: "rejected", reason: e }
+      }
     }
   }
   await Promise.all(Array.from({ length: concurrency }, worker))
@@ -69,15 +72,11 @@ async function runPool<T>(tasks: (() => Promise<T>)[], concurrency: number): Pro
 
 // ── Rate-limit token bucket ───────────────────────────────────────────────────
 
-async function consumeRateLimit(
-  supabase: any,
-  accountId: string,
-  cost = 1,
-): Promise<void> {
+async function consumeRateLimit(supabase: any, accountId: string, cost = 1): Promise<void> {
   const WINDOW_MS = 60_000
-  const LIMIT     = 500
+  const LIMIT = 500
 
-  const now        = new Date()
+  const now = new Date()
   const windowStart = new Date(Math.floor(now.getTime() / WINDOW_MS) * WINDOW_MS).toISOString()
 
   const { data: row } = await supabase
@@ -87,21 +86,21 @@ async function consumeRateLimit(
     .maybeSingle()
 
   const sameWindow = row && row.window_start === windowStart
-  const used       = sameWindow ? (row.tokens_used ?? 0) : 0
+  const used = sameWindow ? (row.tokens_used ?? 0) : 0
 
   if (used + cost > LIMIT) {
     const windowEnd = new Date(Math.floor(now.getTime() / WINDOW_MS) * WINDOW_MS + WINDOW_MS)
-    const waitMs    = Math.max(0, windowEnd.getTime() - Date.now()) + 100
+    const waitMs = Math.max(0, windowEnd.getTime() - Date.now()) + 100
     await new Promise((r) => setTimeout(r, waitMs))
   }
 
   await supabase.from("ml_rate_limits").upsert(
     {
-      account_id:   accountId,
+      account_id: accountId,
       window_start: windowStart,
-      tokens_used:  used + cost,
+      tokens_used: used + cost,
       tokens_limit: LIMIT,
-      updated_at:   new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     },
     { onConflict: "account_id" },
   )
@@ -117,7 +116,7 @@ async function mlFetch(
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
-    ...(options.headers as Record<string, string> ?? {}),
+    ...((options.headers as Record<string, string>) ?? {}),
   }
 
   let attempt = 0
@@ -135,7 +134,11 @@ async function mlFetch(
     }
 
     let data: any = null
-    try { data = await res.json() } catch { /* no-op */ }
+    try {
+      data = await res.json()
+    } catch {
+      /* no-op */
+    }
 
     return { ok: res.ok, status: res.status, data, rateLimited: false, retryAfter: 0 }
   }
@@ -153,10 +156,10 @@ async function jobLog(
   meta?: Record<string, unknown>,
 ) {
   await supabase.from("ml_job_logs").insert({
-    job_id:  jobId,
+    job_id: jobId,
     level,
     message,
-    meta:    meta ?? {},
+    meta: meta ?? {},
   })
 }
 
@@ -165,8 +168,8 @@ async function jobLog(
 async function executeCatalogIndex(job: any, supabase: any): Promise<Record<string, unknown>> {
   const { account_id, payload = {} } = job
   const batchSize = Math.min(Number(payload.batch_size ?? 30), 50)
-  const offset    = Number(payload.offset ?? 0)
-  const force     = Boolean(payload.force ?? false)
+  const offset = Number(payload.offset ?? 0)
+  const force = Boolean(payload.force ?? false)
 
   const token = await getValidAccessToken(account_id)
 
@@ -184,7 +187,10 @@ async function executeCatalogIndex(job: any, supabase: any): Promise<Record<stri
   if (error) throw error
   if (!pubs || pubs.length === 0) return { done: true, has_more: false, processed: 0, offset }
 
-  let matched = 0, not_found = 0, ambiguous = 0, errors = 0
+  let matched = 0,
+    not_found = 0,
+    ambiguous = 0,
+    errors = 0
 
   for (const pub of pubs) {
     const identifier = pub.isbn || pub.ean || pub.gtin
@@ -201,21 +207,27 @@ async function executeCatalogIndex(job: any, supabase: any): Promise<Record<stri
         continue
       }
 
-      if (!ok || !data) { errors++; continue }
+      if (!ok || !data) {
+        errors++
+        continue
+      }
 
       const results: any[] = data.results ?? []
       const catalogProductId = results.length === 1 ? results[0].id : null
-      const isEligible       = catalogProductId !== null
+      const isEligible = catalogProductId !== null
 
-      await supabase.from("ml_publications").update({
-        catalog_product_id:      catalogProductId,
-        catalog_listing_eligible: isEligible,
-        updated_at:              new Date().toISOString(),
-      }).eq("id", pub.id)
+      await supabase
+        .from("ml_publications")
+        .update({
+          catalog_product_id: catalogProductId,
+          catalog_listing_eligible: isEligible,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", pub.id)
 
-      if (isEligible)              matched++
+      if (isEligible) matched++
       else if (results.length === 0) not_found++
-      else                           ambiguous++
+      else ambiguous++
 
       await new Promise((r) => setTimeout(r, 100))
     } catch (e: any) {
@@ -225,11 +237,16 @@ async function executeCatalogIndex(job: any, supabase: any): Promise<Record<stri
   }
 
   const nextOffset = offset + pubs.length
-  const hasMore    = pubs.length === batchSize
+  const hasMore = pubs.length === batchSize
 
   await jobLog(supabase, job.id, "info", "catalog_index batch completed", {
-    processed: pubs.length, matched, not_found, ambiguous, errors,
-    has_more: hasMore, next_offset: nextOffset,
+    processed: pubs.length,
+    matched,
+    not_found,
+    ambiguous,
+    errors,
+    has_more: hasMore,
+    next_offset: nextOffset,
   })
 
   return { processed: pubs.length, matched, not_found, ambiguous, errors, has_more: hasMore, next_offset: nextOffset }
@@ -247,25 +264,24 @@ async function executeCatalogOptIn(job: any, supabase: any): Promise<Record<stri
 
   const catalogJobId = payload.catalog_job_id as string | undefined
   if (catalogJobId) {
-    await supabase.from("ml_catalog_job_items").upsert({
-      job_id:            catalogJobId,
-      old_item_id:       ml_item_id,
-      catalog_product_id,
-      action:            "optin",
-      status:            "running",
-    }, { onConflict: "job_id,old_item_id" })
+    await supabase.from("ml_catalog_job_items").upsert(
+      {
+        job_id: catalogJobId,
+        old_item_id: ml_item_id,
+        catalog_product_id,
+        action: "optin",
+        status: "running",
+      },
+      { onConflict: "job_id,old_item_id" },
+    )
   }
 
   await consumeRateLimit(supabase, account_id)
 
-  const { ok, status, data, rateLimited, retryAfter } = await mlFetch(
-    `${ML_API}/items/${ml_item_id}`,
-    token,
-    {
-      method: "PUT",
-      body: JSON.stringify({ catalog_product_id }),
-    },
-  )
+  const { ok, status, data, rateLimited, retryAfter } = await mlFetch(`${ML_API}/items/${ml_item_id}`, token, {
+    method: "PUT",
+    body: JSON.stringify({ catalog_product_id }),
+  })
 
   if (rateLimited) {
     throw new Error(`Rate limited — retry after ${retryAfter}s`)
@@ -274,24 +290,27 @@ async function executeCatalogOptIn(job: any, supabase: any): Promise<Record<stri
   if (!ok) {
     const errMsg = data?.message ?? data?.error ?? `HTTP ${status}`
     if (catalogJobId) {
-      await supabase.from("ml_catalog_job_items")
+      await supabase
+        .from("ml_catalog_job_items")
         .update({ status: "error", error: errMsg })
         .match({ job_id: catalogJobId, old_item_id: ml_item_id })
     }
     throw new Error(`ML opt-in failed for ${ml_item_id}: ${errMsg}`)
   }
 
-  await supabase.from("ml_publications")
+  await supabase
+    .from("ml_publications")
     .update({
       catalog_product_id,
-      catalog_listing:          true,
+      catalog_listing: true,
       catalog_listing_eligible: true,
       updated_at: new Date().toISOString(),
     })
     .match({ account_id, ml_item_id })
 
   if (catalogJobId) {
-    await supabase.from("ml_catalog_job_items")
+    await supabase
+      .from("ml_catalog_job_items")
       .update({ status: "success", new_item_id: data?.id ?? ml_item_id })
       .match({ job_id: catalogJobId, old_item_id: ml_item_id })
 
@@ -306,7 +325,7 @@ async function executeCatalogOptIn(job: any, supabase: any): Promise<Record<stri
 async function executeBuyboxSync(job: any, supabase: any): Promise<Record<string, unknown>> {
   const { account_id, payload = {} } = job
   const specificItemId = payload.ml_item_id as string | undefined
-  const batchSize      = Math.min(Number(payload.batch_size ?? 20), 50)
+  const batchSize = Math.min(Number(payload.batch_size ?? 20), 50)
 
   const token = await getValidAccessToken(account_id)
 
@@ -332,7 +351,8 @@ async function executeBuyboxSync(job: any, supabase: any): Promise<Record<string
     return { synced: 0, errors: 0, message: "No hay items elegibles para sincronizar" }
   }
 
-  let synced = 0, errors = 0
+  let synced = 0,
+    errors = 0
 
   const chunks: string[][] = []
   for (let i = 0; i < itemIds.length; i += ML_MULTIGET_MAX_IDS) {
@@ -351,10 +371,16 @@ async function executeBuyboxSync(job: any, supabase: any): Promise<Record<string
       continue
     }
 
-    if (!ok || !Array.isArray(data)) { errors += chunk.length; continue }
+    if (!ok || !Array.isArray(data)) {
+      errors += chunk.length
+      continue
+    }
 
     for (const entry of data) {
-      if (entry.code !== 200) { errors++; continue }
+      if (entry.code !== 200) {
+        errors++
+        continue
+      }
       const item = entry.body
 
       const priceToWin = item.health?.catalog_data?.min_price ?? item.price ?? null
@@ -362,14 +388,17 @@ async function executeBuyboxSync(job: any, supabase: any): Promise<Record<string
       const { error: upErr } = await supabase
         .from("ml_publications")
         .update({
-          price_to_win:      priceToWin,
-          is_competing:      item.catalog_listing === true,
+          price_to_win: priceToWin,
+          is_competing: item.catalog_listing === true,
           health_checked_at: new Date().toISOString(),
-          updated_at:        new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         })
         .match({ account_id, ml_item_id: item.id })
 
-      if (upErr) { errors++; continue }
+      if (upErr) {
+        errors++
+        continue
+      }
       synced++
     }
 
@@ -392,9 +421,21 @@ async function executeImportSingle(job: any, supabase: any): Promise<Record<stri
   await consumeRateLimit(supabase, account_id)
 
   const fullAttributes = [
-    "id", "title", "price", "available_quantity", "sold_quantity", "status",
-    "permalink", "thumbnail", "listing_type_id", "attributes",
-    "seller_custom_field", "catalog_listing", "catalog_listing_eligible", "catalog_product_id", "health",
+    "id",
+    "title",
+    "price",
+    "available_quantity",
+    "sold_quantity",
+    "status",
+    "permalink",
+    "thumbnail",
+    "listing_type_id",
+    "attributes",
+    "seller_custom_field",
+    "catalog_listing",
+    "catalog_listing_eligible",
+    "catalog_product_id",
+    "health",
   ].join(",")
 
   const { ok, status, data, rateLimited, retryAfter } = await mlFetch(
@@ -408,30 +449,28 @@ async function executeImportSingle(job: any, supabase: any): Promise<Record<stri
   const item = data
 
   const attrs: any[] = item.attributes ?? []
-  const findAttr     = (ids: string[]) =>
-    attrs.find((a: any) => ids.includes(a.id))?.value_name ?? null
+  const findAttr = (ids: string[]) => attrs.find((a: any) => ids.includes(a.id))?.value_name ?? null
 
   const isbn = findAttr(["ISBN"])
-  const ean  = findAttr(["EAN", "GTIN"])
-  const sku  = item.seller_custom_field
-    ?? attrs.find((a: any) => ["SELLER_SKU", "SKU"].includes(a.id))?.value_name
-    ?? null
+  const ean = findAttr(["EAN", "GTIN"])
+  const sku =
+    item.seller_custom_field ?? attrs.find((a: any) => ["SELLER_SKU", "SKU"].includes(a.id))?.value_name ?? null
 
   const row = {
     account_id,
-    ml_item_id:              item.id,
-    title:                   item.title,
-    price:                   item.price,
-    current_stock:           item.available_quantity,
-    status:                  item.status,
-    permalink:               item.permalink,
+    ml_item_id: item.id,
+    title: item.title,
+    price: item.price,
+    current_stock: item.available_quantity,
+    status: item.status,
+    permalink: item.permalink,
     sku,
     isbn,
     ean,
-    catalog_listing:          item.catalog_listing          ?? false,
+    catalog_listing: item.catalog_listing ?? false,
     catalog_listing_eligible: item.catalog_listing_eligible ?? false,
-    catalog_product_id:       item.catalog_product_id       ?? null,
-    updated_at:              new Date().toISOString(),
+    catalog_product_id: item.catalog_product_id ?? null,
+    updated_at: new Date().toISOString(),
   }
 
   const { error: upsertErr } = await supabase
@@ -447,7 +486,9 @@ async function executeImportSingle(job: any, supabase: any): Promise<Record<stri
     .eq("status", "claimed")
 
   await jobLog(supabase, job.id, "info", `import_single OK: ${ml_item_id}`, {
-    title: item.title, price: item.price, status: item.status,
+    title: item.title,
+    price: item.price,
+    status: item.status,
   })
 
   return { ml_item_id, title: item.title, status: item.status, price: item.price }
@@ -461,40 +502,46 @@ async function handleImportPublications(
   const { account_id, payload } = job
   const max_seconds = payload.max_seconds ?? 50
   const detail_batch = Math.min(ML_MULTIGET_MAX_IDS, Math.max(1, payload.detail_batch ?? ML_MULTIGET_MAX_IDS))
-  const concurrency  = payload.concurrency ?? 2
-  const startTime    = Date.now()
+  const concurrency = payload.concurrency ?? 2
+  const startTime = Date.now()
 
-  const { data: account } = await supabase
-    .from("ml_accounts").select("*").eq("id", account_id).maybeSingle()
+  const { data: account } = await supabase.from("ml_accounts").select("*").eq("id", account_id).maybeSingle()
   if (!account) return { imported_count: 0, has_more: false, rate_limited: false, error: "Account not found" }
 
-  const { data: progress } = await supabase
-    .from("ml_import_progress").select("*").eq("account_id", account_id).single()
-  if (!progress) return { imported_count: 0, has_more: false, rate_limited: false, error: "Progress not found. Initialize import first." }
+  const { data: progress } = await supabase.from("ml_import_progress").select("*").eq("account_id", account_id).single()
+  if (!progress)
+    return {
+      imported_count: 0,
+      has_more: false,
+      rate_limited: false,
+      error: "Progress not found. Initialize import first.",
+    }
 
   if (progress.status === "paused" && progress.paused_until && new Date(progress.paused_until) > new Date()) {
     const wait = Math.ceil((new Date(progress.paused_until).getTime() - Date.now()) / 1000)
     return { imported_count: 0, has_more: true, rate_limited: true, error: `Rate limited, resume in ${wait}s` }
   }
 
-  await supabase.from("ml_import_progress")
+  await supabase
+    .from("ml_import_progress")
     .update({ status: "running", last_run_at: new Date().toISOString(), last_error: null })
     .eq("account_id", account_id)
 
   const accessToken = await getValidAccessToken(account_id)
-  const authHeader  = { Authorization: `Bearer ${accessToken}` }
-  const scope       = progress.publications_scope || "all"
+  const authHeader = { Authorization: `Bearer ${accessToken}` }
+  const scope = progress.publications_scope || "all"
 
   let importedCount = 0
-  let errorsCount   = 0
-  let rateLimited   = false
-  let hasMore       = true
+  let errorsCount = 0
+  let rateLimited = false
+  let hasMore = true
 
   while (Date.now() - startTime < max_seconds * 1000) {
     const { data: cur } = await supabase
       .from("ml_import_progress")
       .select("scroll_id, publications_offset, publications_total")
-      .eq("account_id", account_id).single()
+      .eq("account_id", account_id)
+      .single()
     if (!cur) break
 
     const scrollId = cur.scroll_id as string | null
@@ -506,33 +553,37 @@ async function handleImportPublications(
     const { res: searchRes, rateLimited: rl, retryAfter } = await fetchWithRetry(searchUrl, authHeader)
     if (rl) {
       const pausedUntil = new Date(Date.now() + retryAfter * 1000).toISOString()
-      await supabase.from("ml_import_progress")
+      await supabase
+        .from("ml_import_progress")
         .update({ status: "paused", paused_until: pausedUntil })
         .eq("account_id", account_id)
       rateLimited = true
       break
     }
-    if (!searchRes || !searchRes.ok) { errorsCount++; break }
+    if (!searchRes || !searchRes.ok) {
+      errorsCount++
+      break
+    }
 
-    const searchData  = await searchRes.json()
+    const searchData = await searchRes.json()
     const itemIds: string[] = searchData.results || []
     const newScrollId = searchData.scroll_id || null
     const totalFromApi = searchData.paging?.total || 0
 
     if (itemIds.length === 0) {
       hasMore = false
-      await supabase.from("ml_import_progress")
-        .update({ status: "done", scroll_id: null }).eq("account_id", account_id)
+      await supabase.from("ml_import_progress").update({ status: "done", scroll_id: null }).eq("account_id", account_id)
       break
     }
 
     if (newScrollId && newScrollId !== scrollId) {
-      await supabase.from("ml_import_progress")
-        .update({ scroll_id: newScrollId }).eq("account_id", account_id)
+      await supabase.from("ml_import_progress").update({ scroll_id: newScrollId }).eq("account_id", account_id)
     }
     if (!cur.publications_total && totalFromApi > 0) {
-      await supabase.from("ml_import_progress")
-        .update({ publications_total: totalFromApi }).eq("account_id", account_id)
+      await supabase
+        .from("ml_import_progress")
+        .update({ publications_total: totalFromApi })
+        .eq("account_id", account_id)
     }
 
     const chunks: string[][] = []
@@ -540,50 +591,49 @@ async function handleImportPublications(
       chunks.push(itemIds.slice(i, i + detail_batch))
     }
 
-    const detailTasks = chunks.map(chunk => async () => {
+    const detailTasks = chunks.map((chunk) => async () => {
       const url = `https://api.mercadolibre.com/items?ids=${chunk.join(",")}&attributes=${ML_ATTRIBUTES}`
       const { res } = await fetchWithRetry(url, authHeader)
       if (!res || !res.ok) return []
       const data = await res.json()
-      return Array.isArray(data)
-        ? data.filter((r: any) => r.code === 200).map((r: any) => r.body)
-        : []
+      return Array.isArray(data) ? data.filter((r: any) => r.code === 200).map((r: any) => r.body) : []
     })
 
     const poolResults = await runPool(detailTasks, concurrency)
     const allItems = poolResults
-      .filter(r => r.status === "fulfilled")
-      .flatMap(r => (r as PromiseFulfilledResult<any[]>).value)
+      .filter((r) => r.status === "fulfilled")
+      .flatMap((r) => (r as PromiseFulfilledResult<any[]>).value)
 
     if (allItems.length > 0) {
       const rows = allItems.map((item: any) => {
         const isbn = item.attributes?.find((a: any) => a.id === "ISBN")?.value_name
         return {
           account_id,
-          ml_item_id:          item.id,
-          title:               item.title,
-          price:               item.price,
-          available_quantity:  item.available_quantity,
-          sold_quantity:       item.sold_quantity,
-          status:              item.status,
-          permalink:           item.permalink,
-          thumbnail:           item.thumbnail,
-          listing_type_id:     item.listing_type_id,
-          isbn:                isbn || null,
-          raw_attributes:      item.attributes || [],
-          updated_at:          new Date().toISOString(),
+          ml_item_id: item.id,
+          title: item.title,
+          price: item.price,
+          available_quantity: item.available_quantity,
+          sold_quantity: item.sold_quantity,
+          status: item.status,
+          permalink: item.permalink,
+          thumbnail: item.thumbnail,
+          listing_type_id: item.listing_type_id,
+          isbn: isbn || null,
+          raw_attributes: item.attributes || [],
+          updated_at: new Date().toISOString(),
         }
       })
 
       await supabase.from("ml_publications").upsert(rows, {
-        onConflict:        "account_id,ml_item_id",
-        ignoreDuplicates:  false,
+        onConflict: "account_id,ml_item_id",
+        ignoreDuplicates: false,
       })
 
       importedCount += allItems.length
     }
 
-    await supabase.from("ml_import_progress")
+    await supabase
+      .from("ml_import_progress")
       .update({
         publications_offset: (cur.publications_offset || 0) + itemIds.length,
         publications_progress: cur.publications_total
@@ -594,8 +644,7 @@ async function handleImportPublications(
   }
 
   if (!rateLimited && hasMore) {
-    await supabase.from("ml_import_progress")
-      .update({ status: "idle" }).eq("account_id", account_id)
+    await supabase.from("ml_import_progress").update({ status: "idle" }).eq("account_id", account_id)
   }
 
   return { imported_count: importedCount, has_more: hasMore, rate_limited: rateLimited }

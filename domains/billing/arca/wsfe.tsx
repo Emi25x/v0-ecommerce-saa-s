@@ -10,7 +10,7 @@ export type FacturaItem = {
   descripcion: string
   cantidad: number
   precio_unitario: number
-  alicuota_iva: 0 | 10.5 | 21 | 27  // 0=exento, 10.5, 21, 27
+  alicuota_iva: 0 | 10.5 | 21 | 27 // 0=exento, 10.5, 21, 27
   subtotal: number
   iva: number
 }
@@ -23,28 +23,28 @@ export type FacturaItem = {
 // 10=IVA Liberado Ley 19640, 13=Monotributista Social,
 // 15=IVA No Alcanzado, 16=Monotributo Trabajador Independiente Promovido
 export const CONDICION_IVA_RECEPTOR: Record<string, number> = {
-  responsable_inscripto:              1,
-  exento:                             4,
-  consumidor_final:                   5,
-  monotributo:                        6,
-  no_categorizado:                    7,
-  proveedor_exterior:                 8,
-  cliente_exterior:                   9,
-  liberado:                           10,
-  monotributista_social:              13,
-  no_alcanzado:                       15,
+  responsable_inscripto: 1,
+  exento: 4,
+  consumidor_final: 5,
+  monotributo: 6,
+  no_categorizado: 7,
+  proveedor_exterior: 8,
+  cliente_exterior: 9,
+  liberado: 10,
+  monotributista_social: 13,
+  no_alcanzado: 15,
   monotributo_trabajador_independiente: 16,
 }
 
 export type SolicitarCAEParams = {
   cuit: string
   punto_venta: number
-  tipo_comprobante: number          // 1=FA, 6=FB, 11=FC, 51=FM
-  concepto: 1 | 2 | 3              // 1=Productos, 2=Servicios, 3=Ambos
-  tipo_doc_receptor: number         // 96=DNI, 80=CUIT, 99=Sin doc
+  tipo_comprobante: number // 1=FA, 6=FB, 11=FC, 51=FM
+  concepto: 1 | 2 | 3 // 1=Productos, 2=Servicios, 3=Ambos
+  tipo_doc_receptor: number // 96=DNI, 80=CUIT, 99=Sin doc
   nro_doc_receptor: string
-  condicion_iva_receptor: string    // "consumidor_final", "responsable_inscripto", etc.
-  fecha: string                     // YYYYMMDD
+  condicion_iva_receptor: string // "consumidor_final", "responsable_inscripto", etc.
+  fecha: string // YYYYMMDD
   items: FacturaItem[]
   moneda?: string
   cotizacion?: number
@@ -55,7 +55,7 @@ export type SolicitarCAEParams = {
 
 export type CAEResponse = {
   cae: string
-  cae_vto: string   // YYYYMMDD
+  cae_vto: string // YYYYMMDD
   numero: number
 }
 
@@ -75,7 +75,7 @@ async function soapCall(url: string, action: string, bodyContent: string): Promi
     method: "POST",
     headers: {
       "Content-Type": "text/xml; charset=utf-8",
-      "SOAPAction": `http://ar.gov.afip.dif.FEV1/${action}`,
+      SOAPAction: `http://ar.gov.afip.dif.FEV1/${action}`,
     },
     body: envelope,
   })
@@ -120,8 +120,8 @@ export async function requestCAE(params: SolicitarCAEParams): Promise<CAERespons
   // El precio_unitario enviado ya incluye IVA (precio de venta final al consumidor)
   const esTipoC = [11, 12, 13].includes(params.tipo_comprobante)
 
-  let importeNeto    = 0
-  let importeExento  = 0
+  let importeNeto = 0
+  let importeExento = 0
   let importeIvaTotal = 0
 
   // IDs de alícuota ARCA: 3=0%, 4=10.5%, 5=21%, 6=27%
@@ -144,7 +144,7 @@ export async function requestCAE(params: SolicitarCAEParams): Promise<CAERespons
         const prev = ivaMap.get(id) || { base: 0, importe: 0, id }
         ivaMap.set(id, {
           id,
-          base:    parseFloat((prev.base + item.subtotal).toFixed(2)),
+          base: parseFloat((prev.base + item.subtotal).toFixed(2)),
           importe: parseFloat((prev.importe + item.iva).toFixed(2)),
         })
       }
@@ -152,17 +152,18 @@ export async function requestCAE(params: SolicitarCAEParams): Promise<CAERespons
   }
 
   // Redondear a 2 decimales (ARCA rechaza más de 2 decimales en la parte decimal)
-  importeNeto     = parseFloat(importeNeto.toFixed(2))
-  importeExento   = parseFloat(importeExento.toFixed(2))
+  importeNeto = parseFloat(importeNeto.toFixed(2))
+  importeExento = parseFloat(importeExento.toFixed(2))
   importeIvaTotal = parseFloat(importeIvaTotal.toFixed(2))
 
   const importeTotal = parseFloat((importeNeto + importeExento + importeIvaTotal).toFixed(2))
 
   // <ar:Iva> solo si hay ítems gravados y NO es tipo C (sino ARCA rechaza el nodo)
   const ivaItems = Array.from(ivaMap.values())
-  const ivaXml = (!esTipoC && ivaItems.length > 0)
-    ? `<ar:Iva>${ivaItems.map(a => `<ar:AlicIva><ar:Id>${a.id}</ar:Id><ar:BaseImp>${a.base.toFixed(2)}</ar:BaseImp><ar:Importe>${a.importe.toFixed(2)}</ar:Importe></ar:AlicIva>`).join("")}</ar:Iva>`
-    : ""
+  const ivaXml =
+    !esTipoC && ivaItems.length > 0
+      ? `<ar:Iva>${ivaItems.map((a) => `<ar:AlicIva><ar:Id>${a.id}</ar:Id><ar:BaseImp>${a.base.toFixed(2)}</ar:BaseImp><ar:Importe>${a.importe.toFixed(2)}</ar:Importe></ar:AlicIva>`).join("")}</ar:Iva>`
+      : ""
 
   // Obtener próximo número
   const lastNum = await getLastInvoiceNumber({
@@ -185,12 +186,12 @@ export async function requestCAE(params: SolicitarCAEParams): Promise<CAERespons
   if (params.tipo_doc_receptor !== 99 && (!docNro || docNro === "0")) {
     throw new Error(
       `El tipo de documento seleccionado requiere ingresar el número de documento del receptor. ` +
-      `Si no tenés el dato, seleccioná "Sin documento (Consumidor Final)" con DocTipo 99.`
+        `Si no tenés el dato, seleccioná "Sin documento (Consumidor Final)" con DocTipo 99.`,
     )
   }
 
   // Cotizacion debe ser entero para PES
-  const cotizacion = (params.moneda === "PES" || !params.moneda) ? 1 : (params.cotizacion ?? 1)
+  const cotizacion = params.moneda === "PES" || !params.moneda ? 1 : (params.cotizacion ?? 1)
 
   const body = `
   <ar:FECAESolicitar>
@@ -247,13 +248,12 @@ export async function requestCAE(params: SolicitarCAEParams): Promise<CAERespons
     while ((m = obsRegex.exec(xml)) !== null) {
       obsMsgs.push(m[2])
     }
-    const errMsg = errMsgs.length > 0
-      ? errMsgs.join(" | ")
-      : (obsMsgs.join(" | ") || "ARCA rechazó la factura sin detalle")
+    const errMsg =
+      errMsgs.length > 0 ? errMsgs.join(" | ") : obsMsgs.join(" | ") || "ARCA rechazó la factura sin detalle"
     throw new Error(`ARCA rechazo: ${errMsg}`)
   }
 
-  const cae    = xml.match(/<CAE>(\d+)<\/CAE>/)?.[1]
+  const cae = xml.match(/<CAE>(\d+)<\/CAE>/)?.[1]
   const caeVto = xml.match(/<CAEFchVto>(\d+)<\/CAEFchVto>/)?.[1]
 
   if (!cae || !caeVto) {

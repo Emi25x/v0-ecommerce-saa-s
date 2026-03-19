@@ -4,7 +4,7 @@ import Papa from "papaparse"
 const BATCH_SIZE = 200 // Reducido para evitar timeout en Supabase
 
 // Cache global para el archivo CSV parseado
-const csvCache: Map<string, { data: Record<string, string>[], timestamp: number }> = new Map()
+const csvCache: Map<string, { data: Record<string, string>[]; timestamp: number }> = new Map()
 const CACHE_TTL = 10 * 60 * 1000 // 10 minutos
 
 /**
@@ -19,19 +19,19 @@ function normalizeColumnMapping(columnMapping: any): {
   if (!columnMapping) {
     return { delimiter: "|", mappings: {} }
   }
-  
+
   // Si tiene la estructura nueva con "mappings"
   if (columnMapping.mappings) {
     return {
       delimiter: columnMapping.delimiter || "|",
-      mappings: columnMapping.mappings
+      mappings: columnMapping.mappings,
     }
   }
-  
+
   // Formato viejo: todo el objeto ES el mapping
   return {
     delimiter: "|",
-    mappings: columnMapping
+    mappings: columnMapping,
   }
 }
 
@@ -50,12 +50,11 @@ export interface BatchImportResult {
 }
 
 export async function executeBatchImport(
-  sourceId: string, 
-  offset: number = 0, 
+  sourceId: string,
+  offset: number = 0,
   mode: "update" | "upsert" | "create" = "update",
-  forceReload: boolean = false
+  forceReload: boolean = false,
 ): Promise<BatchImportResult> {
-  
   // Limpiar cache si se fuerza recarga
   if (forceReload) {
     console.log(`[v0] Batch import: Limpiando cache`)
@@ -84,7 +83,7 @@ export async function executeBatchImport(
       failed: 0,
       nextOffset: null,
       progress: 0,
-      error: `Fuente no encontrada: ${sourceId}`
+      error: `Fuente no encontrada: ${sourceId}`,
     }
   }
 
@@ -100,14 +99,14 @@ export async function executeBatchImport(
       failed: 0,
       nextOffset: null,
       progress: 0,
-      error: "URL no configurada"
+      error: "URL no configurada",
     }
   }
 
   // Verificar cache o descargar CSV
   let data: Record<string, string>[]
   const cached = csvCache.get(sourceId)
-  
+
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     console.log(`[v0] Batch import: Usando CSV desde cache`)
     data = cached.data
@@ -117,21 +116,21 @@ export async function executeBatchImport(
     // Construir headers y URL según tipo de autenticación
     let fetchUrl = fileUrl
     const fetchHeaders: HeadersInit = {
-      'User-Agent': 'Ecommerce-Manager/1.0'
+      "User-Agent": "Ecommerce-Manager/1.0",
     }
 
     const authType = source.auth_type
     const credentials = source.credentials
 
     if (authType === "basic_auth" && credentials?.username && credentials?.password) {
-      const auth = Buffer.from(`${credentials.username}:${credentials.password}`).toString('base64')
-      fetchHeaders['Authorization'] = `Basic ${auth}`
+      const auth = Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64")
+      fetchHeaders["Authorization"] = `Basic ${auth}`
     } else if (authType === "bearer_token" && credentials?.token) {
-      fetchHeaders['Authorization'] = `Bearer ${credentials.token}`
+      fetchHeaders["Authorization"] = `Bearer ${credentials.token}`
     } else if (authType === "query_params" && credentials?.type === "query_params" && credentials?.params) {
       // Agregar query params a la URL
       const url = new URL(fetchUrl)
-      Object.keys(credentials.params).forEach(key => {
+      Object.keys(credentials.params).forEach((key) => {
         url.searchParams.set(key, credentials.params[key])
       })
       fetchUrl = url.toString()
@@ -150,7 +149,7 @@ export async function executeBatchImport(
         failed: 0,
         nextOffset: null,
         progress: 0,
-        error: `Error descargando: ${fileResponse.status}`
+        error: `Error descargando: ${fileResponse.status}`,
       }
     }
 
@@ -200,55 +199,53 @@ export async function executeBatchImport(
   if (source.feed_type === "stock_price") {
     const batchEans: string[] = []
     const stockMap = new Map<string, { stock: number; price: number }>()
-    
+
     for (const row of batch) {
       const ean = row[mapping.ean || "EAN"]?.trim()
       const stock = parseInt(row[mapping.stock] || "0", 10)
       const price = parseFloat(row[mapping.price || "PRECIO"]?.replace(",", ".") || "0")
-      
+
       if (!ean) continue
       batchEans.push(ean)
       stockMap.set(ean, { stock, price })
     }
-    
-    const stockUpdates = batchEans.map(ean => {
+
+    const stockUpdates = batchEans.map((ean) => {
       const stockData = stockMap.get(ean)!
       return { ean, stock: stockData.stock, price: stockData.price }
     })
-    
-    const { data: rpcResult, error: rpcError } = await supabase.rpc('update_stock_batch', {
-      stock_updates: stockUpdates
+
+    const { data: rpcResult, error: rpcError } = await supabase.rpc("update_stock_batch", {
+      stock_updates: stockUpdates,
     })
-    
+
     if (!rpcError && rpcResult) {
       updatedCount = rpcResult.updated || 0
     } else {
       console.log(`[v0] RPC error:`, rpcError)
       failedCount = batchEans.length
     }
-    
+
     const newOffset = offset + batch.length
     const done = newOffset >= totalRows
     const progress = Math.round((newOffset / totalRows) * 100)
-    
+
     // Si terminamos, poner stock=0 en productos que no están en el archivo
     if (done) {
       console.log(`[v0] Stock import: Poniendo stock=0 en productos no listados...`)
-      
-      const eansInFile = data
-        .map(row => row[mapping.ean || "EAN"]?.trim())
-        .filter(Boolean)
-      
-      const { data: zeroResult, error: zeroError } = await supabase.rpc('zero_stock_not_in_list', {
-        ean_list: eansInFile
+
+      const eansInFile = data.map((row) => row[mapping.ean || "EAN"]?.trim()).filter(Boolean)
+
+      const { data: zeroResult, error: zeroError } = await supabase.rpc("zero_stock_not_in_list", {
+        ean_list: eansInFile,
       })
-      
+
       if (!zeroError && zeroResult) {
         zeroStockCount = zeroResult.zeroed || 0
         console.log(`[v0] Stock import: ${zeroStockCount} productos puestos a stock=0`)
       }
     }
-    
+
     return {
       success: true,
       done,
@@ -306,13 +303,13 @@ export async function executeBatchImport(
   const CHUNK_SIZE = 500
   for (let i = 0; i < productsToInsert.length; i += CHUNK_SIZE) {
     const chunk = productsToInsert.slice(i, i + CHUNK_SIZE)
-    const chunkWithEan = chunk.filter(p => p.ean)
-    
+    const chunkWithEan = chunk.filter((p) => p.ean)
+
     if (chunkWithEan.length > 0) {
       const { error } = await supabase
         .from("products")
         .upsert(chunkWithEan, { onConflict: "ean", ignoreDuplicates: mode === "create" })
-      
+
       if (error) {
         failedCount += chunkWithEan.length
       } else {
@@ -344,42 +341,41 @@ export async function executeBatchImport(
 
 // Ejecutar importación completa en bucle
 export async function executeFullImport(
-  sourceId: string, 
-  feedType: string
+  sourceId: string,
+  feedType: string,
 ): Promise<{ success: boolean; created: number; updated: number; message: string }> {
-  
   const mode = feedType === "stock_price" ? "update" : "upsert"
   let offset = 0
   let done = false
   let totalCreated = 0
   let totalUpdated = 0
   let isFirstBatch = true
-  
+
   while (!done) {
     const result = await executeBatchImport(sourceId, offset, mode, isFirstBatch)
-    
+
     if (result.error) {
       return {
         success: false,
         created: totalCreated,
         updated: totalUpdated,
-        message: result.error
+        message: result.error,
       }
     }
-    
+
     totalCreated += result.created
     totalUpdated += result.updated
     done = result.done
     offset = result.nextOffset || 0
     isFirstBatch = false
-    
+
     console.log(`[v0] Import progress: ${result.progress}% (${result.processed}/${result.total})`)
   }
-  
+
   return {
     success: true,
     created: totalCreated,
     updated: totalUpdated,
-    message: `Importación completada: ${totalCreated} creados, ${totalUpdated} actualizados`
+    message: `Importación completada: ${totalCreated} creados, ${totalUpdated} actualizados`,
   }
 }

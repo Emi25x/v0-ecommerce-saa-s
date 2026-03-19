@@ -51,7 +51,9 @@ export async function POST(request: NextRequest) {
           .single()
 
         const { stock_by_source, stock } = mergeStockBySource(
-          existingProduct?.stock_by_source, libralSourceId, libralProduct.stockdisponibletotal
+          existingProduct?.stock_by_source,
+          libralSourceId,
+          libralProduct.stockdisponibletotal,
         )
 
         const productData = {

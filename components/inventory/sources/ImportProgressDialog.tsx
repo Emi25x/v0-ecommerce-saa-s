@@ -66,7 +66,9 @@ export function ImportProgressDialog({ open, onClose, importProgress, onCancel }
             <div className="border rounded-lg p-3 bg-muted/30 text-sm">
               <div className="font-medium mb-2">Información del CSV</div>
               <div className="space-y-1 text-muted-foreground">
-                <div>Separador: {importProgress.csvInfo.separator === "\t" ? "TAB" : importProgress.csvInfo.separator}</div>
+                <div>
+                  Separador: {importProgress.csvInfo.separator === "\t" ? "TAB" : importProgress.csvInfo.separator}
+                </div>
                 <div>Columnas: {importProgress.csvInfo.headers.length}</div>
                 <div className="text-xs">
                   Headers: {importProgress.csvInfo.headers.slice(0, 5).join(", ")}

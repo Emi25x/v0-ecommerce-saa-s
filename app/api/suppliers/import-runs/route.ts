@@ -5,10 +5,10 @@ import { NextRequest, NextResponse } from "next/server"
  * GET /api/suppliers/import-runs?supplier_id=xxx[&limit=20]
  */
 export async function GET(request: NextRequest) {
-  const supabase   = createAdminClient()
+  const supabase = createAdminClient()
   const { searchParams } = new URL(request.url)
   const supplierId = searchParams.get("supplier_id")
-  const limit      = Math.min(parseInt(searchParams.get("limit") ?? "30"), 100)
+  const limit = Math.min(parseInt(searchParams.get("limit") ?? "30"), 100)
 
   let query = supabase
     .from("supplier_import_runs")

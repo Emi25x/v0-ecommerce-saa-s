@@ -14,14 +14,10 @@ export async function GET(req: NextRequest) {
   const supabase = createAdminClient()
 
   // 1. Obtener cuenta y refrescar token
-  const { data: account, error: accErr } = await supabase
-    .from("ml_accounts")
-    .select("*")
-    .eq("id", account_id)
-    .single()
+  const { data: account, error: accErr } = await supabase.from("ml_accounts").select("*").eq("id", account_id).single()
   if (accErr || !account) return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
 
-  const validAccount = await refreshTokenIfNeeded(account) as any
+  const validAccount = (await refreshTokenIfNeeded(account)) as any
   const accessToken = validAccount.access_token
   const mlUserId = validAccount.ml_user_id
 
@@ -65,9 +61,7 @@ export async function GET(req: NextRequest) {
       // Extraer EAN/GTIN de attributes o de nuestra DB
       let ean = pub.ean || null
       if (!ean && item.attributes) {
-        const gtinAttr = item.attributes.find(
-          (a: any) => a.id === "GTIN" || a.id === "EAN" || a.id === "ISBN"
-        )
+        const gtinAttr = item.attributes.find((a: any) => a.id === "GTIN" || a.id === "EAN" || a.id === "ISBN")
         if (gtinAttr?.value_name) ean = gtinAttr.value_name
       }
 

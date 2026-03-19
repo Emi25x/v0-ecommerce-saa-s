@@ -3,13 +3,16 @@
 // ── Klaviyo ───────────────────────────────────────────────────────────────────
 
 export async function getKlaviyoCampaigns(credentials: Record<string, any>) {
-  const res = await fetch("https://a.klaviyo.com/api/campaigns/?filter=equals(messages.channel,'email')&sort=-created_at&page[size]=50", {
-    headers: {
-      Authorization: `Klaviyo-API-Key ${credentials.api_key}`,
-      revision: "2024-07-15",
-      "Content-Type": "application/json",
+  const res = await fetch(
+    "https://a.klaviyo.com/api/campaigns/?filter=equals(messages.channel,'email')&sort=-created_at&page[size]=50",
+    {
+      headers: {
+        Authorization: `Klaviyo-API-Key ${credentials.api_key}`,
+        revision: "2024-07-15",
+        "Content-Type": "application/json",
+      },
     },
-  })
+  )
   if (!res.ok) throw new Error(`Klaviyo campaigns error: ${await res.text()}`)
   const data = await res.json()
 
@@ -79,7 +82,7 @@ export async function getMailchimpCampaigns(credentials: Record<string, any>) {
         Authorization: `Basic ${Buffer.from(`anystring:${credentials.api_key}`).toString("base64")}`,
         "Content-Type": "application/json",
       },
-    }
+    },
   )
   if (!res.ok) throw new Error(`Mailchimp campaigns error: ${await res.text()}`)
   const data = await res.json()
@@ -101,14 +104,11 @@ export async function getMailchimpCampaigns(credentials: Record<string, any>) {
 
 export async function getMailchimpLists(credentials: Record<string, any>) {
   const server = credentials.server_prefix || "us1"
-  const res = await fetch(
-    `https://${server}.api.mailchimp.com/3.0/lists?count=20`,
-    {
-      headers: {
-        Authorization: `Basic ${Buffer.from(`anystring:${credentials.api_key}`).toString("base64")}`,
-      },
-    }
-  )
+  const res = await fetch(`https://${server}.api.mailchimp.com/3.0/lists?count=20`, {
+    headers: {
+      Authorization: `Basic ${Buffer.from(`anystring:${credentials.api_key}`).toString("base64")}`,
+    },
+  })
   if (!res.ok) throw new Error(`Mailchimp lists error: ${await res.text()}`)
   const data = await res.json()
   return (data.lists ?? []).map((l: any) => ({
@@ -140,9 +140,10 @@ export async function getBrevoEmailCampaigns(credentials: Record<string, any>) {
     recipients: c.statistics?.globalStats?.sent,
     opens: c.statistics?.globalStats?.uniqueOpens,
     clicks: c.statistics?.globalStats?.uniqueClicks,
-    open_rate: c.statistics?.campaignStats?.[0]?.uniqueOpens && c.statistics?.campaignStats?.[0]?.delivered
-      ? (c.statistics.campaignStats[0].uniqueOpens / c.statistics.campaignStats[0].delivered * 100)
-      : 0,
+    open_rate:
+      c.statistics?.campaignStats?.[0]?.uniqueOpens && c.statistics?.campaignStats?.[0]?.delivered
+        ? (c.statistics.campaignStats[0].uniqueOpens / c.statistics.campaignStats[0].delivered) * 100
+        : 0,
     unsubscribes: c.statistics?.globalStats?.unsubscribes,
   }))
 }
@@ -208,7 +209,7 @@ export async function getActiveCampaignCampaigns(credentials: Record<string, any
     sends: parseInt(c.send_amt ?? 0),
     opens: parseInt(c.opens ?? 0),
     clicks: parseInt(c.uniquelinkclicks ?? 0),
-    open_rate: c.opens && c.send_amt ? (parseInt(c.opens) / parseInt(c.send_amt) * 100) : 0,
+    open_rate: c.opens && c.send_amt ? (parseInt(c.opens) / parseInt(c.send_amt)) * 100 : 0,
     unsubscribes: parseInt(c.unsubscribes ?? 0),
   }))
 }
@@ -216,12 +217,9 @@ export async function getActiveCampaignCampaigns(credentials: Record<string, any
 // ── WhatsApp Business ─────────────────────────────────────────────────────────
 
 export async function getWhatsAppTemplates(credentials: Record<string, any>) {
-  const res = await fetch(
-    `https://graph.facebook.com/v20.0/${credentials.waba_id}/message_templates?limit=50`,
-    {
-      headers: { Authorization: `Bearer ${credentials.access_token}` },
-    }
-  )
+  const res = await fetch(`https://graph.facebook.com/v20.0/${credentials.waba_id}/message_templates?limit=50`, {
+    headers: { Authorization: `Bearer ${credentials.access_token}` },
+  })
   if (!res.ok) throw new Error(`WhatsApp templates error: ${await res.text()}`)
   const data = await res.json()
 
@@ -240,7 +238,7 @@ export async function getWhatsAppPhoneInfo(credentials: Record<string, any>) {
     `https://graph.facebook.com/v20.0/${credentials.phone_number_id}?fields=verified_name,display_phone_number,quality_rating`,
     {
       headers: { Authorization: `Bearer ${credentials.access_token}` },
-    }
+    },
   )
   if (!res.ok) throw new Error(`WhatsApp phone info error: ${await res.text()}`)
   return res.json()

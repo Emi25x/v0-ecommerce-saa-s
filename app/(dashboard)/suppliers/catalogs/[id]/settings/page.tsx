@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, use } from "react"
 import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -12,15 +12,16 @@ import { useToast } from "@/hooks/use-toast"
 import { ArrowLeft, ExternalLink, Download } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
-export default function CatalogSettingsPage({ params }: { params: { id: string } }) {
+export default function CatalogSettingsPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params)
   const router = useRouter()
   const { toast } = useToast()
-  const catalogId = params.id
+  const catalogId = id
 
   const [loading, setLoading] = useState(false)
   const [testing, setTesting] = useState(false)
   const [catalog, setCatalog] = useState<any>(null)
-  
+
   // Form fields
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
@@ -32,7 +33,7 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
   const [bearerToken, setBearerToken] = useState("")
   const [queryParams, setQueryParams] = useState<Array<{ key: string; value: string }>>([])
   const [columnMapping, setColumnMapping] = useState("")
-  
+
   // Preview data
   const [previewData, setPreviewData] = useState<any>(null)
 
@@ -44,7 +45,7 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
     try {
       const res = await fetch(`/api/suppliers/catalogs/${catalogId}`)
       const data = await res.json()
-      
+
       if (data.catalog) {
         const cat = data.catalog
         setCatalog(cat)
@@ -53,7 +54,7 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
         setFeedType(cat.feed_type || "catalog")
         setUrlTemplate(cat.url_template || "")
         setAuthType(cat.auth_type || "none")
-        
+
         // Load credentials if exists
         if (cat.credentials) {
           if (cat.auth_type === "basic_auth") {
@@ -64,12 +65,12 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
           } else if (cat.auth_type === "query_params" && cat.credentials.params) {
             const params = Object.entries(cat.credentials.params).map(([key, value]) => ({
               key,
-              value: value as string
+              value: value as string,
             }))
             setQueryParams(params)
           }
         }
-        
+
         // Load column mapping
         if (cat.column_mapping) {
           setColumnMapping(JSON.stringify(cat.column_mapping, null, 2))
@@ -79,7 +80,7 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
       toast({
         title: "Error",
         description: "No se pudo cargar la configuración del catálogo",
-        variant: "destructive"
+        variant: "destructive",
       })
     }
   }
@@ -91,14 +92,14 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
     try {
       // Build credentials
       let credentials: any = null
-      
+
       if (authType === "basic_auth") {
         credentials = { username, password }
       } else if (authType === "bearer_token") {
         credentials = { token: bearerToken }
       } else if (authType === "query_params") {
         const params: Record<string, string> = {}
-        queryParams.forEach(param => {
+        queryParams.forEach((param) => {
           if (param.key && param.value) {
             params[param.key] = param.value
           }
@@ -112,8 +113,8 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
         body: JSON.stringify({
           url_template: urlTemplate,
           auth_type: authType,
-          credentials
-        })
+          credentials,
+        }),
       })
 
       const data = await res.json()
@@ -123,16 +124,16 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
       }
 
       setPreviewData(data)
-      
+
       toast({
         title: "Preview exitoso",
-        description: `Se detectaron ${data.columns?.length || 0} columnas y ${data.sample_rows?.length || 0} filas de muestra`
+        description: `Se detectaron ${data.columns?.length || 0} columnas y ${data.sample_rows?.length || 0} filas de muestra`,
       })
     } catch (error: any) {
       toast({
         title: "Error en preview",
         description: error.message,
-        variant: "destructive"
+        variant: "destructive",
       })
     } finally {
       setTesting(false)
@@ -145,14 +146,14 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
     try {
       // Build credentials
       let credentials: any = null
-      
+
       if (authType === "basic_auth") {
         credentials = { username, password }
       } else if (authType === "bearer_token") {
         credentials = { token: bearerToken }
       } else if (authType === "query_params") {
         const params: Record<string, string> = {}
-        queryParams.forEach(param => {
+        queryParams.forEach((param) => {
           if (param.key && param.value) {
             params[param.key] = param.value
           }
@@ -169,7 +170,7 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
           toast({
             title: "Error",
             description: "El mapeo de columnas debe ser un JSON válido",
-            variant: "destructive"
+            variant: "destructive",
           })
           setLoading(false)
           return
@@ -186,8 +187,8 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
           url_template: urlTemplate,
           auth_type: authType,
           credentials,
-          column_mapping: parsedMapping
-        })
+          column_mapping: parsedMapping,
+        }),
       })
 
       const data = await res.json()
@@ -198,7 +199,7 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
 
       toast({
         title: "Guardado exitoso",
-        description: "La configuración del catálogo se actualizó correctamente"
+        description: "La configuración del catálogo se actualizó correctamente",
       })
 
       router.push("/suppliers")
@@ -206,7 +207,7 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
       toast({
         title: "Error",
         description: error.message,
-        variant: "destructive"
+        variant: "destructive",
       })
     } finally {
       setLoading(false)
@@ -225,11 +226,7 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
     <div className="p-8 max-w-4xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => router.push("/suppliers")}
-        >
+        <Button variant="ghost" size="sm" onClick={() => router.push("/suppliers")}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           Volver
         </Button>
@@ -242,15 +239,10 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
       {/* Basic Info */}
       <Card className="p-6 space-y-4">
         <h2 className="text-lg font-semibold">Información General</h2>
-        
+
         <div className="space-y-2">
           <Label htmlFor="name">Nombre *</Label>
-          <Input
-            id="name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Ej: Catálogo Completo"
-          />
+          <Input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Catálogo Completo" />
         </div>
 
         <div className="space-y-2">
@@ -284,11 +276,7 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">URL del Feed</h2>
           {urlTemplate && (
-            <Button
-              variant="ghost"
-              size="sm"
-              asChild
-            >
+            <Button variant="ghost" size="sm" asChild>
               <a href={urlTemplate} target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="h-4 w-4 mr-2" />
                 Ver feed raw
@@ -305,9 +293,7 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
             onChange={(e) => setUrlTemplate(e.target.value)}
             placeholder="https://ejemplo.com/catalog.csv"
           />
-          <p className="text-xs text-muted-foreground">
-            URL completa del archivo CSV o endpoint API
-          </p>
+          <p className="text-xs text-muted-foreground">URL completa del archivo CSV o endpoint API</p>
         </div>
       </Card>
 
@@ -334,20 +320,11 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="username">Username</Label>
-              <Input
-                id="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
+              <Input id="username" value={username} onChange={(e) => setUsername(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
+              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
           </div>
         )}
@@ -355,11 +332,7 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
         {authType === "bearer_token" && (
           <div className="space-y-2">
             <Label htmlFor="token">Bearer Token</Label>
-            <Input
-              id="token"
-              value={bearerToken}
-              onChange={(e) => setBearerToken(e.target.value)}
-            />
+            <Input id="token" value={bearerToken} onChange={(e) => setBearerToken(e.target.value)} />
           </div>
         )}
 
@@ -415,7 +388,7 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
       {/* Column Mapping */}
       <Card className="p-6 space-y-4">
         <h2 className="text-lg font-semibold">Mapeo de Columnas</h2>
-        
+
         <div className="space-y-2">
           <Label htmlFor="mapping">JSON de Mapeo</Label>
           <Textarea
@@ -426,9 +399,7 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
             rows={6}
             className="font-mono text-sm"
           />
-          <p className="text-xs text-muted-foreground">
-            Mapeo de columnas del CSV a campos del sistema (formato JSON)
-          </p>
+          <p className="text-xs text-muted-foreground">Mapeo de columnas del CSV a campos del sistema (formato JSON)</p>
         </div>
       </Card>
 
@@ -436,11 +407,7 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
       <Card className="p-6 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Probar Descarga</h2>
-          <Button
-            onClick={handleTestDownload}
-            disabled={testing || !urlTemplate}
-            variant="outline"
-          >
+          <Button onClick={handleTestDownload} disabled={testing || !urlTemplate} variant="outline">
             <Download className="h-4 w-4 mr-2" />
             {testing ? "Descargando..." : "Probar"}
           </Button>
@@ -449,12 +416,8 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
         {previewData && (
           <div className="space-y-4">
             <div>
-              <p className="text-sm font-medium">
-                Columnas detectadas: {previewData.columns?.length || 0}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {previewData.columns?.join(", ")}
-              </p>
+              <p className="text-sm font-medium">Columnas detectadas: {previewData.columns?.length || 0}</p>
+              <p className="text-xs text-muted-foreground">{previewData.columns?.join(", ")}</p>
             </div>
 
             {previewData.sample_rows && previewData.sample_rows.length > 0 && (
@@ -490,17 +453,10 @@ export default function CatalogSettingsPage({ params }: { params: { id: string }
 
       {/* Actions */}
       <div className="flex gap-4">
-        <Button
-          onClick={handleSave}
-          disabled={loading || !name || !urlTemplate}
-          className="flex-1"
-        >
+        <Button onClick={handleSave} disabled={loading || !name || !urlTemplate} className="flex-1">
           {loading ? "Guardando..." : "Guardar Cambios"}
         </Button>
-        <Button
-          variant="outline"
-          onClick={() => router.push("/suppliers")}
-        >
+        <Button variant="outline" onClick={() => router.push("/suppliers")}>
           Cancelar
         </Button>
       </div>

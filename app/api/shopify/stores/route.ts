@@ -37,7 +37,10 @@ export async function GET() {
 export async function PATCH(request: Request) {
   try {
     const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const { store_id, api_key, api_secret } = await request.json()
@@ -146,12 +149,12 @@ export async function POST(request: Request) {
 
     if (insertError) {
       console.error("[SHOPIFY-STORES] Error inserting store:", insertError)
-      
+
       // Handle unique constraint violation
       if (insertError.code === "23505") {
         return NextResponse.json({ error: "This Shopify store is already connected" }, { status: 409 })
       }
-      
+
       return NextResponse.json({ error: "Failed to add store" }, { status: 500 })
     }
 

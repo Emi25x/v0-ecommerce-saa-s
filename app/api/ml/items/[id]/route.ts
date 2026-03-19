@@ -2,9 +2,10 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
-    const itemId = params.id
+    const itemId = id
     console.log("[v0] Fetching SKU for item:", itemId)
 
     const cookieStore = await cookies()

@@ -10,10 +10,7 @@ export async function POST(req: NextRequest) {
     const { ml_item_id, account_id } = body
 
     if (!ml_item_id || !account_id) {
-      return NextResponse.json(
-        { ok: false, error: "ml_item_id y account_id son requeridos" },
-        { status: 400 }
-      )
+      return NextResponse.json({ ok: false, error: "ml_item_id y account_id son requeridos" }, { status: 400 })
     }
 
     const supabase = createAdminClient()
@@ -46,7 +43,7 @@ export async function POST(req: NextRequest) {
       const mlErr = await mlRes.json().catch(() => ({}))
       return NextResponse.json(
         { ok: false, error: mlErr.message ?? `Error ML API: ${mlRes.status}`, ml_error: mlErr },
-        { status: mlRes.status }
+        { status: mlRes.status },
       )
     }
 

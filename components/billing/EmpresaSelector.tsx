@@ -16,21 +16,29 @@ interface EmpresaSelectorProps {
 }
 
 export function EmpresaSelector({
-  empresas, empresaActivaId, loadingConfig,
-  switchEmpresa, cloneEmpresa, setConfigForm, setCloningFrom, setActiveTab,
+  empresas,
+  empresaActivaId,
+  loadingConfig,
+  switchEmpresa,
+  cloneEmpresa,
+  setConfigForm,
+  setCloningFrom,
+  setActiveTab,
 }: EmpresaSelectorProps) {
   if (loadingConfig) return null
 
   // Agrupar por CUIT para detectar multi-PV bajo mismo CUIT
   const cuitCount: Record<string, number> = {}
-  empresas.forEach(e => { cuitCount[e.cuit] = (cuitCount[e.cuit] || 0) + 1 })
+  empresas.forEach((e) => {
+    cuitCount[e.cuit] = (cuitCount[e.cuit] || 0) + 1
+  })
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      {empresas.map(emp => {
-        const isActive   = emp.id === empresaActivaId
-        const nombre     = emp.nombre_empresa || emp.razon_social
-        const multiPV    = cuitCount[emp.cuit] > 1
+      {empresas.map((emp) => {
+        const isActive = emp.id === empresaActivaId
+        const nombre = emp.nombre_empresa || emp.razon_social
+        const multiPV = cuitCount[emp.cuit] > 1
 
         return (
           <div key={emp.id} className="flex items-stretch">
@@ -52,11 +60,13 @@ export function EmpresaSelector({
                 </span>
               )}
               {isActive && (
-                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-sm ${
-                  emp.ambiente === "produccion"
-                    ? "bg-emerald-500/20 text-emerald-400"
-                    : "bg-amber-500/20 text-amber-400"
-                }`}>
+                <span
+                  className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-sm ${
+                    emp.ambiente === "produccion"
+                      ? "bg-emerald-500/20 text-emerald-400"
+                      : "bg-amber-500/20 text-amber-400"
+                  }`}
+                >
                   {emp.ambiente === "produccion" ? "PROD" : "HOMO"}
                 </span>
               )}

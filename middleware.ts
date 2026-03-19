@@ -1,21 +1,17 @@
-import { updateSession } from '@/lib/db/proxy'
-import { type NextRequest, NextResponse } from 'next/server'
+import { updateSession } from "@/lib/db/proxy"
+import { type NextRequest, NextResponse } from "next/server"
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Rutas públicas permitidas sin autenticación
-  const publicRoutes = [
-    '/login',
-    '/auth/callback',
-    '/auth/error',
-  ]
+  const publicRoutes = ["/login", "/auth/callback", "/auth/error"]
 
   // Skip auth routes and static files
   if (
     publicRoutes.includes(pathname) ||
-    pathname.startsWith('/_next') ||
-    pathname.startsWith('/api/auth') ||
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/api/auth") ||
     pathname.match(/\.(ico|png|jpg|jpeg|svg|gif|woff|woff2|ttf|eot)$/)
   ) {
     return NextResponse.next()
@@ -24,12 +20,12 @@ export async function middleware(request: NextRequest) {
   // Permitir sin auth: API de importación y cron jobs
   // Estas rutas usan service role de Supabase internamente — no necesitan sesión de usuario
   if (
-    pathname.startsWith('/api/cron/') ||
-    pathname.startsWith('/api/azeta/') ||
-    pathname.startsWith('/api/arnoia/') ||
-    pathname.startsWith('/api/inventory/import/') ||
-    pathname.startsWith('/api/inventory/sources/') ||
-    pathname.startsWith('/api/shopify/oauth/callback')
+    pathname.startsWith("/api/cron/") ||
+    pathname.startsWith("/api/azeta/") ||
+    pathname.startsWith("/api/arnoia/") ||
+    pathname.startsWith("/api/inventory/import/") ||
+    pathname.startsWith("/api/inventory/sources/") ||
+    pathname.startsWith("/api/shopify/oauth/callback")
   ) {
     return NextResponse.next()
   }
@@ -48,6 +44,6 @@ export const config = {
      * - images - .svg, .png, .jpg, .jpeg, .gif, .webp
      * Feel free to modify this pattern to include more paths.
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 }

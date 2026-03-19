@@ -15,7 +15,7 @@ import { createAdminClient } from "@/lib/db/admin"
 import { mlFetchJson, isMlFetchError } from "@/domains/mercadolibre/api-client"
 
 const SITE_ID = "MLA"
-const BATCH_DELAY_MS = 300   // delay entre requests para no saturar ML API
+const BATCH_DELAY_MS = 300 // delay entre requests para no saturar ML API
 const MAX_EANS_PER_RUN = 200 // máximo EANs por ejecución
 
 export async function GET(request: NextRequest) {
@@ -81,12 +81,19 @@ export async function GET(request: NextRequest) {
       .neq("ean", "")
       .limit(2000)
 
-    const invalidEans = (allEanRows || []).filter(r => (r.ean || "").replace(/\D/g, "").length !== 13)
+    const invalidEans = (allEanRows || []).filter((r) => (r.ean || "").replace(/\D/g, "").length !== 13)
     const invalidEanCount = invalidEans.length
 
-    console.log(`[ML-INTEL-SCAN] DIAG total_publications=${totalProducts} publications_with_ean=${productsWithEan} invalid_ean_count=${invalidEanCount}`)
+    console.log(
+      `[ML-INTEL-SCAN] DIAG total_publications=${totalProducts} publications_with_ean=${productsWithEan} invalid_ean_count=${invalidEanCount}`,
+    )
     if (invalidEanCount > 0) {
-      console.warn(`[ML-INTEL-SCAN] WARN EANs invalidos (length!=13): ${invalidEans.slice(0, 10).map(r => JSON.stringify(r.ean)).join(", ")}`)
+      console.warn(
+        `[ML-INTEL-SCAN] WARN EANs invalidos (length!=13): ${invalidEans
+          .slice(0, 10)
+          .map((r) => JSON.stringify(r.ean))
+          .join(", ")}`,
+      )
     }
     // --- FIN DIAGNÓSTICO ---
 
@@ -105,7 +112,10 @@ export async function GET(request: NextRequest) {
     let skippedSci = 0
     let skippedEmpty = 0
     for (const p of pubs) {
-      if (!p.ean) { skippedEmpty++; continue }
+      if (!p.ean) {
+        skippedEmpty++
+        continue
+      }
 
       // Normalizar notación científica de Excel: 9.78845E+12 → "9788450000000"
       let ean = p.ean.trim()
@@ -116,16 +126,23 @@ export async function GET(request: NextRequest) {
         skippedSci++
       }
 
-      if (!ean) { skippedEmpty++; continue }
+      if (!ean) {
+        skippedEmpty++
+        continue
+      }
 
       const cleaned = ean.replace(/\D/g, "")
       if (cleaned.length !== 13) {
-        console.warn(`[ML-INTEL-SCAN] WARN EAN invalido: "${ean}" (${cleaned.length} digitos) titulo="${p.title?.slice(0, 40)}"`)
+        console.warn(
+          `[ML-INTEL-SCAN] WARN EAN invalido: "${ean}" (${cleaned.length} digitos) titulo="${p.title?.slice(0, 40)}"`,
+        )
         // No filtrar — buscar igual por si ML lo acepta
       }
       if (!eanMap.has(ean)) eanMap.set(ean, p.title || "")
     }
-    console.log(`[ML-INTEL-SCAN] STEP tras dedup: ${eanMap.size} EANs únicos (sci_normalized=${skippedSci} skipped_empty=${skippedEmpty})`)
+    console.log(
+      `[ML-INTEL-SCAN] STEP tras dedup: ${eanMap.size} EANs únicos (sci_normalized=${skippedSci} skipped_empty=${skippedEmpty})`,
+    )
     console.log(`[ML-INTEL-SCAN] sample EANs: ${Array.from(eanMap.keys()).slice(0, 5).join(", ")}`)
     const eans = Array.from(eanMap.entries())
 
@@ -140,8 +157,12 @@ export async function GET(request: NextRequest) {
     const alreadyScanned = new Set((existingSnaps || []).map((s: any) => s.ean))
     const toScan = eans.filter(([ean]) => !alreadyScanned.has(ean))
 
-    console.log(`[ML-INTEL-SCAN] STEP tras filtro cache: ${toScan.length} a escanear (${alreadyScanned.size} ya cacheados hoy)`)
-    console.log(`[ML-INTEL-SCAN] account=${account.nickname} total_eans=${eans.length} already_cached=${alreadyScanned.size} to_scan=${toScan.length}`)
+    console.log(
+      `[ML-INTEL-SCAN] STEP tras filtro cache: ${toScan.length} a escanear (${alreadyScanned.size} ya cacheados hoy)`,
+    )
+    console.log(
+      `[ML-INTEL-SCAN] account=${account.nickname} total_eans=${eans.length} already_cached=${alreadyScanned.size} to_scan=${toScan.length}`,
+    )
 
     if (toScan.length === 0 && eans.length === 0) {
       return NextResponse.json({
@@ -153,7 +174,11 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    const diag = { total_products: totalProducts, products_with_ean: productsWithEan, invalid_ean_count: invalidEanCount }
+    const diag = {
+      total_products: totalProducts,
+      products_with_ean: productsWithEan,
+      invalid_ean_count: invalidEanCount,
+    }
 
     if (toScan.length === 0) {
       return NextResponse.json({
@@ -174,7 +199,11 @@ export async function GET(request: NextRequest) {
       try {
         // Buscar por GTIN primero, fallback por título
         const searchUrl = `https://api.mercadolibre.com/sites/${SITE_ID}/search?q=${encodeURIComponent(ean)}&limit=50`
-        const searchRes = await mlFetchJson(searchUrl, { accessToken }, { account_id, op_name: `intel-scan-ean-${ean}` })
+        const searchRes = await mlFetchJson(
+          searchUrl,
+          { accessToken },
+          { account_id, op_name: `intel-scan-ean-${ean}` },
+        )
 
         if (isMlFetchError(searchRes)) {
           console.warn(`[ML-INTEL-SCAN] Error buscando EAN ${ean}: ${searchRes.status}`)
@@ -192,7 +221,10 @@ export async function GET(request: NextRequest) {
         }
 
         // Calcular métricas
-        const prices = items.map((i: any) => i.price).filter((p: any) => p > 0).sort((a: number, b: number) => a - b)
+        const prices = items
+          .map((i: any) => i.price)
+          .filter((p: any) => p > 0)
+          .sort((a: number, b: number) => a - b)
         const minPrice = prices[0] ?? null
         const avgPrice = prices.length > 0 ? prices.reduce((s: number, p: number) => s + p, 0) / prices.length : null
         const medianPrice = prices.length > 0 ? prices[Math.floor(prices.length / 2)] : null
@@ -204,9 +236,8 @@ export async function GET(request: NextRequest) {
         const sampleItemIds = items.slice(0, 5).map((i: any) => i.id)
 
         // Upsert snapshot
-        const { error: upsertErr } = await supabase
-          .from("ml_market_snapshots")
-          .upsert({
+        const { error: upsertErr } = await supabase.from("ml_market_snapshots").upsert(
+          {
             account_id,
             ean,
             category_id: categoryId,
@@ -220,10 +251,12 @@ export async function GET(request: NextRequest) {
             free_shipping_rate: parseFloat(freeShippingRate.toFixed(4)),
             sold_qty_proxy: soldQtyProxy,
             sample_item_ids: sampleItemIds,
-          }, {
+          },
+          {
             onConflict: "account_id,ean,captured_day",
             ignoreDuplicates: false,
-          })
+          },
+        )
 
         if (upsertErr) {
           console.error(`[ML-INTEL-SCAN] Upsert error EAN ${ean}:`, upsertErr.message)
@@ -232,7 +265,6 @@ export async function GET(request: NextRequest) {
           scanned++
           results.push({ ean, min_price: minPrice, median_price: medianPrice, sellers_count: sellersCount })
         }
-
       } catch (err: any) {
         console.error(`[ML-INTEL-SCAN] Exception EAN ${ean}:`, err.message)
         errors++
@@ -253,7 +285,6 @@ export async function GET(request: NextRequest) {
       results,
       diag,
     })
-
   } catch (err: any) {
     console.error("[ML-INTEL-SCAN] Fatal:", err.message)
     return NextResponse.json({ error: err.message }, { status: 500 })
@@ -261,5 +292,5 @@ export async function GET(request: NextRequest) {
 }
 
 function delay(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms))
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }

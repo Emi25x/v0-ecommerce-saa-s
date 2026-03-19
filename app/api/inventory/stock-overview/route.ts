@@ -5,11 +5,11 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const { searchParams } = new URL(request.url)
 
-  const search   = searchParams.get("search") || ""
+  const search = searchParams.get("search") || ""
   const zeroOnly = searchParams.get("zero") === "1"
-  const page     = Math.max(1, parseInt(searchParams.get("page") || "1"))
-  const limit    = 50
-  const offset   = (page - 1) * limit
+  const page = Math.max(1, parseInt(searchParams.get("page") || "1"))
+  const limit = 50
+  const offset = (page - 1) * limit
 
   // ── Productos ──────────────────────────────────────────────────────────────
   let query = supabase
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
   const sourceKeysSet = new Set<string>()
   for (const p of products ?? []) {
     if (p.stock_by_source && typeof p.stock_by_source === "object") {
-      Object.keys(p.stock_by_source).forEach(k => sourceKeysSet.add(k))
+      Object.keys(p.stock_by_source).forEach((k) => sourceKeysSet.add(k))
     }
   }
   const sourceKeys = Array.from(sourceKeysSet).sort()
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
     products: products ?? [],
     source_keys: sourceKeys,
     source_label: sourceLabel,
-    warehouses,          // [{ id, name, code, source_keys[] }]
+    warehouses, // [{ id, name, code, source_keys[] }]
     no_warehouse_keys: noWarehouseKeys,
     total: count ?? 0,
     page,

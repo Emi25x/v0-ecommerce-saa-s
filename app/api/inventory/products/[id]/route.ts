@@ -1,11 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
     const supabase = await createClient()
     const body = await request.json()
-    const { id } = params
 
     const { data: product, error } = await supabase
       .from("products")
@@ -36,10 +36,10 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
   try {
     const supabase = await createClient()
-    const { id } = params
 
     const { error } = await supabase.from("products").delete().eq("id", id)
 

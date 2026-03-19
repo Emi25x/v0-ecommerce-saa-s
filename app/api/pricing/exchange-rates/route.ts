@@ -6,10 +6,7 @@ export const dynamic = "force-dynamic"
 export async function GET() {
   try {
     const supabase = await createClient()
-    const { data, error } = await supabase
-      .from("exchange_rates")
-      .select("*")
-      .order("updated_at", { ascending: false })
+    const { data, error } = await supabase.from("exchange_rates").select("*").order("updated_at", { ascending: false })
     if (error) throw error
     return NextResponse.json({ ok: true, rates: data ?? [] })
   } catch (err: any) {
@@ -20,7 +17,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient()
-    const body     = await req.json()
+    const body = await req.json()
     const { from_currency, to_currency, rate, source = "manual", is_manual = true } = body
 
     if (!from_currency || !to_currency || rate == null)
@@ -28,9 +25,10 @@ export async function POST(req: NextRequest) {
 
     const { data, error } = await supabase
       .from("exchange_rates")
-      .upsert({ from_currency, to_currency, rate: Number(rate), source, is_manual,
-                updated_at: new Date().toISOString() },
-        { onConflict: "from_currency,to_currency" })
+      .upsert(
+        { from_currency, to_currency, rate: Number(rate), source, is_manual, updated_at: new Date().toISOString() },
+        { onConflict: "from_currency,to_currency" },
+      )
       .select()
       .single()
 
@@ -44,7 +42,7 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     const supabase = await createClient()
-    const { id }   = await req.json()
+    const { id } = await req.json()
     if (!id) return NextResponse.json({ ok: false, error: "id required" }, { status: 400 })
     const { error } = await supabase.from("exchange_rates").delete().eq("id", id)
     if (error) throw error

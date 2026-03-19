@@ -5,29 +5,29 @@
 
 // Mapeo de codigos de idioma a value_id de ML
 const LANGUAGE_MAP: Record<string, string> = {
-  "SPA": "313886", // Español
-  "ENG": "313885", // Inglés
-  "POR": "1258229", // Portugués
-  "FRA": "313883", // Francés
-  "ITA": "313889", // Italiano
-  "DEU": "313884", // Alemán
-  "RUS": "313887", // Ruso
-  "JPN": "313888", // Japonés
-  "CHI": "2466958", // Chino
+  SPA: "313886", // Español
+  ENG: "313885", // Inglés
+  POR: "1258229", // Portugués
+  FRA: "313883", // Francés
+  ITA: "313889", // Italiano
+  DEU: "313884", // Alemán
+  RUS: "313887", // Ruso
+  JPN: "313888", // Japonés
+  CHI: "2466958", // Chino
 }
 
 // Mapeo de binding a BOOK_COVER values de ML
 const COVER_MAP: Record<string, string> = {
-  "rustica": "Blanda",
-  "rústica": "Blanda",
+  rustica: "Blanda",
+  rústica: "Blanda",
   "tapa blanda": "Blanda",
-  "paperback": "Blanda",
-  "blanda": "Blanda",
+  paperback: "Blanda",
+  blanda: "Blanda",
   "tapa dura": "Dura",
-  "hardcover": "Dura",
-  "carton": "Dura",
-  "cartón": "Dura",
-  "dura": "Dura",
+  hardcover: "Dura",
+  carton: "Dura",
+  cartón: "Dura",
+  dura: "Dura",
 }
 
 export interface MlItemTemplate {
@@ -219,16 +219,20 @@ function buildSaleTerms(template: MlItemTemplate) {
   return [
     {
       id: "WARRANTY_TYPE",
-      value_name: template.warranty_type || "Garantía del vendedor"
+      value_name: template.warranty_type || "Garantía del vendedor",
     },
     {
       id: "WARRANTY_TIME",
-      value_name: template.warranty_time || "30 días"
+      value_name: template.warranty_time || "30 días",
     },
-    ...(template.handling_days && template.handling_days > 0 ? [{
-      id: "MANUFACTURING_TIME",
-      value_name: `${template.handling_days} días`
-    }] : [])
+    ...(template.handling_days && template.handling_days > 0
+      ? [
+          {
+            id: "MANUFACTURING_TIME",
+            value_name: `${template.handling_days} días`,
+          },
+        ]
+      : []),
   ]
 }
 
@@ -236,7 +240,7 @@ function buildShipping(template: MlItemTemplate) {
   return {
     mode: template.shipping_mode || "me2",
     local_pick_up: template.local_pick_up || false,
-    free_shipping: template.free_shipping || false
+    free_shipping: template.free_shipping || false,
   }
 }
 
@@ -247,19 +251,19 @@ function buildShipping(template: MlItemTemplate) {
 export function validateTraditionalItem(
   item: Record<string, unknown>,
   productId: string,
-  productTitle: string
+  productTitle: string,
 ): string | null {
   // Validar family_name (requerido para tradicional/linked)
-  if (!item.family_name || typeof item.family_name !== 'string' || item.family_name.trim().length === 0) {
+  if (!item.family_name || typeof item.family_name !== "string" || item.family_name.trim().length === 0) {
     return `family_name inválido: "${item.family_name}". El título del producto no puede estar vacío.`
   }
 
   // Validar atributos requeridos
   const attrs = item.attributes as Array<{ id: string; value_name?: string; value_id?: string }>
-  const bookTitle = attrs?.find(a => a.id === "BOOK_TITLE")
-  const author = attrs?.find(a => a.id === "AUTHOR")
-  const publisher = attrs?.find(a => a.id === "BOOK_PUBLISHER")
-  const genre = attrs?.find(a => a.id === "BOOK_GENRE")
+  const bookTitle = attrs?.find((a) => a.id === "BOOK_TITLE")
+  const author = attrs?.find((a) => a.id === "AUTHOR")
+  const publisher = attrs?.find((a) => a.id === "BOOK_PUBLISHER")
+  const genre = attrs?.find((a) => a.id === "BOOK_GENRE")
 
   if (!bookTitle || !bookTitle.value_name || bookTitle.value_name.trim().length === 0) {
     return `BOOK_TITLE inválido. El producto "${productId}" no tiene título válido.`

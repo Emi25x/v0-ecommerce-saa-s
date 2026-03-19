@@ -10,10 +10,7 @@ import { getValidAccessToken } from "@/lib/mercadolibre"
 
 export async function GET() {
   const supabase = await createClient()
-  const { data, error } = await supabase
-    .from("radar_watched_sellers")
-    .select("*")
-    .order("nickname")
+  const { data, error } = await supabase.from("radar_watched_sellers").select("*").order("nickname")
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
   return NextResponse.json({ ok: true, sellers: data ?? [] })
 }

@@ -5,10 +5,7 @@ import { buildTikTokOAuthUrl } from "@/domains/marketing/tiktok"
 import { createAdminClient } from "@/lib/db/admin"
 import { getAppOrigin } from "@/lib/env/config"
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ provider: string }> }
-) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ provider: string }> }) {
   const { provider } = await params
   const origin = getAppOrigin(request)
   const redirectUri = `${origin}/api/marketing/oauth/callback`

@@ -26,7 +26,7 @@ interface FastMailDebugResponse {
   params: { origen_cp: string; destino_cp: string; peso_g: number }
   fuentes: {
     servicios_cliente: { total: number; lista: Array<{ codigo: string; nombre: string; cotiza: string }> }
-    servicios_by_cp:   { total: number; lista: Array<{ codigo: string; nombre: string }> }
+    servicios_by_cp: { total: number; lista: Array<{ codigo: string; nombre: string }> }
   }
   cotizador_a_precio_servicio: {
     ok: boolean
@@ -112,7 +112,7 @@ function parseFastmailDebug(data: FastMailDebugResponse): ServicioRow[] {
       const codigo = String(servicio?.cod_serv ?? servicio?.codigo ?? r.cod_serv ?? r.codigo ?? "?")
       const nombre = String(servicio?.alias ?? servicio?.descripcion ?? r.alias ?? r.descripcion ?? codigo)
       const precio = extraerPrecioFastmail(item)
-      const plazo  = extraerPlazoFastmail(item)
+      const plazo = extraerPlazoFastmail(item)
       rows.push({ carrier: "FastMail", fuente: "A · precio-servicio", codigo, nombre, precio, plazo, raw: item })
       vistosA.add(codigo)
     }
@@ -121,12 +121,12 @@ function parseFastmailDebug(data: FastMailDebugResponse): ServicioRow[] {
   // Cotizador B: cotizador.json por servicio
   for (const res of data.cotizador_b_por_servicio?.resultados ?? []) {
     const precio = res.resultado ? extraerPrecioFastmail(res.resultado) : null
-    const plazo  = res.resultado ? extraerPlazoFastmail(res.resultado) : null
+    const plazo = res.resultado ? extraerPlazoFastmail(res.resultado) : null
     rows.push({
       carrier: "FastMail",
-      fuente:  "B · cotizador",
-      codigo:  res.codigo,
-      nombre:  res.nombre,
+      fuente: "B · cotizador",
+      codigo: res.codigo,
+      nombre: res.nombre,
       precio,
       plazo,
       raw: res.error ?? res.resultado,
@@ -140,24 +140,23 @@ function parseFastmailDebug(data: FastMailDebugResponse): ServicioRow[] {
 
 export default function CotizadorPage() {
   const [form, setForm] = useState({
-    origen_cp:   "",
-    destino_cp:  "",
-    peso_g:      "1000",
-    alto:        "10",
-    largo:       "20",
+    origen_cp: "",
+    destino_cp: "",
+    peso_g: "1000",
+    alto: "10",
+    largo: "20",
     profundidad: "15",
   })
 
-  const [loading,   setLoading]   = useState(false)
-  const [rows,      setRows]      = useState<ServicioRow[] | null>(null)
-  const [debugFm,   setDebugFm]   = useState<FastMailDebugResponse | null>(null)
-  const [errors,    setErrors]    = useState<string[]>([])
+  const [loading, setLoading] = useState(false)
+  const [rows, setRows] = useState<ServicioRow[] | null>(null)
+  const [debugFm, setDebugFm] = useState<FastMailDebugResponse | null>(null)
+  const [errors, setErrors] = useState<string[]>([])
 
   function field(key: keyof typeof form) {
     return {
-      value:    form[key],
-      onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
-        setForm(prev => ({ ...prev, [key]: e.target.value })),
+      value: form[key],
+      onChange: (e: React.ChangeEvent<HTMLInputElement>) => setForm((prev) => ({ ...prev, [key]: e.target.value })),
     }
   }
 
@@ -174,9 +173,9 @@ export default function CotizadorPage() {
     // ── FastMail debug (ambos cotizadores en un solo endpoint) ──────────────
     try {
       const qs = new URLSearchParams({
-        origen_cp:  form.origen_cp,
+        origen_cp: form.origen_cp,
         destino_cp: form.destino_cp,
-        peso_g:     form.peso_g,
+        peso_g: form.peso_g,
       })
       const res = await fetch(`/api/envios/carriers/fastmail-debug?${qs}`)
       if (res.ok) {
@@ -194,16 +193,16 @@ export default function CotizadorPage() {
     // ── Cabify quote ────────────────────────────────────────────────────────
     try {
       const res = await fetch("/api/envios/quote", {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
+        body: JSON.stringify({
           carrier_slug: "cabify",
-          origen_cp:    form.origen_cp,
-          destino_cp:   form.destino_cp,
-          peso_g:       parseInt(form.peso_g),
+          origen_cp: form.origen_cp,
+          destino_cp: form.destino_cp,
+          peso_g: parseInt(form.peso_g),
           dimensiones: {
-            alto:        parseInt(form.alto),
-            largo:       parseInt(form.largo),
+            alto: parseInt(form.alto),
+            largo: parseInt(form.largo),
             profundidad: parseInt(form.profundidad),
           },
         }),
@@ -213,12 +212,12 @@ export default function CotizadorPage() {
         for (const s of data.servicios) {
           allRows.push({
             carrier: "Cabify",
-            fuente:  "quote",
-            codigo:  s.codigo ?? "",
-            nombre:  s.nombre ?? s.codigo ?? "",
-            precio:  s.precio ?? null,
-            plazo:   s.plazo_dias != null ? `${s.plazo_dias} días` : null,
-            raw:     s,
+            fuente: "quote",
+            codigo: s.codigo ?? "",
+            nombre: s.nombre ?? s.codigo ?? "",
+            precio: s.precio ?? null,
+            plazo: s.plazo_dias != null ? `${s.plazo_dias} días` : null,
+            raw: s,
           })
         }
       } else {
@@ -235,9 +234,9 @@ export default function CotizadorPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  const fmA = rows?.filter(r => r.fuente.startsWith("A"))   ?? []
-  const fmB = rows?.filter(r => r.fuente.startsWith("B"))   ?? []
-  const cab = rows?.filter(r => r.carrier === "Cabify")     ?? []
+  const fmA = rows?.filter((r) => r.fuente.startsWith("A")) ?? []
+  const fmB = rows?.filter((r) => r.fuente.startsWith("B")) ?? []
+  const cab = rows?.filter((r) => r.carrier === "Cabify") ?? []
 
   return (
     <div className="flex flex-col gap-6 p-6 max-w-5xl">
@@ -287,11 +286,7 @@ export default function CotizadorPage() {
             </div>
           </div>
 
-          <Button
-            className="mt-4 gap-2"
-            onClick={cotizar}
-            disabled={loading || !form.origen_cp || !form.destino_cp}
-          >
+          <Button className="mt-4 gap-2" onClick={cotizar} disabled={loading || !form.origen_cp || !form.destino_cp}>
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             Cotizar
           </Button>
@@ -301,7 +296,9 @@ export default function CotizadorPage() {
       {/* Errores */}
       {errors.length > 0 && (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive space-y-1">
-          {errors.map((e, i) => <div key={i}>{e}</div>)}
+          {errors.map((e, i) => (
+            <div key={i}>{e}</div>
+          ))}
         </div>
       )}
 
@@ -314,7 +311,9 @@ export default function CotizadorPage() {
               <CardTitle className="flex items-center gap-2 text-base">
                 <Truck className="h-4 w-4" />
                 FastMail — Cotizador A (precio-servicio)
-                <Badge variant="secondary" className="ml-auto">{fmA.length} servicio{fmA.length !== 1 ? "s" : ""}</Badge>
+                <Badge variant="secondary" className="ml-auto">
+                  {fmA.length} servicio{fmA.length !== 1 ? "s" : ""}
+                </Badge>
               </CardTitle>
               {debugFm?.config && (
                 <p className="text-xs text-muted-foreground">
@@ -342,13 +341,15 @@ export default function CotizadorPage() {
               <CardTitle className="flex items-center gap-2 text-base">
                 <Truck className="h-4 w-4" />
                 FastMail — Cotizador B (por servicio)
-                <Badge variant="secondary" className="ml-auto">{fmB.length} servicio{fmB.length !== 1 ? "s" : ""}</Badge>
+                <Badge variant="secondary" className="ml-auto">
+                  {fmB.length} servicio{fmB.length !== 1 ? "s" : ""}
+                </Badge>
               </CardTitle>
               {debugFm && (
                 <p className="text-xs text-muted-foreground">
-                  Servicios-cliente: {debugFm.fuentes.servicios_cliente.total} ·
-                  Servicios-by-cp: {debugFm.fuentes.servicios_by_cp.total} ·
-                  Candidatos cotizados: {debugFm.cotizador_b_por_servicio.total_candidatos}
+                  Servicios-cliente: {debugFm.fuentes.servicios_cliente.total} · Servicios-by-cp:{" "}
+                  {debugFm.fuentes.servicios_by_cp.total} · Candidatos cotizados:{" "}
+                  {debugFm.cotizador_b_por_servicio.total_candidatos}
                 </p>
               )}
             </CardHeader>
@@ -367,7 +368,9 @@ export default function CotizadorPage() {
               <CardTitle className="flex items-center gap-2 text-base">
                 <Package className="h-4 w-4" />
                 Cabify Logistics
-                <Badge variant="secondary" className="ml-auto">{cab.length} servicio{cab.length !== 1 ? "s" : ""}</Badge>
+                <Badge variant="secondary" className="ml-auto">
+                  {cab.length} servicio{cab.length !== 1 ? "s" : ""}
+                </Badge>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -389,9 +392,11 @@ export default function CotizadorPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div>
-                  <p className="text-xs font-semibold mb-1">servicios-cliente ({debugFm.fuentes.servicios_cliente.total})</p>
+                  <p className="text-xs font-semibold mb-1">
+                    servicios-cliente ({debugFm.fuentes.servicios_cliente.total})
+                  </p>
                   <div className="flex flex-wrap gap-1">
-                    {debugFm.fuentes.servicios_cliente.lista.map(s => (
+                    {debugFm.fuentes.servicios_cliente.lista.map((s) => (
                       <Badge key={s.codigo} variant="outline" className="text-xs font-mono">
                         {s.codigo} · {s.nombre}
                       </Badge>
@@ -402,9 +407,11 @@ export default function CotizadorPage() {
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs font-semibold mb-1">servicios-by-cp para {debugFm.params.destino_cp} ({debugFm.fuentes.servicios_by_cp.total})</p>
+                  <p className="text-xs font-semibold mb-1">
+                    servicios-by-cp para {debugFm.params.destino_cp} ({debugFm.fuentes.servicios_by_cp.total})
+                  </p>
                   <div className="flex flex-wrap gap-1">
-                    {debugFm.fuentes.servicios_by_cp.lista.map(s => (
+                    {debugFm.fuentes.servicios_by_cp.lista.map((s) => (
                       <Badge key={s.codigo} variant="outline" className="text-xs font-mono">
                         {s.codigo} · {s.nombre}
                       </Badge>
@@ -450,13 +457,13 @@ function ServiceTable({ rows }: { rows: ServicioRow[] }) {
                   <td className="px-3 py-2 font-mono text-xs">{row.codigo || "—"}</td>
                   <td className="px-3 py-2">{row.nombre || "—"}</td>
                   <td className="px-3 py-2 text-right font-semibold">
-                    {row.precio != null
-                      ? `$${row.precio.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`
-                      : <span className="text-muted-foreground text-xs">—</span>}
+                    {row.precio != null ? (
+                      `$${row.precio.toLocaleString("es-AR", { minimumFractionDigits: 2 })}`
+                    ) : (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    )}
                   </td>
-                  <td className="px-3 py-2 text-right text-muted-foreground text-xs">
-                    {row.plazo ?? "—"}
-                  </td>
+                  <td className="px-3 py-2 text-right text-muted-foreground text-xs">{row.plazo ?? "—"}</td>
                   <td className="px-3 py-2 text-center">
                     <button
                       className="text-xs text-blue-500 hover:underline"

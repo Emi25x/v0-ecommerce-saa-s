@@ -12,20 +12,16 @@ const ADAPTATION_PATTERNS = [
   /option(?:ed|ing) (?:the )?(?:novel|book|rights)/i,
 ]
 
-const TITLE_EXTRACTORS = [
-  /"([^"]{4,80})"/g,
-  /\u2018([^\u2019]{4,80})\u2019/g,
-  /\u201C([^\u201D]{4,80})\u201D/g,
-]
+const TITLE_EXTRACTORS = [/"([^"]{4,80})"/g, /\u2018([^\u2019]{4,80})\u2019/g, /\u201C([^\u201D]{4,80})\u201D/g]
 
 const AUTHOR_EXTRACTOR = /\bby\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})/g
 
 interface ParsedArticle {
   is_adaptation: boolean
-  confidence:    number
+  confidence: number
   detected_book: string | null
   detected_author: string | null
-  project_type:  "series" | "film" | "unknown"
+  project_type: "series" | "film" | "unknown"
 }
 
 function analyzeContent(title: string, content: string): ParsedArticle {
@@ -40,7 +36,8 @@ function analyzeContent(title: string, content: string): ParsedArticle {
     }
   }
 
-  if (matchCount === 0) return { is_adaptation: false, confidence: 0, detected_book: null, detected_author: null, project_type: "unknown" }
+  if (matchCount === 0)
+    return { is_adaptation: false, confidence: 0, detected_book: null, detected_author: null, project_type: "unknown" }
 
   confidence = Math.min(100, confidence)
 
@@ -48,7 +45,10 @@ function analyzeContent(title: string, content: string): ParsedArticle {
   for (const re of TITLE_EXTRACTORS) {
     re.lastIndex = 0
     const m = re.exec(text)
-    if (m?.[1] && m[1].length > 3) { detected_book = m[1].trim(); break }
+    if (m?.[1] && m[1].length > 3) {
+      detected_book = m[1].trim()
+      break
+    }
   }
 
   let detected_author: string | null = null
@@ -57,19 +57,22 @@ function analyzeContent(title: string, content: string): ParsedArticle {
   if (am?.[1]) detected_author = am[1].trim()
 
   const project_type: "series" | "film" | "unknown" =
-    /\b(series|tv show|limited series|mini.?series|streaming series)\b/i.test(text) ? "series" :
-    /\b(film|movie|feature film|motion picture)\b/i.test(text) ? "film" : "unknown"
+    /\b(series|tv show|limited series|mini.?series|streaming series)\b/i.test(text)
+      ? "series"
+      : /\b(film|movie|feature film|motion picture)\b/i.test(text)
+        ? "film"
+        : "unknown"
 
   return { is_adaptation: true, confidence, detected_book, detected_author, project_type }
 }
 
 // ── RSS Sources ──────────────────────────────────────────────────────────────
 const RSS_SOURCES = [
-  { name: "Variety",             url: "https://variety.com/feed" },
-  { name: "Deadline",            url: "https://deadline.com/feed" },
-  { name: "Hollywood Reporter",  url: "https://www.hollywoodreporter.com/feed" },
-  { name: "ScreenRant",          url: "https://screenrant.com/feed" },
-  { name: "Collider",            url: "https://collider.com/feed" },
+  { name: "Variety", url: "https://variety.com/feed" },
+  { name: "Deadline", url: "https://deadline.com/feed" },
+  { name: "Hollywood Reporter", url: "https://www.hollywoodreporter.com/feed" },
+  { name: "ScreenRant", url: "https://screenrant.com/feed" },
+  { name: "Collider", url: "https://collider.com/feed" },
 ]
 
 function parseRssItems(xml: string): { title: string; url: string; published_at: string | null; content: string }[] {
@@ -78,13 +81,25 @@ function parseRssItems(xml: string): { title: string; url: string; published_at:
   let m: RegExpExecArray | null
   while ((m = itemRegex.exec(xml)) !== null) {
     const block = m[1]
-    const title       = (/<title[^>]*><!\[CDATA\[(.+?)\]\]>/i.exec(block)   ?? /<title[^>]*>(.+?)<\/title>/i.exec(block))?.[1]   ?? ""
-    const link        = (/<link>([^<]+)<\/link>/i.exec(block))?.[1] ?? (/<guid[^>]*>([^<]+)<\/guid>/i.exec(block))?.[1] ?? ""
-    const pubDate     = (/<pubDate>([^<]+)<\/pubDate>/i.exec(block))?.[1] ?? null
-    const description = (/<description><!\[CDATA\[([\s\S]+?)\]\]><\/description>/i.exec(block) ?? /<description>([\s\S]+?)<\/description>/i.exec(block))?.[1] ?? ""
-    const encoded     = (/<content:encoded><!\[CDATA\[([\s\S]+?)\]\]><\/content:encoded>/i.exec(block))?.[1] ?? ""
-    const rawContent  = (encoded || description).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 2000)
-    if (title && link) items.push({ title: title.trim(), url: link.trim(), published_at: pubDate ? new Date(pubDate).toISOString() : null, content: rawContent.trim() })
+    const title =
+      (/<title[^>]*><!\[CDATA\[(.+?)\]\]>/i.exec(block) ?? /<title[^>]*>(.+?)<\/title>/i.exec(block))?.[1] ?? ""
+    const link = /<link>([^<]+)<\/link>/i.exec(block)?.[1] ?? /<guid[^>]*>([^<]+)<\/guid>/i.exec(block)?.[1] ?? ""
+    const pubDate = /<pubDate>([^<]+)<\/pubDate>/i.exec(block)?.[1] ?? null
+    const description =
+      (/<description><!\[CDATA\[([\s\S]+?)\]\]><\/description>/i.exec(block) ??
+        /<description>([\s\S]+?)<\/description>/i.exec(block))?.[1] ?? ""
+    const encoded = /<content:encoded><!\[CDATA\[([\s\S]+?)\]\]><\/content:encoded>/i.exec(block)?.[1] ?? ""
+    const rawContent = (encoded || description)
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .slice(0, 2000)
+    if (title && link)
+      items.push({
+        title: title.trim(),
+        url: link.trim(),
+        published_at: pubDate ? new Date(pubDate).toISOString() : null,
+        content: rawContent.trim(),
+      })
   }
   return items
 }
@@ -116,7 +131,7 @@ export async function fetchRadarNews(opts?: { manual?: boolean }): Promise<Fetch
 
   const allSources = [
     ...RSS_SOURCES,
-    ...(dbSources ?? []).filter(s => s.url).map(s => ({ name: s.name, url: s.url! })),
+    ...(dbSources ?? []).filter((s) => s.url).map((s) => ({ name: s.name, url: s.url! })),
   ]
 
   for (const source of allSources) {
@@ -129,7 +144,7 @@ export async function fetchRadarNews(opts?: { manual?: boolean }): Promise<Fetch
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
-      const xml   = await res.text()
+      const xml = await res.text()
       const items = parseRssItems(xml)
       sourceResult.fetched = items.length
 
@@ -147,21 +162,24 @@ export async function fetchRadarNews(opts?: { manual?: boolean }): Promise<Fetch
         const { data: inserted, error: insertErr } = await supabase
           .from("editorial_radar_news")
           .insert({
-            title:           item.title,
-            source:          source.name,
-            url:             item.url,
-            published_at:    item.published_at,
-            content:         item.content,
-            detected_book:   analysis.detected_book,
+            title: item.title,
+            source: source.name,
+            url: item.url,
+            published_at: item.published_at,
+            content: item.content,
+            detected_book: analysis.detected_book,
             detected_author: analysis.detected_author,
-            project_type:    analysis.project_type,
+            project_type: analysis.project_type,
             confidence_score: analysis.confidence,
-            processed:       analysis.is_adaptation,
+            processed: analysis.is_adaptation,
           })
           .select("id")
           .single()
 
-        if (insertErr) { sourceResult.errors.push(insertErr.message); continue }
+        if (insertErr) {
+          sourceResult.errors.push(insertErr.message)
+          continue
+        }
         sourceResult.new++
         totalNew++
 
@@ -177,29 +195,26 @@ export async function fetchRadarNews(opts?: { manual?: boolean }): Promise<Fetch
             .from("editorial_radar_opportunities")
             .insert({
               opportunity_type: "adaptation",
-              title:            oppTitle,
-              description:      `Detectado en ${source.name}. Tipo de proyecto: ${analysis.project_type}. Confianza: ${analysis.confidence}%.\n\nTítulo artículo: ${item.title}\nURL: ${item.url}`,
-              score:            Math.min(85, 40 + analysis.confidence * 0.45),
-              confidence:       analysis.confidence >= 75 ? "high" : analysis.confidence >= 50 ? "medium" : "low",
-              status:           "new",
-              source_id:        null,
-              metadata_json:    {
-                detected_book:   analysis.detected_book,
+              title: oppTitle,
+              description: `Detectado en ${source.name}. Tipo de proyecto: ${analysis.project_type}. Confianza: ${analysis.confidence}%.\n\nTítulo artículo: ${item.title}\nURL: ${item.url}`,
+              score: Math.min(85, 40 + analysis.confidence * 0.45),
+              confidence: analysis.confidence >= 75 ? "high" : analysis.confidence >= 50 ? "medium" : "low",
+              status: "new",
+              source_id: null,
+              metadata_json: {
+                detected_book: analysis.detected_book,
                 detected_author: analysis.detected_author,
-                project_type:    analysis.project_type,
-                news_source:     source.name,
-                news_url:        item.url,
-                published_at:    item.published_at,
+                project_type: analysis.project_type,
+                news_source: source.name,
+                news_url: item.url,
+                published_at: item.published_at,
               },
             })
             .select("id")
             .single()
 
           if (opp?.id && inserted?.id) {
-            await supabase
-              .from("editorial_radar_news")
-              .update({ opportunity_id: opp.id })
-              .eq("id", inserted.id)
+            await supabase.from("editorial_radar_news").update({ opportunity_id: opp.id }).eq("id", inserted.id)
           }
         }
       }
@@ -217,9 +232,9 @@ export async function fetchRadarNews(opts?: { manual?: boolean }): Promise<Fetch
   }
 
   return {
-    ok:                true,
-    sources_checked:   allSources.length,
-    total_new:         totalNew,
+    ok: true,
+    sources_checked: allSources.length,
+    total_new: totalNew,
     total_adaptations: totalAdaptations,
     results,
   }

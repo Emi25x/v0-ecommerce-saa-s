@@ -4,17 +4,7 @@ import React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import {
-  Home,
-  Package,
-  ShoppingBag,
-  Truck,
-  Settings,
-  BarChart3,
-  CreditCard,
-  Receipt,
-  Target,
-} from "lucide-react"
+import { Home, Package, ShoppingBag, Truck, Settings, BarChart3, CreditCard, Receipt, Target } from "lucide-react"
 
 const navItems = [
   {

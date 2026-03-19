@@ -25,12 +25,12 @@ export class ImportHeartbeat {
       try {
         const supabase = await createClient()
         this.beatCount++
-        
+
         await supabase
           .from("import_history")
           .update({
             last_message: `Procesando... (heartbeat ${this.beatCount})`,
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
           })
           .eq("id", this.historyId!)
 

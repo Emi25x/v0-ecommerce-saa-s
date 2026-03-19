@@ -4,15 +4,15 @@ import { getAppOrigin } from "@/lib/env/config"
 
 export async function GET(request: NextRequest) {
   try {
-    const origin      = getAppOrigin(request)
-    const from        = request.nextUrl.searchParams.get("from") || ""
+    const origin = getAppOrigin(request)
+    const from = request.nextUrl.searchParams.get("from") || ""
     const redirectUri = `${origin}/api/mercadolibre/callback`
 
-    const codeVerifier  = generateCodeVerifier()
+    const codeVerifier = generateCodeVerifier()
     const codeChallenge = await generateCodeChallenge(codeVerifier)
 
     // Construir authUrl con state para saber el origen del flujo
-    const state   = from ? encodeURIComponent(`from=${from}`) : ""
+    const state = from ? encodeURIComponent(`from=${from}`) : ""
     const authUrl = getMercadoLibreAuthUrl(redirectUri, codeChallenge, state)
 
     const response = NextResponse.redirect(authUrl)

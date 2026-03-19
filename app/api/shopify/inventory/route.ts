@@ -14,7 +14,10 @@ export async function GET(request: Request) {
     }
 
     const supabase = await createClient()
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
     const { data: store } = await supabase
@@ -35,8 +38,14 @@ export async function GET(request: Request) {
     // 1. Traer variantes del producto
     const varRes = await fetch(`${base}/products/${product_id}/variants.json`, { headers })
     const varJson = await varRes.json()
-    const variants: Array<{ id: number; title: string; sku: string; inventory_item_id: number; inventory_quantity: number; price: string }> =
-      varJson.variants ?? []
+    const variants: Array<{
+      id: number
+      title: string
+      sku: string
+      inventory_item_id: number
+      inventory_quantity: number
+      price: string
+    }> = varJson.variants ?? []
 
     // 2. Traer metafields del producto — incluye custom.sucursal_stock
     const metaRes = await fetch(`${base}/products/${product_id}/metafields.json`, { headers })
@@ -44,7 +53,7 @@ export async function GET(request: Request) {
     const allMeta: Array<{ namespace: string; key: string; value: string; type: string }> = metaJson.metafields ?? []
 
     // Buscar el metafield de stock por sucursal
-    const sucursalStockMeta = allMeta.find(m => m.namespace === "custom" && m.key === "sucursal_stock")
+    const sucursalStockMeta = allMeta.find((m) => m.namespace === "custom" && m.key === "sucursal_stock")
 
     // Parsear el valor — puede ser JSON string o string plano
     let sucursal_stock: Record<string, number> | null = null
@@ -59,7 +68,7 @@ export async function GET(request: Request) {
         const parts = sucursalStockMeta.value.split(",")
         sucursal_stock = {}
         for (const part of parts) {
-          const [k, v] = part.split(":").map(s => s.trim())
+          const [k, v] = part.split(":").map((s) => s.trim())
           if (k && v && !isNaN(Number(v))) sucursal_stock[k] = Number(v)
         }
         if (!Object.keys(sucursal_stock).length) sucursal_stock = null
@@ -67,11 +76,11 @@ export async function GET(request: Request) {
     }
 
     // 3. Traer todos los metafields de variantes para ver si hay stock por sucursal por variante
-    const variantMetaPromises = variants.slice(0, 10).map(v =>
+    const variantMetaPromises = variants.slice(0, 10).map((v) =>
       fetch(`${base}/variants/${v.id}/metafields.json`, { headers })
-        .then(r => r.json())
-        .then(d => ({ variant_id: v.id, metafields: d.metafields ?? [] }))
-        .catch(() => ({ variant_id: v.id, metafields: [] }))
+        .then((r) => r.json())
+        .then((d) => ({ variant_id: v.id, metafields: d.metafields ?? [] }))
+        .catch(() => ({ variant_id: v.id, metafields: [] })),
     )
     const variantMetas = await Promise.all(variantMetaPromises)
 
@@ -82,7 +91,9 @@ export async function GET(request: Request) {
       if (m?.value) {
         try {
           variantSucursalStock[vm.variant_id] = JSON.parse(m.value)
-        } catch { /* ignorar */ }
+        } catch {
+          /* ignorar */
+        }
       }
     }
 
@@ -90,7 +101,7 @@ export async function GET(request: Request) {
       ok: true,
       variants,
       metafields: allMeta,
-      sucursal_stock,         // stock a nivel producto
+      sucursal_stock, // stock a nivel producto
       variant_sucursal_stock: variantSucursalStock, // stock a nivel variante
     })
   } catch (e: any) {

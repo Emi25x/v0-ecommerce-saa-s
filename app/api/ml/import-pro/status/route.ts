@@ -39,11 +39,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Obtener o crear progress
-    let { data: progress, error: progressError } = await supabase
+    const progressResult = await supabase
       .from("ml_import_progress")
       .select("*")
       .eq("account_id", accountId)
       .maybeSingle()
+    let progress = progressResult.data
+    const progressError = progressResult.error
 
     // Crear registro si no existe
     if (!progress) {
@@ -89,7 +91,7 @@ export async function GET(request: NextRequest) {
       progress: {
         ...progress,
         publications_progress: publicationsProgress,
-        publications_in_db:    publicationsInDb ?? 0,
+        publications_in_db: publicationsInDb ?? 0,
       },
     })
   } catch (error: any) {

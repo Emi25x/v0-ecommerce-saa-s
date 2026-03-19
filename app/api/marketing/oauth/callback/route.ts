@@ -53,18 +53,21 @@ export async function GET(request: NextRequest) {
     }
 
     // Store tokens in credentials
-    await supabase
-      .from("marketing_connections")
-      .upsert({
+    await supabase.from("marketing_connections").upsert(
+      {
         platform: state,
         credentials: { ...credentials, ...tokens },
         is_active: true,
         updated_at: new Date().toISOString(),
-      }, { onConflict: "platform" })
+      },
+      { onConflict: "platform" },
+    )
 
     return NextResponse.redirect(`${origin}/marketing/config?connected=${state}`)
   } catch (err: any) {
     console.error("[MARKETING-OAUTH] Callback error:", err)
-    return NextResponse.redirect(`${origin}/marketing/config?error=${encodeURIComponent(err.message)}&platform=${state}`)
+    return NextResponse.redirect(
+      `${origin}/marketing/config?error=${encodeURIComponent(err.message)}&platform=${state}`,
+    )
   }
 }

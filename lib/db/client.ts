@@ -12,11 +12,11 @@ export function createClient() {
 
   // Limpiar URL si incluye rutas REST o Auth (debe ser base URL)
   let cleanUrl = supabaseUrl.trim()
-  if (cleanUrl.includes('/rest/v1')) {
-    cleanUrl = cleanUrl.split('/rest/v1')[0]
+  if (cleanUrl.includes("/rest/v1")) {
+    cleanUrl = cleanUrl.split("/rest/v1")[0]
   }
-  if (cleanUrl.includes('/auth/v1')) {
-    cleanUrl = cleanUrl.split('/auth/v1')[0]
+  if (cleanUrl.includes("/auth/v1")) {
+    cleanUrl = cleanUrl.split("/auth/v1")[0]
   }
 
   return createBrowserClient(cleanUrl, supabaseAnonKey)

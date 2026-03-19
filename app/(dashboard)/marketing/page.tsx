@@ -89,9 +89,9 @@ export default function MarketingPage() {
     }
   }
 
-  const connectedPlatforms = new Set(connections.map(c => c.platform))
-  const connectedList = PLATFORMS.filter(p => connectedPlatforms.has(p.id))
-  const availableList = PLATFORMS.filter(p => !connectedPlatforms.has(p.id))
+  const connectedPlatforms = new Set(connections.map((c) => c.platform))
+  const connectedList = PLATFORMS.filter((p) => connectedPlatforms.has(p.id))
+  const availableList = PLATFORMS.filter((p) => !connectedPlatforms.has(p.id))
 
   const totalConnected = connectedList.length
 
@@ -146,9 +146,7 @@ export default function MarketingPage() {
           </Card>
           <Card>
             <CardContent className="pt-6">
-              <div className="text-2xl font-bold">
-                {connections.filter(c => c.last_synced_at).length}
-              </div>
+              <div className="text-2xl font-bold">{connections.filter((c) => c.last_synced_at).length}</div>
               <p className="text-sm text-muted-foreground">Sincronizadas</p>
             </CardContent>
           </Card>
@@ -165,7 +163,7 @@ export default function MarketingPage() {
           <div className="mb-8">
             <h2 className="text-xl font-semibold mb-4">Plataformas Conectadas</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[1, 2, 3].map(i => (
+              {[1, 2, 3].map((i) => (
                 <Card key={i}>
                   <CardContent className="pt-6">
                     <Skeleton className="h-6 w-32 mb-2" />
@@ -180,11 +178,13 @@ export default function MarketingPage() {
           <div className="mb-8">
             <h2 className="text-xl font-semibold mb-4">
               Plataformas Conectadas
-              <Badge variant="secondary" className="ml-2">{connectedList.length}</Badge>
+              <Badge variant="secondary" className="ml-2">
+                {connectedList.length}
+              </Badge>
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {connectedList.map(platform => {
-                const conn = connections.find(c => c.platform === platform.id)
+              {connectedList.map((platform) => {
+                const conn = connections.find((c) => c.platform === platform.id)
                 const route = PLATFORM_ROUTES[platform.id] ?? "/marketing/config"
                 return (
                   <Card key={platform.id} className="hover:shadow-md transition-shadow">
@@ -198,20 +198,24 @@ export default function MarketingPage() {
                           <CardTitle className="text-base">{platform.name}</CardTitle>
                         </div>
                         <Badge variant="outline" className="text-green-600 border-green-600 text-xs">
-                          <svg className="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <svg
+                            className="w-3 h-3 mr-1"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                          >
                             <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
                             <path d="M22 4 12 14.01l-3-3" />
                           </svg>
                           Conectado
                         </Badge>
                       </div>
-                      {conn?.account_name && (
-                        <p className="text-sm text-muted-foreground">{conn.account_name}</p>
-                      )}
+                      {conn?.account_name && <p className="text-sm text-muted-foreground">{conn.account_name}</p>}
                     </CardHeader>
                     <CardContent>
                       <div className="flex flex-wrap gap-1 mb-3">
-                        {platform.capabilities.slice(0, 3).map(cap => (
+                        {platform.capabilities.slice(0, 3).map((cap) => (
                           <Badge key={cap} variant="secondary" className="text-xs capitalize">
                             {cap.replace(/_/g, " ")}
                           </Badge>
@@ -226,7 +230,13 @@ export default function MarketingPage() {
                         </Button>
                         <Button size="sm" variant="ghost" asChild>
                           <Link href="/marketing/config">
-                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <svg
+                              className="w-4 h-4"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
                               <circle cx="12" cy="12" r="3" />
                               <path d="M19.07 4.93A9.956 9.956 0 0 0 12 2a9.956 9.956 0 0 0-7.07 2.93M4.93 4.93A9.956 9.956 0 0 0 2 12a9.956 9.956 0 0 0 2.93 7.07M19.07 19.07A9.956 9.956 0 0 0 22 12a9.956 9.956 0 0 0-2.93-7.07M4.93 19.07A9.956 9.956 0 0 0 12 22a9.956 9.956 0 0 0 7.07-2.93" />
                             </svg>
@@ -246,10 +256,12 @@ export default function MarketingPage() {
           <div>
             <h2 className="text-xl font-semibold mb-4">
               Plataformas Disponibles
-              <Badge variant="secondary" className="ml-2">{availableList.length}</Badge>
+              <Badge variant="secondary" className="ml-2">
+                {availableList.length}
+              </Badge>
             </h2>
-            {(["search", "social", "email", "crm", "ecommerce"] as const).map(category => {
-              const categoryPlatforms = availableList.filter(p => p.category === category)
+            {(["search", "social", "email", "crm", "ecommerce"] as const).map((category) => {
+              const categoryPlatforms = availableList.filter((p) => p.category === category)
               if (categoryPlatforms.length === 0) return null
               return (
                 <div key={category} className="mb-6">
@@ -257,7 +269,7 @@ export default function MarketingPage() {
                     {CATEGORY_LABELS[category]}
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {categoryPlatforms.map(platform => (
+                    {categoryPlatforms.map((platform) => (
                       <Card key={platform.id} className="hover:shadow-md transition-shadow border-dashed">
                         <CardHeader className="pb-3">
                           <div className="flex items-center gap-2">
@@ -280,7 +292,13 @@ export default function MarketingPage() {
                           </div>
                           <Button size="sm" className="w-full" asChild>
                             <Link href="/marketing/config">
-                              <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <svg
+                                className="w-4 h-4 mr-2"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                              >
                                 <path d="M12 5v14M5 12h14" />
                               </svg>
                               Conectar

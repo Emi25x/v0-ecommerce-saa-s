@@ -157,9 +157,7 @@ export interface ExportBuildResult {
 
 // ── Resolve columns from template ─────────────────────────────────────────
 
-export function resolveColumns(
-  templateColumns: string[] | null | undefined
-): string[] {
+export function resolveColumns(templateColumns: string[] | null | undefined): string[] {
   return templateColumns?.length ? templateColumns : SHOPIFY_COLUMNS
 }
 
@@ -173,45 +171,49 @@ export function buildExportRows(params: ExportBuildParams): ExportBuildResult {
     const customFields = (p.custom_fields as Record<string, unknown> | null) ?? {}
 
     // ── Identifiers ────────────────────────────────────────────────────
-    const barcode    = p.ean || p.isbn || ""
+    const barcode = p.ean || p.isbn || ""
     // SKU: prefer internal sku, fallback to EAN, then ISBN
     const variantSku = p.sku || p.ean || p.isbn || ""
-    const handle     = slugify(p.title ?? barcode ?? "producto")
-    const weightG    = p.canonical_weight_g ?? ""
-    const stock      = stockMap[p.id] ?? p.stock ?? 0
-    const price      = p.price != null ? String(p.price) : ""
-    const precioArs  = customFields.precio_ars != null ? String(customFields.precio_ars) : price
+    const handle = slugify(p.title ?? barcode ?? "producto")
+    const weightG = p.canonical_weight_g ?? ""
+    const stock = stockMap[p.id] ?? p.stock ?? 0
+    const price = p.price != null ? String(p.price) : ""
+    const precioArs = customFields.precio_ars != null ? String(customFields.precio_ars) : price
 
     // ── Dimensions (mm) from DB or custom_fields ───────────────────────
-    const alto    = p.height    != null ? Math.round(p.height * 10)    : (customFields.alto_mm    ?? "")
-    const ancho   = p.width     != null ? Math.round(p.width * 10)     : (customFields.ancho_mm   ?? "")
+    const alto = p.height != null ? Math.round(p.height * 10) : (customFields.alto_mm ?? "")
+    const ancho = p.width != null ? Math.round(p.width * 10) : (customFields.ancho_mm ?? "")
     const espesor = p.thickness != null ? Math.round(p.thickness * 10) : (customFields.espesor_mm ?? "")
 
     // ── Peso en kg (string) ────────────────────────────────────────────
     const pesoKg = p.canonical_weight_g
       ? `${(Number(p.canonical_weight_g) / 1000).toFixed(2).replace(/\.?0+$/, "")} kg`
-      : (customFields.peso ? String(customFields.peso) : "")
+      : customFields.peso
+        ? String(customFields.peso)
+        : ""
 
     // ── Dimensiones como string "alto x ancho x espesor" ──────────────
-    const dimensionesStr = (p.height != null && p.width != null)
-      ? `${p.height} x ${p.width} x ${p.thickness ?? 0}`
-      : ((customFields.dimensiones as string) ?? "")
+    const dimensionesStr =
+      p.height != null && p.width != null
+        ? `${p.height} x ${p.width} x ${p.thickness ?? 0}`
+        : ((customFields.dimensiones as string) ?? "")
 
     // ── Fecha de publicación ────────────────────────────────────────────
-    const fechaPublicacion = p.edition_date
-      ?? (p.year_edition ? String(p.year_edition) : "")
-      ?? ((customFields.fecha_de_publicacion as string) ?? "")
+    const fechaPublicacion =
+      p.edition_date ??
+      (p.year_edition ? String(p.year_edition) : "") ??
+      (customFields.fecha_de_publicacion as string) ??
+      ""
 
     // ── Short description ──────────────────────────────────────────────
-    const shortDesc = (customFields.short_description as string)
-      || (p.description ? p.description.slice(0, 160) : "")
+    const shortDesc = (customFields.short_description as string) || (p.description ? p.description.slice(0, 160) : "")
 
     // ── Tags ─────────────────────────────────────────────────────────
     const tagParts: string[] = []
     if (p.category) tagParts.push(p.category)
-    if (p.brand)    tagParts.push(p.brand)
+    if (p.brand) tagParts.push(p.brand)
     tagParts.push("catalogo")
-    if (p.author)   tagParts.push(p.author)
+    if (p.author) tagParts.push(p.author)
     tagParts.push(titleRangeTag(p.title ?? ""))
 
     // Extra flags from custom_fields.flags[]
@@ -224,88 +226,143 @@ export function buildExportRows(params: ExportBuildParams): ExportBuildResult {
 
     // ── Vendor / Type ─────────────────────────────────────────────────
     const vendor = defaults["Vendor"] || p.brand || ""
-    const type   = defaults["Type"]   || p.category || ""
+    const type = defaults["Type"] || p.category || ""
 
     // ── Body HTML ────────────────────────────────────────────────────
     const bodyHtml = p.description ? `<p>${p.description}</p>` : ""
 
     // ── SEO ──────────────────────────────────────────────────────────
     const seoTitle = p.title ?? ""
-    const seoDesc  = p.description?.slice(0, 320) ?? ""
+    const seoDesc = p.description?.slice(0, 320) ?? ""
 
     // ── Cell resolver: maps every column name to its value ──────────
     const cell = (col: string): string | number => {
       switch (col) {
         // Core product fields
-        case "Handle":                    return handle
-        case "Title":                     return p.title ?? ""
-        case "Body (HTML)":               return bodyHtml
-        case "Vendor":                    return vendor
-        case "Product Category":          return defaults["Product Category"] ?? ""
-        case "Type":                      return type
-        case "Tags":                      return tags
-        case "Published":                 return defaults["Published"] ?? "TRUE"
-        case "Status":                    return defaults["Status"] ?? "active"
+        case "Handle":
+          return handle
+        case "Title":
+          return p.title ?? ""
+        case "Body (HTML)":
+          return bodyHtml
+        case "Vendor":
+          return vendor
+        case "Product Category":
+          return defaults["Product Category"] ?? ""
+        case "Type":
+          return type
+        case "Tags":
+          return tags
+        case "Published":
+          return defaults["Published"] ?? "TRUE"
+        case "Status":
+          return defaults["Status"] ?? "active"
 
         // Options (single variant — no options needed for books)
-        case "Option1 Name":              return "Title"
-        case "Option1 Value":             return "Default Title"
-        case "Option2 Name":              return ""
-        case "Option2 Value":             return ""
-        case "Option3 Name":              return ""
-        case "Option3 Value":             return ""
+        case "Option1 Name":
+          return "Title"
+        case "Option1 Value":
+          return "Default Title"
+        case "Option2 Name":
+          return ""
+        case "Option2 Value":
+          return ""
+        case "Option3 Name":
+          return ""
+        case "Option3 Value":
+          return ""
 
         // Variant
-        case "Variant SKU":               return variantSku
-        case "Variant Grams":             return weightG
-        case "Variant Inventory Tracker": return "shopify"
-        case "Variant Inventory Qty":     return stock
-        case "Variant Inventory Policy":  return "deny"
-        case "Variant Fulfillment Service": return "manual"
-        case "Variant Price":             return price
-        case "Variant Compare At Price":  return ""
-        case "Variant Requires Shipping": return "TRUE"
-        case "Variant Taxable":           return defaults["Variant Taxable"] ?? "TRUE"
-        case "Variant Barcode":           return barcode
-        case "Variant Weight Unit":       return "g"
-        case "Variant Tax Code":          return ""
-        case "Variant Image":             return ""
+        case "Variant SKU":
+          return variantSku
+        case "Variant Grams":
+          return weightG
+        case "Variant Inventory Tracker":
+          return "shopify"
+        case "Variant Inventory Qty":
+          return stock
+        case "Variant Inventory Policy":
+          return "deny"
+        case "Variant Fulfillment Service":
+          return "manual"
+        case "Variant Price":
+          return price
+        case "Variant Compare At Price":
+          return ""
+        case "Variant Requires Shipping":
+          return "TRUE"
+        case "Variant Taxable":
+          return defaults["Variant Taxable"] ?? "TRUE"
+        case "Variant Barcode":
+          return barcode
+        case "Variant Weight Unit":
+          return "g"
+        case "Variant Tax Code":
+          return ""
+        case "Variant Image":
+          return ""
 
         // Image
-        case "Image Src":                 return p.image_url ?? ""
-        case "Image Position":            return p.image_url ? "1" : ""
-        case "Image Alt Text":            return p.title ?? ""
+        case "Image Src":
+          return p.image_url ?? ""
+        case "Image Position":
+          return p.image_url ? "1" : ""
+        case "Image Alt Text":
+          return p.title ?? ""
 
         // Cost
-        case "Cost per item":             return p.cost_price != null ? String(p.cost_price) : ""
+        case "Cost per item":
+          return p.cost_price != null ? String(p.cost_price) : ""
 
         // Pricing by market
-        case "Included / Argentina":      return "TRUE"
-        case "Price / Argentina":         return precioArs
-        case "Compare At Price / Argentina": return ""
-        case "Included / International":  return "FALSE"
-        case "Price / International":     return ""
-        case "Compare At Price / International": return ""
+        case "Included / Argentina":
+          return "TRUE"
+        case "Price / Argentina":
+          return precioArs
+        case "Compare At Price / Argentina":
+          return ""
+        case "Included / International":
+          return "FALSE"
+        case "Price / International":
+          return ""
+        case "Compare At Price / International":
+          return ""
 
         // Gift card / SEO
-        case "Gift Card":                 return "FALSE"
-        case "SEO Title":                 return seoTitle
-        case "SEO Description":           return seoDesc
+        case "Gift Card":
+          return "FALSE"
+        case "SEO Title":
+          return seoTitle
+        case "SEO Description":
+          return seoDesc
 
         // Google Shopping — left mostly empty for books
-        case "Google Shopping / Google Product Category": return defaults["Google Shopping / Google Product Category"] ?? ""
-        case "Google Shopping / Gender":               return ""
-        case "Google Shopping / Age Group":            return ""
-        case "Google Shopping / MPN":                  return barcode
-        case "Google Shopping / AdWords Grouping":     return ""
-        case "Google Shopping / AdWords Labels":       return ""
-        case "Google Shopping / Condition":            return p.condition ?? "new"
-        case "Google Shopping / Custom Product":       return "FALSE"
-        case "Google Shopping / Custom Label 0":       return p.brand ?? ""
-        case "Google Shopping / Custom Label 1":       return p.category ?? ""
-        case "Google Shopping / Custom Label 2":       return p.author ?? ""
-        case "Google Shopping / Custom Label 3":       return ""
-        case "Google Shopping / Custom Label 4":       return ""
+        case "Google Shopping / Google Product Category":
+          return defaults["Google Shopping / Google Product Category"] ?? ""
+        case "Google Shopping / Gender":
+          return ""
+        case "Google Shopping / Age Group":
+          return ""
+        case "Google Shopping / MPN":
+          return barcode
+        case "Google Shopping / AdWords Grouping":
+          return ""
+        case "Google Shopping / AdWords Labels":
+          return ""
+        case "Google Shopping / Condition":
+          return p.condition ?? "new"
+        case "Google Shopping / Custom Product":
+          return "FALSE"
+        case "Google Shopping / Custom Label 0":
+          return p.brand ?? ""
+        case "Google Shopping / Custom Label 1":
+          return p.category ?? ""
+        case "Google Shopping / Custom Label 2":
+          return p.author ?? ""
+        case "Google Shopping / Custom Label 3":
+          return ""
+        case "Google Shopping / Custom Label 4":
+          return ""
 
         // Metafields
         case "Metafield: custom.autor [single_line_text_field]":
@@ -355,7 +412,11 @@ export function buildExportRows(params: ExportBuildParams): ExportBuildResult {
         case "Metafield: custom.curso [single_line_text_field]":
           return p.course ?? (customFields.curso as string) ?? ""
         case "Metafield: mm-google-shopping.google_product_category [single_line_text_field]":
-          return (customFields.google_product_category as string) ?? (defaults["Google Shopping / Google Product Category"] ?? "")
+          return (
+            (customFields.google_product_category as string) ??
+            defaults["Google Shopping / Google Product Category"] ??
+            ""
+          )
 
         default:
           // Fall back to defaults, then custom_fields

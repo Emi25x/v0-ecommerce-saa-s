@@ -8,35 +8,10 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   Settings,
   MessageSquare,
@@ -73,38 +48,41 @@ interface ChannelConfig {
 }
 
 const CATEGORIES = [
-  { value: "general",   label: "General" },
-  { value: "shipping",  label: "Envíos" },
-  { value: "returns",   label: "Devoluciones" },
-  { value: "stock",     label: "Stock" },
-  { value: "payment",   label: "Pagos" },
+  { value: "general", label: "General" },
+  { value: "shipping", label: "Envíos" },
+  { value: "returns", label: "Devoluciones" },
+  { value: "stock", label: "Stock" },
+  { value: "payment", label: "Pagos" },
   { value: "ml_question", label: "Preguntas ML" },
 ]
 
 const CHANNEL_OPTIONS = [
   { value: "ml_question", label: "ML Preguntas", icon: <ShoppingBag className="h-3.5 w-3.5" /> },
-  { value: "whatsapp",    label: "WhatsApp",     icon: <Phone className="h-3.5 w-3.5" /> },
-  { value: "instagram",   label: "Instagram",    icon: <Instagram className="h-3.5 w-3.5" /> },
-  { value: "email",       label: "Email",        icon: <Mail className="h-3.5 w-3.5" /> },
+  { value: "whatsapp", label: "WhatsApp", icon: <Phone className="h-3.5 w-3.5" /> },
+  { value: "instagram", label: "Instagram", icon: <Instagram className="h-3.5 w-3.5" /> },
+  { value: "email", label: "Email", icon: <Mail className="h-3.5 w-3.5" /> },
 ]
 
 const VARIABLE_HINTS = [
-  "{{customer_name}}", "{{product_title}}", "{{order_id}}",
-  "{{tracking_number}}", "{{store_name}}",
+  "{{customer_name}}",
+  "{{product_title}}",
+  "{{order_id}}",
+  "{{tracking_number}}",
+  "{{store_name}}",
 ]
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 export default function AtencionConfigPage() {
-  const [templates, setTemplates]       = useState<Template[]>([])
+  const [templates, setTemplates] = useState<Template[]>([])
   const [channelConfigs, setChannelConfigs] = useState<ChannelConfig[]>([])
-  const [loading, setLoading]           = useState(false)
+  const [loading, setLoading] = useState(false)
 
   // Template dialog
   const [templateDialog, setTemplateDialog] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
-  const [tName, setTName]       = useState("")
+  const [tName, setTName] = useState("")
   const [tCategory, setTCategory] = useState("")
-  const [tBody, setTBody]       = useState("")
+  const [tBody, setTBody] = useState("")
   const [savingTemplate, setSavingTemplate] = useState(false)
 
   // ── Load data ───────────────────────────────────────────────────────────────
@@ -133,13 +111,17 @@ export default function AtencionConfigPage() {
   // ── Template CRUD ───────────────────────────────────────────────────────────
   const openNewTemplate = () => {
     setEditingTemplate(null)
-    setTName(""); setTCategory("general"); setTBody("")
+    setTName("")
+    setTCategory("general")
+    setTBody("")
     setTemplateDialog(true)
   }
 
   const openEditTemplate = (t: Template) => {
     setEditingTemplate(t)
-    setTName(t.name); setTCategory(t.category ?? "general"); setTBody(t.body)
+    setTName(t.name)
+    setTCategory(t.category ?? "general")
+    setTBody(t.body)
     setTemplateDialog(true)
   }
 
@@ -147,8 +129,8 @@ export default function AtencionConfigPage() {
     if (!tName.trim() || !tBody.trim()) return
     setSavingTemplate(true)
     try {
-      const url     = editingTemplate ? `/api/cs/templates/${editingTemplate.id}` : "/api/cs/templates"
-      const method  = editingTemplate ? "PATCH" : "POST"
+      const url = editingTemplate ? `/api/cs/templates/${editingTemplate.id}` : "/api/cs/templates"
+      const method = editingTemplate ? "PATCH" : "POST"
       await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
@@ -196,8 +178,8 @@ export default function AtencionConfigPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground">
-                Las plantillas permiten responder rápidamente con textos predefinidos.
-                Usá <code className="bg-muted px-1 rounded text-xs">{"{{variable}}"}</code> para insertar datos dinámicos.
+                Las plantillas permiten responder rápidamente con textos predefinidos. Usá{" "}
+                <code className="bg-muted px-1 rounded text-xs">{"{{variable}}"}</code> para insertar datos dinámicos.
               </p>
             </div>
             <Button onClick={openNewTemplate} size="sm">
@@ -234,32 +216,29 @@ export default function AtencionConfigPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {templates.map(t => (
+                  {templates.map((t) => (
                     <TableRow key={t.id}>
                       <TableCell className="font-medium text-sm">{t.name}</TableCell>
                       <TableCell>
                         {t.category && (
                           <Badge variant="secondary" className="text-xs">
-                            {CATEGORIES.find(c => c.value === t.category)?.label ?? t.category}
+                            {CATEGORIES.find((c) => c.value === t.category)?.label ?? t.category}
                           </Badge>
                         )}
                       </TableCell>
                       <TableCell className="max-w-xs">
                         <p className="truncate text-xs text-muted-foreground">{t.body}</p>
                       </TableCell>
-                      <TableCell className="text-right text-sm text-muted-foreground">
-                        {t.use_count}
-                      </TableCell>
+                      <TableCell className="text-right text-sm text-muted-foreground">{t.use_count}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1 justify-end">
-                          <Button
-                            variant="ghost" size="icon" className="h-7 w-7"
-                            onClick={() => openEditTemplate(t)}
-                          >
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditTemplate(t)}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
                           <Button
-                            variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
                             onClick={() => deleteTemplate(t.id)}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -285,7 +264,8 @@ export default function AtencionConfigPage() {
                   MercadoLibre
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Las preguntas y mensajes de ML se sincronizan automáticamente a través de tus cuentas configuradas en la sección ML.
+                  Las preguntas y mensajes de ML se sincronizan automáticamente a través de tus cuentas configuradas en
+                  la sección ML.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -367,11 +347,7 @@ export default function AtencionConfigPage() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs">Nombre</Label>
-                <Input
-                  placeholder="ej: Consulta de envío"
-                  value={tName}
-                  onChange={e => setTName(e.target.value)}
-                />
+                <Input placeholder="ej: Consulta de envío" value={tName} onChange={(e) => setTName(e.target.value)} />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Categoría</Label>
@@ -380,8 +356,10 @@ export default function AtencionConfigPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {CATEGORIES.map(c => (
-                      <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                    {CATEGORIES.map((c) => (
+                      <SelectItem key={c.value} value={c.value}>
+                        {c.label}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -394,14 +372,14 @@ export default function AtencionConfigPage() {
                 className="min-h-[120px] resize-none text-sm"
                 placeholder="Hola {{customer_name}}, gracias por tu consulta..."
                 value={tBody}
-                onChange={e => setTBody(e.target.value)}
+                onChange={(e) => setTBody(e.target.value)}
               />
               <div className="flex flex-wrap gap-1">
-                {VARIABLE_HINTS.map(v => (
+                {VARIABLE_HINTS.map((v) => (
                   <button
                     key={v}
                     className="text-[10px] rounded border px-1.5 py-0.5 font-mono text-muted-foreground hover:bg-muted transition-colors"
-                    onClick={() => setTBody(b => b + v)}
+                    onClick={() => setTBody((b) => b + v)}
                     type="button"
                   >
                     {v}
@@ -412,12 +390,21 @@ export default function AtencionConfigPage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setTemplateDialog(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => setTemplateDialog(false)}>
+              Cancelar
+            </Button>
             <Button onClick={saveTemplate} disabled={savingTemplate || !tName.trim() || !tBody.trim()}>
-              {savingTemplate
-                ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Guardando...</>
-                : <><Save className="mr-2 h-4 w-4" />Guardar</>
-              }
+              {savingTemplate ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Guardando...
+                </>
+              ) : (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Guardar
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

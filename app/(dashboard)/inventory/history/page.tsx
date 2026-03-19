@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import Link from "next/link"
 import { Package, ChevronLeft, ChevronRight, CheckCircle2, XCircle, AlertCircle, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -119,13 +120,13 @@ export default function ImportHistoryPage() {
       <div className="flex flex-1">
         <aside className="w-64 border-r border-border bg-sidebar">
           <nav className="flex flex-col gap-1 p-4">
-            <a
+            <Link
               href="/"
               className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             >
               <Package className="h-5 w-5" />
               <span className="font-medium">Dashboard</span>
-            </a>
+            </Link>
             <a
               href="/inventory"
               className="flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"

@@ -3,15 +3,7 @@
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import {
-  Edit,
-  Trash2,
-  ExternalLink,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
-  Package,
-} from "lucide-react"
+import { Edit, Trash2, ExternalLink, ArrowUpDown, ArrowUp, ArrowDown, Package } from "lucide-react"
 import type { Product, SortOrder } from "@/components/inventory/types"
 
 interface ProductTableProps {
@@ -158,7 +150,9 @@ export function ProductTable({
                   )}
                 </TableCell>
                 <TableCell className="border-r-2 border-border font-mono text-sm">{product.sku}</TableCell>
-                <TableCell className="border-r-2 border-border font-mono text-xs text-muted-foreground">{product.ean || "\u2014"}</TableCell>
+                <TableCell className="border-r-2 border-border font-mono text-xs text-muted-foreground">
+                  {product.ean || "\u2014"}
+                </TableCell>
                 <TableCell className="border-r-2 border-border max-w-xs truncate">{product.title}</TableCell>
                 <TableCell className="border-r-2 border-border font-mono">
                   ${product.price != null ? product.price.toFixed(2) : "N/A"}
@@ -196,11 +190,7 @@ export function ProductTable({
                     <Button variant="ghost" size="icon" onClick={() => onViewDetails(product)}>
                       <ExternalLink className="h-4 w-4" />
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => onDeleteProduct(product)}
-                    >
+                    <Button variant="ghost" size="icon" onClick={() => onDeleteProduct(product)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>

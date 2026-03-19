@@ -21,19 +21,12 @@ const defaultFetcher = async (url: string) => {
  * @param url - API endpoint (or null/undefined to skip fetching)
  * @param options - SWR configuration overrides
  */
-export function useFetch<T = any>(
-  url: string | null | undefined,
-  options?: SWRConfiguration
-) {
-  const { data, error, isLoading, isValidating, mutate } = useSWR<T>(
-    url ?? null,
-    defaultFetcher,
-    {
-      revalidateOnFocus: false,
-      dedupingInterval: 5000,
-      ...options,
-    }
-  )
+export function useFetch<T = any>(url: string | null | undefined, options?: SWRConfiguration) {
+  const { data, error, isLoading, isValidating, mutate } = useSWR<T>(url ?? null, defaultFetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 5000,
+    ...options,
+  })
 
   return {
     data,
@@ -50,7 +43,7 @@ export function useFetch<T = any>(
 export function usePostFetch<T = any>(
   url: string | null | undefined,
   body: Record<string, any> | null,
-  options?: SWRConfiguration
+  options?: SWRConfiguration,
 ) {
   const key = url && body ? [url, JSON.stringify(body)] : null
 
@@ -72,7 +65,7 @@ export function usePostFetch<T = any>(
     {
       revalidateOnFocus: false,
       ...options,
-    }
+    },
   )
 
   return { data, error, isLoading, isValidating, mutate }

@@ -21,9 +21,7 @@ export async function GET(request: Request) {
 
     const supabase = await createClient()
 
-    const { data: accounts, error: accountsError } = await supabase
-      .from("ml_accounts")
-      .select("id, nickname")
+    const { data: accounts, error: accountsError } = await supabase.from("ml_accounts").select("id, nickname")
 
     if (accountsError) {
       console.error("[sync-ml-orders] Error fetching ML accounts:", accountsError)
@@ -36,7 +34,8 @@ export async function GET(request: Request) {
 
     const run = await startRun(supabase, "ml_sync_orders", "ML Sync Orders (cron)")
     const results = []
-    let grandTotalSynced = 0, grandTotalErrors = 0
+    let grandTotalSynced = 0,
+      grandTotalErrors = 0
 
     for (const account of accounts) {
       let totalSynced = 0
@@ -67,12 +66,14 @@ export async function GET(request: Request) {
 
           totalSynced += syncResult.synced ?? 0
           hasMore = syncResult.has_more ?? false
-          offset = syncResult.offset ?? (offset + PAGE_SIZE)
+          offset = syncResult.offset ?? offset + PAGE_SIZE
           pages++
 
-          console.log(`[sync-ml-orders] ${account.nickname} page ${pages}: synced=${syncResult.synced}, total=${syncResult.total}, has_more=${hasMore}`)
+          console.log(
+            `[sync-ml-orders] ${account.nickname} page ${pages}: synced=${syncResult.synced}, total=${syncResult.total}, has_more=${hasMore}`,
+          )
 
-          if (hasMore) await new Promise(r => setTimeout(r, 300))
+          if (hasMore) await new Promise((r) => setTimeout(r, 300))
         }
 
         grandTotalSynced += totalSynced
@@ -87,7 +88,7 @@ export async function GET(request: Request) {
         })
       }
 
-      await new Promise(r => setTimeout(r, 500))
+      await new Promise((r) => setTimeout(r, 500))
     }
 
     await run.complete({
@@ -102,12 +103,8 @@ export async function GET(request: Request) {
       processed: accounts.length,
       results,
     })
-
   } catch (error) {
     console.error("[sync-ml-orders] Error:", error)
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 })
   }
 }

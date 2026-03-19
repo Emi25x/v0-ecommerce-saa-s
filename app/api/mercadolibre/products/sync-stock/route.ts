@@ -83,9 +83,9 @@ export async function POST(request: NextRequest) {
             console.log("[v0] Successfully synced stock with:", relatedId)
 
             await supabase.from("stock_sync_log").insert({
-              listing_id:   relatedId,
+              listing_id: relatedId,
               new_quantity: new_quantity,
-              source:       "manual_sync",
+              source: "manual_sync",
             })
             // Historial de la publicación relacionada se captura vía webhook de ML
           } else {

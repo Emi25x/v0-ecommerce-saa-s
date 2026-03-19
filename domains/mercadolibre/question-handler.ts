@@ -26,12 +26,9 @@ export async function handleQuestionNotification(notification: {
       const validAccount = await refreshTokenIfNeeded(account)
 
       // Obtener datos de la pregunta
-      const questionResponse = await fetch(
-        `https://api.mercadolibre.com/questions/${questionId}`,
-        {
-          headers: { Authorization: `Bearer ${validAccount.access_token}` },
-        }
-      )
+      const questionResponse = await fetch(`https://api.mercadolibre.com/questions/${questionId}`, {
+        headers: { Authorization: `Bearer ${validAccount.access_token}` },
+      })
 
       if (questionResponse.ok) {
         const questionData = await questionResponse.json()
@@ -47,7 +44,7 @@ export async function handleQuestionNotification(notification: {
             question_data: questionData,
             cached_at: new Date().toISOString(),
           },
-          { onConflict: "id" }
+          { onConflict: "id" },
         )
 
         console.log(`[v0] Question ${questionId} synced to cache`)

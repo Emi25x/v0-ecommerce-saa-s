@@ -19,14 +19,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
 interface MLAccount {
   id: string
@@ -102,20 +95,20 @@ export default function MLTemplatesPage() {
   const [loading, setLoading] = useState(true)
   const [analyzing, setAnalyzing] = useState(false)
   const [saving, setSaving] = useState(false)
-  
+
   // Estado para análisis
   const [itemIdToAnalyze, setItemIdToAnalyze] = useState("")
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null)
-  
+
   // Estado para edición de plantilla
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
   const [showEditor, setShowEditor] = useState(false)
-  
+
   // Estado para calculadora de precios
   const [marginPercent, setMarginPercent] = useState(20)
   const [testCostEur, setTestCostEur] = useState(10)
   const [calculating, setCalculating] = useState(false)
-  
+
   // Estado para perfiles de precios
   const [priceProfiles, setPriceProfiles] = useState<PriceProfile[]>([])
   const [selectedProfileId, setSelectedProfileId] = useState<string>("")
@@ -139,7 +132,7 @@ export default function MLTemplatesPage() {
       profit_ars: number
     }
   } | null>(null)
-  
+
   // Estado para analisis de umbral $33k
   const [thresholdCostEur, setThresholdCostEur] = useState(15)
   const [marginMin, setMarginMin] = useState(20)
@@ -170,7 +163,7 @@ export default function MLTemplatesPage() {
     recommendation: "below" | "above" | "either"
     reason: string
   } | null>(null)
-  
+
   // Campos de la plantilla
   const [templateForm, setTemplateForm] = useState({
     name: "Plantilla Principal",
@@ -255,7 +248,7 @@ export default function MLTemplatesPage() {
       }
 
       setAnalysisResult(data)
-      
+
       // Pre-llenar el formulario con la plantilla sugerida
       if (data.suggested_template) {
         setTemplateForm({
@@ -280,7 +273,7 @@ export default function MLTemplatesPage() {
     setSaving(true)
     try {
       const method = editingTemplate ? "PUT" : "POST"
-      const body = editingTemplate 
+      const body = editingTemplate
         ? { id: editingTemplate.id, ...templateForm }
         : { account_id: selectedAccount, ...templateForm }
 
@@ -351,7 +344,7 @@ export default function MLTemplatesPage() {
       toast({ title: "Error", description: "Ingresa un nombre para el perfil", variant: "destructive" })
       return
     }
-    
+
     setSavingProfile(true)
     try {
       const response = await fetch("/api/price-profiles", {
@@ -360,10 +353,10 @@ export default function MLTemplatesPage() {
         body: JSON.stringify({
           name: newProfileName,
           margin_percent: marginPercent,
-          listing_type_id: "gold_special"
-        })
+          listing_type_id: "gold_special",
+        }),
       })
-      
+
       const data = await response.json()
       if (data.profile) {
         toast({ title: "Perfil guardado", description: `Perfil "${newProfileName}" creado` })
@@ -381,7 +374,7 @@ export default function MLTemplatesPage() {
 
   const deleteProfile = async (id: string) => {
     if (!confirm("¿Eliminar este perfil de precios?")) return
-    
+
     try {
       const response = await fetch(`/api/price-profiles?id=${id}`, { method: "DELETE" })
       const data = await response.json()
@@ -398,15 +391,18 @@ export default function MLTemplatesPage() {
     // Actualizar calculadora
     setSelectedProfileId(profile.id)
     setMarginPercent(Number(profile.margin_percent))
-    
+
     // Actualizar plantilla: vincular perfil y actualizar fórmula
     setTemplateForm({
       ...templateForm,
       price_profile_id: profile.id,
-      price_formula: `margin:${profile.margin_percent}%`
+      price_formula: `margin:${profile.margin_percent}%`,
     })
-    
-    toast({ title: "Perfil cargado", description: `Vinculado "${profile.name}" (${profile.margin_percent}%) a la plantilla` })
+
+    toast({
+      title: "Perfil cargado",
+      description: `Vinculado "${profile.name}" (${profile.margin_percent}%) a la plantilla`,
+    })
   }
 
   const calculatePrice = async () => {
@@ -418,10 +414,10 @@ export default function MLTemplatesPage() {
         body: JSON.stringify({
           cost_price_eur: testCostEur,
           margin_percent: marginPercent,
-          listing_type_id: "gold_special"
-        })
+          listing_type_id: "gold_special",
+        }),
       })
-      
+
       const data = await response.json()
       if (data.success) {
         setPriceCalculation(data.calculation)
@@ -434,21 +430,21 @@ export default function MLTemplatesPage() {
       setCalculating(false)
     }
   }
-  
+
   const applyMarginToTemplate = async () => {
     if (!priceCalculation) {
       toast({ title: "Error", description: "Primero debes calcular el precio", variant: "destructive" })
       return
     }
-    
+
     if (templates.length === 0) {
       toast({ title: "Error", description: "No hay plantillas disponibles", variant: "destructive" })
       return
     }
-    
+
     // Usar la primera plantilla o la que este siendo editada
     const targetTemplate = editingTemplate || templates[0]
-    
+
     try {
       const response = await fetch("/api/ml/templates", {
         method: "PUT",
@@ -456,28 +452,28 @@ export default function MLTemplatesPage() {
         body: JSON.stringify({
           id: targetTemplate.id,
           price_formula: `margin:${marginPercent}%`,
-          margin_percent: marginPercent
-        })
+          margin_percent: marginPercent,
+        }),
       })
-      
+
       const data = await response.json()
-      
+
       if (data.error) {
         toast({ title: "Error", description: data.error, variant: "destructive" })
         return
       }
-      
-      toast({ 
-        title: "Margen aplicado", 
-        description: `Plantilla "${targetTemplate.name}" actualizada con ${marginPercent}% de margen` 
+
+      toast({
+        title: "Margen aplicado",
+        description: `Plantilla "${targetTemplate.name}" actualizada con ${marginPercent}% de margen`,
       })
-      
+
       fetchTemplates()
     } catch (error) {
       toast({ title: "Error", description: "Error al actualizar plantilla", variant: "destructive" })
     }
   }
-  
+
   const analyzeThreshold = async () => {
     setCalculatingThreshold(true)
     try {
@@ -485,45 +481,45 @@ export default function MLTemplatesPage() {
       const rateResponse = await fetch("https://dolarapi.com/v1/cotizaciones/eur")
       const rateData = await rateResponse.json()
       const exchangeRate = Math.round((rateData.venta || 1718) * 1.027) // EUR billetes BNA
-      
+
       const costArs = thresholdCostEur * exchangeRate
-      
+
       // Calcular para precio DEBAJO de $33k (con cargo fijo, sin envio)
       // Encontrar el margen que da precio cercano a $32,999
       const targetPriceBelow = 32999
       const mlFeePercent = 0.13
-      
+
       // Para debajo de $33k, determinar cargo fijo segun rango estimado
       let fixedFeeBelow = 2810 // Asumimos rango $25k-$33k
       if (costArs * 1.2 < 15000) fixedFeeBelow = 1115
       else if (costArs * 1.2 < 25000) fixedFeeBelow = 2300
-      
+
       // Calcular margen resultante si fijamos precio en $32,999
-      const netReceivedBelow = targetPriceBelow - (targetPriceBelow * mlFeePercent) - fixedFeeBelow
+      const netReceivedBelow = targetPriceBelow - targetPriceBelow * mlFeePercent - fixedFeeBelow
       const marginBelow = ((netReceivedBelow - costArs) / costArs) * 100
       const profitBelow = netReceivedBelow - costArs
-      
+
       // Calcular para precio ARRIBA de $33k (sin cargo fijo, con envio gratis)
       const shippingCost = 5500
-      
+
       // Calcular precio minimo arriba de $33k con margen minimo aceptable
       const targetMarginAbove = marginMin / 100
       const costWithMarginAbove = costArs * (1 + targetMarginAbove)
       const priceAbove = Math.ceil((costWithMarginAbove + shippingCost) / (1 - mlFeePercent) / 10) * 10
-      
+
       // Verificar que quede arriba de $33k
       const finalPriceAbove = Math.max(priceAbove, 33100)
-      const netReceivedAbove = finalPriceAbove - (finalPriceAbove * mlFeePercent) - shippingCost
+      const netReceivedAbove = finalPriceAbove - finalPriceAbove * mlFeePercent - shippingCost
       const marginAbove = ((netReceivedAbove - costArs) / costArs) * 100
       const profitAbove = netReceivedAbove - costArs
-      
+
       // Determinar recomendacion
       const belowWithinRange = marginBelow >= marginMin && marginBelow <= marginMax
       const aboveWithinRange = marginAbove >= marginMin && marginAbove <= marginMax
-      
+
       let recommendation: "below" | "above" | "either" = "either"
       let reason = ""
-      
+
       if (!belowWithinRange && !aboveWithinRange) {
         recommendation = marginBelow > marginAbove ? "below" : "above"
         reason = "Ninguna opcion esta dentro del rango de margen deseado"
@@ -538,7 +534,7 @@ export default function MLTemplatesPage() {
         recommendation = "above"
         reason = "Ambas opciones cumplen el margen, pero con envio gratis se vende mas."
       }
-      
+
       setThresholdAnalysis({
         costEur: thresholdCostEur,
         costArs,
@@ -550,7 +546,7 @@ export default function MLTemplatesPage() {
           fixedFee: fixedFeeBelow,
           shippingCost: 0,
           netProfit: Math.round(profitBelow),
-          withinRange: belowWithinRange
+          withinRange: belowWithinRange,
         },
         above33k: {
           price: finalPriceAbove,
@@ -559,10 +555,10 @@ export default function MLTemplatesPage() {
           fixedFee: 0,
           shippingCost,
           netProfit: Math.round(profitAbove),
-          withinRange: aboveWithinRange
+          withinRange: aboveWithinRange,
         },
         recommendation,
-        reason
+        reason,
       })
     } catch (error) {
       toast({ title: "Error", description: "Error al analizar umbral", variant: "destructive" })
@@ -597,7 +593,7 @@ export default function MLTemplatesPage() {
   const newTemplate = () => {
     setEditingTemplate(null)
     // Obtener el perfil por defecto
-    const defaultProfile = priceProfiles.find(p => p.is_default)
+    const defaultProfile = priceProfiles.find((p) => p.is_default)
     setTemplateForm({
       name: "Nueva Plantilla",
       description: "",
@@ -658,7 +654,7 @@ export default function MLTemplatesPage() {
               </SelectContent>
             </Select>
             <Button onClick={newTemplate}>Nueva Plantilla</Button>
-            <Button 
+            <Button
               variant="outline"
               onClick={async () => {
                 try {
@@ -666,16 +662,16 @@ export default function MLTemplatesPage() {
                   const res = await fetch("/api/ml/templates/generate-from-account", { method: "POST" })
                   const data = await res.json()
                   if (res.ok) {
-                    toast({ 
-                      title: "Plantilla generada", 
-                      description: `Se analizaron ${data.analysis?.matches_found || 0} publicaciones` 
+                    toast({
+                      title: "Plantilla generada",
+                      description: `Se analizaron ${data.analysis?.matches_found || 0} publicaciones`,
                     })
                     fetchTemplates()
                   } else {
-                    toast({ 
-                      title: "Error", 
+                    toast({
+                      title: "Error",
                       description: data.error || "No se pudo generar la plantilla",
-                      variant: "destructive"
+                      variant: "destructive",
                     })
                   }
                 } catch {
@@ -729,8 +725,7 @@ export default function MLTemplatesPage() {
                           {template.condition === "new" ? "Nuevo" : template.condition}
                         </div>
                         <div>
-                          <span className="text-muted-foreground">Envio:</span>{" "}
-                          {template.shipping_mode}
+                          <span className="text-muted-foreground">Envio:</span> {template.shipping_mode}
                         </div>
                         <div>
                           <span className="text-muted-foreground">Envio gratis:</span>{" "}
@@ -740,14 +735,15 @@ export default function MLTemplatesPage() {
                       <div className="text-sm">
                         <span className="text-muted-foreground">Formula de precio:</span>{" "}
                         <code className="rounded bg-muted px-1">{template.price_formula}</code>
-                        {template.price_profile_id && (() => {
-                          const linkedProfile = priceProfiles.find(p => p.id === template.price_profile_id)
-                          return linkedProfile ? (
-                            <span className="ml-2 text-xs text-blue-600 dark:text-blue-400">
-                              (vinculado a "{linkedProfile.name}" {linkedProfile.margin_percent}%)
-                            </span>
-                          ) : null
-                        })()}
+                        {template.price_profile_id &&
+                          (() => {
+                            const linkedProfile = priceProfiles.find((p) => p.id === template.price_profile_id)
+                            return linkedProfile ? (
+                              <span className="ml-2 text-xs text-blue-600 dark:text-blue-400">
+                                (vinculado a "{linkedProfile.name}" {linkedProfile.margin_percent}%)
+                              </span>
+                            ) : null
+                          })()}
                       </div>
                       {template.description_template && (
                         <div className="text-sm">
@@ -783,8 +779,8 @@ export default function MLTemplatesPage() {
                   <CardHeader>
                     <CardTitle>Configurar Margen</CardTitle>
                     <CardDescription>
-                      Define el margen de ganancia deseado y el sistema calculara el precio final
-                      considerando todos los costos de Mercado Libre.
+                      Define el margen de ganancia deseado y el sistema calculara el precio final considerando todos los
+                      costos de Mercado Libre.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
@@ -801,7 +797,11 @@ export default function MLTemplatesPage() {
                               className={selectedProfileId === profile.id ? "" : "bg-transparent"}
                             >
                               {profile.name} ({profile.margin_percent}%)
-                              {profile.is_default && <Badge variant="secondary" className="ml-1 text-xs">Default</Badge>}
+                              {profile.is_default && (
+                                <Badge variant="secondary" className="ml-1 text-xs">
+                                  Default
+                                </Badge>
+                              )}
                             </Button>
                             {!profile.is_default && (
                               <Button
@@ -823,8 +823,8 @@ export default function MLTemplatesPage() {
                           onChange={(e) => setNewProfileName(e.target.value)}
                           className="max-w-[200px]"
                         />
-                        <Button 
-                          onClick={saveProfile} 
+                        <Button
+                          onClick={saveProfile}
                           disabled={savingProfile || !newProfileName.trim()}
                           variant="outline"
                           size="sm"
@@ -851,7 +851,7 @@ export default function MLTemplatesPage() {
                           <span className="text-2xl font-bold text-primary">{marginPercent}%</span>
                         </div>
                       </div>
-                      
+
                       <div className="space-y-2">
                         <Label htmlFor="testCost">Costo de prueba (EUR)</Label>
                         <div className="flex items-center gap-4">
@@ -868,13 +868,8 @@ export default function MLTemplatesPage() {
                         </div>
                       </div>
                     </div>
-                    
-                    <Button 
-                      onClick={calculatePrice} 
-                      disabled={calculating}
-                      className="w-full"
-                      size="lg"
-                    >
+
+                    <Button onClick={calculatePrice} disabled={calculating} className="w-full" size="lg">
                       {calculating ? "Calculando..." : "Calcular Precio"}
                     </Button>
                   </CardContent>
@@ -884,9 +879,7 @@ export default function MLTemplatesPage() {
                 <Card>
                   <CardHeader>
                     <CardTitle>Desglose de Costos</CardTitle>
-                    <CardDescription>
-                      Valores utilizados en la formula de precio
-                    </CardDescription>
+                    <CardDescription>Valores utilizados en la formula de precio</CardDescription>
                   </CardHeader>
                   <CardContent>
                     {priceCalculation ? (
@@ -898,10 +891,18 @@ export default function MLTemplatesPage() {
                             ${priceCalculation.final_price_ars.toLocaleString("es-AR")}
                           </p>
                           <p className="mt-2 text-lg font-semibold">
-                            Multiplicador: {(priceCalculation.final_price_ars / priceCalculation.cost_price_eur).toLocaleString("es-AR", { maximumFractionDigits: 0 })}
+                            Multiplicador:{" "}
+                            {(priceCalculation.final_price_ars / priceCalculation.cost_price_eur).toLocaleString(
+                              "es-AR",
+                              { maximumFractionDigits: 0 },
+                            )}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            EUR 1 = ARS {(priceCalculation.final_price_ars / priceCalculation.cost_price_eur).toLocaleString("es-AR", { maximumFractionDigits: 0 })}
+                            EUR 1 = ARS{" "}
+                            {(priceCalculation.final_price_ars / priceCalculation.cost_price_eur).toLocaleString(
+                              "es-AR",
+                              { maximumFractionDigits: 0 },
+                            )}
                           </p>
                         </div>
 
@@ -916,15 +917,21 @@ export default function MLTemplatesPage() {
                           <TableBody>
                             <TableRow>
                               <TableCell className="font-medium">Costo producto</TableCell>
-                              <TableCell className="text-right">EUR {priceCalculation.cost_price_eur.toFixed(2)}</TableCell>
+                              <TableCell className="text-right">
+                                EUR {priceCalculation.cost_price_eur.toFixed(2)}
+                              </TableCell>
                             </TableRow>
                             <TableRow>
                               <TableCell className="font-medium">Tipo de cambio (EUR billetes BNA)</TableCell>
-                              <TableCell className="text-right">${priceCalculation.exchange_rate.toLocaleString("es-AR")}</TableCell>
+                              <TableCell className="text-right">
+                                ${priceCalculation.exchange_rate.toLocaleString("es-AR")}
+                              </TableCell>
                             </TableRow>
                             <TableRow>
                               <TableCell className="font-medium">Costo en ARS</TableCell>
-                              <TableCell className="text-right">${priceCalculation.cost_in_ars.toLocaleString("es-AR")}</TableCell>
+                              <TableCell className="text-right">
+                                ${priceCalculation.cost_in_ars.toLocaleString("es-AR")}
+                              </TableCell>
                             </TableRow>
                             <TableRow className="bg-muted/50">
                               <TableCell className="font-medium">Margen deseado</TableCell>
@@ -936,11 +943,15 @@ export default function MLTemplatesPage() {
                             </TableRow>
                             <TableRow>
                               <TableCell className="font-medium">Cargo fijo ML</TableCell>
-                              <TableCell className="text-right">${priceCalculation.ml_fixed_fee.toLocaleString("es-AR")}</TableCell>
+                              <TableCell className="text-right">
+                                ${priceCalculation.ml_fixed_fee.toLocaleString("es-AR")}
+                              </TableCell>
                             </TableRow>
                             <TableRow>
                               <TableCell className="font-medium">Costo envio gratis</TableCell>
-                              <TableCell className="text-right">${priceCalculation.shipping_cost.toLocaleString("es-AR")}</TableCell>
+                              <TableCell className="text-right">
+                                ${priceCalculation.shipping_cost.toLocaleString("es-AR")}
+                              </TableCell>
                             </TableRow>
                           </TableBody>
                         </Table>
@@ -949,35 +960,47 @@ export default function MLTemplatesPage() {
                         <div className="rounded-lg border p-4 space-y-2">
                           <h4 className="font-semibold text-sm">Verificacion</h4>
                           <div className="grid grid-cols-2 gap-2 text-sm">
-                            <span className="text-muted-foreground">Comision ML ({priceCalculation.ml_fee_percent}%):</span>
-                            <span className="text-right">-${priceCalculation.verification.ml_commission.toLocaleString("es-AR")}</span>
-                            
+                            <span className="text-muted-foreground">
+                              Comision ML ({priceCalculation.ml_fee_percent}%):
+                            </span>
+                            <span className="text-right">
+                              -${priceCalculation.verification.ml_commission.toLocaleString("es-AR")}
+                            </span>
+
                             <span className="text-muted-foreground">Cargo fijo ML:</span>
-                            <span className="text-right">-${priceCalculation.ml_fixed_fee.toLocaleString("es-AR")}</span>
-                            
+                            <span className="text-right">
+                              -${priceCalculation.ml_fixed_fee.toLocaleString("es-AR")}
+                            </span>
+
                             <span className="text-muted-foreground">Costo envio:</span>
-                            <span className="text-right">-${priceCalculation.verification.shipping_cost.toLocaleString("es-AR")}</span>
-                            
+                            <span className="text-right">
+                              -${priceCalculation.verification.shipping_cost.toLocaleString("es-AR")}
+                            </span>
+
                             <span className="text-muted-foreground">Total costos ML:</span>
-                            <span className="text-right font-medium">-${priceCalculation.verification.total_costs.toLocaleString("es-AR")}</span>
-                            
+                            <span className="text-right font-medium">
+                              -${priceCalculation.verification.total_costs.toLocaleString("es-AR")}
+                            </span>
+
                             <span className="text-muted-foreground">Neto recibido:</span>
-                            <span className="text-right">${priceCalculation.verification.net_received.toLocaleString("es-AR")}</span>
-                            
+                            <span className="text-right">
+                              ${priceCalculation.verification.net_received.toLocaleString("es-AR")}
+                            </span>
+
                             <span className="text-muted-foreground">Ganancia:</span>
-                            <span className="text-right text-green-600 font-medium">+${priceCalculation.verification.profit_ars.toLocaleString("es-AR")}</span>
-                            
+                            <span className="text-right text-green-600 font-medium">
+                              +${priceCalculation.verification.profit_ars.toLocaleString("es-AR")}
+                            </span>
+
                             <span className="text-muted-foreground">Margen real:</span>
-                            <span className="text-right font-bold text-primary">{priceCalculation.verification.actual_margin_percent}%</span>
+                            <span className="text-right font-bold text-primary">
+                              {priceCalculation.verification.actual_margin_percent}%
+                            </span>
                           </div>
                         </div>
 
                         {/* Boton aplicar */}
-                        <Button 
-                          onClick={applyMarginToTemplate}
-                          variant="outline"
-                          className="w-full bg-transparent"
-                        >
+                        <Button onClick={applyMarginToTemplate} variant="outline" className="w-full bg-transparent">
                           Aplicar margen a plantilla activa
                         </Button>
                       </div>
@@ -990,23 +1013,21 @@ export default function MLTemplatesPage() {
                 </Card>
               </div>
             </div>
-            
+
             {/* Seccion 2: Analisis Umbral $33,000 */}
             <div className="mt-8">
               <h2 className="text-xl font-semibold mb-4">Optimizador de Umbral $33,000</h2>
               <p className="text-sm text-muted-foreground mb-4">
-                Para un producto dado, compara si conviene fijarlo debajo de $33,000 (cargo fijo, sin envio gratis) 
-                o arriba (sin cargo fijo, con envio gratis). Considera que con envio gratis se vende mas.
+                Para un producto dado, compara si conviene fijarlo debajo de $33,000 (cargo fijo, sin envio gratis) o
+                arriba (sin cargo fijo, con envio gratis). Considera que con envio gratis se vende mas.
               </p>
-              
+
               <div className="grid gap-6 lg:grid-cols-2">
                 {/* Panel de configuracion */}
                 <Card>
                   <CardHeader>
                     <CardTitle>Configurar Analisis</CardTitle>
-                    <CardDescription>
-                      Define el costo del producto y el rango de margen aceptable
-                    </CardDescription>
+                    <CardDescription>Define el costo del producto y el rango de margen aceptable</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
                     <div className="space-y-2">
@@ -1019,7 +1040,7 @@ export default function MLTemplatesPage() {
                         onChange={(e) => setThresholdCostEur(Number(e.target.value))}
                       />
                     </div>
-                    
+
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label>Margen minimo (%)</Label>
@@ -1042,17 +1063,12 @@ export default function MLTemplatesPage() {
                         />
                       </div>
                     </div>
-                    
+
                     <p className="text-xs text-muted-foreground">
                       Rango aceptable: {marginMin}% - {marginMax}%
                     </p>
-                    
-                    <Button 
-                      onClick={analyzeThreshold}
-                      disabled={calculatingThreshold}
-                      className="w-full"
-                      size="lg"
-                    >
+
+                    <Button onClick={analyzeThreshold} disabled={calculatingThreshold} className="w-full" size="lg">
                       {calculatingThreshold ? "Analizando..." : "Analizar Opciones"}
                     </Button>
                   </CardContent>
@@ -1072,17 +1088,22 @@ export default function MLTemplatesPage() {
                           <span className="font-medium">EUR {thresholdAnalysis.costEur}</span>
                           <span className="text-muted-foreground"> = </span>
                           <span className="font-medium">${thresholdAnalysis.costArs.toLocaleString("es-AR")}</span>
-                          <span className="text-muted-foreground text-xs"> (TC: ${thresholdAnalysis.exchangeRate})</span>
+                          <span className="text-muted-foreground text-xs">
+                            {" "}
+                            (TC: ${thresholdAnalysis.exchangeRate})
+                          </span>
                         </div>
-                        
+
                         {/* Recomendacion */}
-                        <div className={`rounded-lg p-4 text-center ${
-                          thresholdAnalysis.recommendation === "below" 
-                            ? "bg-blue-500/10 border border-blue-500/30" 
-                            : thresholdAnalysis.recommendation === "above"
-                            ? "bg-green-500/10 border border-green-500/30"
-                            : "bg-yellow-500/10 border border-yellow-500/30"
-                        }`}>
+                        <div
+                          className={`rounded-lg p-4 text-center ${
+                            thresholdAnalysis.recommendation === "below"
+                              ? "bg-blue-500/10 border border-blue-500/30"
+                              : thresholdAnalysis.recommendation === "above"
+                                ? "bg-green-500/10 border border-green-500/30"
+                                : "bg-yellow-500/10 border border-yellow-500/30"
+                          }`}
+                        >
                           <p className="text-sm text-muted-foreground">Recomendacion</p>
                           <p className="text-lg font-bold">
                             {thresholdAnalysis.recommendation === "below" && "Fijar en $32,999"}
@@ -1095,9 +1116,11 @@ export default function MLTemplatesPage() {
                         {/* Comparativa lado a lado */}
                         <div className="grid grid-cols-2 gap-4">
                           {/* Debajo de $33k */}
-                          <div className={`rounded-lg border p-4 ${
-                            thresholdAnalysis.below33k.withinRange ? "border-blue-500/50 bg-blue-500/5" : "opacity-60"
-                          }`}>
+                          <div
+                            className={`rounded-lg border p-4 ${
+                              thresholdAnalysis.below33k.withinRange ? "border-blue-500/50 bg-blue-500/5" : "opacity-60"
+                            }`}
+                          >
                             <p className="text-xs text-muted-foreground mb-2 text-center">Debajo de $33k</p>
                             <p className="text-2xl font-bold text-center text-blue-600">
                               ${thresholdAnalysis.below33k.price.toLocaleString("es-AR")}
@@ -1105,7 +1128,13 @@ export default function MLTemplatesPage() {
                             <div className="mt-3 space-y-1 text-xs">
                               <div className="flex justify-between">
                                 <span className="text-muted-foreground">Margen:</span>
-                                <span className={thresholdAnalysis.below33k.withinRange ? "text-green-600 font-medium" : "text-red-500"}>
+                                <span
+                                  className={
+                                    thresholdAnalysis.below33k.withinRange
+                                      ? "text-green-600 font-medium"
+                                      : "text-red-500"
+                                  }
+                                >
                                   {thresholdAnalysis.below33k.margin}%
                                 </span>
                               </div>
@@ -1123,23 +1152,36 @@ export default function MLTemplatesPage() {
                               </div>
                               <div className="flex justify-between pt-2 border-t">
                                 <span className="text-muted-foreground">Ganancia:</span>
-                                <span className="font-medium">${thresholdAnalysis.below33k.netProfit.toLocaleString("es-AR")}</span>
+                                <span className="font-medium">
+                                  ${thresholdAnalysis.below33k.netProfit.toLocaleString("es-AR")}
+                                </span>
                               </div>
                             </div>
                             <p className="text-xs text-center mt-3 text-muted-foreground">Sin envio gratis</p>
                           </div>
-                          
+
                           {/* Arriba de $33k */}
-                          <div className={`rounded-lg border p-4 ${
-                            thresholdAnalysis.above33k.withinRange ? "border-green-500/50 bg-green-500/5" : "opacity-60"
-                          }`}>
+                          <div
+                            className={`rounded-lg border p-4 ${
+                              thresholdAnalysis.above33k.withinRange
+                                ? "border-green-500/50 bg-green-500/5"
+                                : "opacity-60"
+                            }`}
+                          >
                             <p className="text-xs text-muted-foreground mb-2 text-center">Arriba de $33k</p>
                             <p className="text-2xl font-bold text-center text-green-600">
-                              ${thresholdAnalysis.above33k.price.toLocaleString("es-AR")}</p>
+                              ${thresholdAnalysis.above33k.price.toLocaleString("es-AR")}
+                            </p>
                             <div className="mt-3 space-y-1 text-xs">
                               <div className="flex justify-between">
                                 <span className="text-muted-foreground">Margen:</span>
-                                <span className={thresholdAnalysis.above33k.withinRange ? "text-green-600 font-medium" : "text-red-500"}>
+                                <span
+                                  className={
+                                    thresholdAnalysis.above33k.withinRange
+                                      ? "text-green-600 font-medium"
+                                      : "text-red-500"
+                                  }
+                                >
                                   {thresholdAnalysis.above33k.margin}%
                                 </span>
                               </div>
@@ -1157,7 +1199,9 @@ export default function MLTemplatesPage() {
                               </div>
                               <div className="flex justify-between pt-2 border-t">
                                 <span className="text-muted-foreground">Ganancia:</span>
-                                <span className="font-medium">${thresholdAnalysis.above33k.netProfit.toLocaleString("es-AR")}</span>
+                                <span className="font-medium">
+                                  ${thresholdAnalysis.above33k.netProfit.toLocaleString("es-AR")}
+                                </span>
                               </div>
                             </div>
                             <p className="text-xs text-center mt-3 text-green-600 font-medium">Con envio gratis</p>
@@ -1180,8 +1224,8 @@ export default function MLTemplatesPage() {
               <CardHeader>
                 <CardTitle>Analizar Publicacion Existente</CardTitle>
                 <CardDescription>
-                  Ingresa el ID de una publicacion de ML para extraer sus datos y generar una plantilla automatica.
-                  El sistema buscara el producto en el catalogo de Arnoia por EAN/ISBN.
+                  Ingresa el ID de una publicacion de ML para extraer sus datos y generar una plantilla automatica. El
+                  sistema buscara el producto en el catalogo de Arnoia por EAN/ISBN.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1200,31 +1244,60 @@ export default function MLTemplatesPage() {
                 {analysisResult && (
                   <div className="space-y-4 rounded-lg border p-4">
                     <h3 className="font-semibold">Resultado del Analisis</h3>
-                    
+
                     <div className="grid gap-4 md:grid-cols-2">
                       <div>
                         <h4 className="mb-2 text-sm font-medium">Publicacion de ML</h4>
                         <div className="space-y-1 text-sm">
-                          <p><span className="text-muted-foreground">Titulo:</span> {analysisResult.ml_item.title}</p>
-                          <p><span className="text-muted-foreground">Precio:</span> ${analysisResult.ml_item.price}</p>
-                          <p><span className="text-muted-foreground">SKU/EAN:</span> {analysisResult.ean_found || "No encontrado"}</p>
-                          <p><span className="text-muted-foreground">Tipo:</span> {analysisResult.ml_item.listing_type_id}</p>
-                          <p><span className="text-muted-foreground">Condicion:</span> {analysisResult.ml_item.condition}</p>
+                          <p>
+                            <span className="text-muted-foreground">Titulo:</span> {analysisResult.ml_item.title}
+                          </p>
+                          <p>
+                            <span className="text-muted-foreground">Precio:</span> ${analysisResult.ml_item.price}
+                          </p>
+                          <p>
+                            <span className="text-muted-foreground">SKU/EAN:</span>{" "}
+                            {analysisResult.ean_found || "No encontrado"}
+                          </p>
+                          <p>
+                            <span className="text-muted-foreground">Tipo:</span>{" "}
+                            {analysisResult.ml_item.listing_type_id}
+                          </p>
+                          <p>
+                            <span className="text-muted-foreground">Condicion:</span> {analysisResult.ml_item.condition}
+                          </p>
                         </div>
                       </div>
-                      
+
                       <div>
                         <h4 className="mb-2 text-sm font-medium">Producto del Catalogo</h4>
                         {analysisResult.catalog_product ? (
                           <div className="space-y-1 text-sm">
-                            <p><span className="text-muted-foreground">Titulo:</span> {analysisResult.catalog_product.title}</p>
-                            <p><span className="text-muted-foreground">Precio:</span> ${analysisResult.catalog_product.price}</p>
-                            <p><span className="text-muted-foreground">Costo:</span> ${analysisResult.catalog_product.cost_price || "N/A"}</p>
-                            <p><span className="text-muted-foreground">Stock:</span> {analysisResult.catalog_product.stock}</p>
-                            <p><span className="text-muted-foreground">Autor:</span> {analysisResult.catalog_product.author || "N/A"}</p>
+                            <p>
+                              <span className="text-muted-foreground">Titulo:</span>{" "}
+                              {analysisResult.catalog_product.title}
+                            </p>
+                            <p>
+                              <span className="text-muted-foreground">Precio:</span> $
+                              {analysisResult.catalog_product.price}
+                            </p>
+                            <p>
+                              <span className="text-muted-foreground">Costo:</span> $
+                              {analysisResult.catalog_product.cost_price || "N/A"}
+                            </p>
+                            <p>
+                              <span className="text-muted-foreground">Stock:</span>{" "}
+                              {analysisResult.catalog_product.stock}
+                            </p>
+                            <p>
+                              <span className="text-muted-foreground">Autor:</span>{" "}
+                              {analysisResult.catalog_product.author || "N/A"}
+                            </p>
                           </div>
                         ) : (
-                          <p className="text-sm text-muted-foreground">No se encontro producto en el catalogo con EAN: {analysisResult.ean_found}</p>
+                          <p className="text-sm text-muted-foreground">
+                            No se encontro producto en el catalogo con EAN: {analysisResult.ean_found}
+                          </p>
                         )}
                       </div>
                     </div>
@@ -1242,22 +1315,22 @@ export default function MLTemplatesPage() {
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {Object.entries(analysisResult.ml_item.attributes).slice(0, 20).map(([id, attr]: [string, any]) => (
-                                <TableRow key={id}>
-                                  <TableCell className="font-mono text-xs">{id}</TableCell>
-                                  <TableCell>{attr.name}</TableCell>
-                                  <TableCell>{attr.value}</TableCell>
-                                </TableRow>
-                              ))}
+                              {Object.entries(analysisResult.ml_item.attributes)
+                                .slice(0, 20)
+                                .map(([id, attr]: [string, any]) => (
+                                  <TableRow key={id}>
+                                    <TableCell className="font-mono text-xs">{id}</TableCell>
+                                    <TableCell>{attr.name}</TableCell>
+                                    <TableCell>{attr.value}</TableCell>
+                                  </TableRow>
+                                ))}
                             </TableBody>
                           </Table>
                         </div>
                       </div>
                     )}
 
-                    <Button onClick={() => setShowEditor(true)}>
-                      Crear plantilla basada en este analisis
-                    </Button>
+                    <Button onClick={() => setShowEditor(true)}>Crear plantilla basada en este analisis</Button>
                   </div>
                 )}
               </CardContent>
@@ -1374,11 +1447,13 @@ export default function MLTemplatesPage() {
                 <Select
                   value={templateForm.price_profile_id}
                   onValueChange={(value) => {
-                    const selectedProfile = priceProfiles.find(p => p.id === value)
-                    setTemplateForm({ 
-                      ...templateForm, 
+                    const selectedProfile = priceProfiles.find((p) => p.id === value)
+                    setTemplateForm({
+                      ...templateForm,
                       price_profile_id: value,
-                      price_formula: selectedProfile ? `margin:${selectedProfile.margin_percent}%` : templateForm.price_formula
+                      price_formula: selectedProfile
+                        ? `margin:${selectedProfile.margin_percent}%`
+                        : templateForm.price_formula,
                     })
                   }}
                 >
@@ -1386,7 +1461,7 @@ export default function MLTemplatesPage() {
                     <SelectValue placeholder="Selecciona un perfil" />
                   </SelectTrigger>
                   <SelectContent>
-                    {priceProfiles.map(profile => (
+                    {priceProfiles.map((profile) => (
                       <SelectItem key={profile.id} value={profile.id}>
                         {profile.name} ({profile.margin_percent}%) {profile.is_default && "★"}
                       </SelectItem>
@@ -1396,7 +1471,8 @@ export default function MLTemplatesPage() {
                 <p className="text-sm text-muted-foreground mt-1">
                   {templateForm.price_profile_id ? (
                     <>
-                      Fórmula aplicada: <code className="bg-muted px-1.5 py-0.5 rounded text-xs">{templateForm.price_formula}</code>
+                      Fórmula aplicada:{" "}
+                      <code className="bg-muted px-1.5 py-0.5 rounded text-xs">{templateForm.price_formula}</code>
                       <br />
                       Los cambios en "Calculadora de precios" se reflejan automáticamente.
                     </>
@@ -1416,11 +1492,9 @@ export default function MLTemplatesPage() {
                     value={templateForm.handling_days}
                     onChange={(e) => setTemplateForm({ ...templateForm, handling_days: parseInt(e.target.value) || 3 })}
                   />
-                  <p className="text-sm text-muted-foreground">
-                    Tiempo de preparación del envío (1-30 días)
-                  </p>
+                  <p className="text-sm text-muted-foreground">Tiempo de preparación del envío (1-30 días)</p>
                 </div>
-                
+
                 <div className="space-y-2">
                   <Label>Modo de envio</Label>
                   <Select
@@ -1475,7 +1549,8 @@ export default function MLTemplatesPage() {
                   className="font-mono text-sm"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Variables disponibles: {"{title}"}, {"{author}"}, {"{brand}"}, {"{description}"}, {"{ean}"}, {"{pages}"}, {"{language}"}, {"{binding}"}, {"{subject}"}, {"{category}"}, {"{year_edition}"}
+                  Variables disponibles: {"{title}"}, {"{author}"}, {"{brand}"}, {"{description}"}, {"{ean}"},{" "}
+                  {"{pages}"}, {"{language}"}, {"{binding}"}, {"{subject}"}, {"{category}"}, {"{year_edition}"}
                 </p>
               </div>
 

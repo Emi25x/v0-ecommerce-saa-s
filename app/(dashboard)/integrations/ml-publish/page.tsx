@@ -77,21 +77,25 @@ export default function MLPublishPage() {
   const [publishingInProgress, setPublishingInProgress] = useState(false)
   const [testLimit, setTestLimit] = useState<number>(5) // Límite para pruebas
   const [totalAvailable, setTotalAvailable] = useState<number>(0) // Total disponible con filtros
-  const [publishResults, setPublishResults] = useState<Array<{
-    title: string
-    ean: string
-    status: "success" | "error" | "skipped"
-    ml_item_id?: string
-    error?: string
-    warnings?: string[]
-  }>>([])
+  const [publishResults, setPublishResults] = useState<
+    Array<{
+      title: string
+      ean: string
+      status: "success" | "error" | "skipped"
+      ml_item_id?: string
+      error?: string
+      warnings?: string[]
+    }>
+  >([])
   const [filterBrand, setFilterBrand] = useState<string>("")
   const [filterLanguage, setFilterLanguage] = useState<string>("")
   const [excludeIbd, setExcludeIbd] = useState<boolean>(true) // Por defecto excluir IBD
   const [elapsedTime, setElapsedTime] = useState<number>(0) // Tiempo transcurrido en segundos
   const [publishStartTime, setPublishStartTime] = useState<number | null>(null)
   const [bulkAction, setBulkAction] = useState<"publish" | "update_price">("publish") // Acción masiva
-  const [priceProfiles, setPriceProfiles] = useState<{id: string, name: string, margin_percent: number, is_default: boolean}[]>([])
+  const [priceProfiles, setPriceProfiles] = useState<
+    { id: string; name: string; margin_percent: number; is_default: boolean }[]
+  >([])
   const [useIva, setUseIva] = useState<boolean>(false)
   const [ivaPercent, setIvaPercent] = useState<number>(0)
   const [useCommission, setUseCommission] = useState<boolean>(false)
@@ -152,8 +156,8 @@ export default function MLPublishPage() {
       fetchData()
       // También actualizar total disponible para publicación masiva
       fetch(buildFilterUrl(true))
-        .then(res => res.json())
-        .then(data => setTotalAvailable(data.ids?.length || 0))
+        .then((res) => res.json())
+        .then((data) => setTotalAvailable(data.ids?.length || 0))
         .catch(() => setTotalAvailable(0))
     }, 300)
     setDebouncedFetch(timeout)
@@ -170,7 +174,7 @@ export default function MLPublishPage() {
       setStats({
         total_in_db: productsData.total || 0,
         published_count: productsData.published_count || 0,
-        available_count: productsData.total || 0
+        available_count: productsData.total || 0,
       })
 
       // Fetch templates
@@ -213,21 +217,21 @@ export default function MLPublishPage() {
 
   const selectAll = () => {
     const visibleProducts = filteredProducts.slice(0, 50)
-    const allVisibleSelected = visibleProducts.every(p => selectedProducts.has(p.id))
-    
+    const allVisibleSelected = visibleProducts.every((p) => selectedProducts.has(p.id))
+
     if (allVisibleSelected) {
       // Deseleccionar todos los visibles
       const newSelected = new Set(selectedProducts)
-      visibleProducts.forEach(p => newSelected.delete(p.id))
+      visibleProducts.forEach((p) => newSelected.delete(p.id))
       setSelectedProducts(newSelected)
     } else {
       // Seleccionar todos los visibles
       const newSelected = new Set(selectedProducts)
-      visibleProducts.forEach(p => newSelected.add(p.id))
+      visibleProducts.forEach((p) => newSelected.add(p.id))
       setSelectedProducts(newSelected)
     }
   }
-  
+
   // Seleccionar TODOS los productos filtrados (traer todos los IDs del servidor)
   const selectAllFiltered = async () => {
     // Si ya hay seleccionados, deseleccionar todos
@@ -235,21 +239,25 @@ export default function MLPublishPage() {
       setSelectedProducts(new Set<string>())
       return
     }
-    
+
     // Traer todos los IDs del servidor con los filtros actuales
     setLoading(true)
     try {
       const res = await fetch(buildFilterUrl(true))
       const data = await res.json()
-      
+
       if (data.ids && data.ids.length > 0) {
         setSelectedProducts(new Set<string>(data.ids))
         toast({
           title: "Todos seleccionados",
-          description: `${data.ids.length.toLocaleString()} productos seleccionados con los filtros actuales`
+          description: `${data.ids.length.toLocaleString()} productos seleccionados con los filtros actuales`,
         })
       } else {
-        toast({ title: "Sin resultados", description: "No hay productos que coincidan con los filtros", variant: "destructive" })
+        toast({
+          title: "Sin resultados",
+          description: "No hay productos que coincidan con los filtros",
+          variant: "destructive",
+        })
       }
     } catch {
       toast({ title: "Error", description: "Error al seleccionar todos", variant: "destructive" })
@@ -257,21 +265,21 @@ export default function MLPublishPage() {
       setLoading(false)
     }
   }
-  
+
   // Abrir modal de publicación masiva
   const openPublishModal = () => {
     if (!selectedTemplate || !selectedAccount) {
       toast({ title: "Error", description: "Selecciona plantilla y cuenta primero", variant: "destructive" })
       return
     }
-    
+
     // Si hay productos seleccionados, usar esa cantidad
     if (selectedProducts.size > 0) {
       setTotalAvailable(selectedProducts.size)
       setShowPublishModal(true)
       return
     }
-    
+
     // Si no hay seleccionados, obtener total disponible con filtros
     const fetchTotalAvailable = async () => {
       try {
@@ -282,19 +290,19 @@ export default function MLPublishPage() {
         setTotalAvailable(0)
       }
     }
-    
+
     fetchTotalAvailable()
-    
+
     setShowPublishModal(true)
   }
-  
+
   // Iniciar publicación masiva desde el modal
   const startBulkPublish = async () => {
     setPublishingInProgress(true)
     setPublishStartTime(Date.now()) // Iniciar timer
     setElapsedTime(0)
     setPublishResults([]) // Limpiar resultados anteriores
-    
+
     // Si hay productos seleccionados, usar SOLO esos
     let productIds: string[]
     if (selectedProducts.size > 0) {
@@ -307,31 +315,31 @@ export default function MLPublishPage() {
       // Si no hay seleccionados, obtener todos con los filtros actuales
       const res = await fetch(buildFilterUrl(true))
       const data = await res.json()
-      
+
       if (!data.ids || data.ids.length === 0) {
         toast({ title: "Sin productos", description: "No hay productos para publicar", variant: "destructive" })
         setPublishingInProgress(false)
         return
       }
-      
+
       // Aplicar límite de prueba si está configurado
       const allIds = data.ids
       productIds = testLimit > 0 ? allIds.slice(0, testLimit) : allIds
     }
-    
+
     setPublishProgress({ current: 0, total: productIds.length, success: 0, errors: 0, skipped: 0 })
-    
+
     let successCount = 0
     let errorCount = 0
     let skippedCount = 0
     const results: typeof publishResults = []
     const rateLimitRetries = new Map<string, number>() // productId → cantidad de reintentos por rate limit
     const MAX_RATE_LIMIT_RETRIES = 3
-    
+
     // Publicar en lotes de 3 productos en paralelo para mayor velocidad
     const BATCH_SIZE = 3
     const DELAY_BETWEEN_BATCHES = 1000 // 1 segundo entre lotes
-    
+
     const publishProduct = async (productId: string) => {
       try {
         const response = await fetch("/api/ml/publish", {
@@ -346,35 +354,57 @@ export default function MLPublishPage() {
             use_iva: useIva,
             iva_percent: ivaPercent,
             use_commission: useCommission,
-            commission_percent: commissionPercent
-          })
+            commission_percent: commissionPercent,
+          }),
         })
-        
+
         const result = await response.json()
         if (result.success) {
-          return { status: "success" as const, title: result.product_title || productId, ean: result.product_ean || "", ml_item_id: result.ml_item_id, warnings: result.warnings }
+          return {
+            status: "success" as const,
+            title: result.product_title || productId,
+            ean: result.product_ean || "",
+            ml_item_id: result.ml_item_id,
+            warnings: result.warnings,
+          }
         } else if (result.skipped) {
-          return { status: "skipped" as const, title: result.product_title || productId, ean: result.product_ean || "", ml_item_id: result.existing_item_id }
+          return {
+            status: "skipped" as const,
+            title: result.product_title || productId,
+            ean: result.product_ean || "",
+            ml_item_id: result.existing_item_id,
+          }
         } else if (result.is_rate_limit) {
           return { status: "rate_limit" as const, productId }
         } else {
-          return { status: "error" as const, title: result.product_title || productId, ean: result.product_ean || "", error: result.error }
+          return {
+            status: "error" as const,
+            title: result.product_title || productId,
+            ean: result.product_ean || "",
+            error: result.error,
+          }
         }
       } catch {
         return { status: "error" as const, title: productId, ean: "", error: "Error de conexión" }
       }
     }
-    
+
     // Procesar en lotes
     for (let i = 0; i < productIds.length; i += BATCH_SIZE) {
       const batch = productIds.slice(i, i + BATCH_SIZE)
       const batchResults = await Promise.all(batch.map(publishProduct))
-      
+
       // Procesar resultados del lote
       for (const result of batchResults) {
         if (result.status === "success") {
           successCount++
-          results.push({ title: result.title, ean: result.ean, status: "success", ml_item_id: result.ml_item_id, warnings: result.warnings })
+          results.push({
+            title: result.title,
+            ean: result.ean,
+            status: "success",
+            ml_item_id: result.ml_item_id,
+            warnings: result.warnings,
+          })
         } else if (result.status === "skipped") {
           skippedCount++
           results.push({ title: result.title, ean: result.ean, status: "skipped", ml_item_id: result.ml_item_id })
@@ -383,38 +413,49 @@ export default function MLPublishPage() {
           if (retries <= MAX_RATE_LIMIT_RETRIES) {
             rateLimitRetries.set(result.productId, retries)
             // Re-encolar con backoff: esperar antes de continuar
-            await new Promise(resolve => setTimeout(resolve, retries * 2000))
+            await new Promise((resolve) => setTimeout(resolve, retries * 2000))
             productIds.push(result.productId)
           } else {
             errorCount++
-            results.push({ title: result.productId, ean: "", status: "error", error: "Rate limit: máximo de reintentos alcanzado" })
+            results.push({
+              title: result.productId,
+              ean: "",
+              status: "error",
+              error: "Rate limit: máximo de reintentos alcanzado",
+            })
           }
         } else {
           errorCount++
           results.push({ title: result.title, ean: result.ean, status: "error", error: result.error })
         }
       }
-      
-      setPublishProgress({ current: Math.min(i + BATCH_SIZE, productIds.length), total: productIds.length, success: successCount, errors: errorCount, skipped: skippedCount })
+
+      setPublishProgress({
+        current: Math.min(i + BATCH_SIZE, productIds.length),
+        total: productIds.length,
+        success: successCount,
+        errors: errorCount,
+        skipped: skippedCount,
+      })
       setPublishResults([...results])
-      
+
       // Delay entre lotes
       if (i + BATCH_SIZE < productIds.length) {
-        await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES))
+        await new Promise((resolve) => setTimeout(resolve, DELAY_BETWEEN_BATCHES))
       }
     }
-    
+
     setPublishingInProgress(false)
-    
+
     toast({
       title: "Publicación completada",
-      description: `${successCount} nuevos, ${skippedCount} ya existentes, ${errorCount} errores`
+      description: `${successCount} nuevos, ${skippedCount} ya existentes, ${errorCount} errores`,
     })
-    
+
     // Recargar productos disponibles
     fetchData()
   }
-  
+
   // Cerrar modal y resetear
   const closePublishModal = () => {
     if (publishingInProgress) return // No cerrar mientras está en progreso
@@ -436,7 +477,7 @@ export default function MLPublishPage() {
     const newPreviews: PublishPreview[] = []
 
     for (const productId of selectedProducts) {
-      const product = products.find(p => p.id === productId)
+      const product = products.find((p) => p.id === productId)
       if (!product) continue
 
       try {
@@ -452,15 +493,15 @@ export default function MLPublishPage() {
             use_iva: useIva,
             iva_percent: ivaPercent,
             use_commission: useCommission,
-            commission_percent: commissionPercent
-          })
+            commission_percent: commissionPercent,
+          }),
         })
 
         const data = await response.json()
 
         // Si es rate limit, esperar y reintentar
         if (data.is_rate_limit) {
-          await new Promise(resolve => setTimeout(resolve, 2000))
+          await new Promise((resolve) => setTimeout(resolve, 2000))
           // Reintentar una vez
           const retryResponse = await fetch("/api/ml/publish", {
             method: "POST",
@@ -474,8 +515,8 @@ export default function MLPublishPage() {
               use_iva: useIva,
               iva_percent: ivaPercent,
               use_commission: useCommission,
-              commission_percent: commissionPercent
-            })
+              commission_percent: commissionPercent,
+            }),
           })
           const retryData = await retryResponse.json()
           if (retryData.success) {
@@ -485,7 +526,7 @@ export default function MLPublishPage() {
               multiplier: Math.round(retryData.preview.price / product.cost_price),
               margin: retryData.preview.margin,
               status: "pending",
-              already_published: retryData.preview.already_published
+              already_published: retryData.preview.already_published,
             })
           } else {
             newPreviews.push({
@@ -494,7 +535,7 @@ export default function MLPublishPage() {
               multiplier: 0,
               margin: 0,
               status: "error",
-              error: retryData.error || "Error después de reintentar"
+              error: retryData.error || "Error después de reintentar",
             })
           }
         } else if (data.success) {
@@ -504,7 +545,7 @@ export default function MLPublishPage() {
             multiplier: Math.round(data.preview.price / product.cost_price),
             margin: data.preview.margin,
             status: "pending",
-            already_published: data.preview.already_published
+            already_published: data.preview.already_published,
           })
         } else {
           newPreviews.push({
@@ -513,7 +554,7 @@ export default function MLPublishPage() {
             multiplier: 0,
             margin: 0,
             status: "error",
-            error: data.error
+            error: data.error,
           })
         }
       } catch (error) {
@@ -523,12 +564,12 @@ export default function MLPublishPage() {
           multiplier: 0,
           margin: 0,
           status: "error",
-          error: "Error al calcular precio"
+          error: "Error al calcular precio",
         })
       }
-      
+
       // Delay entre previews para evitar rate limiting
-      await new Promise(resolve => setTimeout(resolve, 500))
+      await new Promise((resolve) => setTimeout(resolve, 500))
     }
 
     setPreviews(newPreviews)
@@ -562,8 +603,8 @@ export default function MLPublishPage() {
             use_iva: useIva,
             iva_percent: ivaPercent,
             use_commission: useCommission,
-            commission_percent: commissionPercent
-          })
+            commission_percent: commissionPercent,
+          }),
         })
 
         const data = await response.json()
@@ -590,10 +631,10 @@ export default function MLPublishPage() {
 
     setPublishing(false)
 
-    const successCount = updatedPreviews.filter(p => p.status === "success").length
+    const successCount = updatedPreviews.filter((p) => p.status === "success").length
     toast({
       title: "Publicación completada",
-      description: `${successCount} de ${updatedPreviews.length} productos publicados`
+      description: `${successCount} de ${updatedPreviews.length} productos publicados`,
     })
   }
 
@@ -614,7 +655,7 @@ export default function MLPublishPage() {
 
     for (let i = 0; i < productIds.length; i++) {
       const productId = productIds[i]
-      setPublishProgress(prev => ({ ...prev, current: i + 1 }))
+      setPublishProgress((prev) => ({ ...prev, current: i + 1 }))
 
       try {
         const response = await fetch("/api/ml/publish", {
@@ -629,8 +670,8 @@ export default function MLPublishPage() {
             use_iva: useIva,
             iva_percent: ivaPercent,
             use_commission: useCommission,
-            commission_percent: commissionPercent
-          })
+            commission_percent: commissionPercent,
+          }),
         })
 
         const data = await response.json()
@@ -640,15 +681,27 @@ export default function MLPublishPage() {
         } else {
           errorCount++
         }
-        setPublishProgress({ current: i + 1, total: productIds.length, success: successCount, errors: errorCount, skipped: 0 })
+        setPublishProgress({
+          current: i + 1,
+          total: productIds.length,
+          success: successCount,
+          errors: errorCount,
+          skipped: 0,
+        })
       } catch {
         errorCount++
-        setPublishProgress({ current: i + 1, total: productIds.length, success: successCount, errors: errorCount, skipped: 0 })
+        setPublishProgress({
+          current: i + 1,
+          total: productIds.length,
+          success: successCount,
+          errors: errorCount,
+          skipped: 0,
+        })
       }
 
       // Delay de 1 segundo entre publicaciones
       if (i < productIds.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000))
+        await new Promise((resolve) => setTimeout(resolve, 1000))
       }
     }
 
@@ -656,11 +709,11 @@ export default function MLPublishPage() {
 
     toast({
       title: "Publicación completada",
-      description: `${successCount} de ${productIds.length} productos publicados`
+      description: `${successCount} de ${productIds.length} productos publicados`,
     })
   }
 
-  const selectedTemplate_obj = templates.find(t => t.id === selectedTemplate)
+  const selectedTemplate_obj = templates.find((t) => t.id === selectedTemplate)
 
   if (loading) {
     return (
@@ -680,7 +733,9 @@ export default function MLPublishPage() {
         </Link>
         <div>
           <h1 className="text-2xl font-bold">Publicar en Mercado Libre</h1>
-          <p className="text-muted-foreground">Selecciona productos para publicar con precio calculado automaticamente</p>
+          <p className="text-muted-foreground">
+            Selecciona productos para publicar con precio calculado automaticamente
+          </p>
         </div>
       </div>
 
@@ -699,7 +754,7 @@ export default function MLPublishPage() {
                     <SelectValue placeholder="Seleccionar plantilla" />
                   </SelectTrigger>
                   <SelectContent>
-                    {templates.map(t => (
+                    {templates.map((t) => (
                       <SelectItem key={t.id} value={t.id}>
                         {t.name} ({t.margin_percent || 20}% margen)
                       </SelectItem>
@@ -714,7 +769,7 @@ export default function MLPublishPage() {
                     <SelectValue placeholder="Seleccionar cuenta" />
                   </SelectTrigger>
                   <SelectContent>
-                    {accounts.map(a => (
+                    {accounts.map((a) => (
                       <SelectItem key={a.id} value={a.id}>
                         {a.nickname}
                       </SelectItem>
@@ -724,28 +779,25 @@ export default function MLPublishPage() {
               </div>
               <div className="space-y-2">
                 <Label>Modo de publicacion</Label>
-                <Select value={publishMode} onValueChange={(v) => setPublishMode(v as "linked" | "catalog" | "traditional")}>
+                <Select
+                  value={publishMode}
+                  onValueChange={(v) => setPublishMode(v as "linked" | "catalog" | "traditional")}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="linked">
-                      Vinculada (recomendado)
-                    </SelectItem>
-                    <SelectItem value="catalog">
-                      Solo Catalogo
-                    </SelectItem>
-                    <SelectItem value="traditional">
-                      Solo Tradicional
-                    </SelectItem>
+                    <SelectItem value="linked">Vinculada (recomendado)</SelectItem>
+                    <SelectItem value="catalog">Solo Catalogo</SelectItem>
+                    <SelectItem value="traditional">Solo Tradicional</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  {publishMode === "linked" 
-                    ? "Crea tradicional + catalogo vinculadas. Stock compartido automatico por ML." 
+                  {publishMode === "linked"
+                    ? "Crea tradicional + catalogo vinculadas. Stock compartido automatico por ML."
                     : publishMode === "catalog"
-                    ? "Solo publicacion en catalogo. Mayor visibilidad pero sin alternativa."
-                    : "Solo publicacion tradicional sin vincular al catalogo."}
+                      ? "Solo publicacion en catalogo. Mayor visibilidad pero sin alternativa."
+                      : "Solo publicacion tradicional sin vincular al catalogo."}
                 </p>
               </div>
             </CardContent>
@@ -758,9 +810,7 @@ export default function MLPublishPage() {
                 <Upload className="h-5 w-5" />
                 Publicación Masiva
               </CardTitle>
-              <CardDescription>
-                Publica o actualiza múltiples productos de una vez
-              </CardDescription>
+              <CardDescription>Publica o actualiza múltiples productos de una vez</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -777,7 +827,7 @@ export default function MLPublishPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                
+
                 {/* Límite */}
                 <div className="space-y-2">
                   <Label>Límite de productos</Label>
@@ -796,14 +846,13 @@ export default function MLPublishPage() {
 
               <div className="flex items-center justify-between pt-4 border-t">
                 <div className="text-sm text-muted-foreground">
-                  <span className="font-medium">{totalAvailable.toLocaleString()}</span> productos disponibles con filtros actuales
-                  {testLimit > 0 && <span> (se procesarán {Math.min(testLimit, totalAvailable).toLocaleString()})</span>}
+                  <span className="font-medium">{totalAvailable.toLocaleString()}</span> productos disponibles con
+                  filtros actuales
+                  {testLimit > 0 && (
+                    <span> (se procesarán {Math.min(testLimit, totalAvailable).toLocaleString()})</span>
+                  )}
                 </div>
-                <Button 
-                  onClick={openPublishModal} 
-                  disabled={!selectedTemplate || !selectedAccount}
-                  size="lg"
-                >
+                <Button onClick={openPublishModal} disabled={!selectedTemplate || !selectedAccount} size="lg">
                   <Upload className="h-4 w-4 mr-2" />
                   {bulkAction === "publish" ? "Iniciar Publicación Masiva" : "Actualizar Precios"}
                 </Button>
@@ -819,7 +868,8 @@ export default function MLPublishPage() {
                   <div>
                     <CardTitle>Productos disponibles</CardTitle>
                     <CardDescription>
-                      {stats.published_count.toLocaleString()} publicados en ML | {filteredProducts.length.toLocaleString()} disponibles con filtros actuales
+                      {stats.published_count.toLocaleString()} publicados en ML |{" "}
+                      {filteredProducts.length.toLocaleString()} disponibles con filtros actuales
                     </CardDescription>
                   </div>
                   <div className="flex items-center gap-4">
@@ -832,14 +882,11 @@ export default function MLPublishPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Label className="text-sm whitespace-nowrap">Excluir IBD</Label>
-                      <Checkbox
-                        checked={excludeIbd}
-                        onCheckedChange={(checked) => setExcludeIbd(!!checked)}
-                      />
+                      <Checkbox checked={excludeIbd} onCheckedChange={(checked) => setExcludeIbd(!!checked)} />
                     </div>
                   </div>
                 </div>
-                
+
                 {/* Filtros */}
                 <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
                   <div className="space-y-1">
@@ -913,7 +960,10 @@ export default function MLPublishPage() {
                     <TableRow>
                       <TableHead className="w-12">
                         <Checkbox
-                          checked={filteredProducts.slice(0, 50).every(p => selectedProducts.has(p.id)) && filteredProducts.length > 0}
+                          checked={
+                            filteredProducts.slice(0, 50).every((p) => selectedProducts.has(p.id)) &&
+                            filteredProducts.length > 0
+                          }
                           onCheckedChange={selectAll}
                         />
                       </TableHead>
@@ -924,7 +974,7 @@ export default function MLPublishPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredProducts.slice(0, 50).map(product => (
+                    {filteredProducts.slice(0, 50).map((product) => (
                       <TableRow key={product.id}>
                         <TableCell>
                           <Checkbox
@@ -960,14 +1010,15 @@ export default function MLPublishPage() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-4 p-4 bg-muted/50 rounded-lg">
                 <div className="space-y-1">
                   <p className="text-sm font-medium">
-                    Filtrados: <span className="text-primary">{filteredProducts.length.toLocaleString()}</span> productos
+                    Filtrados: <span className="text-primary">{filteredProducts.length.toLocaleString()}</span>{" "}
+                    productos
                   </p>
                   <p className="text-sm text-muted-foreground">
                     {selectedProducts.size.toLocaleString()} seleccionados
                     {filteredProducts.length > 50 && ` (mostrando 50 en tabla)`}
                   </p>
                 </div>
-                
+
                 <div className="flex flex-wrap gap-2">
                   <Button
                     variant="outline"
@@ -975,34 +1026,25 @@ export default function MLPublishPage() {
                     onClick={selectAllFiltered}
                     disabled={filteredProducts.length === 0 || publishing}
                   >
-                    {filteredProducts.every(p => selectedProducts.has(p.id)) && filteredProducts.length > 0
+                    {filteredProducts.every((p) => selectedProducts.has(p.id)) && filteredProducts.length > 0
                       ? `Deseleccionar todos (${filteredProducts.length.toLocaleString()})`
-                      : `Seleccionar todos (${filteredProducts.length.toLocaleString()})`
-                    }
+                      : `Seleccionar todos (${filteredProducts.length.toLocaleString()})`}
                   </Button>
-                  
+
                   <Button
                     variant="outline"
                     onClick={generatePreviews}
                     disabled={selectedProducts.size === 0 || publishing}
                   >
-                    {publishing ? (
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    ) : (
-                      <Eye className="h-4 w-4 mr-2" />
-                    )}
+                    {publishing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
                     Vista previa
                   </Button>
-                  
-                  <Button
-                    onClick={openPublishModal}
-                    disabled={!selectedTemplate || !selectedAccount}
-                  >
+
+                  <Button onClick={openPublishModal} disabled={!selectedTemplate || !selectedAccount}>
                     <Upload className="h-4 w-4 mr-2" />
-                    {selectedProducts.size > 0 
-                      ? `Publicar ${selectedProducts.size} seleccionados` 
-                      : "Publicar masivo (con filtros)"
-                    }
+                    {selectedProducts.size > 0
+                      ? `Publicar ${selectedProducts.size} seleccionados`
+                      : "Publicar masivo (con filtros)"}
                   </Button>
                 </div>
               </div>
@@ -1016,9 +1058,7 @@ export default function MLPublishPage() {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle>Vista previa de publicacion</CardTitle>
-                <CardDescription>
-                  Revisa los precios calculados antes de publicar
-                </CardDescription>
+                <CardDescription>Revisa los precios calculados antes de publicar</CardDescription>
               </div>
               <Button variant="outline" onClick={() => setShowPreview(false)}>
                 Volver a seleccion
@@ -1052,12 +1092,10 @@ export default function MLPublishPage() {
                       <TableCell className="text-right">{preview.multiplier?.toLocaleString("es-AR")}x</TableCell>
                       <TableCell className="text-right">{preview.margin?.toFixed(1)}%</TableCell>
                       <TableCell className="text-center">
-                        {preview.already_published && (
-                          <Badge className="bg-yellow-500 text-black">
-                            Ya publicado
-                          </Badge>
+                        {preview.already_published && <Badge className="bg-yellow-500 text-black">Ya publicado</Badge>}
+                        {!preview.already_published && preview.status === "pending" && (
+                          <Badge variant="outline">Pendiente</Badge>
                         )}
-                        {!preview.already_published && preview.status === "pending" && <Badge variant="outline">Pendiente</Badge>}
                         {!preview.already_published && preview.status === "publishing" && (
                           <Badge variant="secondary">
                             <Loader2 className="h-3 w-3 animate-spin mr-1" />
@@ -1092,35 +1130,30 @@ export default function MLPublishPage() {
 
             {selectedTemplate_obj && (
               <p className="text-sm text-muted-foreground mb-4">
-                Usando plantilla "{selectedTemplate_obj.name}" con {selectedTemplate_obj.margin_percent || 20}% de margen
+                Usando plantilla "{selectedTemplate_obj.name}" con {selectedTemplate_obj.margin_percent || 20}% de
+                margen
               </p>
             )}
 
             <div className="flex justify-end gap-2">
               <Button
                 onClick={publishProducts}
-                disabled={publishing || previews.every(p => p.status === "success" || p.status === "error")}
+                disabled={publishing || previews.every((p) => p.status === "success" || p.status === "error")}
               >
-                {publishing ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                ) : (
-                  <Upload className="h-4 w-4 mr-2" />
-                )}
-                Publicar {previews.filter(p => p.status === "pending").length} productos
+                {publishing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Upload className="h-4 w-4 mr-2" />}
+                Publicar {previews.filter((p) => p.status === "pending").length} productos
               </Button>
             </div>
           </CardContent>
         </Card>
       )}
-      
+
       {/* Modal de publicación masiva */}
       {showPublishModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <Card className="w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
             <CardHeader>
-              <CardTitle>
-                {bulkAction === "publish" ? "Publicación Masiva" : "Actualización de Precios"}
-              </CardTitle>
+              <CardTitle>{bulkAction === "publish" ? "Publicación Masiva" : "Actualización de Precios"}</CardTitle>
               <CardDescription>
                 {totalAvailable.toLocaleString()} productos disponibles con los filtros actuales
               </CardDescription>
@@ -1128,10 +1161,14 @@ export default function MLPublishPage() {
             <CardContent className="space-y-4 overflow-y-auto flex-1">
               {/* Filtros siempre visibles */}
               <div className="p-4 bg-muted rounded-lg space-y-2">
-                <p className="text-sm"><strong>Filtros aplicados:</strong></p>
+                <p className="text-sm">
+                  <strong>Filtros aplicados:</strong>
+                </p>
                 <ul className="text-sm text-muted-foreground space-y-1 grid grid-cols-2 gap-1">
                   <li>Stock mínimo: {minStock}</li>
-                  <li>Precio: EUR {minPrice} - {maxPrice}</li>
+                  <li>
+                    Precio: EUR {minPrice} - {maxPrice}
+                  </li>
                   {languageFilter && languageFilter !== "ALL" && <li>Idioma: {languageFilter}</li>}
                   {filterBrand && <li>Marca: {filterBrand}</li>}
                   {searchTerm && <li>Búsqueda: {searchTerm}</li>}
@@ -1139,31 +1176,47 @@ export default function MLPublishPage() {
                   <li>Excluir IBD: {excludeIbd ? "Sí" : "No"}</li>
                 </ul>
               </div>
-              
+
               {!publishingInProgress && publishProgress.total === 0 && (
                 <>
                   <div className="p-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg space-y-2">
                     <p className="text-sm font-medium">Configuración seleccionada:</p>
                     <ul className="text-sm space-y-1">
-                      <li><strong>Acción:</strong> {bulkAction === "publish" ? "Publicar nuevos" : "Actualizar precios"}</li>
-                      <li><strong>Productos:</strong> {testLimit === 0 ? (selectedProducts.size > 0 ? `${selectedProducts.size} seleccionados` : `Todos (${totalAvailable.toLocaleString()})`) : `${testLimit} de ${totalAvailable.toLocaleString()}`}</li>
-                      <li><strong>Perfil:</strong> {(() => {
-                        const selectedTemplateData = templates.find(t => t.id === selectedTemplate)
-                        if (selectedTemplateData?.price_profile_id) {
-                          const linkedProfile = priceProfiles.find(p => p.id === selectedTemplateData.price_profile_id)
-                          return linkedProfile ? `${linkedProfile.name} (${linkedProfile.margin_percent}%) - desde plantilla` : "Perfil no encontrado"
-                        }
-                        return "Usando margen de la plantilla"
-                      })()}</li>
+                      <li>
+                        <strong>Acción:</strong> {bulkAction === "publish" ? "Publicar nuevos" : "Actualizar precios"}
+                      </li>
+                      <li>
+                        <strong>Productos:</strong>{" "}
+                        {testLimit === 0
+                          ? selectedProducts.size > 0
+                            ? `${selectedProducts.size} seleccionados`
+                            : `Todos (${totalAvailable.toLocaleString()})`
+                          : `${testLimit} de ${totalAvailable.toLocaleString()}`}
+                      </li>
+                      <li>
+                        <strong>Perfil:</strong>{" "}
+                        {(() => {
+                          const selectedTemplateData = templates.find((t) => t.id === selectedTemplate)
+                          if (selectedTemplateData?.price_profile_id) {
+                            const linkedProfile = priceProfiles.find(
+                              (p) => p.id === selectedTemplateData.price_profile_id,
+                            )
+                            return linkedProfile
+                              ? `${linkedProfile.name} (${linkedProfile.margin_percent}%) - desde plantilla`
+                              : "Perfil no encontrado"
+                          }
+                          return "Usando margen de la plantilla"
+                        })()}
+                      </li>
                     </ul>
                     <p className="text-xs text-muted-foreground mt-2">
                       El precio se calcula automáticamente incluyendo tipo de cambio, comisión ML y cargos fijos.
                     </p>
                   </div>
-                  
+
                   <p className="text-sm text-muted-foreground">
-                    Se procesan 3 productos en paralelo cada segundo.
-                    {" "}Tiempo estimado: ~{formatTime(Math.ceil((testLimit > 0 ? testLimit : totalAvailable) / 3))}
+                    Se procesan 3 productos en paralelo cada segundo. Tiempo estimado: ~
+                    {formatTime(Math.ceil((testLimit > 0 ? testLimit : totalAvailable) / 3))}
                   </p>
                   <div className="p-3 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                     <p className="text-sm text-yellow-700 dark:text-yellow-300">
@@ -1172,7 +1225,7 @@ export default function MLPublishPage() {
                   </div>
                 </>
               )}
-              
+
               {(publishingInProgress || publishProgress.total > 0) && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
@@ -1183,15 +1236,15 @@ export default function MLPublishPage() {
                       <p className="text-sm text-muted-foreground">
                         {publishProgress.current} / {publishProgress.total}
                       </p>
-                      <p className="text-sm font-mono bg-muted px-2 py-1 rounded">
-                        {formatTime(elapsedTime)}
-                      </p>
+                      <p className="text-sm font-mono bg-muted px-2 py-1 rounded">{formatTime(elapsedTime)}</p>
                     </div>
                   </div>
                   <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
-                    <div 
-                      className="bg-primary h-3 rounded-full transition-all duration-300" 
-                      style={{ width: `${publishProgress.total > 0 ? (publishProgress.current / publishProgress.total) * 100 : 0}%` }}
+                    <div
+                      className="bg-primary h-3 rounded-full transition-all duration-300"
+                      style={{
+                        width: `${publishProgress.total > 0 ? (publishProgress.current / publishProgress.total) * 100 : 0}%`,
+                      }}
                     />
                   </div>
                   <div className="flex flex-wrap justify-between gap-2 text-sm">
@@ -1204,7 +1257,7 @@ export default function MLPublishPage() {
                       </span>
                     )}
                   </div>
-                  
+
                   {/* Lista de resultados */}
                   {publishResults.length > 0 && (
                     <div className="mt-4 max-h-60 overflow-y-auto border rounded-lg">
@@ -1230,7 +1283,9 @@ export default function MLPublishPage() {
                                     <Badge className="bg-green-500">Publicado</Badge>
                                     {result.warnings && result.warnings.length > 0 && (
                                       <div className="text-xs text-yellow-500 mt-1 space-y-0.5">
-                                        {result.warnings.map((w, wi) => <div key={wi}>⚠ {w}</div>)}
+                                        {result.warnings.map((w, wi) => (
+                                          <div key={wi}>⚠ {w}</div>
+                                        ))}
                                       </div>
                                     )}
                                   </div>
@@ -1241,7 +1296,10 @@ export default function MLPublishPage() {
                                 {result.status === "error" && (
                                   <div>
                                     <Badge variant="destructive">Error</Badge>
-                                    <div className="text-xs text-red-400 mt-1 truncate max-w-[150px]" title={result.error}>
+                                    <div
+                                      className="text-xs text-red-400 mt-1 truncate max-w-[150px]"
+                                      title={result.error}
+                                    >
                                       {result.error}
                                     </div>
                                   </div>
@@ -1269,9 +1327,7 @@ export default function MLPublishPage() {
                 </>
               )}
               {!publishingInProgress && publishProgress.total > 0 && (
-                <Button onClick={closePublishModal}>
-                  Cerrar
-                </Button>
+                <Button onClick={closePublishModal}>Cerrar</Button>
               )}
               {publishingInProgress && (
                 <Button disabled>

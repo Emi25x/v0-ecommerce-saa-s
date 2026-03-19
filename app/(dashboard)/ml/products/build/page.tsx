@@ -28,7 +28,10 @@ export default function ProductBuilderPage() {
     if (!autoMode || !selectedAccountId || running) return
 
     // Si ya completó, apagar auto-mode
-    if (progress?.status === 'done' || (progress?.publications_processed >= progress?.publications_total && progress?.publications_total > 0)) {
+    if (
+      progress?.status === "done" ||
+      (progress?.publications_processed >= progress?.publications_total && progress?.publications_total > 0)
+    ) {
       setAutoMode(false)
       return
     }
@@ -90,9 +93,10 @@ export default function ProductBuilderPage() {
     setAutoMode(false)
   }
 
-  const progressPercent = progress?.publications_total > 0
-    ? Math.round((progress.publications_processed / progress.publications_total) * 100)
-    : 0
+  const progressPercent =
+    progress?.publications_total > 0
+      ? Math.round((progress.publications_processed / progress.publications_total) * 100)
+      : 0
 
   return (
     <div className="container mx-auto p-6 max-w-5xl">
@@ -108,7 +112,8 @@ export default function ProductBuilderPage() {
           <div className="text-sm text-blue-900">
             <p className="font-medium mb-2">¿Qué hace el Product Builder?</p>
             <p className="mb-2">
-              Toma las publicaciones de MercadoLibre que ya fueron importadas y crea automáticamente productos en tu catálogo.
+              Toma las publicaciones de MercadoLibre que ya fueron importadas y crea automáticamente productos en tu
+              catálogo.
             </p>
             <ul className="text-xs space-y-1 ml-4 list-disc">
               <li>Si el producto ya existe (por SKU/ISBN/EAN), solo vincula la publicación</li>
@@ -131,7 +136,8 @@ export default function ProductBuilderPage() {
             </div>
             <Progress value={progressPercent} className="h-2" />
             <p className="text-xs text-muted-foreground mt-1">
-              {progress.publications_processed?.toLocaleString() || 0} de {progress.publications_total?.toLocaleString() || 0}
+              {progress.publications_processed?.toLocaleString() || 0} de{" "}
+              {progress.publications_total?.toLocaleString() || 0}
             </p>
           </div>
 
@@ -188,9 +194,7 @@ export default function ProductBuilderPage() {
 
         {autoMode && progress?.status !== "done" && (
           <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
-            <p className="text-sm text-blue-700 font-medium mb-1">
-              Modo automático activo
-            </p>
+            <p className="text-sm text-blue-700 font-medium mb-1">Modo automático activo</p>
             <p className="text-xs text-blue-600">
               El proceso continúa automáticamente cada 3 segundos. Podés pausar en cualquier momento.
             </p>

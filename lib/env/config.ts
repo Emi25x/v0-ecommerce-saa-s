@@ -18,4 +18,3 @@ export function getAppOrigin(request?: NextRequest): string {
   }
   return "http://localhost:3000"
 }
-
