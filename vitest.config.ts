@@ -4,7 +4,16 @@ import path from "path"
 export default defineConfig({
   test: {
     globals: true,
-    include: ["**/__tests__/**/*.test.ts"],
+    include: [
+      "domains/**/__tests__/**/*.test.ts",
+      "lib/**/__tests__/**/*.test.ts",
+      "tests/**/*.test.ts",
+    ],
+    coverage: {
+      provider: "v8",
+      include: ["domains/**/*.ts", "lib/**/*.ts"],
+      exclude: ["**/__tests__/**", "**/index.ts"],
+    },
   },
   resolve: {
     alias: {
