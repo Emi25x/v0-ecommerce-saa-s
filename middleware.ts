@@ -1,48 +1,57 @@
 import { updateSession } from "@/lib/db/proxy"
 import { type NextRequest, NextResponse } from "next/server"
 
+/**
+ * Authentication middleware.
+ *
+ * The `config.matcher` below excludes static assets (_next/static, _next/image, favicon, images).
+ * This function only runs for app routes and API routes.
+ *
+ * Policy:
+ *  - Public routes:       login, auth callbacks
+ *  - Unauthenticated API: cron jobs (secured by Vercel infra), supplier imports,
+ *                         OAuth callbacks, external webhooks
+ *  - Everything else:     requires valid Supabase session
+ */
+
+const PUBLIC_PATHS = ["/login", "/auth/callback", "/auth/error"] as const
+
+const UNAUTHENTICATED_API_PREFIXES = [
+  "/api/auth/",
+  "/api/cron/",
+  "/api/azeta/",
+  "/api/arnoia/",
+  "/api/inventory/import/",
+  "/api/inventory/sources/",
+  "/api/webhooks/",
+  "/api/shopify/oauth/callback",
+] as const
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
-  // Rutas públicas permitidas sin autenticación
-  const publicRoutes = ["/login", "/auth/callback", "/auth/error"]
-
-  // Skip auth routes and static files
-  if (
-    publicRoutes.includes(pathname) ||
-    pathname.startsWith("/_next") ||
-    pathname.startsWith("/api/auth") ||
-    pathname.match(/\.(ico|png|jpg|jpeg|svg|gif|woff|woff2|ttf|eot)$/)
-  ) {
+  // Public pages
+  if (PUBLIC_PATHS.some((p) => pathname === p)) {
     return NextResponse.next()
   }
 
-  // Permitir sin auth: API de importación y cron jobs
-  // Estas rutas usan service role de Supabase internamente — no necesitan sesión de usuario
-  if (
-    pathname.startsWith("/api/cron/") ||
-    pathname.startsWith("/api/azeta/") ||
-    pathname.startsWith("/api/arnoia/") ||
-    pathname.startsWith("/api/inventory/import/") ||
-    pathname.startsWith("/api/inventory/sources/") ||
-    pathname.startsWith("/api/shopify/oauth/callback")
-  ) {
+  // API routes that use service role internally — no user session needed
+  if (UNAUTHENTICATED_API_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
     return NextResponse.next()
   }
 
-  // Proteger TODAS las demás rutas (app y API)
+  // All other routes: validate Supabase session
   return await updateSession(request)
 }
 
 export const config = {
   matcher: [
     /*
-     * Match all request paths except:
+     * Match all routes except static assets:
      * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - images - .svg, .png, .jpg, .jpeg, .gif, .webp
-     * Feel free to modify this pattern to include more paths.
+     * - _next/image (image optimization)
+     * - favicon.ico
+     * - image files (.svg, .png, .jpg, .jpeg, .gif, .webp)
      */
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],

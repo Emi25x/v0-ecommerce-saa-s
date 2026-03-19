@@ -1,8 +1,11 @@
 {
-  "name": "my-v0-project",
+  "name": "nexo-commerce",
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",

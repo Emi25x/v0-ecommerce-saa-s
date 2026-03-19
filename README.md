@@ -1,6 +1,8 @@
 # Nexo Commerce
 
-Plataforma SaaS de gestión e-commerce multi-canal para vendedores en Argentina y Latinoamérica. Centraliza productos, stock, pedidos, envíos y facturación de múltiples canales de venta.
+> Plataforma SaaS de gestión e-commerce multi-canal para vendedores en Argentina y Latinoamérica. Centraliza productos, stock, pedidos, envíos y facturación de múltiples canales de venta.
+
+**Estado:** Producción &middot; **Deploy:** Vercel Pro &middot; **Node:** >=20 &middot; **pnpm:** 9
 
 ## Stack
 
@@ -50,7 +52,13 @@ pnpm install
 
 ### Variables de entorno
 
-Crear `.env.local` en la raíz:
+Copiar el template y completar:
+
+```bash
+cp .env.example .env.local
+```
+
+Variables requeridas en `.env.local`:
 
 ```bash
 # Supabase (obligatorias)
