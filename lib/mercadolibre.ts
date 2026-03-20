@@ -1,5 +1,9 @@
 // Mercado Libre API client and utilities
 
+import { createStructuredLogger } from "@/lib/logger"
+
+const log = createStructuredLogger({})
+
 const ML_API_BASE = "https://api.mercadolibre.com"
 
 export interface MLProduct {
@@ -91,9 +95,7 @@ export async function exchangeCodeForToken(
     throw new Error("Mercado Libre credentials not configured")
   }
 
-  console.log("[v0] ML Token Exchange - Code:", code.substring(0, 10) + "...")
-  console.log("[v0] ML Token Exchange - Redirect URI:", redirectUri)
-  console.log("[v0] ML Token Exchange - Code Verifier:", codeVerifier.substring(0, 10) + "...")
+  log.info("Token exchange started", "ml.token_exchange")
 
   const body = {
     grant_type: "authorization_code",
@@ -103,8 +105,6 @@ export async function exchangeCodeForToken(
     redirect_uri: redirectUri,
     code_verifier: codeVerifier,
   }
-
-  console.log("[v0] ML Token Exchange - Request body:", { ...body, client_secret: "***", code_verifier: "***" })
 
   const response = await fetch(`${ML_API_BASE}/oauth/token`, {
     method: "POST",
@@ -116,12 +116,14 @@ export async function exchangeCodeForToken(
 
   if (!response.ok) {
     const errorText = await response.text()
-    console.error("[v0] ML Token Exchange - Error response:", errorText)
+    log.error("Token exchange failed", new Error(errorText), "ml.token_exchange", {
+      status: response.status,
+    })
     throw new Error(`Failed to exchange code: ${response.status} - ${errorText}`)
   }
 
   const tokens = await response.json()
-  console.log("[v0] ML Token Exchange - Success!")
+  log.info("Token exchange successful", "ml.token_exchange", { status: "ok" })
   return tokens
 }
 
@@ -180,7 +182,7 @@ export async function refreshTokenIfNeeded(account: {
   }
 
   // Token is expired or about to expire, refresh it
-  console.log("[v0] ML Token - Refreshing expired token for account:", account.id)
+  log.info("Refreshing expired token", "ml.token_refresh", { account_id: account.id })
   const tokens = await refreshAccessToken(account.refresh_token)
 
   // Update database with new tokens
@@ -195,7 +197,7 @@ export async function refreshTokenIfNeeded(account: {
     })
     .eq("id", account.id)
 
-  console.log("[v0] ML Token - Refreshed successfully")
+  log.info("Token refreshed successfully", "ml.token_refresh", { account_id: account.id, status: "ok" })
   return {
     ...account,
     access_token: tokens.access_token,
@@ -215,11 +217,9 @@ export async function getValidAccessToken(accountId: string): Promise<string> {
   const { data: account, error } = await supabase.from("ml_accounts").select("*").eq("id", accountId).single()
 
   if (error || !account) {
-    console.error("[v0] ML Token - Account not found for account_id:", accountId, error)
+    log.error("Account not found", error || new Error("not_found"), "ml.get_token", { account_id: accountId })
     throw new Error("MercadoLibre account not found. Please connect your MercadoLibre account first.")
   }
-
-  console.log("[v0] ML Token - Account found:", account.id)
 
   // Check if token is expired or will expire in the next 5 minutes
   const expiresAt = new Date(account.token_expires_at)
@@ -228,12 +228,11 @@ export async function getValidAccessToken(accountId: string): Promise<string> {
 
   if (expiresAt > fiveMinutesFromNow) {
     // Token is still valid
-    console.log("[v0] ML Token - Using existing valid token")
     return account.access_token
   }
 
   // Token is expired or about to expire, refresh it
-  console.log("[v0] ML Token - Refreshing expired token")
+  log.info("Refreshing expired token", "ml.token_refresh", { account_id: accountId })
   const tokens = await refreshAccessToken(account.refresh_token)
 
   // Update database with new tokens
@@ -246,9 +245,9 @@ export async function getValidAccessToken(accountId: string): Promise<string> {
       token_expires_at: newExpiresAt,
       updated_at: new Date().toISOString(),
     })
-    .eq("id", account.id)
+    .eq("id", accountId)
 
-  console.log("[v0] ML Token - Refreshed successfully")
+  log.info("Token refreshed successfully", "ml.token_refresh", { account_id: accountId, status: "ok" })
   return tokens.access_token
 }
 
@@ -311,7 +310,6 @@ export async function getMercadoLibreProducts(
   }
 
   const url = `${ML_API_BASE}/users/${userId}/items/search?${params.toString()}`
-  console.log("[v0] ML Products - Fetching with filters:", url)
 
   const response = await fetch(url, {
     headers: {
@@ -327,7 +325,7 @@ export async function getMercadoLibreProducts(
   const itemIds = data.results
   const paging = data.paging
 
-  console.log("[v0] ML Products - Total:", paging.total, "Limit:", limit, "Offset:", offset)
+  log.info("Products search completed", "ml.products_search", { total: paging.total, limit, offset })
 
   if (!itemIds || itemIds.length === 0) {
     return { products: [], paging: { total: 0, limit, offset } }
@@ -348,12 +346,11 @@ export async function getMercadoLibreProducts(
     )
 
     if (!productsResponse.ok) {
-      console.error(`[v0] Failed to fetch batch ${i / batchSize + 1}`)
+      log.warn("Failed to fetch product batch", "ml.products_batch", { batch_index: i / batchSize + 1 })
       continue
     }
 
     const productsData = await productsResponse.json()
-    console.log("[v0] Sample product from API (full):", JSON.stringify(productsData[0]?.body, null, 2))
 
     const processedProducts = productsData.map((item: any) => {
       const product = item.body
@@ -369,12 +366,6 @@ export async function getMercadoLibreProducts(
         }
       }
 
-      console.log("[v0] Product SKU extraction:", {
-        id: product.id,
-        seller_custom_field: product.seller_custom_field,
-        extracted_sku: sku,
-      })
-
       return {
         ...product,
         SELLER_SKU: sku,
@@ -383,8 +374,6 @@ export async function getMercadoLibreProducts(
 
     products.push(...processedProducts)
   }
-
-  console.log("[v0] Final products sample with SKU:", products[0])
 
   return { products, paging: { total: paging.total, limit, offset } }
 }
@@ -460,8 +449,7 @@ export async function updateMercadoLibreProduct(
     description?: string
   },
 ) {
-  console.log("[v0] ML Update Product - ID:", productId)
-  console.log("[v0] ML Update Product - Updates:", JSON.stringify(updates, null, 2))
+  log.info("Updating product", "ml.update_product", { product_id: productId })
 
   const response = await fetch(`${ML_API_BASE}/items/${productId}`, {
     method: "PUT",
@@ -474,12 +462,15 @@ export async function updateMercadoLibreProduct(
 
   if (!response.ok) {
     const errorText = await response.text()
-    console.error("[v0] ML Update Product - Error:", errorText)
+    log.error("Product update failed", new Error(errorText), "ml.update_product", {
+      product_id: productId,
+      status: response.status,
+    })
     throw new Error(`Failed to update product ${productId}: ${response.status} - ${errorText}`)
   }
 
   const result = await response.json()
-  console.log("[v0] ML Update Product - Success")
+  log.info("Product updated successfully", "ml.update_product", { product_id: productId, status: "ok" })
   return result
 }
 
@@ -569,50 +560,10 @@ export async function getMercadoLibreOrders(
 
   const data = await response.json()
 
-  console.log("[v0] ===== ANÁLISIS DE TODAS LAS ÓRDENES =====")
-  console.log("[v0] Total de órdenes:", data.results?.length || 0)
-
-  if (data.results && data.results.length > 0) {
-    data.results.forEach((order: any, index: number) => {
-      console.log(`\n[v0] --- ORDEN ${index + 1}/${data.results.length} ---`)
-      console.log("[v0] ID:", order.id)
-      console.log("[v0] Status:", order.status)
-      console.log("[v0] Tags:", JSON.stringify(order.tags))
-      console.log("[v0] Date created:", order.date_created)
-      console.log("[v0] Manufacturing ending date:", order.manufacturing_ending_date)
-
-      // Datos de shipping
-      if (order.shipping) {
-        console.log("[v0] SHIPPING DATA:")
-        console.log("[v0]   - id:", order.shipping.id)
-        console.log("[v0]   - mode:", order.shipping.mode)
-        console.log("[v0]   - shipping_mode:", order.shipping.shipping_mode)
-        console.log("[v0]   - logistic_type:", order.shipping.logistic_type)
-        console.log("[v0]   - status:", order.shipping.status)
-        console.log("[v0]   - substatus:", order.shipping.substatus)
-
-        if (order.shipping.shipping_option) {
-          console.log("[v0]   - shipping_option.id:", order.shipping.shipping_option.id)
-          console.log("[v0]   - shipping_option.name:", order.shipping.shipping_option.name)
-          console.log("[v0]   - shipping_option.shipping_method_id:", order.shipping.shipping_option.shipping_method_id)
-        }
-
-        if (order.shipping.logistic) {
-          console.log("[v0]   - logistic.mode:", order.shipping.logistic.mode)
-          console.log("[v0]   - logistic.type:", order.shipping.logistic.type)
-        }
-      } else {
-        console.log("[v0] SHIPPING DATA: null")
-      }
-
-      // Resaltar la orden problemática
-      if (order.id === 2000013158887752) {
-        console.log("[v0] ⚠️  ESTA ES LA ORDEN PROBLEMÁTICA ⚠️")
-      }
-    })
-
-    console.log("\n[v0] ===== FIN DEL ANÁLISIS =====\n")
-  }
+  log.info("Orders fetched", "ml.orders_search", {
+    count: data.results?.length || 0,
+    total: data.paging?.total,
+  })
 
   return data
 }
@@ -659,17 +610,11 @@ export async function getMercadoLibreShipments(
       // Add delay before making request to avoid rate limiting
       if (retries > 0) {
         const delay = Math.min(1000 * Math.pow(2, retries), 5000) // Exponential backoff, max 5s
-        console.log(`[v0] ML Shipments - Retry ${retries}/${maxRetries}, waiting ${delay}ms...`)
+        log.info("Retrying shipments fetch", "ml.shipments", { retry: retries, max: maxRetries, delay_ms: delay })
         await new Promise((resolve) => setTimeout(resolve, delay))
       }
 
       const ordersData = await getMercadoLibreOrders(accessToken, userId, filters)
-
-      if (ordersData.results && ordersData.results.length > 0) {
-        const sampleOrder = ordersData.results[0]
-        console.log("[v0] Sample order shipping data:", JSON.stringify(sampleOrder.shipping, null, 2))
-        console.log("[v0] Sample order full data:", JSON.stringify(sampleOrder, null, 2))
-      }
 
       // Extraer shipments de las órdenes
       const shipments = ordersData.results
@@ -705,10 +650,6 @@ export async function getMercadoLibreShipments(
           }
         })
 
-      if (shipments.length > 0) {
-        console.log("[v0] Sample processed shipment:", JSON.stringify(shipments[0], null, 2))
-      }
-
       return {
         results: shipments,
         paging: ordersData.paging,
@@ -718,7 +659,7 @@ export async function getMercadoLibreShipments(
       const errorMessage = error.message || String(error)
 
       if (errorMessage.includes("Too Many") || errorMessage.includes("429")) {
-        console.log(`[v0] ML Shipments - Rate limit hit, attempt ${retries + 1}/${maxRetries + 1}`)
+        log.warn("Rate limit hit on shipments", "ml.shipments", { attempt: retries + 1, max: maxRetries + 1 })
         retries++
         if (retries <= maxRetries) {
           continue // Retry
@@ -806,7 +747,7 @@ export async function createProductAdsCampaign(
 
   if (!response.ok) {
     const errorText = await response.text()
-    console.error("[v0] Failed to create campaign:", errorText)
+    log.error("Failed to create campaign", new Error(errorText), "ml.create_campaign")
     throw new Error(`Failed to create campaign: ${errorText}`)
   }
 

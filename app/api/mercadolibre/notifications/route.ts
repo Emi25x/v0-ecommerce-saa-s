@@ -1,36 +1,37 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
+
+const log = createStructuredLogger({ request_id: genRequestId() })
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-
-    console.log("[v0] Mercado Libre notification received:", body)
 
     const { resource, topic, user_id } = body
 
     // Procesar según el tipo de notificación
     switch (topic) {
       case "items":
-        console.log("[v0] Item updated:", resource)
+        log.info("Item updated", "ml_notify.item", { resource })
         break
 
       case "orders":
-        console.log("[v0] Order notification:", resource)
+        log.info("Order notification", "ml_notify.order", { resource })
         await processOrderNotification(resource, user_id)
         break
 
       case "questions":
-        console.log("[v0] Question received:", resource)
+        log.info("Question received", "ml_notify.question", { resource })
         break
 
       default:
-        console.log("[v0] Unknown topic:", topic)
+        log.info("Unknown topic", "ml_notify.unknown", { topic })
     }
 
     return NextResponse.json({ success: true }, { status: 200 })
   } catch (error) {
-    console.error("[v0] Error processing notification:", error)
+    log.error("Error processing notification", error, "ml_notify.fatal")
     return NextResponse.json({ success: false }, { status: 200 })
   }
 }
@@ -50,11 +51,11 @@ async function processOrderNotification(resource: string, userId: string) {
     const orderId = resource.split("/").pop()
 
     if (!orderId) {
-      console.error("[v0] Invalid order resource:", resource)
+      log.error("Invalid order resource", new Error("missing order_id"), "ml_notify.order", { resource })
       return
     }
 
-    console.log(`[v0] Processing order ${orderId} from MercadoLibre user ${userId}`)
+    log.info("Processing order", "ml_notify.order_process", { order_id: orderId, user_id: userId })
 
     const { data: account } = await supabase
       .from("ml_accounts")
@@ -63,7 +64,9 @@ async function processOrderNotification(resource: string, userId: string) {
       .single()
 
     if (!account) {
-      console.error(`[v0] ML account not found for user ${userId}`)
+      log.error("ML account not found", new Error("account_not_found"), "ml_notify.order_process", {
+        user_id: userId,
+      })
       return
     }
 
@@ -75,7 +78,10 @@ async function processOrderNotification(resource: string, userId: string) {
     })
 
     if (!mlResponse.ok) {
-      console.error(`[v0] Failed to fetch order details: ${mlResponse.status}`)
+      log.error("Failed to fetch order details", new Error(`HTTP ${mlResponse.status}`), "ml_notify.order_fetch", {
+        order_id: orderId,
+        status: mlResponse.status,
+      })
       return
     }
 
@@ -107,7 +113,7 @@ async function processOrderNotification(resource: string, userId: string) {
       .single()
 
     if (error) {
-      console.error("[v0] Error saving order:", error)
+      log.error("Error saving order", error, "ml_notify.order_save", { order_id: orderId })
       return
     }
 
@@ -136,9 +142,9 @@ async function processOrderNotification(resource: string, userId: string) {
       status: "pending",
     })
 
-    console.log(`[v0] Order ${orderId} saved successfully`)
+    log.info("Order saved successfully", "ml_notify.order_save", { order_id: orderId, status: "ok" })
   } catch (error) {
-    console.error("[v0] Error processing order notification:", error)
+    log.error("Error processing order notification", error, "ml_notify.order_process")
   }
 }
 

@@ -2,16 +2,19 @@ import { type NextRequest, NextResponse } from "next/server"
 import { requireCron } from "@/lib/auth/require-auth"
 import { createAdminClient } from "@/lib/db/admin"
 import { runAzetaStockUpdate } from "@/domains/suppliers/azeta/stock-import"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300 // 5 minutos
+
+const log = createStructuredLogger({ request_id: genRequestId() })
 
 // Vercel Cron invoca con GET — delegar a POST
 export async function GET(request: NextRequest) {
   const auth = await requireCron(request)
   if (auth.error) return auth.response
   const isCron = request.headers.get("x-vercel-cron") === "1"
-  console.log(`[AZETA-STOCK] GET - ${isCron ? "cron" : "manual"}`)
+  log.info("Azeta stock import triggered", "azeta.stock", { trigger: isCron ? "cron" : "manual" })
   return POST(request)
 }
 
@@ -52,7 +55,7 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error: any) {
-    console.error("[AZETA-STOCK] Fatal error:", error.message)
+    log.error("Fatal error in azeta stock import", error, "azeta.stock_fatal")
     return NextResponse.json({ error: error.message || "Stock update failed" }, { status: 500 })
   }
 }

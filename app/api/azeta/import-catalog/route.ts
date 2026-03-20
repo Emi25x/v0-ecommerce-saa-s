@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { requireCron } from "@/lib/auth/require-auth"
 import { runCatalogImport } from "@/domains/suppliers/azeta/catalog-import"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
 
 export const maxDuration = 300
 
@@ -31,6 +32,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const auth = await requireCron(request)
   if (auth.error) return auth.response
+  const log = createStructuredLogger({ request_id: genRequestId() })
   let source_id: string | undefined
   let source_name: string | undefined
 
@@ -48,7 +50,7 @@ export async function POST(request: NextRequest) {
       const result = await runCatalogImport(source_id ? { source_id } : source_name ? { source_name } : undefined)
       return NextResponse.json(result, { status: result.success ? 200 : 500 })
     } catch (err: any) {
-      console.error("[import-catalog] Unhandled error:", err)
+      log.error("Unhandled error in import-catalog", err, "azeta.import_catalog")
       return NextResponse.json({ success: false, error: err?.message ?? "Error interno del servidor" }, { status: 500 })
     }
   }
@@ -79,7 +81,7 @@ export async function POST(request: NextRequest) {
 
         send({ type: "done", ...result })
       } catch (err: any) {
-        console.error("[import-catalog][SSE] Error:", err.message)
+        log.error("SSE error in import-catalog", err, "azeta.import_catalog_sse")
         send({ type: "error", error: err.message })
       } finally {
         try {

@@ -2,6 +2,10 @@
  * Helper para construir fetch con autenticación según el tipo de auth de la fuente
  */
 
+import { createStructuredLogger } from "@/lib/logger"
+
+const log = createStructuredLogger({})
+
 interface SourceAuth {
   url_template: string
   auth_type?: string
@@ -58,16 +62,16 @@ export async function fetchWithAuth(source: SourceAuth): Promise<Response> {
   const url = buildAuthenticatedUrl(source)
   const headers = buildAuthHeaders(source)
 
-  console.log(`[v0][FETCH-AUTH] Base URL: ${source.url_template}`)
-  console.log(`[v0][FETCH-AUTH] Auth type: ${source.auth_type || "none"}`)
-  console.log(`[v0][FETCH-AUTH] Credentials:`, JSON.stringify(source.credentials))
-  console.log(`[v0][FETCH-AUTH] Final URL: ${url}`)
-  console.log(`[v0][FETCH-AUTH] Headers:`, JSON.stringify(headers))
+  log.info("Fetching with auth", "http.fetch_auth", {
+    auth_type: source.auth_type || "none",
+  })
 
   const response = await fetch(url, { headers })
 
-  console.log(`[v0][FETCH-AUTH] Response status: ${response.status} ${response.statusText}`)
-  console.log(`[v0][FETCH-AUTH] Response headers:`, JSON.stringify(Object.fromEntries(response.headers.entries())))
+  log.info("Fetch response received", "http.fetch_auth", {
+    status: response.status,
+    status_text: response.statusText,
+  })
 
   return response
 }

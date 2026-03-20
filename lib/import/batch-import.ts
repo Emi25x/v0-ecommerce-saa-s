@@ -1,5 +1,8 @@
 import { createClient } from "@/lib/db/server"
 import Papa from "papaparse"
+import { createStructuredLogger } from "@/lib/logger"
+
+const log = createStructuredLogger({})
 
 const BATCH_SIZE = 200 // Reducido para evitar timeout en Supabase
 
@@ -57,11 +60,11 @@ export async function executeBatchImport(
 ): Promise<BatchImportResult> {
   // Limpiar cache si se fuerza recarga
   if (forceReload) {
-    console.log(`[v0] Batch import: Limpiando cache`)
+    log.info("Clearing CSV cache", "batch_import.cache")
     csvCache.clear()
   }
 
-  console.log(`[v0] Batch import ejecutando: sourceId=${sourceId}, mode=${mode}, offset=${offset}`)
+  log.info("Batch import executing", "batch_import.start", { source_id: sourceId, mode, offset })
 
   const supabase = await createClient()
 
@@ -108,10 +111,10 @@ export async function executeBatchImport(
   const cached = csvCache.get(sourceId)
 
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    console.log(`[v0] Batch import: Usando CSV desde cache`)
+    log.info("Using cached CSV", "batch_import.cache")
     data = cached.data
   } else {
-    console.log(`[v0] Batch import: Descargando archivo desde ${fileUrl}`)
+    log.info("Downloading file", "batch_import.download", { url: fileUrl.substring(0, 60) })
 
     // Construir headers y URL según tipo de autenticación
     let fetchUrl = fileUrl
@@ -154,11 +157,11 @@ export async function executeBatchImport(
     }
 
     const csvText = await fileResponse.text()
-    console.log(`[v0] Batch import: Archivo descargado, ${csvText.length} caracteres`)
+    log.info("File downloaded", "batch_import.download", { chars: csvText.length })
 
     // Normalizar column_mapping para obtener delimiter y mappings
     const { delimiter, mappings } = normalizeColumnMapping(source.column_mapping)
-    console.log(`[v0] Batch import: Usando delimiter "${delimiter}"`)
+    log.info("Using delimiter", "batch_import.parse", { delimiter })
 
     const parseResult = Papa.parse(csvText, {
       header: true,
@@ -222,7 +225,7 @@ export async function executeBatchImport(
     if (!rpcError && rpcResult) {
       updatedCount = rpcResult.updated || 0
     } else {
-      console.log(`[v0] RPC error:`, rpcError)
+      log.error("RPC error in stock batch", rpcError, "batch_import.stock_rpc")
       failedCount = batchEans.length
     }
 
@@ -232,7 +235,7 @@ export async function executeBatchImport(
 
     // Si terminamos, poner stock=0 en productos que no están en el archivo
     if (done) {
-      console.log(`[v0] Stock import: Poniendo stock=0 en productos no listados...`)
+      log.info("Zeroing stock for unlisted products", "batch_import.zero_stock")
 
       const eansInFile = data.map((row) => row[mapping.ean || "EAN"]?.trim()).filter(Boolean)
 
@@ -242,7 +245,7 @@ export async function executeBatchImport(
 
       if (!zeroError && zeroResult) {
         zeroStockCount = zeroResult.zeroed || 0
-        console.log(`[v0] Stock import: ${zeroStockCount} productos puestos a stock=0`)
+        log.info("Products zeroed", "batch_import.zero_stock", { count: zeroStockCount })
       }
     }
 
@@ -369,7 +372,11 @@ export async function executeFullImport(
     offset = result.nextOffset || 0
     isFirstBatch = false
 
-    console.log(`[v0] Import progress: ${result.progress}% (${result.processed}/${result.total})`)
+    log.info("Import progress", "batch_import.progress", {
+      progress: result.progress,
+      processed: result.processed,
+      total: result.total,
+    })
   }
 
   return {

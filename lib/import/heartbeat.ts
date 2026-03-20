@@ -4,6 +4,9 @@
  */
 
 import { createClient } from "@/lib/db/server"
+import { createStructuredLogger } from "@/lib/logger"
+
+const log = createStructuredLogger({})
 
 export class ImportHeartbeat {
   private historyId: string | null
@@ -35,9 +38,9 @@ export class ImportHeartbeat {
           .eq("id", this.historyId!)
 
         this.lastBeat = Date.now()
-        console.log(`[v0][HEARTBEAT] Beat #${this.beatCount} sent to history ${this.historyId}`)
+        log.info("Heartbeat sent", "import.heartbeat", { beat: this.beatCount, history_id: this.historyId })
       } catch (error) {
-        console.error("[v0][HEARTBEAT] Error sending beat:", error)
+        log.error("Error sending heartbeat", error, "import.heartbeat")
       }
     }, 10000) // Cada 10 segundos
   }
@@ -49,7 +52,7 @@ export class ImportHeartbeat {
     if (this.intervalId) {
       clearInterval(this.intervalId)
       this.intervalId = null
-      console.log(`[v0][HEARTBEAT] Stopped after ${this.beatCount} beats`)
+      log.info("Heartbeat stopped", "import.heartbeat", { total_beats: this.beatCount })
     }
   }
 

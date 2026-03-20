@@ -4,10 +4,12 @@ import { refreshTokenIfNeeded } from "@/lib/mercadolibre"
 import { handleQuestionNotification } from "@/domains/mercadolibre/question-handler"
 import { MlWebhookPayloadSchema } from "@/lib/validation/schemas"
 import { createAdminClient } from "@/lib/db/admin"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
 
 // Webhook endpoint para recibir notificaciones de MercadoLibre
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
+  const log = createStructuredLogger({ request_id: genRequestId() })
 
   try {
     let rawBody: unknown
@@ -20,7 +22,7 @@ export async function POST(request: NextRequest) {
     // ── Zod validation: enforce payload contract ─────────────────────────
     const parsed = MlWebhookPayloadSchema.safeParse(rawBody)
     if (!parsed.success) {
-      console.warn("[webhook] Invalid payload shape:", parsed.error.issues[0]?.message)
+      log.warn("Invalid payload shape", "webhook.validate", { issue: parsed.error.issues[0]?.message })
       await logWebhook("unknown", "unknown", "unknown", 400, Date.now() - startTime, "Schema validation failed")
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 })
     }
@@ -37,7 +39,7 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
 
     if (!knownAccount) {
-      console.warn(`[webhook] Unknown user_id: ${body.user_id} — rejecting`)
+      log.warn("Unknown user_id, rejecting", "webhook.auth", { user_id: body.user_id })
       await logWebhook(body.topic, body.resource, String(body.user_id), 403, Date.now() - startTime, "Unknown user_id")
       // Return 200 to ML so they don't retry (the user_id genuinely doesn't belong to us)
       return NextResponse.json({ success: true }, { status: 200 })
@@ -57,19 +59,19 @@ export async function POST(request: NextRequest) {
 
     switch (body.topic) {
       case "orders_v2":
-        await handleOrderNotification(notification)
+        await handleOrderNotification(notification, log)
         break
       case "shipments":
-        await handleShipmentNotification(notification)
+        await handleShipmentNotification(notification, log)
         break
       case "items":
-        await handleItemNotification(notification)
+        await handleItemNotification(notification, log)
         break
       case "questions":
         await handleQuestionNotification(notification as any)
         break
       default:
-        console.log(`[webhook] Unhandled topic: ${body.topic}`)
+        log.info("Unhandled topic", "webhook.unhandled", { topic: body.topic })
     }
 
     // Log exitoso
@@ -78,7 +80,7 @@ export async function POST(request: NextRequest) {
     // Responder rápidamente (< 500ms) para evitar que ML deshabilite el webhook
     return NextResponse.json({ success: true }, { status: 200 })
   } catch (error) {
-    console.error("[webhook] Processing error:", error)
+    log.error("Processing error", error, "webhook.fatal")
     const errorMessage = error instanceof Error ? error.message : "Unknown error"
 
     // Log del error — best-effort
@@ -89,12 +91,12 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function handleOrderNotification(notification: any) {
+async function handleOrderNotification(notification: any, log: ReturnType<typeof createStructuredLogger>) {
   try {
     const supabase = await createClient()
     const orderId = notification.resource.split("/").pop()
 
-    console.log(`[webhook] Processing order notification for order ${orderId}`)
+    log.info("Processing order notification", "webhook.order", { order_id: orderId })
 
     // Buscar la cuenta de ML por user_id
     const { data: account } = await supabase
@@ -129,7 +131,7 @@ async function handleOrderNotification(notification: any) {
           { onConflict: "id" },
         )
 
-        console.log(`[webhook] Order ${orderId} synced to cache`)
+        log.info("Order synced to cache", "webhook.order", { order_id: orderId, status: "ok" })
       }
     }
 
@@ -145,16 +147,16 @@ async function handleOrderNotification(notification: any) {
       created_at: new Date().toISOString(),
     })
   } catch (error) {
-    console.error("[webhook] Error handling order notification:", error)
+    log.error("Error handling order notification", error, "webhook.order")
   }
 }
 
-async function handleShipmentNotification(notification: any) {
+async function handleShipmentNotification(notification: any, log: ReturnType<typeof createStructuredLogger>) {
   try {
     const supabase = await createClient()
     const shipmentId = notification.resource.split("/").pop()
 
-    console.log(`[webhook] Processing shipment notification for shipment ${shipmentId}`)
+    log.info("Processing shipment notification", "webhook.shipment", { shipment_id: shipmentId })
 
     // Buscar la cuenta de ML
     const { data: account } = await supabase
@@ -188,7 +190,7 @@ async function handleShipmentNotification(notification: any) {
           { onConflict: "id" },
         )
 
-        console.log(`[webhook] Shipment ${shipmentId} synced to cache`)
+        log.info("Shipment synced to cache", "webhook.shipment", { shipment_id: shipmentId, status: "ok" })
       }
     }
 
@@ -200,16 +202,16 @@ async function handleShipmentNotification(notification: any) {
       created_at: new Date().toISOString(),
     })
   } catch (error) {
-    console.error("[webhook] Error handling shipment notification:", error)
+    log.error("Error handling shipment notification", error, "webhook.shipment")
   }
 }
 
-async function handleItemNotification(notification: any) {
+async function handleItemNotification(notification: any, log: ReturnType<typeof createStructuredLogger>) {
   try {
     const supabase = await createClient()
     const itemId = notification.resource.split("/").pop()
 
-    console.log(`[webhook] Processing item notification for item ${itemId}`)
+    log.info("Processing item notification", "webhook.item", { item_id: itemId })
 
     // Buscar la cuenta de ML
     const { data: account } = await supabase
@@ -248,7 +250,7 @@ async function handleItemNotification(notification: any) {
           { onConflict: "id" },
         )
 
-        console.log(`[webhook] Item ${itemId} synced to cache`)
+        log.info("Item synced to cache", "webhook.item", { item_id: itemId, status: "ok" })
       }
     }
 
@@ -260,9 +262,11 @@ async function handleItemNotification(notification: any) {
       created_at: new Date().toISOString(),
     })
   } catch (error) {
-    console.error("[webhook] Error handling item notification:", error)
+    log.error("Error handling item notification", error, "webhook.item")
   }
 }
+
+const webhookLog = createStructuredLogger({ request_id: "webhook-audit" })
 
 async function logWebhook(
   topic: string,
@@ -284,7 +288,7 @@ async function logWebhook(
       created_at: new Date().toISOString(),
     })
   } catch (error) {
-    console.error("[webhook] Error logging webhook:", error)
+    webhookLog.error("Error logging webhook", error, "webhook.audit")
   }
 }
 
