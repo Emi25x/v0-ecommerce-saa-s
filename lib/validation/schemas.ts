@@ -19,7 +19,8 @@ export const zPositiveInt = z.coerce.number().int().positive()
 export const ImportRunSchema = z.object({
   account_id: zUUID,
   max_seconds: z.number().int().min(1).max(300).optional().default(12),
-  detail_batch: z.number().int().min(1).max(20).optional(),
+  /** Accepts any non-negative int; the parser clamps to [1, ML_MULTIGET_MAX_IDS] */
+  detail_batch: z.number().int().min(0).optional(),
   concurrency: z.number().int().min(1).max(10).optional().default(2),
 })
 export type ImportRunInput = z.infer<typeof ImportRunSchema>
@@ -72,3 +73,37 @@ export const AzetaImportSchema = z.object({
   source_name: z.string().optional(),
 })
 export type AzetaImportInput = z.infer<typeof AzetaImportSchema>
+
+// ── Arnoia Stock Import ───────────────────────────────────────────────────
+
+export const ArnoiaStockImportSchema = z.object({
+  source_id: z.string().optional(),
+  source_name: z.string().optional(),
+  dry_run: z.boolean().optional().default(false),
+})
+export type ArnoiaStockImportInput = z.infer<typeof ArnoiaStockImportSchema>
+
+// ── Cron Sync ─────────────────────────────────────────────────────────────
+
+export const CronSyncQuerySchema = z.object({
+  account_id: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+})
+export type CronSyncQuery = z.infer<typeof CronSyncQuerySchema>
+
+// ── Shopify Sync ──────────────────────────────────────────────────────────
+
+export const ShopifySyncSchema = z.object({
+  store_id: zUUID,
+  full_sync: z.boolean().optional().default(false),
+})
+export type ShopifySyncInput = z.infer<typeof ShopifySyncSchema>
+
+// ── Pagination ────────────────────────────────────────────────────────────
+
+export const PaginationQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).optional().default(1),
+  limit: z.coerce.number().int().min(1).max(500).optional().default(50),
+  q: z.string().max(200).optional(),
+})
+export type PaginationQuery = z.infer<typeof PaginationQuerySchema>

@@ -17,18 +17,17 @@ export function parseRunRequest(body: unknown): ImportRunInput {
   const result = ImportRunSchema.safeParse(body)
   if (!result.success) {
     const first = result.error.issues[0]
-    throw new ValidationError(
-      first?.message ?? "Invalid request body",
-      first?.path?.join("."),
-    )
+    throw new ValidationError(first?.message ?? "Invalid request body", first?.path?.join("."))
   }
+
+  // Clamp detail_batch to [1, ML_MULTIGET_MAX_IDS], default to ML_MULTIGET_MAX_IDS
+  const rawBatch = result.data.detail_batch
+  const detail_batch = rawBatch != null ? Math.max(1, Math.min(ML_MULTIGET_MAX_IDS, rawBatch)) : ML_MULTIGET_MAX_IDS
 
   return {
     account_id: result.data.account_id,
     max_seconds: result.data.max_seconds,
-    detail_batch: result.data.detail_batch
-      ? Math.min(ML_MULTIGET_MAX_IDS, result.data.detail_batch)
-      : undefined,
+    detail_batch,
     concurrency: result.data.concurrency,
   }
 }

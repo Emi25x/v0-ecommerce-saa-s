@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
           .from("products")
           .select("*", { count: "exact", head: true })
           .not("stock_by_source", "is", null)
-          .neq(`stock_by_source->>${sourceKey}`, null as any)
+          .neq(`stock_by_source->>${sourceKey}`, null as unknown as string)
 
         // Sumar stock total del proveedor
         const { data: stockData } = await supabase
@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
 
         let stockTotal = 0
         let productsWithStock = 0
-        stockData?.forEach((product: any) => {
+        stockData?.forEach((product: { stock_by_source: Record<string, number> | null }) => {
           const sbs = product.stock_by_source || {}
           const val = sbs[sourceKey]
           if (val != null && val > 0) {
@@ -106,7 +106,9 @@ export async function GET(request: NextRequest) {
       .not("ml_item_id", "is", null)
       .not("ml_sold_quantity", "is", null)
 
-    const soldCount = salesData?.reduce((sum: number, p: any) => sum + (p.ml_sold_quantity || 0), 0) || 0
+    const soldCount =
+      salesData?.reduce((sum: number, p: { ml_sold_quantity: number | null }) => sum + (p.ml_sold_quantity || 0), 0) ||
+      0
 
     return NextResponse.json({
       providers: providersWithStats,
@@ -124,8 +126,9 @@ export async function GET(request: NextRequest) {
         visits_30d: 0, // Placeholder: requiere integración con API de ML
       },
     })
-  } catch (error: any) {
-    console.error("[v0] Ops status error:", error)
-    return NextResponse.json({ error: error.message || "Failed to fetch ops status" }, { status: 500 })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to fetch ops status"
+    console.error("[ops/status] Error:", message)
+    return NextResponse.json({ ok: false, error: { code: "internal_error", detail: message } }, { status: 500 })
   }
 }

@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
       recent: recent || [],
     })
   } catch (error) {
-    console.error("[v0] Error fetching webhook stats:", error)
+    console.error("[webhooks/stats] Error:", error)
     const errorMessage = error instanceof Error ? error.message : "Failed to fetch stats"
     return NextResponse.json({ error: errorMessage }, { status: 500 })
   }

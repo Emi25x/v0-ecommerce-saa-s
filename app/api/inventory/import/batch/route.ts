@@ -8,6 +8,7 @@ import { normalizeHeader, detectDelimiter } from "@/lib/import/csv-helpers"
 import { inflateRawSync } from "node:zlib"
 import { startRun } from "@/lib/process-runs"
 import { BatchImportSchema } from "@/lib/validation/schemas"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
 
 export const maxDuration = 300
 
@@ -28,17 +29,22 @@ export async function POST(request: NextRequest) {
   const auth = await requireCron(request)
   if (auth.error) return auth.response
   const startTime = Date.now()
+  const log = createStructuredLogger({ request_id: genRequestId() })
 
   try {
     let rawBody: unknown
     try {
       rawBody = await request.json()
     } catch {
-      return NextResponse.json({ ok: false, error: { code: "bad_request", detail: "Invalid JSON body" } }, { status: 400 })
+      return NextResponse.json(
+        { ok: false, error: { code: "bad_request", detail: "Invalid JSON body" } },
+        { status: 400 },
+      )
     }
 
     const validated = BatchImportSchema.safeParse(rawBody)
     if (!validated.success) {
+      log.warn("Validation failed", "batch.validate", { issues_count: validated.error.issues.length })
       return NextResponse.json(
         { ok: false, error: { code: "validation_error", detail: validated.error.issues } },
         { status: 422 },
@@ -151,10 +157,13 @@ export async function POST(request: NextRequest) {
     const done = rows_seen === 0 || offset + rows_seen >= totalRows
 
     if (offset === 0) {
-      console.log(
-        `[BATCH] source="${source.name}" delimiter="${delimiter}" totalRows=${totalRows} batchSize=${effectiveBatchSize}`,
-      )
-      console.log(`[BATCH] headers: ${headersNormalized.slice(0, 10).join(", ")}`)
+      log.info("Batch import started", "batch.start", {
+        source_name: source.name,
+        delimiter,
+        total_rows: totalRows,
+        batch_size: effectiveBatchSize,
+        headers_sample: headersNormalized.slice(0, 10),
+      })
     }
 
     // 5. Mapear productos
@@ -357,7 +366,7 @@ export async function POST(request: NextRequest) {
               if (isTimeoutError(rpcError.message) && retryCount < 2) {
                 timeout_count++
                 retryCount++
-                console.log(`[BATCH][STOCK] Timeout en chunk, retry ${retryCount}/2`)
+                log.warn("Stock chunk timeout, retrying", "batch.stock_rpc", { retry: retryCount })
                 await new Promise((r) => setTimeout(r, 1000 * retryCount))
                 continue
               }
@@ -407,7 +416,7 @@ export async function POST(request: NextRequest) {
               if (isTimeoutError(chunkError.message) && retryCount < 2) {
                 timeout_count++
                 retryCount++
-                console.log(`[BATCH][CATALOG] Timeout en chunk offset=${i}, retry ${retryCount}/2`)
+                log.warn("Catalog chunk timeout, retrying", "batch.upsert", { chunk_offset: i, retry: retryCount })
                 await new Promise((r) => setTimeout(r, 1000 * retryCount))
                 continue
               }
@@ -432,9 +441,11 @@ export async function POST(request: NextRequest) {
 
       // Validar: created+updated nunca puede superar rows_processed
       if (created + updated > rows_processed) {
-        console.log(
-          `[BATCH] INCONSISTENCIA: created=${created}+updated=${updated} > rows_processed=${rows_processed}. Corrigiendo.`,
-        )
+        log.warn("Counter inconsistency detected, correcting", "batch.counters", {
+          created,
+          updated,
+          rows_processed,
+        })
         const total_ok = rows_processed - failed_rows
         updated = isStockImport ? total_ok : Math.min(updated, total_ok)
         created = isStockImport ? 0 : Math.min(created, total_ok - updated)
@@ -467,7 +478,9 @@ export async function POST(request: NextRequest) {
               { onConflict: "id" },
             )
           } catch (e) {
-            console.warn("[BATCH] stock_by_source update failed for chunk:", e)
+            log.warn("stock_by_source update failed for chunk", "batch.stock_by_source", {
+              error: e instanceof Error ? e.message : String(e),
+            })
           }
         }
       }
@@ -480,9 +493,20 @@ export async function POST(request: NextRequest) {
     const duration_ms = Date.now() - startTime
     const next_offset = done ? null : offset + rows_seen
 
-    console.log(
-      `[BATCH] done=${done} offset=${offset} seen=${rows_seen} processed=${rows_processed} created=${created} updated=${updated} failed=${failed_rows} timeouts=${timeout_count} duration=${duration_ms}ms reason=${last_reason}`,
-    )
+    log.info("Batch import completed", "batch.complete", {
+      done,
+      offset,
+      rows_seen,
+      rows_processed,
+      created,
+      updated,
+      failed_rows,
+      timeout_count,
+      duration_ms,
+      reason: last_reason,
+      source_name: source.name,
+      status: last_error ? "partial" : "ok",
+    })
 
     // Record run on first batch (captures the initial batch metrics)
     if (run) {
@@ -557,8 +581,9 @@ export async function POST(request: NextRequest) {
             }
           : undefined,
     })
-  } catch (error: any) {
-    console.error("[BATCH] Fatal error:", error)
-    return NextResponse.json({ error: error.message || "Error interno" }, { status: 500 })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Error interno"
+    log.error("Batch import fatal error", error, "batch.fatal")
+    return NextResponse.json({ ok: false, error: { code: "internal_error", detail: message } }, { status: 500 })
   }
 }
