@@ -10,10 +10,8 @@ export async function GET(request: NextRequest) {
       .select("*", { count: "exact", head: true })
       .eq("processed", false)
 
-    // If table doesn't exist, error code will be 42P01 (undefined_table)
     if (error) {
       if (error.code === "42P01" || error.message.includes("does not exist")) {
-        console.log("[webhooks/queue] Table does not exist yet")
         return NextResponse.json({ count: 0, message: "Webhook queue not configured" })
       }
       console.error("[webhooks/queue] Error fetching count:", error)

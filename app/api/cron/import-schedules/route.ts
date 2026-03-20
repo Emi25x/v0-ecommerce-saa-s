@@ -7,17 +7,7 @@ import { runAzetaStockUpdate } from "@/domains/suppliers/azeta/stock-import"
 import { runLibralStockImport } from "@/domains/suppliers/libral/stock-import"
 import { runArnoiaStockImport } from "@/domains/suppliers/arnoia/stock-import"
 import { requireCron } from "@/lib/auth/require-auth"
-// TODO: Implementar sync ML como función directa en lugar de fetch
-// import { syncStockWithML } from "@/lib/ml/sync-stock"
-
-// Este endpoint debe ser llamado por un cron job (ej: Vercel Cron)
-// Configurar en vercel.json:
-// {
-//   "crons": [{
-//     "path": "/api/cron/import-schedules",
-//     "schedule": "0 * * * *"  // Cada hora
-//   }]
-// }
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -26,9 +16,10 @@ export async function GET(request: NextRequest) {
   const cronAuth = await requireCron(request)
   if (cronAuth.error) return cronAuth.response
 
-  try {
-    console.log("[v0] Ejecutando cron job de importaciones programadas")
+  const log = createStructuredLogger({ request_id: genRequestId() })
+  log.info("Starting scheduled imports cron", "import_schedules.start")
 
+  try {
     const supabase = await createClient()
 
     // Buscar schedules que necesitan ejecutarse
@@ -45,23 +36,25 @@ export async function GET(request: NextRequest) {
       .lte("next_run_at", now)
 
     if (schedulesError) {
-      console.error("[v0] Error obteniendo schedules:", schedulesError)
+      log.error("Error fetching schedules", schedulesError, "import_schedules.query_error")
       return NextResponse.json({ error: schedulesError.message }, { status: 500 })
     }
 
     if (!schedules || schedules.length === 0) {
-      console.log("[v0] No hay importaciones programadas para ejecutar")
       return NextResponse.json({ message: "No hay importaciones programadas para ejecutar", executed: 0 })
     }
 
-    console.log(`[v0] Ejecutando ${schedules.length} importaciones programadas`)
+    log.info(`Executing ${schedules.length} scheduled imports`, "import_schedules.run", { count: schedules.length })
 
     const results = []
 
     for (const schedule of schedules) {
       try {
         const source = schedule.import_sources
-        console.log(`[v0] Ejecutando importación para fuente: ${source.name} (feed_type: ${source.feed_type})`)
+        log.info(`Importing source: ${source.name}`, "import_schedules.source", {
+          source: source.name,
+          feed_type: source.feed_type,
+        })
 
         // Rutear según proveedor: cada proveedor tiene su propio manejador
         const nameLower = source.name.toLowerCase()
@@ -73,8 +66,6 @@ export async function GET(request: NextRequest) {
         let importResult: { success: boolean; created?: number; updated?: number; message?: string }
 
         if (isAzeta && source.feed_type === "stock_price") {
-          // Stock Azeta: usa bulk_update_azeta_stock RPC para no afectar otros proveedores
-          console.log(`[v0] Ejecutando actualización de stock AZETA para ${source.name}`)
           const r = await runAzetaStockUpdate(source)
           importResult = {
             success: r.success,
@@ -82,8 +73,6 @@ export async function GET(request: NextRequest) {
             message: r.error ?? `${r.updated} actualizados, ${r.not_found} no encontrados`,
           }
         } else if (isAzeta) {
-          // Catálogo/parcial Azeta: ZIP + latin1 + EAN normalization
-          console.log(`[v0] Ejecutando importación catálogo AZETA para ${source.name}`)
           const r = await runCatalogImport({ source_id: schedule.source_id })
           importResult = {
             success: r.success,
@@ -92,8 +81,6 @@ export async function GET(request: NextRequest) {
             message: r.error ?? `${r.created} creados, ${r.updated} actualizados`,
           }
         } else if (isArnoiaStock) {
-          // Arnoia Stock: CSV latin1, actualiza via bulk_update_stock_price RPC
-          console.log(`[v0] Ejecutando actualización de stock ARNOIA para ${source.name}`)
           const r = await runArnoiaStockImport()
           importResult = {
             success: r.success,
@@ -101,9 +88,7 @@ export async function GET(request: NextRequest) {
             message: r.error ?? `${r.updated} actualizados, ${r.not_found} no encontrados`,
           }
         } else if (isLibral) {
-          // Libral: API JSON con paginación, usa admin client para bypassear RLS
           const sourceKey = source.source_key ?? "libral"
-          console.log(`[v0] Ejecutando importación stock LIBRAL para ${source.name} (source_key: ${sourceKey})`)
           const r = await runLibralStockImport(sourceKey)
           importResult = {
             success: r.success,
@@ -111,8 +96,6 @@ export async function GET(request: NextRequest) {
             message: r.error ?? `${r.updated} actualizados, ${r.zeroed} en cero`,
           }
         } else {
-          // Resto de proveedores: importador genérico CSV (incluye Arnoia catalog, Libral Argentina)
-          console.log(`[v0] Ejecutando importación directa para ${source.name}`)
           importResult = await executeFullImport(schedule.source_id, source.feed_type)
         }
 
@@ -134,20 +117,20 @@ export async function GET(request: NextRequest) {
           result: importResult,
         })
 
-        // TODO: Si es una importación de stock/precio, sincronizar con ML
-        // Esto se implementará como función directa cuando el cron funcione en producción
         if (source.feed_type === "stock_price" && (importResult.success || (importResult.updated ?? 0) > 0)) {
-          console.log(
-            `[v0] Importación de stock completada. Sync con ML pendiente de implementar como función directa.`,
-          )
-          // La sincronización con ML se puede hacer manualmente desde la UI por ahora
+          log.info("Stock import completed, ML sync pending", "import_schedules.stock_done", {
+            source: source.name,
+          })
         }
-      } catch (error: any) {
-        console.error(`[v0] Error ejecutando importación para schedule ${schedule.id}:`, error)
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : "Unknown error"
+        log.error(`Error importing schedule ${schedule.id}`, error, "import_schedules.schedule_error", {
+          schedule_id: schedule.id,
+        })
         results.push({
           source: schedule.import_sources?.name || "Unknown",
           success: false,
-          error: error.message,
+          error: msg,
         })
       }
     }
@@ -157,19 +140,20 @@ export async function GET(request: NextRequest) {
       executed: schedules.length,
       results,
     })
-  } catch (error: any) {
-    console.error("[v0] Error en cron de importaciones:", error)
-    return NextResponse.json(
-      {
-        error: error.message || "Error desconocido",
-        details: error.toString(),
-      },
-      { status: 500 },
-    )
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error"
+    log.error("Fatal error in import schedules cron", error, "import_schedules.fatal")
+    return NextResponse.json({ ok: false, error: { code: "internal_error", detail: msg } }, { status: 500 })
   }
 }
 
-function calculateNextRun(schedule: any): string {
+function calculateNextRun(schedule: {
+  frequency: string
+  hour?: number
+  minute?: number
+  day_of_week?: number
+  day_of_month?: number
+}): string {
   const now = new Date()
 
   const hours = schedule.hour || 0
@@ -185,11 +169,9 @@ function calculateNextRun(schedule: any): string {
 
   switch (schedule.frequency) {
     case "daily":
-      // Ya está configurado para mañana si es necesario
       break
 
-    case "weekly":
-      // Ajustar al día de la semana especificado
+    case "weekly": {
       const targetDay = schedule.day_of_week || 1
       const currentDay = nextRun.getDay()
       let daysToAdd = targetDay - currentDay
@@ -202,18 +184,18 @@ function calculateNextRun(schedule: any): string {
 
       nextRun.setDate(nextRun.getDate() + daysToAdd)
       break
+    }
 
-    case "monthly":
-      // Ajustar al día del mes especificado
+    case "monthly": {
       const targetDayOfMonth = schedule.day_of_month || 1
       nextRun.setDate(targetDayOfMonth)
 
-      // Si ya pasó este mes, ir al próximo mes
       if (nextRun <= now) {
         nextRun.setMonth(nextRun.getMonth() + 1)
         nextRun.setDate(targetDayOfMonth)
       }
       break
+    }
   }
 
   return nextRun.toISOString()

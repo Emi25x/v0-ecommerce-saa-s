@@ -21,6 +21,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { getValidAccessToken } from "@/lib/mercadolibre"
 import { requireCron } from "@/lib/auth/require-auth"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300 // 5 min — procesar ítems en serie sin timeout
@@ -114,8 +115,10 @@ export async function GET(req: NextRequest) {
     .select("id, ml_item_id, account_id, min_price, max_price, target_price, last_our_price, strategy")
     .eq("enabled", true)
 
+  const log = createStructuredLogger({ request_id: genRequestId() })
+
   if (cfgErr) {
-    console.error("[reprice] Error leyendo repricing_config:", cfgErr.message)
+    log.error("Error reading repricing_config", cfgErr, "reprice.read_config")
     return NextResponse.json({ ok: false, error: cfgErr.message }, { status: 500 })
   }
 
@@ -123,7 +126,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, message: "No hay ítems con repricing activo", processed: 0 })
   }
 
-  console.log(`[reprice] Procesando ${configs.length} ítems`)
+  log.info(`Processing ${configs.length} items`, "reprice.start", { count: configs.length })
 
   const results: Array<{
     ml_item_id: string
@@ -141,7 +144,7 @@ export async function GET(req: NextRequest) {
     try {
       // 2a. Obtener access token fresco
       if (!account_id) {
-        console.warn(`[reprice] ${ml_item_id}: sin account_id configurado, saltando`)
+        log.warn(`${ml_item_id}: no account_id, skipping`, "reprice.no_account", { ml_item_id })
         continue
       }
       const token = await getValidAccessToken(account_id)
@@ -164,7 +167,7 @@ export async function GET(req: NextRequest) {
 
       if (!ptwRes.ok) {
         const errTxt = await ptwRes.text()
-        console.warn(`[reprice] ${ml_item_id}: price_to_win HTTP ${ptwRes.status}`)
+        log.warn(`${ml_item_id}: price_to_win HTTP ${ptwRes.status}`, "reprice.ptw_error", { ml_item_id })
         await persistResult(supabase, {
           cfg,
           currentPrice,
@@ -222,10 +225,14 @@ export async function GET(req: NextRequest) {
             .eq("ml_item_id", ml_item_id)
             .eq("account_id", account_id)
 
-          console.log(`[reprice] ${ml_item_id}: ${currentPrice} → ${new_price} (${status})`)
+          log.info(`${ml_item_id}: ${currentPrice} → ${new_price} (${status})`, "reprice.updated", {
+            ml_item_id,
+            old_price: currentPrice,
+            new_price,
+          })
         } else {
           const errBody = await updateRes.json().catch(() => ({}))
-          console.error(`[reprice] ${ml_item_id}: error al actualizar precio en ML`, errBody)
+          log.error(`${ml_item_id}: error updating price in ML`, errBody, "reprice.update_error", { ml_item_id })
           await persistResult(supabase, {
             cfg,
             currentPrice,
@@ -256,9 +263,10 @@ export async function GET(req: NextRequest) {
       })
 
       results.push({ ml_item_id, changed: needsChange, status, old_price: currentPrice, new_price })
-    } catch (e: any) {
-      console.error(`[reprice] ${ml_item_id}: excepción`, e.message)
-      results.push({ ml_item_id, changed: false, status: "error", error: e.message })
+    } catch (e: unknown) {
+      const eMsg = e instanceof Error ? e.message : "Unknown error"
+      log.error(`${ml_item_id}: exception`, e, "reprice.item_error", { ml_item_id })
+      results.push({ ml_item_id, changed: false, status: "error", error: eMsg })
     }
 
     // Rate limit: 300ms entre ítems

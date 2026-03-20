@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/db/admin"
 import { NextResponse } from "next/server"
 import { runMatcherBatch } from "@/domains/mercadolibre/matcher"
 import { requireCron } from "@/lib/auth/require-auth"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -22,14 +23,12 @@ export async function POST(request: NextRequest) {
   const auth = await requireCron(request)
   if (auth.error) return auth.response
 
+  const log = createStructuredLogger({ request_id: genRequestId() })
   const ranAt = new Date().toISOString()
 
   try {
     const supabase = createAdminClient()
 
-    // Find accounts with active matcher work:
-    // - status 'idle' with a cursor means the UI started but stopped polling
-    // - status 'running' with stale heartbeat means the previous request crashed
     const { data: rows, error } = await supabase
       .from("ml_matcher_progress")
       .select("account_id, status, last_heartbeat_at, cursor")
@@ -38,7 +37,7 @@ export async function POST(request: NextRequest) {
       .limit(5)
 
     if (error) {
-      console.error("[CRON ML-MATCHER] Error querying progress:", error.message)
+      log.error("Error querying matcher progress", error, "ml_matcher_tick.query_error")
       return NextResponse.json({ ok: false, ranAt, error: error.message }, { status: 500 })
     }
 
@@ -46,7 +45,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, ranAt, message: "No active matcher work" })
     }
 
-    const results: any[] = []
+    const results: Record<string, unknown>[] = []
 
     for (const row of rows) {
       // Skip if another process is actively working (heartbeat < 90s)
@@ -62,16 +61,20 @@ export async function POST(request: NextRequest) {
           batch_size: 200,
         })
         results.push({ account_id: row.account_id, ...result })
-      } catch (err: any) {
-        console.error(`[CRON ML-MATCHER] Error for ${row.account_id}:`, err.message)
-        results.push({ account_id: row.account_id, error: err.message })
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Unknown error"
+        log.error(`Error for account ${row.account_id}`, err, "ml_matcher_tick.account_error", {
+          account_id: row.account_id,
+        })
+        results.push({ account_id: row.account_id, error: msg })
       }
     }
 
-    console.log(`[CRON ML-MATCHER] Processed ${results.length} accounts`)
+    log.info(`Processed ${results.length} accounts`, "ml_matcher_tick.done", { count: results.length })
     return NextResponse.json({ ok: true, ranAt, processed: results.length, results })
-  } catch (error: any) {
-    console.error("[CRON ML-MATCHER] Fatal:", error)
-    return NextResponse.json({ ok: false, ranAt, error: error.message }, { status: 500 })
+  } catch (error: unknown) {
+    log.error("Fatal error in matcher tick", error, "ml_matcher_tick.fatal")
+    const message = error instanceof Error ? error.message : "Unknown error"
+    return NextResponse.json({ ok: false, ranAt, error: { code: "internal_error", detail: message } }, { status: 500 })
   }
 }

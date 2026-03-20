@@ -15,6 +15,7 @@ import {
   createRepriceJob,
   type Strategy,
 } from "@/domains/mercadolibre/repricing-engine"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -53,8 +54,10 @@ export async function GET(req: NextRequest) {
     .eq("enabled", true)
     .order("last_reprice_at", { ascending: true, nullsFirst: true })
 
+  const log = createStructuredLogger({ request_id: genRequestId() })
+
   if (strErr) {
-    console.error("[ml-reprice] Error leyendo estrategias:", strErr.message)
+    log.error("Error reading strategies", strErr, "ml_reprice.read_strategies")
     return NextResponse.json({ ok: false, error: strErr.message }, { status: 500 })
   }
 
@@ -226,8 +229,9 @@ export async function GET(req: NextRequest) {
         old_price: currentPrice,
         new_price: changed ? new_price : null,
       })
-    } catch (e: any) {
-      console.error(`[ml-reprice] ${ml_item_id}:`, e.message)
+    } catch (e: unknown) {
+      const eMsg = e instanceof Error ? e.message : "Unknown error"
+      log.error(`Reprice error for ${ml_item_id}`, e, "ml_reprice.item_error", { ml_item_id })
       await persistRepriceState(supabase, {
         strategyId,
         ml_item_id,
@@ -237,10 +241,10 @@ export async function GET(req: NextRequest) {
         status: "error",
         ptwPrice: null,
         competitorPrice: null,
-        rawResponse: { error: e.message },
+        rawResponse: { error: eMsg },
         changed: false,
       })
-      results.push({ ml_item_id, status: "error", error: e.message, changed: false })
+      results.push({ ml_item_id, status: "error", error: eMsg, changed: false })
     }
 
     await delay(300)

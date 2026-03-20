@@ -3,6 +3,7 @@ import { createClient } from "@/lib/db/server"
 import { NextResponse } from "next/server"
 import { executeSingleTick } from "@/domains/mercadolibre/import/orchestrator"
 import { requireCron } from "@/lib/auth/require-auth"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -18,7 +19,8 @@ export async function GET(request: NextRequest) {
   const auth = await requireCron(request)
   if (auth.error) return auth.response
 
-  console.log("[v0] ========== ML IMPORT WORKER CRON ==========")
+  const log = createStructuredLogger({ request_id: genRequestId() })
+  log.info("ML Import Worker started", "ml_import_worker.start")
 
   try {
     const supabase = await createClient()
@@ -33,7 +35,9 @@ export async function GET(request: NextRequest) {
       .select("id")
 
     if (staleItems && staleItems.length > 0) {
-      console.log(`[v0] Recovered ${staleItems.length} stale claimed items`)
+      log.warn(`Recovered ${staleItems.length} stale claimed items`, "ml_import_worker.stale_items", {
+        count: staleItems.length,
+      })
     }
 
     // ── Also recover stale jobs stuck in running states > 2 hours ──
@@ -46,7 +50,9 @@ export async function GET(request: NextRequest) {
       .select("id")
 
     if (staleJobs && staleJobs.length > 0) {
-      console.log(`[v0] Marked ${staleJobs.length} stale jobs as failed`)
+      log.warn(`Marked ${staleJobs.length} stale jobs as failed`, "ml_import_worker.stale_jobs", {
+        count: staleJobs.length,
+      })
     }
 
     // Find active jobs
@@ -64,16 +70,16 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    console.log("[v0] Found", jobs.length, "jobs to process")
+    log.info(`Found ${jobs.length} jobs to process`, "ml_import_worker.jobs", { count: jobs.length })
     const results = []
 
     for (const job of jobs) {
       try {
         const result = await executeSingleTick(supabase)
         results.push({ job_id: job.id, success: result.ok, action: result.action, status: result.status })
-      } catch (error: any) {
-        console.error("[v0] Error processing job", job.id, error)
-        results.push({ job_id: job.id, success: false, error: error.message })
+      } catch (error: unknown) {
+        log.error(`Error processing job ${job.id}`, error, "ml_import_worker.job_error", { job_id: job.id })
+        results.push({ job_id: job.id, success: false, error: error instanceof Error ? error.message : "Unknown" })
       }
     }
 
@@ -83,8 +89,9 @@ export async function GET(request: NextRequest) {
       results,
       stale_recovered: staleItems?.length ?? 0,
     })
-  } catch (error: any) {
-    console.error("[v0] Error in cron worker:", error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (error: unknown) {
+    log.error("Fatal error in import worker cron", error, "ml_import_worker.fatal")
+    const message = error instanceof Error ? error.message : "Unknown error"
+    return NextResponse.json({ ok: false, error: { code: "internal_error", detail: message } }, { status: 500 })
   }
 }
