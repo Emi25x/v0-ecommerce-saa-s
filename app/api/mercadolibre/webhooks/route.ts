@@ -94,7 +94,7 @@ async function handleOrderNotification(notification: any) {
     const supabase = await createClient()
     const orderId = notification.resource.split("/").pop()
 
-    console.log(`[v0] Processing order notification for order ${orderId}`)
+    console.log(`[webhook] Processing order notification for order ${orderId}`)
 
     // Buscar la cuenta de ML por user_id
     const { data: account } = await supabase
@@ -129,7 +129,7 @@ async function handleOrderNotification(notification: any) {
           { onConflict: "id" },
         )
 
-        console.log(`[v0] Order ${orderId} synced to cache`)
+        console.log(`[webhook] Order ${orderId} synced to cache`)
       }
     }
 
@@ -145,7 +145,7 @@ async function handleOrderNotification(notification: any) {
       created_at: new Date().toISOString(),
     })
   } catch (error) {
-    console.error("[v0] Error handling order notification:", error)
+    console.error("[webhook] Error handling order notification:", error)
   }
 }
 
@@ -154,7 +154,7 @@ async function handleShipmentNotification(notification: any) {
     const supabase = await createClient()
     const shipmentId = notification.resource.split("/").pop()
 
-    console.log(`[v0] Processing shipment notification for shipment ${shipmentId}`)
+    console.log(`[webhook] Processing shipment notification for shipment ${shipmentId}`)
 
     // Buscar la cuenta de ML
     const { data: account } = await supabase
@@ -188,7 +188,7 @@ async function handleShipmentNotification(notification: any) {
           { onConflict: "id" },
         )
 
-        console.log(`[v0] Shipment ${shipmentId} synced to cache`)
+        console.log(`[webhook] Shipment ${shipmentId} synced to cache`)
       }
     }
 
@@ -200,7 +200,7 @@ async function handleShipmentNotification(notification: any) {
       created_at: new Date().toISOString(),
     })
   } catch (error) {
-    console.error("[v0] Error handling shipment notification:", error)
+    console.error("[webhook] Error handling shipment notification:", error)
   }
 }
 
@@ -209,7 +209,7 @@ async function handleItemNotification(notification: any) {
     const supabase = await createClient()
     const itemId = notification.resource.split("/").pop()
 
-    console.log(`[v0] Processing item notification for item ${itemId}`)
+    console.log(`[webhook] Processing item notification for item ${itemId}`)
 
     // Buscar la cuenta de ML
     const { data: account } = await supabase
@@ -248,7 +248,7 @@ async function handleItemNotification(notification: any) {
           { onConflict: "id" },
         )
 
-        console.log(`[v0] Item ${itemId} synced to cache`)
+        console.log(`[webhook] Item ${itemId} synced to cache`)
       }
     }
 
@@ -260,7 +260,7 @@ async function handleItemNotification(notification: any) {
       created_at: new Date().toISOString(),
     })
   } catch (error) {
-    console.error("[v0] Error handling item notification:", error)
+    console.error("[webhook] Error handling item notification:", error)
   }
 }
 
@@ -284,7 +284,7 @@ async function logWebhook(
       created_at: new Date().toISOString(),
     })
   } catch (error) {
-    console.error("[v0] Error logging webhook:", error)
+    console.error("[webhook] Error logging webhook:", error)
   }
 }
 

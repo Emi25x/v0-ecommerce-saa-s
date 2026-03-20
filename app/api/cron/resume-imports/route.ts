@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
 import { executeFullImport } from "@/lib/import/batch-import"
 import { requireCron } from "@/lib/auth/require-auth"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300
@@ -12,22 +13,12 @@ export const maxDuration = 300
  *
  * Detects orphaned import_history records (status='running' with stale updated_at)
  * and resumes them server-side using executeFullImport.
- *
- * An import is considered orphaned if:
- *  - status = 'running'
- *  - updated_at < now() - 5 minutes (no heartbeat from the browser loop)
- *  - current_offset > 0 (partially completed, not just started)
- *
- * This cron is safe to run repeatedly:
- *  - executeFullImport re-downloads the CSV and processes from offset 0,
- *    but the underlying upsert is idempotent (ON CONFLICT ean).
- *  - We mark the record as 'failed' with a note before attempting retry,
- *    so a subsequent cron won't double-process if this one is still running.
  */
 export async function POST(request: NextRequest) {
   const auth = await requireCron(request)
   if (auth.error) return auth.response
 
+  const log = createStructuredLogger({ request_id: genRequestId() })
   const ranAt = new Date().toISOString()
 
   try {
@@ -43,7 +34,7 @@ export async function POST(request: NextRequest) {
       .limit(3)
 
     if (error) {
-      console.error("[CRON RESUME-IMPORTS] Query error:", error.message)
+      log.error("Query error", error, "resume_imports.query_error")
       return NextResponse.json({ ok: false, ranAt, error: error.message }, { status: 500 })
     }
 
@@ -51,9 +42,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, ranAt, message: "No orphaned imports" })
     }
 
-    console.log(`[CRON RESUME-IMPORTS] Found ${orphans.length} orphaned imports`)
+    log.info(`Found ${orphans.length} orphaned imports`, "resume_imports.found", { count: orphans.length })
 
-    const results: any[] = []
+    const results: Record<string, unknown>[] = []
 
     for (const orphan of orphans) {
       // Mark as resuming to prevent double-pickup
@@ -65,7 +56,6 @@ export async function POST(request: NextRequest) {
         })
         .eq("id", orphan.id)
 
-      // Get the source to determine feed_type
       const { data: source } = await supabase
         .from("import_sources")
         .select("feed_type")
@@ -85,8 +75,6 @@ export async function POST(request: NextRequest) {
       }
 
       try {
-        // executeFullImport runs the full loop server-side
-        // The underlying upsert is idempotent, so re-processing already-done rows is safe
         const result = await executeFullImport(orphan.source_id, source.feed_type)
 
         await supabase
@@ -106,24 +94,26 @@ export async function POST(request: NextRequest) {
           created: result.created,
           updated: result.updated,
         })
-      } catch (err: any) {
-        console.error(`[CRON RESUME-IMPORTS] Error resuming ${orphan.id}:`, err.message)
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Unknown error"
+        log.error(`Error resuming import ${orphan.id}`, err, "resume_imports.resume_error", { import_id: orphan.id })
         await supabase
           .from("import_history")
           .update({
             status: "failed",
-            last_message: `Cron resume error: ${err.message}`,
+            last_message: `Cron resume error: ${msg}`,
             updated_at: new Date().toISOString(),
           })
           .eq("id", orphan.id)
-        results.push({ id: orphan.id, error: err.message })
+        results.push({ id: orphan.id, error: msg })
       }
     }
 
-    console.log(`[CRON RESUME-IMPORTS] Processed ${results.length} orphaned imports`)
+    log.info(`Processed ${results.length} orphaned imports`, "resume_imports.done", { count: results.length })
     return NextResponse.json({ ok: true, ranAt, resumed: results.length, results })
-  } catch (error: any) {
-    console.error("[CRON RESUME-IMPORTS] Fatal:", error)
-    return NextResponse.json({ ok: false, ranAt, error: error.message }, { status: 500 })
+  } catch (error: unknown) {
+    log.error("Fatal error in resume-imports", error, "resume_imports.fatal")
+    const message = error instanceof Error ? error.message : "Unknown error"
+    return NextResponse.json({ ok: false, ranAt, error: { code: "internal_error", detail: message } }, { status: 500 })
   }
 }

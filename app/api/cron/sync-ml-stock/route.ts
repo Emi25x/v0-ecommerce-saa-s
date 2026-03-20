@@ -156,7 +156,7 @@ async function linkPublicationsToProducts(
       // Delay entre lotes
       await new Promise((resolve) => setTimeout(resolve, 200))
     } catch (error) {
-      console.error("Error processing batch:", error)
+      // Error in batch processing during publication linking
       errors++
     }
   }

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
 import { sendDailySalesEmail } from "@/domains/radar/daily-sales"
 import { requireCron } from "@/lib/auth/require-auth"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -11,12 +12,13 @@ export async function GET(request: NextRequest) {
   const auth = await requireCron(request)
   if (auth.error) return auth.response
 
+  const log = createStructuredLogger({ request_id: genRequestId() })
+
   try {
-    console.log("[v0] Cron: Ejecutando reporte diario de ventas")
+    log.info("Executing daily sales report", "daily_sales.start")
 
     const supabase = await createClient()
 
-    // Obtener configuración
     const { data: settings } = await supabase
       .from("report_settings")
       .select("*")
@@ -24,12 +26,10 @@ export async function GET(request: NextRequest) {
       .single()
 
     if (!settings || !settings.enabled) {
-      console.log("[v0] Reporte automático desactivado")
       return NextResponse.json({ message: "Reporte automático desactivado" })
     }
 
     if (!settings.email_recipients || settings.email_recipients.length === 0) {
-      console.log("[v0] No hay destinatarios configurados")
       return NextResponse.json({ message: "No hay destinatarios" })
     }
 
@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
       throw new Error(result.error || "Error enviando reporte")
     }
 
-    console.log("[v0] Reporte enviado exitosamente a:", settings.email_recipients)
+    log.info("Report sent successfully", "daily_sales.sent", { recipients: settings.email_recipients })
 
     return NextResponse.json({
       success: true,
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
       recipients: settings.email_recipients,
     })
   } catch (error) {
-    console.error("[v0] Error en cron de reportes:", error)
+    log.error("Error in daily sales cron", error, "daily_sales.fatal")
     return NextResponse.json({ error: error instanceof Error ? error.message : "Error desconocido" }, { status: 500 })
   }
 }
