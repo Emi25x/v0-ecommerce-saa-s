@@ -1,6 +1,6 @@
 # Technical Debt Registry
 
-Last updated: 2026-03-19
+Last updated: 2026-03-20
 
 This document tracks known technical debt. Each item includes severity, scope, and a suggested fix. Items are prioritized for future sprints.
 
@@ -13,13 +13,15 @@ This document tracks known technical debt. Each item includes severity, scope, a
 - **ESLint status:** `@typescript-eslint/no-explicit-any` set to `"warn"` (not `"error"`)
 - **Fix:** Incrementally replace `any` with proper types or `unknown`. Start with `lib/` and `domains/`, then `components/`, then `app/`.
 - **Target:** Flip eslint rule to `"error"` once count is below 50
+- **Progress:** Critical routes (ops/status, sync-ml-stock, batch import error handler) cleaned up in hardening round 3
 
 ### TD-002: `noUncheckedIndexedAccess` disabled
 
 - **File:** `tsconfig.json`
 - **Impact:** Array/object index access returns `T` instead of `T | undefined`, hiding null-check bugs
-- **Current errors:** ~100 when enabled
+- **Current errors:** ~100 when enabled (363 lines of TS output = ~100 distinct errors)
 - **Fix:** Enable flag, fix errors file by file. Mostly adding `?? defaultValue` or `if (x != null)` guards.
+- **Strategy:** Enable per-file with `// @ts-check` or fix in batches of ~20 files per PR. Priority files: `domains/mercadolibre/`, `lib/import/`, `app/api/cron/`.
 
 ## High
 
@@ -31,9 +33,10 @@ This document tracks known technical debt. Each item includes severity, scope, a
 
 ### TD-004: Client-side fetching in dashboard pages
 
-- **Scope:** 30+ pages use `useEffect` + `fetch` for initial data load
+- **Scope:** ~30 pages still use `useEffect` + `fetch` for initial data load
 - **Impact:** Slower page loads, no SSR, no SEO (not critical for dashboard, but not ideal)
 - **Fix:** Convert to Server Components with `async` data fetch, or use SWR hooks
+- **Progress:** Main dashboard page converted to server component in hardening round 3
 - **Priority:** Medium — works correctly, just suboptimal
 
 ### TD-005: `@typescript-eslint/no-unused-vars` set to `warn`
@@ -42,11 +45,25 @@ This document tracks known technical debt. Each item includes severity, scope, a
 - **Fix:** Clean up unused imports/variables, then flip to `"error"`
 - **Risk:** None — pure cleanup
 
+### TD-013: `skipLibCheck: true` required
+
+- **File:** `tsconfig.json`
+- **Reason:** `lucide-react@0.454.0` has type errors with React 19 (`ReactSVG` not exported)
+- **Fix:** Wait for lucide-react to ship React 19-compatible types, then try disabling `skipLibCheck`
+- **Workaround:** None needed — `skipLibCheck` only skips checking `.d.ts` files in `node_modules`
+
+### TD-014: `[v0]` legacy logging prefix
+
+- **Scope:** ~141 files still use `console.log("[v0] ...")` or `console.error("[v0] ...")`
+- **Impact:** Cosmetic, but pollutes logs with legacy branding
+- **Fix:** Global find-and-replace `[v0]` → structured logger or context-specific prefix
+- **Progress:** Critical routes (webhooks, crons) cleaned up in hardening round 3
+
 ## Medium
 
 ### TD-006: No integration/E2E tests
 
-- **Current state:** Vitest is configured, but test coverage is minimal
+- **Current state:** Vitest is configured with 8 unit test files (import-pro, ML client)
 - **Fix:** Add tests for critical paths: stock sync, ML import, Shopify push
 - **Priority:** Medium — manual testing works but doesn't scale
 
@@ -67,13 +84,14 @@ Some pages exceed 500 lines with mixed concerns:
 
 - Some routes return `{ error: string }`, others return `{ message: string }`
 - Some throw unhandled errors that produce HTML responses
-- **Fix:** Standardize on `{ error: string }` with proper status codes. Consider a shared `apiError()` helper.
+- **Fix:** Adopt `handleRouteError()` from `lib/errors/handle-route-error.ts` and `apiError()` from `lib/api/response.ts` across all routes
+- **Progress:** Standardized in batch import, webhook process, and ops/status routes in hardening round 3
 
 ### TD-009: No rate limiting on public API endpoints
 
 - **Scope:** `/api/cron/*`, `/api/webhooks/*`, supplier import endpoints
-- **Current mitigation:** Vercel infra provides basic DDoS protection
-- **Fix:** Add `x-vercel-cron-secret` validation for cron endpoints, webhook signature verification for ML
+- **Current mitigation:** Vercel infra provides basic DDoS protection + `requireCron()` validates CRON_SECRET
+- **Fix:** Add webhook signature verification for ML notifications
 
 ## Low
 
@@ -103,7 +121,7 @@ Some pages exceed 500 lines with mixed concerns:
 | - | `MigrationProvider` dead code | UI shell refactor |
 | - | Sidebar monolith (300 lines) | UI shell refactor — extracted to data-driven |
 | - | No `ThemeProvider` wired | UI shell refactor |
-| - | `[v0]` in console.error | UI shell refactor (14 files) |
+| - | `[v0]` in console.error (critical routes) | Hardening round 3 |
 | - | Missing `.env.example` | Hardening round 2 |
 | - | `package.json` name `my-v0-project` | Hardening round 2 |
 | - | No `engines` constraint | Hardening round 2 |
@@ -112,3 +130,7 @@ Some pages exceed 500 lines with mixed concerns:
 | - | No engineering standards doc | Hardening round 2 |
 | - | Dashboard page monolith | Hardening round 2 — extracted to 5 components |
 | - | Stale PLAN.md in repo root | Hardening round 2 |
+| - | Dashboard client-side fetching | Hardening round 3 — converted to server component |
+| - | No CI quality gates | Hardening round 3 — CI workflow with build gate |
+| - | No structured logging in cron/batch routes | Hardening round 3 — integrated `createStructuredLogger` |
+| - | No Zod validation in cron/webhook routes | Hardening round 3 — schemas + validation helpers |

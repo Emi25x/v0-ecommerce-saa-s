@@ -4,6 +4,7 @@ import { executeSyncOrdersBatch } from "@/domains/mercadolibre/sync/orders"
 import { NextResponse } from "next/server"
 import { startRun } from "@/lib/process-runs"
 import { requireCron } from "@/lib/auth/require-auth"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300 // 5 minutos
@@ -15,13 +16,15 @@ export async function GET(request: NextRequest) {
   const cronAuth = await requireCron(request)
   if (cronAuth.error) return cronAuth.response
 
+  const log = createStructuredLogger({ request_id: genRequestId() })
+
   try {
     const supabase = await createClient()
 
     const { data: accounts, error: accountsError } = await supabase.from("ml_accounts").select("id, nickname")
 
     if (accountsError) {
-      console.error("[sync-ml-orders] Error fetching ML accounts:", accountsError)
+      log.error("Error fetching ML accounts", accountsError, "ml_sync_orders.fetch_accounts")
       return NextResponse.json({ error: accountsError.message }, { status: 500 })
     }
 
@@ -41,7 +44,7 @@ export async function GET(request: NextRequest) {
       let pages = 0
       const maxPages = Math.ceil(MAX_ORDERS_PER_ACCOUNT / PAGE_SIZE)
 
-      console.log(`[sync-ml-orders] Syncing orders for account: ${account.nickname}`)
+      log.info("Syncing orders for account", "ml_sync_orders.account", { account: account.nickname })
 
       try {
         while (hasMore && pages < maxPages) {
@@ -54,9 +57,11 @@ export async function GET(request: NextRequest) {
 
           if (!syncResult.ok) {
             if (syncResult.rate_limited) {
-              console.warn(`[sync-ml-orders] Rate limited for account ${account.nickname}, stopping`)
+              log.warn("Rate limited, stopping", "ml_sync_orders.sync", { account: account.nickname })
             } else {
-              console.error(`[sync-ml-orders] Error for account ${account.nickname}:`, syncResult.error)
+              log.error("Sync error for account", syncResult.error, "ml_sync_orders.sync", {
+                account: account.nickname,
+              })
             }
             break
           }
@@ -66,9 +71,13 @@ export async function GET(request: NextRequest) {
           offset = syncResult.offset ?? offset + PAGE_SIZE
           pages++
 
-          console.log(
-            `[sync-ml-orders] ${account.nickname} page ${pages}: synced=${syncResult.synced}, total=${syncResult.total}, has_more=${hasMore}`,
-          )
+          log.info("Orders page synced", "ml_sync_orders.page", {
+            account: account.nickname,
+            page: pages,
+            synced: syncResult.synced,
+            total: syncResult.total,
+            has_more: hasMore,
+          })
 
           if (hasMore) await new Promise((r) => setTimeout(r, 300))
         }
@@ -77,7 +86,7 @@ export async function GET(request: NextRequest) {
         results.push({ account: account.nickname, synced: totalSynced, pages })
       } catch (error) {
         grandTotalErrors++
-        console.error(`[sync-ml-orders] Error processing account ${account.nickname}:`, error)
+        log.error("Error processing account", error, "ml_sync_orders.account", { account: account.nickname })
         results.push({
           account: account.nickname,
           synced: totalSynced,
@@ -101,7 +110,7 @@ export async function GET(request: NextRequest) {
       results,
     })
   } catch (error) {
-    console.error("[sync-ml-orders] Error:", error)
+    log.error("Fatal error in sync-ml-orders", error, "ml_sync_orders.fatal")
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 })
   }
 }

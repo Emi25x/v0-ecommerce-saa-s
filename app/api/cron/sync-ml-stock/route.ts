@@ -5,6 +5,7 @@ import { getBestIdentifier } from "@/domains/mercadolibre/publications/identifie
 import { NextResponse } from "next/server"
 import { startRun } from "@/lib/process-runs"
 import { requireCron } from "@/lib/auth/require-auth"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 300 // 5 minutos
@@ -12,6 +13,8 @@ export const maxDuration = 300 // 5 minutos
 export async function GET(request: NextRequest) {
   const cronAuth = await requireCron(request)
   if (cronAuth.error) return cronAuth.response
+
+  const log = createStructuredLogger({ request_id: genRequestId() })
 
   try {
     const supabase = await createClient()
@@ -23,7 +26,7 @@ export async function GET(request: NextRequest) {
       .eq("auto_sync_stock", true)
 
     if (accountsError) {
-      console.error("Error fetching ML accounts:", accountsError)
+      log.error("Error fetching ML accounts", accountsError, "ml_sync_stock.fetch_accounts")
       return NextResponse.json({ error: accountsError.message }, { status: 500 })
     }
 
@@ -59,7 +62,7 @@ export async function GET(request: NextRequest) {
         })
       } catch (error) {
         totalErrors++
-        console.error(`Error processing account ${account.nickname}:`, error)
+        log.error("Error processing account", error, "ml_sync_stock.account", { account: account.nickname })
         results.push({
           account: account.nickname,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -80,14 +83,14 @@ export async function GET(request: NextRequest) {
       results,
     })
   } catch (error) {
-    console.error("Error in sync-ml-stock cron:", error)
+    log.error("Fatal error in sync-ml-stock cron", error, "ml_sync_stock.fatal")
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 })
   }
 }
 
 // Función para vincular publicaciones con productos por EAN
 async function linkPublicationsToProducts(
-  supabase: any,
+  supabase: ReturnType<typeof createClient> extends Promise<infer R> ? R : never,
   account: { id: string; nickname: string; access_token: string; ml_user_id: string },
 ) {
   // Obtener publicaciones sin product_id
@@ -108,7 +111,7 @@ async function linkPublicationsToProducts(
   // Procesar en lotes de 20 (límite de ML API)
   for (let i = 0; i < unlinkedPubs.length; i += 20) {
     const batch = unlinkedPubs.slice(i, i + 20)
-    const itemIds = batch.map((p: any) => p.ml_item_id).join(",")
+    const itemIds = batch.map((p: { ml_item_id: string }) => p.ml_item_id).join(",")
 
     try {
       // Obtener detalles de ML
@@ -125,7 +128,7 @@ async function linkPublicationsToProducts(
         if (itemWrapper.code !== 200 || !itemWrapper.body) continue
 
         const item = itemWrapper.body
-        const pub = batch.find((p: any) => p.ml_item_id === item.id)
+        const pub = batch.find((p: { id: string; ml_item_id: string }) => p.ml_item_id === item.id)
         if (!pub) continue
 
         // Extraer EAN usando extractor compartido

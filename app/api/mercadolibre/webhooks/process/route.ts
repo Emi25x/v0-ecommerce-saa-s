@@ -1,9 +1,12 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
 import { getValidAccessToken } from "@/lib/mercadolibre"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
 
 // Endpoint para procesar las notificaciones en cola
 // Este endpoint se puede llamar desde un cron job o manualmente
+const log = createStructuredLogger({ request_id: genRequestId() })
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
@@ -16,7 +19,7 @@ export async function POST(request: NextRequest) {
       .limit(50)
 
     if (error) {
-      console.error("[v0] Error fetching webhook queue:", error)
+      log.error("Error fetching webhook queue", error, "webhook.fetch_queue")
 
       if (error.message?.includes("relation") || error.message?.includes("does not exist")) {
         return NextResponse.json(
@@ -39,7 +42,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    console.log(`[v0] Processing ${notifications.length} webhook notifications`)
+    log.info("Processing webhook notifications", "webhook.process", { count: notifications.length })
 
     const results = {
       processed: 0,
@@ -60,7 +63,7 @@ export async function POST(request: NextRequest) {
 
         results.processed++
       } catch (error) {
-        console.error(`[v0] Error processing notification ${notification.id}:`, error)
+        log.error("Error processing notification", error, "webhook.process_item", { notification_id: notification.id })
         results.failed++
         results.errors.push(`Notification ${notification.id}: ${error}`)
       }
@@ -71,9 +74,9 @@ export async function POST(request: NextRequest) {
       results,
     })
   } catch (error) {
-    console.error("[v0] Error processing webhook queue:", error)
+    log.error("Fatal error processing webhook queue", error, "webhook.fatal")
     const errorMessage = error instanceof Error ? error.message : "Processing failed"
-    return NextResponse.json({ error: errorMessage }, { status: 500 })
+    return NextResponse.json({ ok: false, error: { code: "internal_error", detail: errorMessage } }, { status: 500 })
   }
 }
 
@@ -116,7 +119,7 @@ async function processNotification(notification: any) {
 async function processOrderUpdate(orderData: any, userId: string) {
   const supabase = await createClient()
 
-  console.log(`[v0] Processing order update: ${orderData.id}`)
+  log.info("Processing order update", "webhook.order", { order_id: orderData.id })
 
   // Guardar o actualizar la orden en la base de datos
   const { error } = await supabase.from("ml_orders").upsert(
@@ -139,7 +142,7 @@ async function processOrderUpdate(orderData: any, userId: string) {
   )
 
   if (error) {
-    console.error("[v0] Error upserting order:", error)
+    log.error("Error upserting order", error, "webhook.order")
     throw error
   }
 
@@ -175,13 +178,13 @@ async function processOrderUpdate(orderData: any, userId: string) {
     }
   }
 
-  console.log(`[v0] Order ${orderData.id} updated successfully`)
+  log.info("Order updated successfully", "webhook.order", { order_id: orderData.id, status: orderData.status })
 }
 
 async function processShipmentUpdate(shipmentData: any, userId: string) {
   const supabase = await createClient()
 
-  console.log(`[v0] Processing shipment update: ${shipmentData.id}`)
+  log.info("Processing shipment update", "webhook.shipment", { shipment_id: shipmentData.id })
 
   // Guardar o actualizar el envío en la base de datos
   const { error } = await supabase.from("ml_shipments").upsert(
@@ -202,17 +205,20 @@ async function processShipmentUpdate(shipmentData: any, userId: string) {
   )
 
   if (error) {
-    console.error("[v0] Error upserting shipment:", error)
+    log.error("Error upserting shipment", error, "webhook.shipment")
     throw error
   }
 
-  console.log(`[v0] Shipment ${shipmentData.id} updated successfully`)
+  log.info("Shipment updated successfully", "webhook.shipment", {
+    shipment_id: shipmentData.id,
+    status: shipmentData.status,
+  })
 }
 
 async function processItemUpdate(itemData: any, userId: string) {
   const supabase = await createClient()
 
-  console.log(`[v0] Processing item update: ${itemData.id}`)
+  log.info("Processing item update", "webhook.item", { item_id: itemData.id })
 
   const newQty: number | null = itemData.available_quantity ?? null
 
@@ -248,5 +254,5 @@ async function processItemUpdate(itemData: any, userId: string) {
       .eq("ml_item_id", itemData.id)
   }
 
-  console.log(`[v0] Item ${itemData.id} processed (stock: ${pub?.current_stock} → ${newQty})`)
+  log.info("Item processed", "webhook.item", { item_id: itemData.id, old_stock: pub?.current_stock, new_stock: newQty })
 }
