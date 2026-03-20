@@ -89,7 +89,8 @@ export async function GET(request: Request) {
     })
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Unknown error"
-    console.error("[process-orders] Fatal:", msg)
+    const fatalLog = createStructuredLogger({ request_id: genRequestId() })
+    fatalLog.error("Fatal error in process-orders", error, "process_orders.fatal")
     return NextResponse.json({ ok: false, error: { code: "internal_error", detail: msg } }, { status: 500 })
   }
 }

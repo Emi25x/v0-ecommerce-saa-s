@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/utils/supabase/server"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
+
+const log = createStructuredLogger({ request_id: genRequestId() })
 
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    console.log("[v0] Webhook ML recibido:", JSON.stringify(body))
 
     // Validar estructura del webhook
     if (!body.topic || !body.resource) {
-      console.log("[v0] Webhook inválido, falta topic o resource")
+      log.warn("Invalid webhook payload, missing topic or resource", "ml_notification.validate")
       return NextResponse.json({ success: true }) // ML espera 200 siempre
     }
 
@@ -16,19 +18,19 @@ export async function POST(request: Request) {
 
     // Solo procesar notificaciones de items
     if (!topic.startsWith("items")) {
-      console.log("[v0] Topic ignorado:", topic)
+      log.info("Ignored topic", "ml_notification.skip", { topic })
       return NextResponse.json({ success: true })
     }
 
     // Extraer item_id del resource (/items/MLA123456)
     const itemIdMatch = resource.match(/\/items\/([A-Z0-9]+)/)
     if (!itemIdMatch) {
-      console.log("[v0] No se pudo extraer item_id de:", resource)
+      log.warn("Could not extract item_id from resource", "ml_notification.parse", { resource })
       return NextResponse.json({ success: true })
     }
 
     const itemId = itemIdMatch[1]
-    console.log("[v0] Procesando cambio en item:", itemId)
+    log.info("Processing item change", "ml_notification.process", { item_id: itemId })
 
     const supabase = await createClient()
 
@@ -40,7 +42,7 @@ export async function POST(request: Request) {
       .single()
 
     if (!publication || !publication.ml_accounts) {
-      console.log("[v0] No se encontró cuenta para item:", itemId)
+      log.warn("No account found for item", "ml_notification.lookup", { item_id: itemId })
       return NextResponse.json({ success: true })
     }
 
@@ -52,12 +54,14 @@ export async function POST(request: Request) {
     })
 
     if (!itemResponse.ok) {
-      console.error("[v0] Error obteniendo item de ML:", itemResponse.status)
+      log.error("Error fetching item from ML", new Error(`HTTP ${itemResponse.status}`), "ml_notification.fetch", {
+        item_id: itemId,
+        status: itemResponse.status,
+      })
       return NextResponse.json({ success: true })
     }
 
     const itemData = await itemResponse.json()
-    console.log("[v0] Item obtenido de ML:", itemId)
 
     // Extraer SKU/GTIN/ISBN
     let sku = itemData.seller_custom_field || ""
@@ -93,18 +97,18 @@ export async function POST(request: Request) {
       .eq("ml_item_id", itemId)
 
     if (error) {
-      console.error("[v0] Error actualizando publicación:", error)
+      log.error("Error updating publication", error, "ml_notification.update", { item_id: itemId })
     } else {
-      console.log(
-        "[v0] Publicación actualizada:",
-        itemId,
-        productId ? `vinculada a producto ${productId}` : "sin vincular",
-      )
+      log.info("Publication updated", "ml_notification.update", {
+        item_id: itemId,
+        linked: !!productId,
+        status: "ok",
+      })
     }
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("[v0] Error en webhook ML:", error)
+    log.error("Error in ML webhook", error, "ml_notification.fatal")
     // Siempre retornar 200 para que ML no reintente
     return NextResponse.json({ success: true })
   }
