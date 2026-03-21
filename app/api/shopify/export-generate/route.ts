@@ -9,9 +9,11 @@
 import { createClient } from "@/lib/db/server"
 import { buildExportRows, resolveColumns } from "@/domains/shopify/export-builder"
 import { resolveProductStockForWarehouse } from "@/domains/inventory/stock-helpers"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
 import { NextRequest, NextResponse } from "next/server"
 
 export async function POST(request: NextRequest) {
+  const log = createStructuredLogger({ request_id: genRequestId() })
   try {
     const supabase = await createClient()
     const {
@@ -79,9 +81,12 @@ export async function POST(request: NextRequest) {
     if (resolved.mode === "warehouse_consolidated" && Object.keys(resolved.stockMap).length > 0) {
       stockMap = resolved.stockMap
       stockMode = "warehouse_consolidated"
-      console.log(
-        `[shopify/export] stock_mode=warehouse_consolidated warehouse=${resolveWhId} source_keys=${resolved.source_keys.join(",")} products=${Object.keys(stockMap).length}`,
-      )
+      log.info("Export stock resolved via warehouse", "shopify_export.stock_resolved", {
+        stock_mode: "warehouse_consolidated",
+        warehouse_id: resolveWhId,
+        source_keys: resolved.source_keys,
+        products_resolved: Object.keys(stockMap).length,
+      })
     } else {
       // Fallback: supplier_catalog_items (legacy path)
       let stockQuery = supabase
@@ -99,9 +104,11 @@ export async function POST(request: NextRequest) {
         }
       }
       stockMode = "legacy_fallback"
-      console.log(
-        `[shopify/export] stock_mode=legacy_fallback warehouse=${warehouse_id ?? "none"} products_with_stock=${Object.keys(stockMap).length}`,
-      )
+      log.info("Export stock resolved via legacy fallback", "shopify_export.stock_resolved", {
+        stock_mode: "legacy_fallback",
+        warehouse_id: warehouse_id ?? null,
+        products_with_stock: Object.keys(stockMap).length,
+      })
     }
 
     // 5. Build export rows (domain logic)
@@ -109,7 +116,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true, stock_mode: stockMode, ...result })
   } catch (e: any) {
-    console.error("[shopify/export-generate]", e)
+    log.error("Export generate failed", e, "shopify_export.fatal")
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }

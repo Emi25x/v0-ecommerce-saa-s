@@ -6,6 +6,7 @@
 
 import { getValidToken } from "@/domains/shopify/auth"
 import { resolveProductStockForWarehouse } from "@/domains/inventory/stock-helpers"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -108,6 +109,8 @@ export async function pushProductToShopify(
   userId: string,
   dryRun = false,
 ): Promise<PushProductResult> {
+  const log = createStructuredLogger({ request_id: genRequestId() })
+
   // ── 1. Tienda + configuración de exportación ───────────────────────────
   let store: any = null
   {
@@ -127,7 +130,7 @@ export async function pushProductToShopify(
     if (data) {
       store = data
     } else if (error) {
-      console.warn(`[push-product] select completo falló: ${error.message}, reintentando con columnas base`)
+      log.warn(`Store select failed, retrying with base columns`, "push_product.store_fallback", { error: error.message })
       const { data: fallback } = await supabase
         .from("shopify_stores")
         .select("id, shop_domain, access_token, api_key, api_secret, token_expires_at")
@@ -163,7 +166,7 @@ export async function pushProductToShopify(
     if (data) {
       product = data
     } else if (error && error.message?.includes("column")) {
-      console.warn(`[push-product] product select falló: ${error.message}, reintentando con columnas base`)
+      log.warn(`Product select failed, retrying with base columns`, "push_product.product_fallback", { error: error.message })
       const { data: fallback } = await supabase
         .from("products")
         .select(
@@ -238,9 +241,12 @@ export async function pushProductToShopify(
           qty: warehouseStockByWh[m.warehouse_id] ?? 0,
         })
       }
-      console.log(
-        `[push-product] stock_mode=warehouse_consolidated ean=${cleanEan} warehouse_ids=${warehouseIds.join(",")} stock=${JSON.stringify(warehouseStockByWh)}`,
-      )
+      log.info("Stock resolved via warehouse", "push_product.stock_resolved", {
+        stock_mode: "warehouse_consolidated",
+        ean: cleanEan,
+        warehouse_ids: warehouseIds,
+        stock: warehouseStockByWh,
+      })
     } else {
       // Fallback: use supplier_catalog_items (legacy path)
       stockMode = "legacy_fallback"
@@ -259,9 +265,11 @@ export async function pushProductToShopify(
           qty: stockRow?.stock_quantity ?? 0,
         })
       }
-      console.log(
-        `[push-product] stock_mode=legacy_fallback ean=${cleanEan} warehouse_id=${warehouseId ?? "none"}`,
-      )
+      log.info("Stock resolved via legacy fallback", "push_product.stock_resolved", {
+        stock_mode: "legacy_fallback",
+        ean: cleanEan,
+        warehouse_id: warehouseId ?? null,
+      })
     }
   }
 
@@ -519,7 +527,7 @@ export async function pushProductToShopify(
         }
         metafieldsSet++
       } catch (e: any) {
-        console.error(`[push-product] metafield ${mf.key} error:`, e.message)
+        log.warn(`Metafield ${mf.key} failed`, "push_product.metafield_error", { key: mf.key, error: e.message })
       }
     }
   }
