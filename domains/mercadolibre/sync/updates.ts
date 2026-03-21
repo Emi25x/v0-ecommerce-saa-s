@@ -8,6 +8,7 @@
 
 import { getValidAccessToken } from "@/lib/mercadolibre"
 import { resolveProductStockForWarehouse } from "@/domains/inventory/stock-helpers"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
 
 export interface SyncUpdatesParams {
   account_id: string
@@ -31,6 +32,7 @@ export interface SyncUpdatesResult {
 }
 
 export async function executeSyncUpdates(supabase: any, params: SyncUpdatesParams): Promise<SyncUpdatesResult> {
+  const log = createStructuredLogger({ request_id: genRequestId() })
   const { account_id, sync_type, warehouse_id, price_list_id, zero_missing_stock = false } = params
 
   const syncStock = sync_type === "stock" || sync_type === "both"
@@ -86,9 +88,13 @@ export async function executeSyncUpdates(supabase: any, params: SyncUpdatesParam
       if (resolved.mode === "warehouse_consolidated" && Object.keys(resolved.stockMap).length > 0) {
         Object.assign(stockMap, resolved.stockMap)
         stockMode = "warehouse_consolidated"
-        console.log(
-          `[ml-sync-updates] stock_mode=warehouse_consolidated account=${account_id} warehouse=${warehouse_id} source_keys=${resolved.source_keys.join(",")} resolved=${Object.keys(resolved.stockMap).length}`,
-        )
+        log.info("ML stock resolved via warehouse", "ml_sync_updates.stock_resolved", {
+          stock_mode: "warehouse_consolidated",
+          account_id,
+          warehouse_id,
+          source_keys: resolved.source_keys,
+          resolved: Object.keys(resolved.stockMap).length,
+        })
       } else {
         // Fallback: supplier_catalog_items
         const { data: stockRows } = await supabase
@@ -104,9 +110,12 @@ export async function executeSyncUpdates(supabase: any, params: SyncUpdatesParam
           }
         }
         if (Object.keys(stockMap).length > 0) stockMode = "legacy_catalog"
-        console.log(
-          `[ml-sync-updates] stock_mode=legacy_catalog account=${account_id} warehouse=${warehouse_id} resolved=${Object.keys(stockMap).length}`,
-        )
+        log.info("ML stock resolved via legacy catalog", "ml_sync_updates.stock_resolved", {
+          stock_mode: "legacy_catalog",
+          account_id,
+          warehouse_id,
+          resolved: Object.keys(stockMap).length,
+        })
       }
     }
 
@@ -118,9 +127,11 @@ export async function executeSyncUpdates(supabase: any, params: SyncUpdatesParam
         stockMap[p.id] = p.stock ?? 0
       }
       if (stockMode === "legacy_product") {
-        console.log(
-          `[ml-sync-updates] stock_mode=legacy_product account=${account_id} resolved=${missingIds.length}`,
-        )
+        log.info("ML stock resolved via products.stock", "ml_sync_updates.stock_resolved", {
+          stock_mode: "legacy_product",
+          account_id,
+          resolved: missingIds.length,
+        })
       }
     }
   }
