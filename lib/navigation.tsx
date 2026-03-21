@@ -60,6 +60,14 @@ export interface NavSubgroup {
   items: NavItem[]
 }
 
+/**
+ * Module visibility levels:
+ * - "core"     → visible, fully functional
+ * - "beta"     → visible with "Beta" badge, functional but incomplete
+ * - "internal" → hidden from navigation, routes still work
+ */
+export type ModuleVisibility = "core" | "beta" | "internal"
+
 export interface NavSection {
   id: string
   label: string
@@ -71,6 +79,8 @@ export interface NavSection {
   flatHref?: string
   /** Child links shown indented below the flat link */
   children?: NavItem[]
+  /** Module visibility level. Defaults to "core" if omitted. */
+  visibility?: ModuleVisibility
 }
 
 // ── ML brand logo (not in lucide-react) ──
@@ -188,11 +198,12 @@ export const navigation: NavSection[] = [
     ],
   },
 
-  // ── Radar Editorial ──
+  // ── Radar Editorial ── (internal: módulo en desarrollo, no listo para usuario)
   {
     id: "radar",
     label: "Radar Editorial",
     icon: Radar,
+    visibility: "internal",
     items: [
       { href: "/radar", label: "Dashboard", icon: Radar, match: "exact" },
       { href: "/radar/oportunidades", label: "Oportunidades", icon: Zap },
@@ -230,11 +241,12 @@ export const navigation: NavSection[] = [
     ],
   },
 
-  // ── Atención al Cliente ──
+  // ── Atención al Cliente ── (beta: preguntas ML funciona, inbox parcial)
   {
     id: "atencion",
     label: "Atención al Cliente",
     icon: MessageSquare,
+    visibility: "beta",
     items: [
       { href: "/atencion/inbox", label: "Bandeja unificada", icon: Inbox },
       { href: "/atencion/ml-preguntas", label: "Preguntas ML", icon: MLLogo },
@@ -242,11 +254,12 @@ export const navigation: NavSection[] = [
     ],
   },
 
-  // ── Marketing ──
+  // ── Marketing ── (internal: 15+ plataformas en desarrollo, no listo)
   {
     id: "marketing",
     label: "Marketing",
     icon: Activity,
+    visibility: "internal",
     items: [
       { href: "/marketing", label: "Dashboard", icon: LayoutGrid, match: "exact" },
       { href: "/marketing/google", label: "Google Marketing", icon: Search },
@@ -257,3 +270,12 @@ export const navigation: NavSection[] = [
     ],
   },
 ]
+
+/**
+ * Returns only sections visible to the user (core + beta).
+ * Internal sections are filtered out — their routes still work,
+ * they just don't appear in navigation.
+ */
+export function getVisibleNavigation(): NavSection[] {
+  return navigation.filter((s) => (s.visibility ?? "core") !== "internal")
+}
