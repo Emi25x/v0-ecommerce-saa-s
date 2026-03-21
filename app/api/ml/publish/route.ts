@@ -80,12 +80,20 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // ── Resolve price ───────────────────────────────────────────────────────
+    // ── Resolve price (pricing engine first, then legacy ML calculator) ────
     const {
       finalPrice,
       priceCalculation,
+      priceMode,
       errorMessage: priceError,
-    } = await resolvePrice({ overridePrice: override_price, costPrice: product.cost_price, marginPercent })
+    } = await resolvePrice({
+      overridePrice: override_price,
+      costPrice: product.cost_price,
+      marginPercent,
+      supabase,
+      productId: product_id,
+      accountId: account_id,
+    })
     if (!finalPrice) return NextResponse.json({ success: false, error: priceError }, { status: 400 })
 
     // ── Resolve image, title, description, catalog ──────────────────────────
@@ -137,6 +145,7 @@ export async function POST(request: NextRequest) {
         success: true,
         preview: {
           price: finalPrice,
+          price_mode: priceMode,
           margin: Math.round(actualMargin * 10) / 10,
           multiplier: Math.round(finalPrice / product.cost_price),
           exchange_rate: priceCalculation?.exchangeRate || 1765,
@@ -215,6 +224,7 @@ export async function POST(request: NextRequest) {
       ml_item_id: mlData.id,
       permalink: mlData.permalink,
       status: mlData.status,
+      price_mode: priceMode,
       product_title: product.title,
       product_ean: product.ean,
       warnings: warnings.length > 0 ? warnings : undefined,

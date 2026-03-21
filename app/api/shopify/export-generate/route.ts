@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     // 1. Verify store ownership
     const { data: store } = await supabase
       .from("shopify_stores")
-      .select("id, shop_domain, name, sucursal_stock_code, default_warehouse_id")
+      .select("id, shop_domain, name, sucursal_stock_code, default_warehouse_id, price_source, price_list_id")
       .eq("id", store_id)
       .eq("owner_user_id", user.id)
       .maybeSingle()
@@ -111,10 +111,46 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // 5. Build export rows (domain logic)
-    const result = buildExportRows({ products, stockMap, columns, defaults, store })
+    // 5. Resolve pricing engine prices (if a price list is configured)
+    let enginePriceMap: Record<string, number> | undefined
+    let exportPriceMode: "pricing_engine" | "legacy" = "legacy"
 
-    return NextResponse.json({ ok: true, stock_mode: stockMode, ...result })
+    const storePriceListId = (store as any).price_list_id as string | undefined
+    if (storePriceListId) {
+      try {
+        const { data: priceRows } = await supabase
+          .from("product_prices")
+          .select("product_id, calculated_price")
+          .in("product_id", productIds)
+          .eq("price_list_id", storePriceListId)
+
+        if (priceRows?.length) {
+          enginePriceMap = {}
+          for (const row of priceRows) {
+            if (row.calculated_price != null && row.calculated_price > 0) {
+              enginePriceMap[row.product_id] = Number(row.calculated_price)
+            }
+          }
+          if (Object.keys(enginePriceMap).length > 0) {
+            exportPriceMode = "pricing_engine"
+            log.info("Export prices resolved via pricing engine", "shopify_export.price_resolved", {
+              price_mode: "pricing_engine",
+              price_list_id: storePriceListId,
+              products_with_engine_price: Object.keys(enginePriceMap).length,
+              total_products: productIds.length,
+            })
+          }
+        }
+      } catch {
+        // product_prices table might not exist — graceful fallback
+        log.warn("Could not load pricing engine prices for export", "shopify_export.price_fallback")
+      }
+    }
+
+    // 6. Build export rows (domain logic)
+    const result = buildExportRows({ products, stockMap, columns, defaults, store, enginePriceMap })
+
+    return NextResponse.json({ ok: true, stock_mode: stockMode, price_mode: exportPriceMode, ...result })
   } catch (e: any) {
     log.error("Export generate failed", e, "shopify_export.fatal")
     return NextResponse.json({ error: e.message }, { status: 500 })

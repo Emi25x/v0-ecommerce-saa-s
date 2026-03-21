@@ -12,6 +12,7 @@
  */
 
 import { calculateMlPrice } from "@/domains/mercadolibre/price-calculator"
+import { resolveMlEnginePrice } from "@/domains/pricing/resolve-channel-price"
 import { resolveProductImage } from "@/domains/mercadolibre/publications/image-uploader"
 import { buildMlTitle, buildMlDescription } from "@/domains/mercadolibre/publications/text-sanitizer"
 import {
@@ -19,6 +20,7 @@ import {
   buildCatalogItem,
   validateTraditionalItem,
 } from "@/domains/mercadolibre/publications/builder"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -149,21 +151,66 @@ export async function searchCatalog(
 
 // ─── Price resolution ─────────────────────────────────────────────────────────
 
+export type MlPriceMode = "pricing_engine" | "legacy_ml_calculator" | "legacy_override"
+
 export async function resolvePrice(params: {
   overridePrice?: number
   costPrice?: number
   marginPercent: number
+  /** Optional: pass supabase + context to try pricing engine first */
+  supabase?: SupabaseClient
+  productId?: string
+  accountId?: string
+  priceListId?: string | null
 }): Promise<{
   finalPrice: number | null
   priceCalculation: Awaited<ReturnType<typeof calculateMlPrice>> | null
+  priceMode?: MlPriceMode
   errorMessage?: string
 }> {
-  const { overridePrice, costPrice, marginPercent } = params
+  const { overridePrice, costPrice, marginPercent, supabase, productId, accountId, priceListId } = params
+  const log = createStructuredLogger({ request_id: genRequestId() })
 
-  let finalPrice = overridePrice || null
+  // ── 1. Override price (highest priority — user explicitly set it) ───────
+  if (overridePrice && overridePrice > 0) {
+    log.info("ML price resolved via override", "pricing.ml_resolve", {
+      product_id: productId ?? null,
+      account_id: accountId ?? null,
+      price_mode: "legacy_override",
+      price: overridePrice,
+    })
+    return { finalPrice: overridePrice, priceCalculation: null, priceMode: "legacy_override" }
+  }
+
+  // ── 2. Try pricing engine (if supabase context available) ───────────────
+  if (supabase && productId) {
+    try {
+      const engineResult = await resolveMlEnginePrice(supabase, {
+        product: { id: productId },
+        accountId: accountId ?? "",
+        priceListId: priceListId,
+      })
+
+      if (engineResult && engineResult.price > 0) {
+        log.info("ML price resolved via pricing engine", "pricing.ml_resolve", {
+          product_id: productId,
+          account_id: accountId ?? null,
+          price_mode: "pricing_engine",
+          price: engineResult.price,
+          price_list_id: engineResult.price_list_id ?? null,
+        })
+        return { finalPrice: engineResult.price, priceCalculation: null, priceMode: "pricing_engine" }
+      }
+    } catch {
+      // Pricing engine not available — fall through to legacy
+    }
+  }
+
+  // ── 3. Legacy ML calculator (fallback) ──────────────────────────────────
+  let finalPrice: number | null = null
   let priceCalculation: Awaited<ReturnType<typeof calculateMlPrice>> | null = null
 
-  if (!finalPrice && costPrice) {
+  if (costPrice) {
     priceCalculation = await calculateMlPrice({ costPriceEur: costPrice, marginPercent })
     finalPrice = priceCalculation.price
   }
@@ -173,10 +220,18 @@ export async function resolvePrice(params: {
       finalPrice !== undefined && finalPrice !== null && finalPrice <= 0
         ? `Precio calculado inválido (${finalPrice}). Verificar costo y margen del producto.`
         : "No se pudo calcular el precio. El producto no tiene cost_price."
-    return { finalPrice: null, priceCalculation, errorMessage }
+    return { finalPrice: null, priceCalculation, priceMode: "legacy_ml_calculator", errorMessage }
   }
 
-  return { finalPrice, priceCalculation }
+  log.info("ML price resolved via legacy calculator", "pricing.ml_resolve", {
+    product_id: productId ?? null,
+    account_id: accountId ?? null,
+    price_mode: "legacy_ml_calculator",
+    price: finalPrice,
+    fallback_reason: "no_engine_price",
+  })
+
+  return { finalPrice, priceCalculation, priceMode: "legacy_ml_calculator" }
 }
 
 // ─── ML publish + post-publish steps ──────────────────────────────────────────
