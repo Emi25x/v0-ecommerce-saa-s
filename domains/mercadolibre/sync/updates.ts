@@ -136,17 +136,59 @@ export async function executeSyncUpdates(supabase: any, params: SyncUpdatesParam
     }
   }
 
-  // Build price map
+  // Build price map — try explicit price_list_id first, then auto-discover via assignments
   const priceMap: Record<string, number> = {}
-  if (syncPrice && productIds.length > 0 && price_list_id) {
-    const { data: priceRows } = await supabase
-      .from("product_prices")
-      .select("product_id, calculated_price")
-      .in("product_id", productIds)
-      .eq("price_list_id", price_list_id)
+  let resolvedPriceListId = price_list_id ?? null
+  let priceMode: "pricing_engine" | "explicit_price_list" | "none" = "none"
 
-    for (const p of priceRows ?? []) {
-      if (p.product_id) priceMap[p.product_id] = p.calculated_price
+  if (syncPrice && productIds.length > 0) {
+    // Auto-discover price list if not explicitly provided
+    if (!resolvedPriceListId) {
+      try {
+        const { data: assignment } = await supabase
+          .from("price_list_assignments")
+          .select("price_list_id")
+          .eq("entity_type", "ml_account")
+          .eq("entity_id", account_id)
+          .eq("is_active", true)
+          .order("priority", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (assignment?.price_list_id) {
+          resolvedPriceListId = assignment.price_list_id
+          priceMode = "pricing_engine"
+          log.info("ML sync price list auto-discovered via assignment", "ml_sync_updates.price_list", {
+            account_id,
+            price_list_id: resolvedPriceListId,
+            discovery: "auto",
+          })
+        }
+      } catch {
+        // price_list_assignments table might not exist — graceful fallback
+      }
+    } else {
+      priceMode = "explicit_price_list"
+    }
+
+    if (resolvedPriceListId) {
+      const { data: priceRows } = await supabase
+        .from("product_prices")
+        .select("product_id, calculated_price")
+        .in("product_id", productIds)
+        .eq("price_list_id", resolvedPriceListId)
+
+      for (const p of priceRows ?? []) {
+        if (p.product_id && p.calculated_price != null) priceMap[p.product_id] = p.calculated_price
+      }
+
+      log.info("ML sync prices loaded", "ml_sync_updates.prices_loaded", {
+        account_id,
+        price_list_id: resolvedPriceListId,
+        price_mode: priceMode,
+        products_with_price: Object.keys(priceMap).length,
+        total_linked: productIds.length,
+      })
     }
   }
 

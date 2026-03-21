@@ -148,6 +148,11 @@ export interface ExportBuildParams {
   columns: string[]
   defaults: Record<string, string>
   store: ExportStore
+  /**
+   * Pre-resolved prices from the pricing engine, keyed by product.id.
+   * When provided, these take priority over products.price / custom_fields.
+   */
+  enginePriceMap?: Record<string, number>
 }
 
 export interface ExportBuildResult {
@@ -164,7 +169,7 @@ export function resolveColumns(templateColumns: string[] | null | undefined): st
 // ── Main builder ──────────────────────────────────────────────────────────
 
 export function buildExportRows(params: ExportBuildParams): ExportBuildResult {
-  const { products, stockMap, columns, defaults, store } = params
+  const { products, stockMap, columns, defaults, store, enginePriceMap } = params
   const rows: Record<string, string | number>[] = []
 
   for (const p of products) {
@@ -177,8 +182,12 @@ export function buildExportRows(params: ExportBuildParams): ExportBuildResult {
     const handle = slugify(p.title ?? barcode ?? "producto")
     const weightG = p.canonical_weight_g ?? ""
     const stock = stockMap[p.id] ?? p.stock ?? 0
-    const price = p.price != null ? String(p.price) : ""
-    const precioArs = customFields.precio_ars != null ? String(customFields.precio_ars) : price
+    // Price resolution: pricing engine > legacy (product.price / custom_fields)
+    const enginePrice = enginePriceMap?.[p.id]
+    const price = enginePrice != null ? String(enginePrice) : (p.price != null ? String(p.price) : "")
+    const precioArs = enginePrice != null
+      ? String(enginePrice)
+      : (customFields.precio_ars != null ? String(customFields.precio_ars) : price)
 
     // ── Dimensions (mm) from DB or custom_fields ───────────────────────
     const alto = p.height != null ? Math.round(p.height * 10) : (customFields.alto_mm ?? "")

@@ -6,6 +6,7 @@
 
 import { getValidToken } from "@/domains/shopify/auth"
 import { resolveProductStockForWarehouse } from "@/domains/inventory/stock-helpers"
+import { resolveShopifyPrice } from "@/domains/pricing/resolve-channel-price"
 import { createStructuredLogger, genRequestId } from "@/lib/logger"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
@@ -94,6 +95,7 @@ export interface PushProductResult {
   tags?: string
   price_used?: string
   price_source?: string
+  price_mode?: string
   dry_run?: boolean
   product_id?: string
   payload?: any
@@ -183,23 +185,33 @@ export async function pushProductToShopify(
 
   const cf = (product.custom_fields as Record<string, any>) ?? {}
 
-  // ── 3. Precio según configuración de la tienda ─────────────────────────
-  let salePrice: string = String(product.price ?? "0")
+  // ── 3. Precio según pricing engine + fallback a configuración legacy ────
+  const priceResult = await resolveShopifyPrice(supabase, {
+    product: {
+      id: product.id,
+      price: product.price,
+      cost_price: product.cost_price,
+      pvp_editorial: product.pvp_editorial,
+      custom_fields: cf,
+    },
+    store: {
+      id: storeId,
+      price_source: store.price_source,
+      price_list_id: store.price_list_id,
+    },
+  })
+  const salePrice: string = String(priceResult.price)
+  const priceMode = priceResult.price_mode
 
-  if (store.price_source === "product_prices" && store.price_list_id) {
-    const { data: pp } = await supabase
-      .from("product_prices")
-      .select("calculated_price")
-      .eq("product_id", product.id)
-      .eq("price_list_id", store.price_list_id)
-      .maybeSingle()
-    if (pp?.calculated_price != null) salePrice = String(pp.calculated_price)
-  }
-
-  if (store.price_source === "custom_fields_precio_ars") {
-    const arsPrice = Number(cf.precio_ars)
-    if (arsPrice > 0) salePrice = String(arsPrice)
-  }
+  log.info("Shopify price resolved", "push_product.price_resolved", {
+    ean: cleanEan,
+    product_id: product.id,
+    store_id: storeId,
+    price_mode: priceMode,
+    price: priceResult.price,
+    price_list_id: priceResult.price_list_id ?? null,
+    fallback_reason: priceResult.fallback_reason ?? null,
+  })
 
   // ── 4. Stock desde el almacén configurado ──────────────────────────────
   // Strategy: prefer warehouse-consolidated stock (from stock_by_source),
@@ -426,6 +438,7 @@ export async function pushProductToShopify(
       stock_mode: stockMode,
       price_used: salePrice,
       price_source: store.price_source,
+      price_mode: priceMode,
     }
   }
 
@@ -588,5 +601,6 @@ export async function pushProductToShopify(
     tags,
     price_used: salePrice,
     price_source: store.price_source,
+    price_mode: priceMode,
   }
 }
