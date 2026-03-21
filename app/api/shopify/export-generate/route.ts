@@ -8,6 +8,7 @@
 
 import { createClient } from "@/lib/db/server"
 import { buildExportRows, resolveColumns } from "@/domains/shopify/export-builder"
+import { resolveProductStockForWarehouse } from "@/domains/inventory/stock-helpers"
 import { NextRequest, NextResponse } from "next/server"
 
 export async function POST(request: NextRequest) {
@@ -33,11 +34,12 @@ export async function POST(request: NextRequest) {
     // 1. Verify store ownership
     const { data: store } = await supabase
       .from("shopify_stores")
-      .select("id, shop_domain, name, sucursal_stock_code")
+      .select("id, shop_domain, name, sucursal_stock_code, default_warehouse_id")
       .eq("id", store_id)
       .eq("owner_user_id", user.id)
       .maybeSingle()
     if (!store) return NextResponse.json({ error: "Tienda no encontrada" }, { status: 404 })
+    const store_warehouse_id = (store as any).default_warehouse_id as string | undefined
 
     // 2. Load template (columns override + defaults like Vendor, Type)
     const { data: tpl } = await supabase
@@ -66,28 +68,46 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No se encontraron productos para los EANs ingresados" }, { status: 404 })
     }
 
-    // 4. Load best stock per product from supplier_catalog_items
+    // 4. Load best stock per product — prefer warehouse-consolidated, fallback to supplier_catalog_items
     const productIds = products.map((p) => p.id)
-    let stockQuery = supabase
-      .from("supplier_catalog_items")
-      .select("product_id, stock_quantity")
-      .in("product_id", productIds)
-      .order("stock_quantity", { ascending: false })
+    let stockMap: Record<string, number> = {}
+    let stockMode: "warehouse_consolidated" | "legacy_fallback" = "legacy_fallback"
 
-    if (warehouse_id) stockQuery = stockQuery.eq("warehouse_id", warehouse_id)
+    // Try warehouse-consolidated stock first (from stock_by_source + import_sources)
+    const resolveWhId = warehouse_id ?? store_warehouse_id
+    const resolved = await resolveProductStockForWarehouse(supabase, resolveWhId, productIds)
+    if (resolved.mode === "warehouse_consolidated" && Object.keys(resolved.stockMap).length > 0) {
+      stockMap = resolved.stockMap
+      stockMode = "warehouse_consolidated"
+      console.log(
+        `[shopify/export] stock_mode=warehouse_consolidated warehouse=${resolveWhId} source_keys=${resolved.source_keys.join(",")} products=${Object.keys(stockMap).length}`,
+      )
+    } else {
+      // Fallback: supplier_catalog_items (legacy path)
+      let stockQuery = supabase
+        .from("supplier_catalog_items")
+        .select("product_id, stock_quantity")
+        .in("product_id", productIds)
+        .order("stock_quantity", { ascending: false })
 
-    const { data: stockRows } = await stockQuery
-    const stockMap: Record<string, number> = {}
-    for (const s of stockRows ?? []) {
-      if (s.product_id && !(s.product_id in stockMap)) {
-        stockMap[s.product_id] = s.stock_quantity ?? 0
+      if (warehouse_id) stockQuery = stockQuery.eq("warehouse_id", warehouse_id)
+
+      const { data: stockRows } = await stockQuery
+      for (const s of stockRows ?? []) {
+        if (s.product_id && !(s.product_id in stockMap)) {
+          stockMap[s.product_id] = s.stock_quantity ?? 0
+        }
       }
+      stockMode = "legacy_fallback"
+      console.log(
+        `[shopify/export] stock_mode=legacy_fallback warehouse=${warehouse_id ?? "none"} products_with_stock=${Object.keys(stockMap).length}`,
+      )
     }
 
     // 5. Build export rows (domain logic)
     const result = buildExportRows({ products, stockMap, columns, defaults, store })
 
-    return NextResponse.json({ ok: true, ...result })
+    return NextResponse.json({ ok: true, stock_mode: stockMode, ...result })
   } catch (e: any) {
     console.error("[shopify/export-generate]", e)
     return NextResponse.json({ error: e.message }, { status: 500 })

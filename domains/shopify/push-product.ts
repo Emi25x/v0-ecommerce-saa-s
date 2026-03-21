@@ -5,6 +5,7 @@
  */
 
 import { getValidToken } from "@/domains/shopify/auth"
+import { resolveProductStockForWarehouse } from "@/domains/inventory/stock-helpers"
 import type { SupabaseClient } from "@supabase/supabase-js"
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -88,6 +89,7 @@ export interface PushProductResult {
   metafields_set?: number
   inventory_updated?: number
   inventory_by_location?: { location_id: string; qty: number }[]
+  stock_mode?: "warehouse_consolidated" | "legacy_fallback"
   tags?: string
   price_used?: string
   price_source?: string
@@ -197,6 +199,8 @@ export async function pushProductToShopify(
   }
 
   // ── 4. Stock desde el almacén configurado ──────────────────────────────
+  // Strategy: prefer warehouse-consolidated stock (from stock_by_source),
+  // fall back to supplier_catalog_items if no warehouse mapping exists.
   const warehouseId = store.default_warehouse_id
   const { data: mappings } = await supabase
     .from("shopify_location_mappings")
@@ -204,21 +208,60 @@ export async function pushProductToShopify(
     .eq("store_id", storeId)
 
   const inventoryByLocation: { location_id: string; qty: number }[] = []
+  let stockMode: "warehouse_consolidated" | "legacy_fallback" = "legacy_fallback"
+
   if (mappings?.length) {
-    for (const m of mappings) {
-      if (warehouseId && m.warehouse_id !== warehouseId) continue
-      const { data: stockRow } = await supabase
-        .from("supplier_catalog_items")
-        .select("stock_quantity")
-        .eq("product_id", product.id)
-        .eq("warehouse_id", m.warehouse_id)
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      inventoryByLocation.push({
-        location_id: m.shopify_location_id,
-        qty: stockRow?.stock_quantity ?? 0,
-      })
+    // Try warehouse-consolidated stock first (from stock_by_source + import_sources)
+    const warehouseIds = warehouseId
+      ? [warehouseId]
+      : [...new Set(mappings.map((m: any) => m.warehouse_id).filter(Boolean))]
+
+    // Resolve consolidated stock per warehouse
+    const warehouseStockByWh: Record<string, number> = {}
+    let anyConsolidatedResolved = false
+
+    for (const whId of warehouseIds) {
+      const resolved = await resolveProductStockForWarehouse(supabase, whId, [product.id])
+      if (resolved.mode === "warehouse_consolidated" && product.id in resolved.stockMap) {
+        warehouseStockByWh[whId] = resolved.stockMap[product.id]
+        anyConsolidatedResolved = true
+      }
+    }
+
+    if (anyConsolidatedResolved) {
+      // Use consolidated stock — populate inventoryByLocation from resolved values
+      stockMode = "warehouse_consolidated"
+      for (const m of mappings) {
+        if (warehouseId && m.warehouse_id !== warehouseId) continue
+        inventoryByLocation.push({
+          location_id: m.shopify_location_id,
+          qty: warehouseStockByWh[m.warehouse_id] ?? 0,
+        })
+      }
+      console.log(
+        `[push-product] stock_mode=warehouse_consolidated ean=${cleanEan} warehouse_ids=${warehouseIds.join(",")} stock=${JSON.stringify(warehouseStockByWh)}`,
+      )
+    } else {
+      // Fallback: use supplier_catalog_items (legacy path)
+      stockMode = "legacy_fallback"
+      for (const m of mappings) {
+        if (warehouseId && m.warehouse_id !== warehouseId) continue
+        const { data: stockRow } = await supabase
+          .from("supplier_catalog_items")
+          .select("stock_quantity")
+          .eq("product_id", product.id)
+          .eq("warehouse_id", m.warehouse_id)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        inventoryByLocation.push({
+          location_id: m.shopify_location_id,
+          qty: stockRow?.stock_quantity ?? 0,
+        })
+      }
+      console.log(
+        `[push-product] stock_mode=legacy_fallback ean=${cleanEan} warehouse_id=${warehouseId ?? "none"}`,
+      )
     }
   }
 
@@ -372,6 +415,7 @@ export async function pushProductToShopify(
       tags,
       metafields,
       inventory_by_location: inventoryByLocation,
+      stock_mode: stockMode,
       price_used: salePrice,
       price_source: store.price_source,
     }
@@ -532,6 +576,7 @@ export async function pushProductToShopify(
     metafields_set: metafieldsSet,
     inventory_updated: inventoryUpdated,
     inventory_by_location: inventoryByLocation,
+    stock_mode: stockMode,
     tags,
     price_used: salePrice,
     price_source: store.price_source,
