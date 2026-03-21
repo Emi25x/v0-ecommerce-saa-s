@@ -97,14 +97,9 @@ export async function POST(request: NextRequest) {
             totalImported++
           }
         } else {
-          // Insert new product
-          const { error: insertError } = await supabase.from("products").insert(productData)
-
-          if (insertError) {
-            console.error("[v0] Libral Import - Failed to insert product:", libralProduct.ean, insertError)
-          } else {
-            totalImported++
-          }
+          // Libral Argentina is a stock-only source — it must NOT create new products.
+          // Products should already exist from Arnoia/Azeta catalog imports.
+          console.log(`[LIBRAL-IMPORT] Skipped unknown EAN ${libralProduct.ean} — product not in catalog`)
         }
       }
 
