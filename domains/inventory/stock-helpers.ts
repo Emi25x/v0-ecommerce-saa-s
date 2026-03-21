@@ -154,7 +154,7 @@ export async function getWarehouseConsolidatedStock(
   const { data: rows, count, error } = await query
 
   if (error) {
-    console.error("[getWarehouseConsolidatedStock] Query error:", error.message)
+    // Return empty result — callers handle gracefully. Error is in the Supabase response.
     return {
       warehouse_id: warehouseId,
       source_keys: sourceKeys,

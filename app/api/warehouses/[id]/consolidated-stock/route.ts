@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
 import { getWarehouseConsolidatedStock } from "@/domains/inventory/stock-helpers"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
 
 /**
  * GET /api/warehouses/[id]/consolidated-stock
@@ -68,7 +69,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       },
     })
   } catch (error) {
-    console.error("[CONSOLIDATED-STOCK]", error)
+    const log = createStructuredLogger({ request_id: genRequestId() })
+    log.error("Consolidated stock error", error, "consolidated_stock.fatal")
     return NextResponse.json({ error: "Error interno", detail: String(error) }, { status: 500 })
   }
 }
