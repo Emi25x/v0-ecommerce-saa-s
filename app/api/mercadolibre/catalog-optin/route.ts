@@ -1,3 +1,8 @@
+/**
+ * @deprecated Use /api/ml/catalog-optin instead (comprehensive implementation with bulk support).
+ * This endpoint is kept for backward compatibility with existing UI callers.
+ * New code should call /api/ml/catalog-optin directly.
+ */
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
 

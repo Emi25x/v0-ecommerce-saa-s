@@ -1,3 +1,9 @@
+/**
+ * @deprecated Canonical namespace is /api/ml/accounts.
+ * This endpoint has extra features (token auto-refresh, DELETE, connection status)
+ * that should be migrated to /api/ml/accounts in the future.
+ * Kept for backward compatibility with ~15 UI callers.
+ */
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
 import { refreshTokenIfNeeded } from "@/lib/mercadolibre"

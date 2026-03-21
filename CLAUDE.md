@@ -173,9 +173,18 @@ se guardan en columnas JSONB en la base de datos, no en variables de entorno.
 - Patrón: `try/catch` + `NextResponse.json()`
 - Patrón resiliente: intentar SELECT con todas las columnas, si falla por columna inexistente → fallback a columnas seguras
 
+### Namespace de API — Mercado Libre
+- **Namespace oficial: `/api/ml/`** — todo código nuevo debe usar este namespace
+- **`/api/mercadolibre/`** — legacy, se mantiene funcional por compatibilidad:
+  - **Obligatorio mantener:** `auth`, `callback`, `webhooks/*` (URLs registradas en ML como callback externo)
+  - **Deprecado con re-export:** `products` → re-exporta desde `/api/ml/items`
+  - **Deprecado, migración futura:** `accounts` (tiene auto-refresh de tokens + DELETE), `catalog-optin`, `products/sync-stock`
+  - **Único en mercadolibre (sin equivalente en ml):** `shipments/*`, `payments`, `claims`, `returns/*`, `ads/*`, `generate-link`, `status`
+- **Regla:** Nunca crear endpoints NUEVOS en `/api/mercadolibre/`. Usar `/api/ml/` para nuevas funcionalidades.
+
 ### Autenticación
 - Middleware en `middleware.ts` protege todas las rutas
-- Rutas públicas: `/login`, `/auth/*`, `/api/cron/*`, `/api/azeta/*`, `/api/arnoia/*`, `/api/inventory/import/*`, `/api/shopify/oauth/callback`
+- Rutas públicas: `/login`, `/auth/*`, `/api/cron/*`, `/api/arnoia/*`, `/api/inventory/import/*`, `/api/shopify/oauth/callback`
 
 ### Nomenclatura
 - Tablas DB: snake_case en español (e.g., `remitentes`, `transportistas`)
