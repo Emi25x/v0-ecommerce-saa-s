@@ -7,6 +7,7 @@
  */
 
 import { getValidAccessToken } from "@/lib/mercadolibre"
+import { resolveProductStockForWarehouse } from "@/domains/inventory/stock-helpers"
 
 export interface SyncUpdatesParams {
   account_id: string
@@ -75,30 +76,51 @@ export async function executeSyncUpdates(supabase: any, params: SyncUpdatesParam
   const unlinkedPubs = (publications || []).filter((p: any) => !p.product_id)
   const productIds = Array.from(new Set<string>(linkedPubs.map((p: any) => p.product_id)))
 
-  // Build stock map
+  // Build stock map — prefer warehouse-consolidated, then supplier_catalog_items, then products.stock
   const stockMap: Record<string, number> = {}
+  let stockMode: "warehouse_consolidated" | "legacy_catalog" | "legacy_product" = "legacy_product"
   if (syncStock && productIds.length > 0) {
+    // Try warehouse-consolidated stock first (from stock_by_source + import_sources)
     if (warehouse_id) {
-      const { data: stockRows } = await supabase
-        .from("supplier_catalog_items")
-        .select("product_id, stock_quantity")
-        .in("product_id", productIds)
-        .eq("warehouse_id", warehouse_id)
-        .order("stock_quantity", { ascending: false })
+      const resolved = await resolveProductStockForWarehouse(supabase, warehouse_id, productIds)
+      if (resolved.mode === "warehouse_consolidated" && Object.keys(resolved.stockMap).length > 0) {
+        Object.assign(stockMap, resolved.stockMap)
+        stockMode = "warehouse_consolidated"
+        console.log(
+          `[ml-sync-updates] stock_mode=warehouse_consolidated account=${account_id} warehouse=${warehouse_id} source_keys=${resolved.source_keys.join(",")} resolved=${Object.keys(resolved.stockMap).length}`,
+        )
+      } else {
+        // Fallback: supplier_catalog_items
+        const { data: stockRows } = await supabase
+          .from("supplier_catalog_items")
+          .select("product_id, stock_quantity")
+          .in("product_id", productIds)
+          .eq("warehouse_id", warehouse_id)
+          .order("stock_quantity", { ascending: false })
 
-      for (const s of stockRows ?? []) {
-        if (s.product_id && !(s.product_id in stockMap)) {
-          stockMap[s.product_id] = s.stock_quantity ?? 0
+        for (const s of stockRows ?? []) {
+          if (s.product_id && !(s.product_id in stockMap)) {
+            stockMap[s.product_id] = s.stock_quantity ?? 0
+          }
         }
+        if (Object.keys(stockMap).length > 0) stockMode = "legacy_catalog"
+        console.log(
+          `[ml-sync-updates] stock_mode=legacy_catalog account=${account_id} warehouse=${warehouse_id} resolved=${Object.keys(stockMap).length}`,
+        )
       }
     }
 
-    // Fallback to products.stock
+    // Final fallback: products.stock (global total) for any product not yet resolved
     const missingIds = productIds.filter((id) => !(id in stockMap))
     if (missingIds.length > 0) {
       const { data: products } = await supabase.from("products").select("id, stock").in("id", missingIds)
       for (const p of products ?? []) {
         stockMap[p.id] = p.stock ?? 0
+      }
+      if (stockMode === "legacy_product") {
+        console.log(
+          `[ml-sync-updates] stock_mode=legacy_product account=${account_id} resolved=${missingIds.length}`,
+        )
       }
     }
   }

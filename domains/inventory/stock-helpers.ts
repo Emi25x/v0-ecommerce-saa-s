@@ -203,3 +203,67 @@ export async function getWarehouseConsolidatedStock(
     total_warehouse_units: totalWarehouseUnits,
   }
 }
+
+// ── Per-product stock resolution for marketplace push ─────────────────────────
+
+export interface ResolveStockResult {
+  /** product_id → warehouse stock (sum of stock_by_source[source_keys]) */
+  stockMap: Record<string, number>
+  /** Which source_keys were used */
+  source_keys: string[]
+  /** "warehouse_consolidated" if warehouse mapping worked, "legacy_fallback" otherwise */
+  mode: "warehouse_consolidated" | "legacy_fallback"
+}
+
+/**
+ * Resolve stock for a list of product IDs using warehouse-consolidated logic.
+ *
+ * This is the lightweight building block for marketplace push operations
+ * (Shopify push, ML sync-updates, etc.). Given a warehouse_id:
+ *
+ * 1. Resolves source_keys from import_sources
+ * 2. Fetches products.stock_by_source for the given product IDs
+ * 3. Sums stock_by_source[key] for each matched source_key
+ *
+ * If warehouseId is null/undefined or no source_keys are found, returns
+ * an empty stockMap so callers can fall back to their legacy path.
+ */
+export async function resolveProductStockForWarehouse(
+  supabase: SupabaseClient,
+  warehouseId: string | null | undefined,
+  productIds: string[],
+): Promise<ResolveStockResult> {
+  if (!warehouseId || productIds.length === 0) {
+    return { stockMap: {}, source_keys: [], mode: "legacy_fallback" }
+  }
+
+  const sources = await getWarehouseSourceKeys(supabase, warehouseId)
+  const sourceKeys = sources.map((s) => s.source_key)
+
+  if (sourceKeys.length === 0) {
+    return { stockMap: {}, source_keys: [], mode: "legacy_fallback" }
+  }
+
+  // Fetch stock_by_source for the requested products
+  const CHUNK = 500
+  const stockMap: Record<string, number> = {}
+
+  for (let i = 0; i < productIds.length; i += CHUNK) {
+    const chunk = productIds.slice(i, i + CHUNK)
+    const { data: rows } = await supabase
+      .from("products")
+      .select("id, stock_by_source")
+      .in("id", chunk)
+
+    for (const row of (rows ?? []) as any[]) {
+      const sbs: Record<string, number> = row.stock_by_source ?? {}
+      let total = 0
+      for (const key of sourceKeys) {
+        total += Number(sbs[key]) || 0
+      }
+      stockMap[row.id] = total
+    }
+  }
+
+  return { stockMap, source_keys: sourceKeys, mode: "warehouse_consolidated" }
+}
