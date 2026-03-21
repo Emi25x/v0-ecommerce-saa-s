@@ -205,10 +205,16 @@ export function RepricingModal({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="win_buybox">🏆 Ganar Buybox — usar price_to_win de ML</SelectItem>
-                <SelectItem value="follow_competitor">🤝 Igualar Competidor — mismo precio que el ganador</SelectItem>
+                <SelectItem value="win_buybox">Ganar Buybox — usar price_to_win de ML</SelectItem>
+                <SelectItem value="follow_competitor">Igualar Competidor — mismo precio que el ganador</SelectItem>
                 <SelectItem value="maximize_margin_if_alone">
-                  💰 Maximizar Margen — sube a precio máximo cuando estoy solo
+                  Maximizar Margen — sube a precio máximo cuando estoy solo
+                </SelectItem>
+                <SelectItem value="cost_plus">
+                  Cost Plus — price_to_win con piso de costo
+                </SelectItem>
+                <SelectItem value="hybrid">
+                  Híbrido — precio competidor o price_to_win como fallback
                 </SelectItem>
               </SelectContent>
             </Select>
@@ -219,6 +225,10 @@ export function RepricingModal({
                 "Iguala el precio exacto del vendedor ganador actual, sin necesariamente ganar el buybox"}
               {trackingForm.strategy === "maximize_margin_if_alone" &&
                 "Gana el buybox cuando hay competencia; sube directo al precio máximo cuando no hay competidores con stock"}
+              {trackingForm.strategy === "cost_plus" &&
+                "Usa price_to_win pero nunca baja del costo + margen mínimo configurado"}
+              {trackingForm.strategy === "hybrid" &&
+                "Usa el precio del competidor si está disponible, sino price_to_win como fallback"}
             </p>
           </div>
 

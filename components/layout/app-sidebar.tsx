@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { navigation, type NavSection, type NavItem, type NavSubgroup } from "@/lib/navigation"
+import { getVisibleNavigation, type NavSection, type NavItem, type NavSubgroup } from "@/lib/navigation"
 import { useNotifications } from "@/hooks/use-notifications"
 import { useLastVisits } from "@/hooks/use-last-visits"
 import { SidebarSection } from "@/components/layout/sidebar-section"
@@ -43,8 +43,8 @@ export function AppSidebar() {
             <span className="font-medium">Dashboard</span>
           </Link>
 
-          {/* Sections from navigation data */}
-          {navigation.map((section) => (
+          {/* Sections from navigation data (internal modules filtered out) */}
+          {getVisibleNavigation().map((section) => (
             <SidebarNavSection
               key={section.id}
               section={section}
@@ -97,9 +97,11 @@ function SidebarNavSection({
     )
   }
 
+  const isBeta = section.visibility === "beta"
+
   // Collapsible sections
   return (
-    <SidebarSection label={section.label} icon={section.icon}>
+    <SidebarSection label={section.label} icon={section.icon} badge={isBeta ? "Beta" : undefined}>
       {/* Primary items */}
       {section.items?.map((item) => (
         <NavItemLink key={item.href} item={item} notifications={notifications} />

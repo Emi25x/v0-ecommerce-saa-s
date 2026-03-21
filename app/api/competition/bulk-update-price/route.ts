@@ -2,8 +2,7 @@
  * POST /api/competition/bulk-update-price
  *
  * Actualización masiva de precio al price_to_win.
- * Aplica la misma lógica de 5 escenarios que el cron, respetando
- * min_price / max_price si el ítem tiene repricing_config configurado.
+ * Respeta min_price / max_price de ml_price_strategies (fuente de verdad única).
  * Si no tiene config, aplica price_to_win directamente (acción manual).
  *
  * Body: { item_ids: string[] }
@@ -12,6 +11,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
 import { getValidAccessToken } from "@/lib/mercadolibre"
+import { createRepriceJob } from "@/domains/mercadolibre/repricing-engine"
 
 const ML_API = "https://api.mercadolibre.com"
 
@@ -25,10 +25,10 @@ export async function POST(req: NextRequest) {
 
     const supabase = await createClient()
 
-    // Precargar configs de repricing para todos los ítems en un solo query
+    // Load strategy configs (modern source of truth)
     const { data: configs } = await supabase
-      .from("repricing_config")
-      .select("ml_item_id, min_price, max_price, target_price")
+      .from("ml_price_strategies")
+      .select("ml_item_id, min_price, max_price")
       .in("ml_item_id", item_ids)
 
     const configMap = new Map((configs || []).map((c: any) => [c.ml_item_id, c]))
@@ -44,7 +44,6 @@ export async function POST(req: NextRequest) {
 
     for (const item_id of item_ids) {
       try {
-        // Obtener account_id y precio actual desde ml_publications
         const { data: pub } = await supabase
           .from("ml_publications")
           .select("account_id, price")
@@ -59,7 +58,7 @@ export async function POST(req: NextRequest) {
         const accessToken = await getValidAccessToken(pub.account_id)
         const currentPrice = pub.price ? Number(pub.price) : null
 
-        // Consultar price_to_win
+        // Fetch price_to_win from ML
         const ptwRes = await fetch(`${ML_API}/items/${item_id}/price_to_win?siteId=MLA&version=v2`, {
           headers: { Authorization: `Bearer ${accessToken}` },
           signal: AbortSignal.timeout(10_000),
@@ -80,7 +79,7 @@ export async function POST(req: NextRequest) {
           continue
         }
 
-        // Aplicar límites si tiene config de repricing
+        // Apply limits from strategy config
         const cfg = configMap.get(item_id)
         let newPrice = ptwPrice
         let repStatus = "adjusted"
@@ -98,14 +97,14 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // No actualizar si el cambio es < $1 (evitar llamadas innecesarias a ML)
+        // Skip if change < $1
         if (currentPrice !== null && Math.abs(newPrice - currentPrice) < 1) {
           results.push({ item_id, success: true, old_price: currentPrice, new_price: newPrice, status: "no_change" })
           await delay(300)
           continue
         }
 
-        // Actualizar precio en ML
+        // Update price in ML
         const updateRes = await fetch(`${ML_API}/items/${item_id}`, {
           method: "PUT",
           headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
@@ -120,21 +119,19 @@ export async function POST(req: NextRequest) {
           continue
         }
 
-        // Actualizar en ml_publications
+        // Update in ml_publications
         await supabase
           .from("ml_publications")
           .update({ price: newPrice, updated_at: new Date().toISOString() })
           .eq("ml_item_id", item_id)
           .eq("account_id", pub.account_id)
 
-        // Registrar en historial
-        await supabase.from("repricing_history").insert({
+        // Record in ml_repricing_jobs (modern audit trail)
+        await createRepriceJob(supabase, {
+          account_id: pub.account_id,
           ml_item_id: item_id,
-          old_price: currentPrice,
-          new_price: newPrice,
-          price_to_win: ptwPrice,
-          status: repStatus,
-          changed: true,
+          reason: `bulk_manual:${repStatus}`,
+          status: "done",
         })
 
         results.push({
