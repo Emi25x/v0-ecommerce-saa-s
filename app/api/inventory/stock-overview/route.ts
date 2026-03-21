@@ -71,11 +71,29 @@ export async function GET(request: NextRequest) {
 
   const warehouses = Object.values(warehouseMap)
 
+  // ── Consolidated stock totals per warehouse ─────────────────────────────────
+  // For each warehouse, sum the stock_by_source keys that belong to it across
+  // the current page of products. This is an additive field — existing consumers
+  // can ignore it.
+  const warehouseStockTotals: Record<string, { warehouse_id: string; name: string; code: string; total_units: number }> =
+    {}
+  for (const wh of warehouses) {
+    let total = 0
+    for (const p of (products ?? []) as any[]) {
+      const sbs = p.stock_by_source ?? {}
+      for (const key of wh.source_keys) {
+        total += Number(sbs[key]) || 0
+      }
+    }
+    warehouseStockTotals[wh.id] = { warehouse_id: wh.id, name: wh.name, code: wh.code, total_units: total }
+  }
+
   return NextResponse.json({
     products: products ?? [],
     source_keys: sourceKeys,
     source_label: sourceLabel,
     warehouses, // [{ id, name, code, source_keys[] }]
+    warehouse_stock_totals: Object.values(warehouseStockTotals), // NEW — additive field
     no_warehouse_keys: noWarehouseKeys,
     total: count ?? 0,
     page,

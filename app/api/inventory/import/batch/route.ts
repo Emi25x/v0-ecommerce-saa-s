@@ -172,6 +172,9 @@ export async function POST(request: NextRequest) {
     let invalid_ean = 0
 
     const isStockImport = source.name.toLowerCase().includes("stock") || source.feed_type === "stock_price"
+    // Libral Argentina is a stock-only source — it must never create new products.
+    // Products should already exist from Arnoia/Azeta catalog imports.
+    const isStockOnlySource = isStockImport || source.feed_type === "api" || source.name.toLowerCase().includes("libral")
 
     // column_mapping values may be original-case column names; normalize them for lookup
     const cm: Record<string, string> = {}
@@ -387,7 +390,24 @@ export async function POST(request: NextRequest) {
         const eanToSku = new Map<string, string>()
         existingRows?.forEach((r: any) => eanToSku.set(r.ean, r.sku))
 
-        const toUpsert = deduped.map((p) => {
+        // Stock-only sources (e.g. Libral Argentina) must NOT create new products.
+        // Filter to only existing EANs and log skipped ones.
+        let skippedNotFound = 0
+        const effectiveDeduped = isStockOnlySource
+          ? deduped.filter((p) => {
+              if (eanToSku.has(p.ean)) return true
+              skippedNotFound++
+              return false
+            })
+          : deduped
+        if (skippedNotFound > 0) {
+          log.info(`Stock-only source: skipped ${skippedNotFound} EANs not in catalog`, "batch.skip_stock_only", {
+            skipped: skippedNotFound,
+            source_name: source.name,
+          })
+        }
+
+        const toUpsert = effectiveDeduped.map((p) => {
           // Strip price_ars — not a products column (goes to custom_fields via two-prices RPC path)
           const { price_ars, ...rest } = p
           const custom_fields =

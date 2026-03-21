@@ -38,7 +38,7 @@ export async function GET(request: Request) {
     const fieldMapping = libralSource.column_mapping || {}
 
     let productsUpdated = 0
-    let productsNew = 0
+    let productsSkippedNotFound = 0
     let productsUnchanged = 0
     let errors = 0
 
@@ -108,35 +108,11 @@ export async function GET(request: Request) {
               productsUnchanged++
             }
           } else {
-            const { stock_by_source: newSbs, stock: totalStock } = mergeStockBySource(null, libralSourceKey, newStock)
-            const productData: Record<string, unknown> = {
-              sku,
-              title: apiProduct[fieldMapping.title as string],
-              description: (apiProduct[fieldMapping.description as string] as string) || null,
-              price: newPrice,
-              stock: totalStock,
-              stock_by_source: newSbs,
-              brand: (apiProduct[fieldMapping.brand as string] as string) || null,
-              category: (apiProduct[fieldMapping.category as string] as string) || null,
-              image_url: (apiProduct[fieldMapping.image_url as string] as string) || null,
-              condition: apiProduct[fieldMapping.condition as string] ? "new" : "used",
-              source: [libralSourceKey],
-              internal_code: `INT-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
-              custom_fields: {
-                libral_id: apiProduct.id,
-                libral_imported_at: new Date().toISOString(),
-                auto_detected: true,
-              },
-            }
-
-            const { error: insertError } = await supabase.from("products").insert(productData)
-
-            if (insertError) {
-              log.error(`Error inserting new product ${sku}`, insertError, "sync_libral.insert_error")
-              errors++
-            } else {
-              productsNew++
-            }
+            // Libral Argentina is a stock-only source — it must NOT create new products.
+            // Products should already exist from Arnoia/Azeta catalog imports.
+            // Log and skip so we can audit which Libral SKUs have no match.
+            log.info(`Skipped unknown SKU ${sku} — product not in catalog`, "sync_libral.skip_unknown")
+            productsSkippedNotFound++
           }
         } catch (error: unknown) {
           log.error("Error processing product", error, "sync_libral.product_error")
@@ -160,7 +136,7 @@ export async function GET(request: Request) {
     log.info("Libral sync complete", "sync_libral.done", {
       totalProcessed,
       productsUpdated,
-      productsNew,
+      productsSkippedNotFound,
       productsUnchanged,
       errors,
       duration,
@@ -171,7 +147,7 @@ export async function GET(request: Request) {
       summary: {
         processed: totalProcessed,
         updated: productsUpdated,
-        new: productsNew,
+        skipped_not_found: productsSkippedNotFound,
         unchanged: productsUnchanged,
         errors,
         duration,
