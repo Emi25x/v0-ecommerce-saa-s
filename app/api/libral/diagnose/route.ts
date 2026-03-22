@@ -1,3 +1,7 @@
+/**
+ * @internal Diagnostic endpoint for Libral ERP connection.
+ * Used by: app/(dashboard)/integrations/page.tsx
+ */
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
 
