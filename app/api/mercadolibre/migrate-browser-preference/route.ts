@@ -1,3 +1,7 @@
+/**
+ * @deprecated One-time migration endpoint. Column browser_preference should already exist.
+ * Safe to remove after confirming migration ran successfully.
+ */
 import { NextResponse } from "next/server"
 
 export async function POST() {
