@@ -1,3 +1,6 @@
-// This endpoint has been moved to /api/ml/items
-// Re-export directly instead of redirecting (avoids self-fetch / URL dependency)
+/**
+ * @deprecated Use /api/ml/items instead.
+ * This endpoint re-exports from /api/ml/items for backward compatibility.
+ * New code should call /api/ml/items directly.
+ */
 export { GET } from "@/app/api/ml/items/route"
