@@ -1,3 +1,7 @@
+/**
+ * @deprecated Use /api/ml/shipments/[id] instead.
+ * This endpoint uses cookie-based auth. Kept for backward compatibility.
+ */
 import { type NextRequest, NextResponse } from "next/server"
 import { getValidAccessToken, getShipmentDetails } from "@/lib/mercadolibre"
 

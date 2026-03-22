@@ -1,3 +1,8 @@
+/**
+ * @deprecated Use /api/ml/orders instead (reads from local DB with pagination).
+ * This endpoint hits ML API directly — kept for backward compatibility with ~8 UI callers.
+ * New code should use /api/ml/orders.
+ */
 import { createClient } from "@/lib/db/server"
 import { NextResponse } from "next/server"
 
