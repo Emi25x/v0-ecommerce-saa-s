@@ -1,3 +1,8 @@
+/**
+ * @internal Development-only diagnostic endpoint.
+ * Used by: app/(dashboard)/ml/importer/page.tsx
+ * Shows ML import progress for an account.
+ */
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 

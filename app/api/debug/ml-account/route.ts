@@ -1,3 +1,8 @@
+/**
+ * @internal Development-only diagnostic endpoint.
+ * Used by: app/(dashboard)/ml/matcher/page.tsx, app/(dashboard)/ml/importer/page.tsx
+ * Shows ML account details (without sensitive tokens).
+ */
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/db/admin"
 
