@@ -1,4 +1,7 @@
 /**
+ * @internal Development-only diagnostic endpoint.
+ * Used by: app/(dashboard)/envios/cotizador/page.tsx
+ *
  * GET /api/envios/carriers/fastmail-debug?origen_cp=XXX&destino_cp=YYY&peso_g=NNN
  *
  * Endpoint de diagnóstico: cotiza TODOS los servicios disponibles usando ambos

@@ -13,7 +13,7 @@ import { type NextRequest, NextResponse } from "next/server"
  * |-------------------|----------------------------------|-----------------------------|
  * | Public pages      | /login, /auth/*                  | None (login flow)           |
  * | Cron jobs         | /api/cron/*                      | requireCron() — CRON_SECRET |
- * | Supplier imports  | /api/azeta/*, /api/arnoia/*      | requireCron() — CRON_SECRET |
+ * | Supplier imports  | /api/arnoia/*                    | requireCron() — CRON_SECRET |
  * | Inventory imports | /api/inventory/import/*           | requireCron() — CRON_SECRET |
  * | Inventory sources | /api/inventory/sources/*          | requireCron() — CRON_SECRET |
  * | ML webhooks       | /api/mercadolibre/webhooks/*      | Payload user_id validation  |
@@ -34,7 +34,6 @@ const PUBLIC_PATHS = ["/login", "/auth/callback", "/auth/error"] as const
 const UNAUTHENTICATED_API_PREFIXES = [
   "/api/auth/",                       // OAuth callbacks
   "/api/cron/",                       // Cron jobs — secured by requireCron()
-  "/api/azeta/",                      // Supplier imports — secured by requireCron()
   "/api/arnoia/",                     // Supplier imports — secured by requireCron()
   "/api/inventory/import/",           // Batch imports — secured by requireCron()
   "/api/inventory/sources/",          // Source config — secured by requireCron()

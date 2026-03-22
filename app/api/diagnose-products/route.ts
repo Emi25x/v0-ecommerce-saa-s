@@ -1,3 +1,8 @@
+/**
+ * @internal Development-only diagnostic endpoint.
+ * Used by: hooks/use-import-sources.ts
+ * Product count and duplicate diagnostics.
+ */
 import { createClient } from "@supabase/supabase-js"
 import { NextResponse } from "next/server"
 

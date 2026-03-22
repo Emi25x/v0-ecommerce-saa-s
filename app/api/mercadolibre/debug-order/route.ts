@@ -1,8 +1,11 @@
+/**
+ * @internal Development-only diagnostic endpoint.
+ * Used by: app/(dashboard)/billing/debug/page.tsx
+ */
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
 import { createAdminClient } from "@/lib/db/admin"
 
-// Endpoint temporal de diagnóstico — muestra la estructura real de ML para una orden
 // GET /api/mercadolibre/debug-order?account_id=xxx&order_id=yyy
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
