@@ -21,7 +21,6 @@ import {
   buildCatalogItem,
 } from "@/domains/mercadolibre/publications/builder"
 import {
-  resolveProductStockForWarehouse,
   getWarehouseSafetyStock,
   calculatePublishableStock,
   getWarehouseSourceKeys,
@@ -32,7 +31,6 @@ import { startRun } from "@/lib/process-runs"
 export const maxDuration = 300
 
 const BATCH_SIZE = 50
-const CONCURRENCY = 3
 const DELAY_BETWEEN_ITEMS_MS = 1000
 
 interface BulkResult {
@@ -46,10 +44,33 @@ interface BulkResult {
 }
 
 /**
+ * Resolves the default publication template for an ML account.
+ * Returns the template with is_default=true, or the most recently created one.
+ * Returns null if no template exists for this account.
+ */
+async function resolveAccountTemplate(supabase: any, accountId: string) {
+  const { data: template } = await supabase
+    .from("ml_publication_templates")
+    .select("*")
+    .eq("account_id", accountId)
+    .order("is_default", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  return template
+}
+
+/**
  * POST /api/ml/bulk-publish
  *
  * Publishes all products with publishable_stock > 0 for a given
  * warehouse + ML account, skipping already-published products.
+ *
+ * Template is auto-resolved from the account's default template.
+ * If template_id is provided, it must belong to the account.
+ *
+ * Input: { warehouse_id, account_id, template_id?, publish_mode?, dry_run?, limit? }
  */
 export async function POST(request: NextRequest) {
   const requestId = genRequestId()
@@ -60,21 +81,117 @@ export async function POST(request: NextRequest) {
     const {
       warehouse_id,
       account_id,
-      template_id,
+      template_id: explicitTemplateId,
       publish_mode = "linked",
       dry_run = false,
       limit = 0,
     } = body
 
     // ── Validation ────────────────────────────────────────────────────────
-    if (!warehouse_id || !account_id || !template_id) {
+    if (!warehouse_id || !account_id) {
       return NextResponse.json(
-        { success: false, error: "warehouse_id, account_id y template_id son requeridos" },
+        { success: false, error: "warehouse_id y account_id son requeridos" },
         { status: 400 },
       )
     }
 
     const supabase = await createAdminClient()
+
+    // ── Resolve template for this account ────────────────────────────────
+    let template: any
+
+    if (explicitTemplateId) {
+      // Explicit template_id provided — validate it belongs to this account
+      const { data: explicitTemplate } = await supabase
+        .from("ml_publication_templates")
+        .select("*")
+        .eq("id", explicitTemplateId)
+        .single()
+
+      if (!explicitTemplate) {
+        log.warn("Template not found", "ml.bulk_publish.missing_template", {
+          template_id: explicitTemplateId,
+          account_id,
+        })
+        return NextResponse.json(
+          { success: false, error: "Plantilla no encontrada" },
+          { status: 404 },
+        )
+      }
+
+      if (explicitTemplate.account_id !== account_id) {
+        log.warn("Template belongs to different account", "ml.bulk_publish.wrong_template_owner", {
+          template_id: explicitTemplateId,
+          template_account_id: explicitTemplate.account_id,
+          requested_account_id: account_id,
+        })
+        return NextResponse.json(
+          {
+            success: false,
+            error: `La plantilla "${explicitTemplate.name}" pertenece a otra cuenta ML. Cada cuenta debe usar su propia plantilla.`,
+          },
+          { status: 400 },
+        )
+      }
+
+      template = explicitTemplate
+    } else {
+      // Auto-resolve default template for this account
+      template = await resolveAccountTemplate(supabase, account_id)
+
+      if (!template) {
+        log.warn("No template configured for account", "ml.bulk_publish.missing_template", {
+          account_id,
+        })
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Esta cuenta ML no tiene plantilla de publicación configurada. Creá una plantilla en Integraciones > Plantillas ML antes de publicar.",
+          },
+          { status: 400 },
+        )
+      }
+    }
+
+    const templateId = template.id
+
+    log.info("Template resolved for account", "ml.bulk_publish.template_resolved", {
+      account_id,
+      template_id: templateId,
+      template_name: template.name,
+      is_default: template.is_default,
+      explicit: !!explicitTemplateId,
+    })
+
+    // ── Resolve margin from price profile ────────────────────────────────
+    let marginPercent = template.margin_percent || 20
+    if (template.price_profile_id) {
+      const { data: priceProfile } = await supabase
+        .from("price_profiles")
+        .select("margin_percent")
+        .eq("id", template.price_profile_id)
+        .single()
+      if (priceProfile) {
+        marginPercent = Number(priceProfile.margin_percent)
+      }
+    }
+
+    // ── Validate ML account + refresh token ──────────────────────────────
+    const { data: account, error: accountError } = await supabase
+      .from("ml_accounts")
+      .select("*")
+      .eq("id", account_id)
+      .single()
+
+    if (accountError || !account) {
+      return NextResponse.json(
+        { success: false, error: "Cuenta ML no encontrada" },
+        { status: 404 },
+      )
+    }
+
+    const validAccount = (await refreshTokenIfNeeded(account)) as any
+    const accessToken = validAccount.access_token
 
     // ── Validate warehouse sources ────────────────────────────────────────
     const sources = await getWarehouseSourceKeys(supabase, warehouse_id)
@@ -85,30 +202,6 @@ export async function POST(request: NextRequest) {
       )
     }
     const sourceKeys = sources.map((s) => s.source_key)
-
-    // ── Load template + account (validates they exist, refreshes token) ──
-    // Use a dummy product to test context loading — we only need template + account
-    const { data: anyProduct } = await supabase
-      .from("products")
-      .select("id")
-      .limit(1)
-      .single()
-
-    if (!anyProduct) {
-      return NextResponse.json({ success: false, error: "No hay productos en la base." }, { status: 400 })
-    }
-
-    const contextCheck = await loadPublishContext({
-      supabase,
-      productId: anyProduct.id,
-      templateId: template_id,
-      accountId: account_id,
-      refreshTokenFn: refreshTokenIfNeeded,
-    })
-    if (!contextCheck.ok) {
-      return NextResponse.json(contextCheck.body, { status: contextCheck.status })
-    }
-    const { template, marginPercent, accessToken, validAccount } = contextCheck.ctx
 
     // ── Safety stock ──────────────────────────────────────────────────────
     const safetyStock = await getWarehouseSafetyStock(supabase, warehouse_id)
@@ -124,7 +217,6 @@ export async function POST(request: NextRequest) {
     )
 
     // ── Fetch candidate products in batches ───────────────────────────────
-    // Products that have stock in any of the warehouse's source keys
     const jsonbOrFilter = sourceKeys.map((k) => `stock_by_source->>${k}.not.is.null`).join(",")
 
     let totalCandidates = 0
@@ -137,7 +229,8 @@ export async function POST(request: NextRequest) {
     log.info("Bulk publish started", "ml.bulk_publish.start", {
       warehouse_id,
       account_id,
-      template_id: template_id,
+      template_id: templateId,
+      template_name: template.name,
       publish_mode,
       dry_run,
       limit: limit || "all",
@@ -169,7 +262,7 @@ export async function POST(request: NextRequest) {
 
       for (const product of batch as any[]) {
         // Check limit
-        if (limit > 0 && (published + skippedNoStock + alreadyPublished + errors) >= limit) {
+        if (limit > 0 && (published + errors) >= limit) {
           keepGoing = false
           break
         }
@@ -238,7 +331,16 @@ export async function POST(request: NextRequest) {
 
           if (result.success) {
             published++
-            publishedSet.add(product.id) // prevent re-publish within same run
+            publishedSet.add(product.id)
+
+            log.info("Item published", "ml.bulk_publish.item_published", {
+              product_id: product.id,
+              ean: product.ean,
+              ml_item_id: result.ml_item_id,
+              account_id,
+              template_id: templateId,
+            })
+
             results.push({
               product_id: product.id,
               ean: product.ean,
@@ -282,7 +384,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Checkpoint every 50 products
-        if ((published + errors) % 50 === 0) {
+        if ((published + errors) % 50 === 0 && (published + errors) > 0) {
           await run.checkpoint({
             rows_processed: totalCandidates,
             rows_updated: published,
@@ -302,6 +404,8 @@ export async function POST(request: NextRequest) {
       errors,
       dry_run,
       run_id: run.id,
+      template_id: templateId,
+      template_name: template.name,
     }
 
     log.info("Bulk publish completed", "ml.bulk_publish.complete", {
@@ -319,7 +423,8 @@ export async function POST(request: NextRequest) {
         skipped_no_stock: skippedNoStock,
         warehouse_id,
         account_id,
-        template_id,
+        template_id: templateId,
+        template_name: template.name,
         publish_mode,
         dry_run,
       },
@@ -328,7 +433,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       summary,
-      results: results.slice(0, 200), // cap response size
+      results: results.slice(0, 200),
       results_truncated: results.length > 200,
     })
   } catch (error: any) {
@@ -394,7 +499,7 @@ async function publishSingleProduct(params: {
   }
 
   // ── Price ────────────────────────────────────────────────────────────
-  const { finalPrice, priceCalculation } = await resolvePrice({
+  const { finalPrice } = await resolvePrice({
     costPrice: product.cost_price,
     marginPercent,
     supabase,
