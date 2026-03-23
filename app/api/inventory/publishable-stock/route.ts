@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
 
     // 3. Fetch ML publications for these products
     const productIds = (rows ?? []).map((r: any) => r.id)
-    let mlPubMap: Record<string, Array<{ ml_item_id: string; account_id: string; nickname: string; status: string }>> = {}
+    const mlPubMap: Record<string, Array<{ ml_item_id: string; account_id: string; nickname: string; status: string }>> = {}
 
     if (productIds.length > 0) {
       const { data: pubs } = await supabase

@@ -11,6 +11,7 @@
  */
 
 import { createAdminClient } from "@/lib/db/admin"
+import { startRun } from "@/lib/process-runs"
 
 export interface StockUpdateResult {
   success: boolean
@@ -28,6 +29,7 @@ export async function runAzetaStockUpdate(
 ): Promise<StockUpdateResult> {
   const startTime = Date.now()
   const supabase = createAdminClient()
+  const run = await startRun(supabase, "azeta_stock", "Azeta Stock Update")
 
   // Resolver fuente si no viene como parámetro
   let src = source
@@ -41,8 +43,11 @@ export async function runAzetaStockUpdate(
   }
 
   if (!src?.url_template) {
+    await run.fail(new Error("Fuente Azeta Stock no encontrada en import_sources"))
     return { success: false, error: "Fuente Azeta Stock no encontrada en import_sources" }
   }
+
+  try {
 
   console.log(`[AZETA][STOCK] Descargando desde: ${src.url_template}`)
   const response = await fetch(src.url_template, {
@@ -104,7 +109,15 @@ export async function runAzetaStockUpdate(
       updated += rpcResult?.updated ?? 0
       notFound += rpcResult?.not_found ?? 0
     }
-    if ((i + BATCH) % 5000 === 0) console.log(`[AZETA][STOCK] Progreso: ${i + BATCH}/${validUpdates.length}`)
+    if ((i + BATCH) % 5000 === 0) {
+      console.log(`[AZETA][STOCK] Progreso: ${i + BATCH}/${validUpdates.length}`)
+      await run.checkpoint({
+        rows_processed: Math.min(i + BATCH, validUpdates.length),
+        rows_updated: updated,
+        rows_failed: notFound,
+        log_json: { checkpoint: true, batch_offset: i + BATCH },
+      })
+    }
   }
 
   // Poner stock_by_source.azeta = 0 en productos que NO están en el archivo
@@ -131,6 +144,13 @@ export async function runAzetaStockUpdate(
     `[AZETA][STOCK] Completado en ${elapsed}ms: ${updated} actualizados, ${notFound} no encontrados, ${zeroed} puestos a 0`,
   )
 
+  await run.complete({
+    rows_processed: validUpdates.length,
+    rows_updated: updated,
+    rows_failed: notFound,
+    log_json: { zeroed, skipped, not_found: notFound, unique_eans: validUpdates.length },
+  })
+
   return {
     success: true,
     processed: validUpdates.length,
@@ -139,5 +159,10 @@ export async function runAzetaStockUpdate(
     zeroed,
     skipped,
     elapsed_ms: elapsed,
+  }
+  } catch (err: any) {
+    console.error("[AZETA][STOCK] Error fatal:", err.message)
+    await run.fail(err)
+    return { success: false, error: err.message, elapsed_ms: Date.now() - startTime }
   }
 }

@@ -13,9 +13,11 @@
 
 import { createAdminClient } from "@/lib/db/admin"
 import { normalizeEan } from "@/domains/inventory/ean-utils"
+import { startRun } from "@/lib/process-runs"
 
 // URL de fallback — solo si no está configurado en import_sources
-const AZETA_TOTAL_URL = "https://www.azetadistribuciones.es/servicios_web/csv.php?user=680899&password=badajoz24"
+// Credentials should be stored in import_sources, not here
+const AZETA_TOTAL_URL = process.env.AZETA_FALLBACK_URL || ""
 
 // Headers para que el servidor de Azeta no bloquee la petición
 const FETCH_HEADERS = {
@@ -55,6 +57,7 @@ export async function runCatalogImport(
   console.log("[AZETA][RUN] === Inicio importacion catalogo ===")
 
   const supabase = createAdminClient()
+  const run = await startRun(supabase, "azeta_catalog", "Azeta Catálogo Import")
   let url = AZETA_TOTAL_URL
 
   // Resolver fuente desde import_sources
@@ -67,8 +70,11 @@ export async function runCatalogImport(
     if (src?.url_template) {
       url = src.url_template
       console.log(`[AZETA][RUN] Fuente: "${src.name}" → ${url}`)
+    } else if (!url) {
+      await run.fail(new Error("No Azeta URL configured in import_sources and no AZETA_FALLBACK_URL env var"))
+      return { success: false, error: "No Azeta URL configured. Set up import_sources or AZETA_FALLBACK_URL env var." }
     } else {
-      console.warn("[AZETA][RUN] Fuente no encontrada en import_sources, usando URL hardcodeada")
+      console.warn("[AZETA][RUN] Fuente no encontrada en import_sources, usando AZETA_FALLBACK_URL")
     }
   }
 
@@ -413,6 +419,13 @@ export async function runCatalogImport(
     console.log(
       `[AZETA] Completado: creados=${created} actualizados=${updated} errores=${errors} descartados=${discarded} en ${elapsed.toFixed(1)}s`,
     )
+    await run.complete({
+      rows_processed: totalProcessed,
+      rows_created: created,
+      rows_updated: updated,
+      rows_failed: errors,
+      log_json: { discarded, total_rows: totalProcessed },
+    })
     return {
       success: true,
       created,
@@ -423,6 +436,7 @@ export async function runCatalogImport(
     }
   } catch (err: any) {
     console.error("[AZETA][RUN] Error fatal:", err.message)
+    await run.fail(err)
     return { success: false, error: err.message }
   }
 }
