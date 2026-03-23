@@ -210,8 +210,7 @@ export async function POST(request: NextRequest) {
     console.log("[v0] ML Title from template:", mlTitle)
 
     // ── Build ML item (using publishable_stock instead of global stock) ─────
-    // Cap at 50 per ML rules
-    const stockForMl = Math.min(publishableStock, 50)
+    const stockForMl = publishableStock
 
     let mlItem: Record<string, unknown>
     if (publish_mode === "catalog") {
