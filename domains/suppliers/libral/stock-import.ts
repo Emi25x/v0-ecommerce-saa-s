@@ -15,6 +15,7 @@
 import { createAdminClient } from "@/lib/db/admin"
 import { authenticateLibral, isLibralTokenValid, queryLibralProducts } from "@/domains/suppliers/libral/client"
 import { mergeStockBySource } from "@/domains/inventory/stock-helpers"
+import { startRun } from "@/lib/process-runs"
 
 const PAGE_SIZE = 1000
 const UPSERT_CHUNK = 500
@@ -31,7 +32,29 @@ export interface LibralImportResult {
 export async function runLibralStockImport(sourceKey = "libral"): Promise<LibralImportResult> {
   const start = Date.now()
   const supabase = createAdminClient()
+  const run = await startRun(supabase, "libral_stock", "Libral Stock Import")
 
+  try {
+  return await _runLibralStockImportInner(supabase, sourceKey, start, run)
+  } catch (err) {
+    await run.fail(err)
+    return {
+      success: false,
+      updated: 0,
+      zeroed: 0,
+      errors: 0,
+      elapsed_seconds: Math.round((Date.now() - start) / 1000),
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
+
+async function _runLibralStockImportInner(
+  supabase: ReturnType<typeof createAdminClient>,
+  sourceKey: string,
+  start: number,
+  run: Awaited<ReturnType<typeof startRun>>,
+): Promise<LibralImportResult> {
   // ── 1. Get / refresh JWT token via integration_configs ──────────────────────
   const { data: config, error: configErr } = await supabase
     .from("integration_configs")
@@ -41,6 +64,7 @@ export async function runLibralStockImport(sourceKey = "libral"): Promise<Libral
     .single()
 
   if (configErr || !config) {
+    await run.fail(new Error("Libral integration not configured in integration_configs"))
     return {
       success: false,
       updated: 0,
@@ -149,6 +173,13 @@ export async function runLibralStockImport(sourceKey = "libral"): Promise<Libral
 
   const elapsed = Math.round((Date.now() - start) / 1000)
   console.log(`[LIBRAL-IMPORT] Completado: ${updated} actualizados, ${zeroed} en cero, ${errors} errores. ${elapsed}s`)
+
+  await run.complete({
+    rows_processed: allEans.size,
+    rows_updated: updated,
+    rows_failed: errors,
+    log_json: { zeroed, pages: page, source_key: sourceKey },
+  })
 
   return { success: true, updated, zeroed, errors, elapsed_seconds: elapsed }
 }
