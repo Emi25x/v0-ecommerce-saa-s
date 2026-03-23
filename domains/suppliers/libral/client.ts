@@ -393,11 +393,8 @@ export async function getLibralCredentials(): Promise<{ username: string; passwo
           password: process.env.LIBRAL_PASSWORD,
         }
       }
-      // Credenciales por defecto según documentación
-      return {
-        username: "SHOPIFY",
-        password: "A#7890.ATGHIp",
-      }
+      console.error("[v0] Libral credentials not found in integration_configs or env vars")
+      return null
     }
 
     return data.credentials as { username: string; password: string }
@@ -410,11 +407,8 @@ export async function getLibralCredentials(): Promise<{ username: string; passwo
         password: process.env.LIBRAL_PASSWORD,
       }
     }
-    // Credenciales por defecto según documentación
-    return {
-      username: "SHOPIFY",
-      password: "A#7890.ATGHIp",
-    }
+    console.error("[v0] Libral credentials not found in integration_configs or env vars")
+    return null
   }
 }
 

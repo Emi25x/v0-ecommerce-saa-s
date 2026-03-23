@@ -148,6 +148,16 @@ async function _runLibralStockImportInner(
     } else {
       updated += updates.length
     }
+
+    // Checkpoint mid-run for observability
+    if ((i + UPSERT_CHUNK) % 5000 < UPSERT_CHUNK) {
+      await run.checkpoint({
+        rows_processed: Math.min(i + UPSERT_CHUNK, eanArray.length),
+        rows_updated: updated,
+        rows_failed: errors,
+        log_json: { checkpoint: true, batch_offset: i + UPSERT_CHUNK, source_key: sourceKey },
+      })
+    }
   }
 
   // ── 4. Zero out stock for products NOT in Libral's response ─────────────────
