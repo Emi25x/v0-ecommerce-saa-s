@@ -10,7 +10,7 @@ const PAGE_SIZE = 50
  *  1. Catálogo: si hay supplier_catalog_items para este almacén
  *  2. Productos: filtra products.stock_by_source por los source_key de las fuentes vinculadas
  *     (ej: stock_by_source->>'libral' IS NOT NULL para fuente "Libral Argentina")
- *     Si no hay datos en stock_by_source aún, fallback: todos los productos con stock > 0.
+ *     Si no hay fuentes vinculadas, muestra todos los productos con stock > 0.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -65,36 +65,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }
 
     // ── Sin fuentes vinculadas → mostrar todos los productos con stock > 0 ─────
-    // No bloquear el almacén: si aún no tiene fuentes configuradas, muestra el
-    // catálogo completo como fallback para que el usuario pueda ver qué tiene.
-    // (Cuando se vinculen fuentes, se filtrará por stock_by_source[source_key])
     const noLinkedSources = sourceKeys.length === 0
 
     // ── Modo 2: products filtrados por stock_by_source[source_key] ────────────
-    // Los source_keys son cadenas cortas sin guiones (e.g. "libral", "azeta")
-    // por lo que el filtro JSONB funciona correctamente en PostgREST.
-    //
     // Construir filtro OR: stock_by_source->>'key1'.not.is.null,...
     const jsonbOrFilter = noLinkedSources
       ? ""
       : sourceKeys.map((k: string) => `stock_by_source->>${k}.not.is.null`).join(",")
 
-    // Contar cuántos productos ya tienen stock_by_source poblado con alguna de estas claves
-    let hasSourceData = false
-    if (!noLinkedSources && jsonbOrFilter) {
-      const { count: jsonbCount, error: jsonbTestErr } = await supabase
-        .from("products")
-        .select("*", { count: "exact", head: true })
-        .or(jsonbOrFilter)
-
-      if (jsonbTestErr) {
-        console.error("[WAREHOUSE STOCK] JSONB filter error:", jsonbTestErr.message)
-      } else {
-        hasSourceData = (jsonbCount ?? 0) > 0
-      }
-    }
-
-    // Construir queries según si hay datos de stock_by_source o no
+    // Construir queries — cuando hay fuentes vinculadas, SIEMPRE filtrar por ellas.
+    // Si no hay productos que coincidan, devolver vacío (no fallback a "todos").
     let prodQ = supabase
       .from("products")
       .select("id, sku, title, stock, cost_price, stock_by_source")
@@ -102,13 +82,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       .order("stock", { ascending: false })
       .range(offset, offset + PAGE_SIZE - 1)
 
-    // Always filter by stock > 0 for both data and count
     let countQ = supabase.from("products").select("*", { count: "exact", head: true }).gt("stock", 0)
 
-    if (hasSourceData) {
-      // Filtrar por source_key en stock_by_source
-      // Nota: combinar con búsqueda en un solo .or() evita que PostgREST
-      // descarte el primer parámetro or= cuando hay dos en la misma query.
+    if (!noLinkedSources) {
+      // Siempre filtrar por source_key cuando hay fuentes vinculadas
       if (search) {
         const searchFilter = `title.ilike.%${search}%,sku.ilike.%${search}%`
         prodQ = prodQ.or(jsonbOrFilter).or(searchFilter)
@@ -180,7 +157,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json({
       warehouse,
       items,
-      data_source: noLinkedSources ? "products_all" : hasSourceData ? "products_by_source" : "products_fallback",
+      data_source: noLinkedSources ? "products_all" : "products_by_source",
       linked_sources: sourceNames,
       source_keys: sourceKeys,
       pagination: {
