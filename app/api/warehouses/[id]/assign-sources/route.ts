@@ -39,8 +39,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const { source_ids } = body as { source_ids: string[] }
 
     // Si no hay fuentes seleccionadas, desvincular todo y salir
+    // Usar admin client para import_sources (puede tener RLS sin policy para el user)
     if (!source_ids || source_ids.length === 0) {
-      await supabase.from("import_sources").update({ warehouse_id: null }).eq("warehouse_id", warehouseId)
+      await supabaseAdmin.from("import_sources").update({ warehouse_id: null }).eq("warehouse_id", warehouseId)
       return NextResponse.json({
         success: true,
         assigned_sources: 0,
@@ -50,17 +51,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
 
     // Desvincular fuentes de este warehouse que no están en la nueva lista
-    // Usar filter directo para evitar problemas con NOT IN y UUIDs
-    const { data: currentLinked } = await supabase.from("import_sources").select("id").eq("warehouse_id", warehouseId)
+    const { data: currentLinked } = await supabaseAdmin
+      .from("import_sources")
+      .select("id")
+      .eq("warehouse_id", warehouseId)
 
     const toUnlink = (currentLinked ?? []).map((s) => s.id).filter((id) => !source_ids.includes(id))
 
     if (toUnlink.length > 0) {
-      await supabase.from("import_sources").update({ warehouse_id: null }).in("id", toUnlink)
+      await supabaseAdmin.from("import_sources").update({ warehouse_id: null }).in("id", toUnlink)
     }
 
     // Vincular las fuentes seleccionadas
-    const { error: updateError } = await supabase
+    const { error: updateError } = await supabaseAdmin
       .from("import_sources")
       .update({ warehouse_id: warehouseId })
       .in("id", source_ids)

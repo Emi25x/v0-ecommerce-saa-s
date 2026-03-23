@@ -118,6 +118,13 @@ export default function WarehouseDetailPage() {
         )
         .map((s: any) => s.id)
 
+      // Guard: si hay proveedores seleccionados pero 0 fuentes coinciden, avisar
+      if (selectedSupplierIds.length > 0 && sourceIds.length === 0) {
+        setAssignResult("No se encontraron fuentes de importación para los proveedores seleccionados. Verificá que existan import sources configurados.")
+        setAssigning(false)
+        return
+      }
+
       const res = await fetch(`/api/warehouses/${warehouseId}/assign-sources`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

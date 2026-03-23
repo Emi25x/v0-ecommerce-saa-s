@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
+import { createAdminClient } from "@/lib/db/admin"
 
 const PAGE_SIZE = 50
 
@@ -42,7 +43,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const offset = (page - 1) * PAGE_SIZE
 
     // ── Fuentes vinculadas (con source_key) ───────────────────────────────────
-    const { data: linkedSources } = await supabase
+    // Usar admin client para evitar problemas de RLS en import_sources
+    const supabaseAdmin = createAdminClient()
+    const { data: linkedSources } = await supabaseAdmin
       .from("import_sources")
       .select("id, name, source_key")
       .eq("warehouse_id", warehouseId)
