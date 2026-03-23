@@ -40,6 +40,18 @@ export default function WarehouseDetailPage() {
   const [assignResult, setAssignResult] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  /** Bidirectional fuzzy match: supplier code/name ↔ import_source name/source_key */
+  function sourceMatchesSupplier(source: any, supplierCode: string): boolean {
+    const sName = (source.name ?? "").toLowerCase()
+    const sKey = (source.source_key ?? "").toLowerCase()
+    return (
+      sName.includes(supplierCode) ||
+      sKey.includes(supplierCode) ||
+      (sKey && supplierCode.includes(sKey)) ||
+      (sName && supplierCode.includes(sName.split(" ")[0]))
+    )
+  }
+
   const fetchData = useCallback(
     async (currentPage: number, currentSearch: string) => {
       setLoading(true)
@@ -82,11 +94,7 @@ export default function WarehouseDetailPage() {
         const preSelected = sups
           .filter((sup: any) => {
             const code = (sup.code ?? sup.name ?? "").toLowerCase()
-            return srcs.some(
-              (s: any) =>
-                linkedSourceIds.has(s.id) &&
-                (s.name?.toLowerCase().includes(code) || s.source_key?.toLowerCase().includes(code)),
-            )
+            return srcs.some((s: any) => linkedSourceIds.has(s.id) && sourceMatchesSupplier(s, code))
           })
           .map((sup: any) => sup.id)
         setSelectedSupplierIds(preSelected)
@@ -105,7 +113,7 @@ export default function WarehouseDetailPage() {
             const sup = allSuppliers.find((p: any) => p.id === supId)
             if (!sup) return false
             const code = (sup.code ?? sup.name ?? "").toLowerCase()
-            return s.name?.toLowerCase().includes(code) || s.source_key?.toLowerCase().includes(code)
+            return sourceMatchesSupplier(s, code)
           }),
         )
         .map((s: any) => s.id)
@@ -210,9 +218,7 @@ export default function WarehouseDetailPage() {
             <div className="space-y-2 max-h-48 overflow-y-auto">
               {allSuppliers.map((sup: any) => {
                 const code = (sup.code ?? sup.name ?? "").toLowerCase()
-                const matchingSources = allSources.filter(
-                  (s: any) => s.name?.toLowerCase().includes(code) || s.source_key?.toLowerCase().includes(code),
-                )
+                const matchingSources = allSources.filter((s: any) => sourceMatchesSupplier(s, code))
                 const linkedCount = matchingSources.filter((s: any) => s.warehouse_id === warehouseId).length
                 return (
                   <label key={sup.id} className="flex items-center gap-3 cursor-pointer">
