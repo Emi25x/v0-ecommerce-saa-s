@@ -48,9 +48,9 @@ export async function POST(request: NextRequest) {
       force_republish = false,
     } = body
 
-    if (!product_id || !template_id || !account_id) {
+    if (!product_id || !template_id || !account_id || !warehouse_id) {
       return NextResponse.json(
-        { success: false, error: "product_id, template_id y account_id son requeridos" },
+        { success: false, error: "product_id, template_id, account_id y warehouse_id son requeridos" },
         { status: 400 },
       )
     }
@@ -68,71 +68,41 @@ export async function POST(request: NextRequest) {
     if (!loaded.ok) return NextResponse.json(loaded.body, { status: loaded.status })
     const { product, template, account, marginPercent, accessToken, validAccount } = loaded.ctx
 
-    // ── Resolve stock from warehouse (FASE 3 + 4 + 5) ───────────────────────
-    let publishableStock = 0
-    let warehouseStock = 0
-    let safetyStock = 0
-    let stockMode: "warehouse_consolidated" | "legacy_fallback" = "legacy_fallback"
-
-    if (warehouse_id) {
-      // FASE 5: Verify warehouse has source assignments
-      const sources = await getWarehouseSourceKeys(supabase, warehouse_id)
-      if (sources.length === 0) {
-        log.warn("Warehouse has no import sources assigned", "ml.publish.warehouse_no_sources", {
-          product_id,
-          ean: product.ean ?? null,
-          warehouse_id,
-          account_id,
-        })
-        return NextResponse.json(
-          {
-            success: false,
-            error: `El warehouse ${warehouse_id} no tiene fuentes de importación asignadas. Verificar configuración de import_sources.`,
-            warehouse_id,
-          },
-          { status: 400 },
-        )
-      }
-
-      // Resolve warehouse-consolidated stock
-      const resolved = await resolveProductStockForWarehouse(supabase, warehouse_id, [product_id])
-      warehouseStock = resolved.stockMap[product_id] ?? 0
-      stockMode = resolved.mode
-
-      // Apply safety stock
-      safetyStock = await getWarehouseSafetyStock(supabase, warehouse_id)
-      const stockResult = calculatePublishableStock(warehouseStock, safetyStock)
-      publishableStock = stockResult.publishable_stock
-
-      log.info("Stock resolved from warehouse", "ml.publish.stock_resolved", {
+    // ── Resolve stock from warehouse ───────────────────────────────────────
+    // warehouse_id is mandatory — no legacy fallback to products.stock
+    const sources = await getWarehouseSourceKeys(supabase, warehouse_id)
+    if (sources.length === 0) {
+      log.warn("Warehouse has no import sources assigned", "ml.publish.warehouse_no_sources", {
         product_id,
         ean: product.ean ?? null,
         warehouse_id,
-        warehouse_stock: warehouseStock,
-        safety_stock: safetyStock,
-        publishable_stock: publishableStock,
-        source_keys: resolved.source_keys,
-        stock_mode: stockMode,
         account_id,
       })
-    } else {
-      // No warehouse_id provided — log explicit warning, use global stock as last resort
-      warehouseStock = product.stock ?? 0
-      publishableStock = warehouseStock
-
-      log.warn(
-        "No warehouse_id provided — using global products.stock as fallback. This is deprecated.",
-        "ml.publish.stock_resolved",
+      return NextResponse.json(
         {
-          product_id,
-          ean: product.ean ?? null,
-          global_stock: warehouseStock,
-          publishable_stock: publishableStock,
-          stock_mode: "legacy_fallback",
-          account_id,
+          success: false,
+          error: `El warehouse ${warehouse_id} no tiene fuentes de importación asignadas. Verificar configuración de import_sources.`,
+          warehouse_id,
         },
+        { status: 400 },
       )
     }
+
+    const resolved = await resolveProductStockForWarehouse(supabase, warehouse_id, [product_id])
+    const warehouseStock = resolved.stockMap[product_id] ?? 0
+    const safetyStock = await getWarehouseSafetyStock(supabase, warehouse_id)
+    const { publishable_stock: publishableStock } = calculatePublishableStock(warehouseStock, safetyStock)
+
+    log.info("Stock resolved from warehouse", "ml.publish.stock_resolved", {
+      product_id,
+      ean: product.ean ?? null,
+      warehouse_id,
+      warehouse_stock: warehouseStock,
+      safety_stock: safetyStock,
+      publishable_stock: publishableStock,
+      source_keys: resolved.source_keys,
+      account_id,
+    })
 
     // ── FASE 4: Pre-publication stock validation ─────────────────────────────
     if (publishableStock <= 0 && !preview_only) {
@@ -210,8 +180,7 @@ export async function POST(request: NextRequest) {
     console.log("[v0] ML Title from template:", mlTitle)
 
     // ── Build ML item (using publishable_stock instead of global stock) ─────
-    // Cap at 50 per ML rules
-    const stockForMl = Math.min(publishableStock, 50)
+    const stockForMl = publishableStock
 
     let mlItem: Record<string, unknown>
     if (publish_mode === "catalog") {
@@ -265,7 +234,7 @@ export async function POST(request: NextRequest) {
             warehouse_stock: warehouseStock,
             safety_stock: safetyStock,
             publishable_stock: publishableStock,
-            stock_mode: stockMode,
+            stock_mode: "warehouse_consolidated",
           },
           already_published: alreadyPublishedInfo.exists
             ? { item_id: alreadyPublishedInfo.item_id, source: alreadyPublishedInfo.source }
@@ -345,7 +314,7 @@ export async function POST(request: NextRequest) {
       safety_stock: safetyStock,
       publishable_stock: publishableStock,
       stock_sent_to_ml: stockForMl,
-      stock_mode: stockMode,
+      stock_mode: "warehouse_consolidated",
       account_id,
     })
 
@@ -363,7 +332,7 @@ export async function POST(request: NextRequest) {
         safety_stock: safetyStock,
         publishable_stock: publishableStock,
         stock_sent_to_ml: stockForMl,
-        stock_mode: stockMode,
+        stock_mode: "warehouse_consolidated",
       },
       warnings: warnings.length > 0 ? warnings : undefined,
       image_url_sent: product.image_url || null,

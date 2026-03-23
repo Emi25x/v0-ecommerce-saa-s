@@ -46,6 +46,13 @@ interface Account {
   ml_user_id: string
 }
 
+interface Warehouse {
+  id: string
+  name: string
+  is_default: boolean
+  safety_stock: number
+}
+
 interface PublishPreview {
   product: Product
   calculated_price: number
@@ -63,9 +70,11 @@ export default function MLPublishPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set())
   const [selectedTemplate, setSelectedTemplate] = useState<string>("")
   const [selectedAccount, setSelectedAccount] = useState<string>("")
+  const [selectedWarehouse, setSelectedWarehouse] = useState<string>("")
   const [publishMode, setPublishMode] = useState<"linked" | "catalog" | "traditional">("linked")
   const [previews, setPreviews] = useState<PublishPreview[]>([])
   const [publishing, setPublishing] = useState(false)
@@ -191,6 +200,15 @@ export default function MLPublishPage() {
       setAccounts(accountsData.accounts || [])
       if (accountsData.accounts?.length > 0) {
         setSelectedAccount(accountsData.accounts[0].id)
+      }
+
+      // Fetch warehouses
+      const warehousesRes = await fetch("/api/warehouses")
+      const warehousesData = await warehousesRes.json()
+      setWarehouses(warehousesData.warehouses || [])
+      if (warehousesData.warehouses?.length > 0) {
+        const defaultWh = warehousesData.warehouses.find((w: Warehouse) => w.is_default)
+        setSelectedWarehouse(defaultWh?.id || warehousesData.warehouses[0].id)
       }
 
       // Fetch price profiles
@@ -349,6 +367,7 @@ export default function MLPublishPage() {
             product_id: productId,
             template_id: selectedTemplate,
             account_id: selectedAccount,
+            warehouse_id: selectedWarehouse,
             preview_only: false,
             publish_mode: publishMode,
             use_iva: useIva,
@@ -488,6 +507,7 @@ export default function MLPublishPage() {
             product_id: productId,
             template_id: selectedTemplate,
             account_id: selectedAccount,
+            warehouse_id: selectedWarehouse,
             preview_only: true,
             publish_mode: publishMode,
             use_iva: useIva,
@@ -598,6 +618,7 @@ export default function MLPublishPage() {
             product_id: updatedPreviews[i].product.id,
             template_id: selectedTemplate,
             account_id: selectedAccount,
+            warehouse_id: selectedWarehouse,
             preview_only: false,
             publish_mode: publishMode,
             use_iva: useIva,
@@ -665,6 +686,7 @@ export default function MLPublishPage() {
             product_id: productId,
             template_id: selectedTemplate,
             account_id: selectedAccount,
+            warehouse_id: selectedWarehouse,
             preview_only: false,
             publish_mode: publishMode,
             use_iva: useIva,
@@ -746,7 +768,7 @@ export default function MLPublishPage() {
             <CardHeader>
               <CardTitle>Configuracion</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-3">
+            <CardContent className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-2">
                 <Label>Plantilla</Label>
                 <Select value={selectedTemplate} onValueChange={setSelectedTemplate}>
@@ -772,6 +794,21 @@ export default function MLPublishPage() {
                     {accounts.map((a) => (
                       <SelectItem key={a.id} value={a.id}>
                         {a.nickname}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Warehouse</Label>
+                <Select value={selectedWarehouse} onValueChange={setSelectedWarehouse}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Seleccionar warehouse" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {warehouses.map((w) => (
+                      <SelectItem key={w.id} value={w.id}>
+                        {w.name}{w.is_default ? " (default)" : ""}{w.safety_stock > 0 ? ` — safety: ${w.safety_stock}` : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -852,7 +889,7 @@ export default function MLPublishPage() {
                     <span> (se procesarán {Math.min(testLimit, totalAvailable).toLocaleString()})</span>
                   )}
                 </div>
-                <Button onClick={openPublishModal} disabled={!selectedTemplate || !selectedAccount} size="lg">
+                <Button onClick={openPublishModal} disabled={!selectedTemplate || !selectedAccount || !selectedWarehouse} size="lg">
                   <Upload className="h-4 w-4 mr-2" />
                   {bulkAction === "publish" ? "Iniciar Publicación Masiva" : "Actualizar Precios"}
                 </Button>
@@ -1040,7 +1077,7 @@ export default function MLPublishPage() {
                     Vista previa
                   </Button>
 
-                  <Button onClick={openPublishModal} disabled={!selectedTemplate || !selectedAccount}>
+                  <Button onClick={openPublishModal} disabled={!selectedTemplate || !selectedAccount || !selectedWarehouse}>
                     <Upload className="h-4 w-4 mr-2" />
                     {selectedProducts.size > 0
                       ? `Publicar ${selectedProducts.size} seleccionados`
@@ -1192,6 +1229,14 @@ export default function MLPublishPage() {
                             ? `${selectedProducts.size} seleccionados`
                             : `Todos (${totalAvailable.toLocaleString()})`
                           : `${testLimit} de ${totalAvailable.toLocaleString()}`}
+                      </li>
+                      <li>
+                        <strong>Warehouse:</strong>{" "}
+                        {warehouses.find((w) => w.id === selectedWarehouse)?.name ?? "—"}
+                        {(() => {
+                          const wh = warehouses.find((w) => w.id === selectedWarehouse)
+                          return wh?.safety_stock ? ` (safety: ${wh.safety_stock})` : ""
+                        })()}
                       </li>
                       <li>
                         <strong>Perfil:</strong>{" "}
