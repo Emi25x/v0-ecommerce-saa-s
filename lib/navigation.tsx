@@ -168,6 +168,7 @@ export const navigation: NavSection[] = [
       { href: "/inventory/sources/batch-import", label: "Importación inicial", icon: Upload },
       { href: "/suppliers", label: "Proveedores", icon: Truck, match: "exact" },
       { href: "/warehouses", label: "Almacenes", icon: Home, match: "exact" },
+      { href: "/publication/candidates", label: "Candidatos publicación", icon: CheckCircle2, match: "exact" },
     ],
   },
 
