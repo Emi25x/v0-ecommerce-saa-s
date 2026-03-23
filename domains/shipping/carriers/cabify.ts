@@ -582,7 +582,34 @@ export class CabifyLogisticsClient {
         const msg = (data as any)?.message ?? (data as any)?.error ?? res.statusText
         throw new Error(`Cabify Logistics API error ${res.status}: ${msg}`)
       }
-      return Array.isArray(data) ? data : []
+      // La API puede devolver un array directo o un objeto con shipping_types/data
+      if (Array.isArray(data)) return data
+      if (Array.isArray(data?.shipping_types)) return data.shipping_types
+      if (Array.isArray(data?.data)) return data.data
+      if (Array.isArray(data?.results)) return data.results
+      return []
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  /**
+   * Raw response de shipping_types para diagnóstico.
+   * Devuelve el JSON tal cual viene de la API.
+   */
+  async getShippingTypesRaw(lat = -34.603722, lon = -58.381592): Promise<{ status: number; body: unknown; url: string }> {
+    const token = await this.getBearerToken()
+    const url = `${this.baseUrl}${CabifyLogisticsClient.BASE_PATHS.shippingTypes}?location=${lat},${lon}`
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), this.timeout)
+    try {
+      const res = await fetch(url, {
+        method: "GET",
+        signal: controller.signal,
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      })
+      const body = await res.json().catch(() => null)
+      return { status: res.status, body, url }
     } finally {
       clearTimeout(timer)
     }
@@ -792,17 +819,34 @@ export class CabifyLogisticsClient {
    * 1. Obtiene token OAuth (valida client_id/client_secret).
    * 2. GET /v1/shipping_types/available para confirmar acceso a la API.
    */
-  async healthCheck(): Promise<{ ok: boolean; message: string }> {
+  async healthCheck(): Promise<{ ok: boolean; message: string; debug?: unknown }> {
     try {
       await this.getBearerToken()
     } catch (err: any) {
       return { ok: false, message: err.message }
     }
     try {
-      const types = await this.getShippingTypes()
+      const [types, raw] = await Promise.all([
+        this.getShippingTypes(),
+        this.getShippingTypesRaw(),
+      ])
+      const debug: Record<string, unknown> = {
+        shipping_types_parsed: types,
+        shipping_types_raw: raw,
+      }
+      // Intentar obtener info extra de la cuenta
+      try {
+        const hubs = await this.listHubs()
+        debug.hubs = hubs
+      } catch { /* ignorar */ }
+      try {
+        const users = await this.listUsers()
+        debug.users = users
+      } catch { /* ignorar */ }
       return {
         ok: true,
         message: `Conexión exitosa con Cabify Logistics API — ${types.length} tipo(s) de envío disponibles`,
+        debug,
       }
     } catch (err: any) {
       if (err.name === "AbortError")
