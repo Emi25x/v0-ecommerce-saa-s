@@ -204,6 +204,47 @@ export async function getWarehouseConsolidatedStock(
   }
 }
 
+// ── Publishable stock (warehouse stock minus safety stock) ────────────────────
+
+export interface PublishableStockResult {
+  warehouse_stock: number
+  safety_stock: number
+  publishable_stock: number
+}
+
+/**
+ * Calculate publishable stock for a single product in a warehouse.
+ * publishable_stock = max(0, warehouse_stock - safety_stock)
+ */
+export function calculatePublishableStock(warehouseStock: number, safetyStock: number): PublishableStockResult {
+  return {
+    warehouse_stock: warehouseStock,
+    safety_stock: safetyStock,
+    publishable_stock: Math.max(0, warehouseStock - safetyStock),
+  }
+}
+
+/**
+ * Fetch safety_stock for a warehouse. Returns 0 if not found or column missing.
+ */
+export async function getWarehouseSafetyStock(
+  supabase: SupabaseClient,
+  warehouseId: string,
+): Promise<number> {
+  try {
+    const { data, error } = await supabase
+      .from("warehouses")
+      .select("safety_stock")
+      .eq("id", warehouseId)
+      .single()
+
+    if (error || !data) return 0
+    return (data as any).safety_stock ?? 0
+  } catch {
+    return 0
+  }
+}
+
 // ── Per-product stock resolution for marketplace push ─────────────────────────
 
 export interface ResolveStockResult {
