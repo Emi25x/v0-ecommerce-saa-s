@@ -580,6 +580,18 @@ export async function loadPublishContext(params: {
     return { ok: false, status: 404, body: { success: false, error: "Plantilla no encontrada" } }
   }
 
+  // Validate template belongs to the requested account
+  if (template.account_id && template.account_id !== accountId) {
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        success: false,
+        error: `La plantilla "${template.name}" pertenece a otra cuenta ML (${template.account_id}). Usá una plantilla de la cuenta seleccionada.`,
+      },
+    }
+  }
+
   // Resolve margin from price profile
   let marginPercent = template.margin_percent || 20
   if (template.price_profile_id) {
