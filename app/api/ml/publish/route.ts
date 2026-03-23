@@ -23,15 +23,25 @@ import {
   buildCatalogItem,
   validateTraditionalItem,
 } from "@/domains/mercadolibre/publications/builder"
+import {
+  resolveProductStockForWarehouse,
+  getWarehouseSafetyStock,
+  calculatePublishableStock,
+  getWarehouseSourceKeys,
+} from "@/domains/inventory/stock-helpers"
+import { createStructuredLogger, genRequestId } from "@/lib/logger"
 
 // POST: Publicar un producto del catalogo a ML
 export async function POST(request: NextRequest) {
+  const log = createStructuredLogger({ request_id: genRequestId() })
+
   try {
     const body = await request.json()
     const {
       product_id,
       template_id,
       account_id,
+      warehouse_id,
       override_price,
       preview_only = true,
       publish_mode = "linked",
@@ -57,6 +67,101 @@ export async function POST(request: NextRequest) {
     })
     if (!loaded.ok) return NextResponse.json(loaded.body, { status: loaded.status })
     const { product, template, account, marginPercent, accessToken, validAccount } = loaded.ctx
+
+    // ── Resolve stock from warehouse (FASE 3 + 4 + 5) ───────────────────────
+    let publishableStock = 0
+    let warehouseStock = 0
+    let safetyStock = 0
+    let stockMode: "warehouse_consolidated" | "legacy_fallback" = "legacy_fallback"
+
+    if (warehouse_id) {
+      // FASE 5: Verify warehouse has source assignments
+      const sources = await getWarehouseSourceKeys(supabase, warehouse_id)
+      if (sources.length === 0) {
+        log.warn("Warehouse has no import sources assigned", "ml.publish.warehouse_no_sources", {
+          product_id,
+          ean: product.ean ?? null,
+          warehouse_id,
+          account_id,
+        })
+        return NextResponse.json(
+          {
+            success: false,
+            error: `El warehouse ${warehouse_id} no tiene fuentes de importación asignadas. Verificar configuración de import_sources.`,
+            warehouse_id,
+          },
+          { status: 400 },
+        )
+      }
+
+      // Resolve warehouse-consolidated stock
+      const resolved = await resolveProductStockForWarehouse(supabase, warehouse_id, [product_id])
+      warehouseStock = resolved.stockMap[product_id] ?? 0
+      stockMode = resolved.mode
+
+      // Apply safety stock
+      safetyStock = await getWarehouseSafetyStock(supabase, warehouse_id)
+      const stockResult = calculatePublishableStock(warehouseStock, safetyStock)
+      publishableStock = stockResult.publishable_stock
+
+      log.info("Stock resolved from warehouse", "ml.publish.stock_resolved", {
+        product_id,
+        ean: product.ean ?? null,
+        warehouse_id,
+        warehouse_stock: warehouseStock,
+        safety_stock: safetyStock,
+        publishable_stock: publishableStock,
+        source_keys: resolved.source_keys,
+        stock_mode: stockMode,
+        account_id,
+      })
+    } else {
+      // No warehouse_id provided — log explicit warning, use global stock as last resort
+      warehouseStock = product.stock ?? 0
+      publishableStock = warehouseStock
+
+      log.warn(
+        "No warehouse_id provided — using global products.stock as fallback. This is deprecated.",
+        "ml.publish.stock_resolved",
+        {
+          product_id,
+          ean: product.ean ?? null,
+          global_stock: warehouseStock,
+          publishable_stock: publishableStock,
+          stock_mode: "legacy_fallback",
+          account_id,
+        },
+      )
+    }
+
+    // ── FASE 4: Pre-publication stock validation ─────────────────────────────
+    if (publishableStock <= 0 && !preview_only) {
+      log.info("Publication skipped — no publishable stock", "ml.publish.skipped_no_stock", {
+        product_id,
+        ean: product.ean ?? null,
+        warehouse_id: warehouse_id ?? null,
+        warehouse_stock: warehouseStock,
+        safety_stock: safetyStock,
+        publishable_stock: publishableStock,
+        account_id,
+      })
+      return NextResponse.json(
+        {
+          success: false,
+          skipped: true,
+          reason: "no_publishable_stock",
+          message: `Stock publicable es 0. warehouse_stock=${warehouseStock}, safety_stock=${safetyStock}, publishable_stock=${publishableStock}`,
+          product_id,
+          product_ean: product.ean,
+          product_title: product.title,
+          warehouse_id: warehouse_id ?? null,
+          warehouse_stock: warehouseStock,
+          safety_stock: safetyStock,
+          publishable_stock: publishableStock,
+        },
+        { status: 200 },
+      )
+    }
 
     // ── Check duplicates ────────────────────────────────────────────────────
     const alreadyPublishedInfo = await checkAlreadyPublished({
@@ -104,7 +209,10 @@ export async function POST(request: NextRequest) {
     console.log("[v0] Product image_url from DB:", product.image_url)
     console.log("[v0] ML Title from template:", mlTitle)
 
-    // ── Build ML item ───────────────────────────────────────────────────────
+    // ── Build ML item (using publishable_stock instead of global stock) ─────
+    // Cap at 50 per ML rules
+    const stockForMl = Math.min(publishableStock, 50)
+
     let mlItem: Record<string, unknown>
     if (publish_mode === "catalog") {
       if (!catalogProductId)
@@ -116,9 +224,11 @@ export async function POST(request: NextRequest) {
           },
           { status: 400 },
         )
-      mlItem = buildCatalogItem({ template, catalogProductId, finalPrice, mlPictureId, stock: product.stock })
+      mlItem = buildCatalogItem({ template, catalogProductId, finalPrice, mlPictureId, stock: stockForMl })
     } else {
-      mlItem = buildTraditionalItem({ product, template, mlTitle, finalPrice, mlPictureId })
+      // Override product.stock with publishable stock for the builder
+      const productWithWarehouseStock = { ...product, stock: stockForMl }
+      mlItem = buildTraditionalItem({ product: productWithWarehouseStock, template, mlTitle, finalPrice, mlPictureId })
     }
 
     // ── Validate ────────────────────────────────────────────────────────────
@@ -150,6 +260,13 @@ export async function POST(request: NextRequest) {
           multiplier: Math.round(finalPrice / product.cost_price),
           exchange_rate: priceCalculation?.exchangeRate || 1765,
           ml_item: mlItem,
+          stock_info: {
+            warehouse_id: warehouse_id ?? null,
+            warehouse_stock: warehouseStock,
+            safety_stock: safetyStock,
+            publishable_stock: publishableStock,
+            stock_mode: stockMode,
+          },
           already_published: alreadyPublishedInfo.exists
             ? { item_id: alreadyPublishedInfo.item_id, source: alreadyPublishedInfo.source }
             : null,
@@ -219,6 +336,19 @@ export async function POST(request: NextRequest) {
       catalogListing,
     })
 
+    log.info("Publication completed", "ml.publish.success", {
+      product_id,
+      ean: product.ean ?? null,
+      ml_item_id: mlData.id,
+      warehouse_id: warehouse_id ?? null,
+      warehouse_stock: warehouseStock,
+      safety_stock: safetyStock,
+      publishable_stock: publishableStock,
+      stock_sent_to_ml: stockForMl,
+      stock_mode: stockMode,
+      account_id,
+    })
+
     return NextResponse.json({
       success: true,
       ml_item_id: mlData.id,
@@ -227,6 +357,14 @@ export async function POST(request: NextRequest) {
       price_mode: priceMode,
       product_title: product.title,
       product_ean: product.ean,
+      stock_info: {
+        warehouse_id: warehouse_id ?? null,
+        warehouse_stock: warehouseStock,
+        safety_stock: safetyStock,
+        publishable_stock: publishableStock,
+        stock_sent_to_ml: stockForMl,
+        stock_mode: stockMode,
+      },
       warnings: warnings.length > 0 ? warnings : undefined,
       image_url_sent: product.image_url || null,
       ml_picture_id: mlPictureId || null,

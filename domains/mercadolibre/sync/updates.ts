@@ -7,7 +7,7 @@
  */
 
 import { getValidAccessToken } from "@/lib/mercadolibre"
-import { resolveProductStockForWarehouse } from "@/domains/inventory/stock-helpers"
+import { resolveProductStockForWarehouse, getWarehouseSafetyStock, calculatePublishableStock } from "@/domains/inventory/stock-helpers"
 import { createStructuredLogger, genRequestId } from "@/lib/logger"
 
 export interface SyncUpdatesParams {
@@ -131,6 +131,22 @@ export async function executeSyncUpdates(supabase: any, params: SyncUpdatesParam
           stock_mode: "legacy_product",
           account_id,
           resolved: missingIds.length,
+        })
+      }
+    }
+
+    // Apply safety_stock: reduce all stock values by the warehouse safety buffer
+    if (warehouse_id) {
+      const safetyStock = await getWarehouseSafetyStock(supabase, warehouse_id)
+      if (safetyStock > 0) {
+        for (const id of Object.keys(stockMap)) {
+          stockMap[id] = Math.max(0, stockMap[id] - safetyStock)
+        }
+        log.info("Safety stock applied to sync", "ml_sync_updates.safety_stock_applied", {
+          account_id,
+          warehouse_id,
+          safety_stock: safetyStock,
+          products_affected: Object.keys(stockMap).length,
         })
       }
     }
