@@ -31,9 +31,9 @@ export async function GET(request: NextRequest) {
     }
 
     const FULL_SELECT =
-      "id, sku, title, ean, isbn, price, stock, source, created_at, updated_at, image_url, author, brand, language, pages, binding, category, description, year_edition, height, width, thickness, canonical_weight_g, cost_price, custom_fields"
+      "id, sku, title, ean, isbn, price, stock, source, stock_by_source, created_at, updated_at, image_url, author, brand, language, pages, binding, category, description, year_edition, height, width, thickness, canonical_weight_g, cost_price, custom_fields"
     const SAFE_SELECT =
-      "id, sku, title, ean, price, stock, source, created_at, updated_at, image_url, brand, category, description, custom_fields"
+      "id, sku, title, ean, price, stock, source, stock_by_source, created_at, updated_at, image_url, brand, category, description, custom_fields"
     const countType = search ? "exact" : "estimated"
 
     function buildQuery(selectCols: string) {
@@ -71,21 +71,25 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const { data: importSources } = await supabase.from("import_sources").select("id, name")
+    const { data: importSources } = await supabase.from("import_sources").select("id, name, source_key")
 
     const sourceMapById = new Map<string, string>()
     const sourceMapByName = new Map<string, string>()
+    const sourceMapByKey = new Map<string, string>()
     if (importSources) {
       for (const source of importSources) {
         sourceMapById.set(source.id, source.name)
         sourceMapByName.set(source.name, source.name)
+        if (source.source_key) {
+          sourceMapByKey.set(source.source_key, source.name)
+        }
       }
     }
 
     const normalizedProducts = products?.map((product: any) => {
       const sourceIds = Array.isArray(product.source) ? product.source : product.source ? [product.source] : []
 
-      const sourceNames = sourceIds
+      let sourceNames = sourceIds
         .map((idOrName: string) => {
           const nameById = sourceMapById.get(idOrName)
           if (nameById) return nameById
@@ -95,8 +99,19 @@ export async function GET(request: NextRequest) {
         })
         .filter((name: string) => name)
 
+      // If source column is empty, derive from stock_by_source keys
+      if (sourceNames.length === 0 && product.stock_by_source && typeof product.stock_by_source === "object") {
+        const sbsKeys = Object.keys(product.stock_by_source).filter(
+          (k) => product.stock_by_source[k] != null && product.stock_by_source[k] > 0
+        )
+        sourceNames = sbsKeys
+          .map((key) => sourceMapByKey.get(key) || key)
+          .filter((v, i, a) => a.indexOf(v) === i) // dedupe
+      }
+
+      const { stock_by_source, ...rest } = product
       return {
-        ...product,
+        ...rest,
         source: sourceNames,
       }
     })
