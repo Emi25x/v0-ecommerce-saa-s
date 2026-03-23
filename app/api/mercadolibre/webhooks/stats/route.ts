@@ -1,9 +1,17 @@
+/**
+ * @internal Webhook queue statistics — pending, processed, failed counts + recent notifications.
+ * Protected by requireUser() — only authenticated users can access.
+ */
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/db/server"
+import { createAdminClient } from "@/lib/db/admin"
+import { requireUser } from "@/lib/auth/require-auth"
 
 export async function GET(request: NextRequest) {
+  const auth = await requireUser()
+  if (auth.error) return auth.response
+
   try {
-    const supabase = await createClient()
+    const supabase = createAdminClient()
 
     // Verificar si las tablas existen
     const { data: queueData, error: queueError } = await supabase

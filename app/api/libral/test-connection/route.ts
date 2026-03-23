@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { getLibralToken } from "@/domains/suppliers/libral/client"
+import { requireUser } from "@/lib/auth/require-auth"
 
 async function testLibralConnection(token: string) {
   const testConfigs = [
@@ -114,8 +115,10 @@ async function testLibralConnection(token: string) {
 }
 
 export async function GET() {
+  const auth = await requireUser()
+  if (auth.error) return auth.response
+
   try {
-    console.log("[v0] Testing Libral connection with multiple body formats...")
 
     const token = await getLibralToken()
     const results = await testLibralConnection(token)

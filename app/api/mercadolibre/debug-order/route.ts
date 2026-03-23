@@ -1,18 +1,16 @@
 /**
  * @internal Development-only diagnostic endpoint.
  * Used by: app/(dashboard)/billing/debug/page.tsx
+ * Protected by requireUser() — only authenticated users can access.
  */
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/db/server"
 import { createAdminClient } from "@/lib/db/admin"
+import { requireUser } from "@/lib/auth/require-auth"
 
 // GET /api/mercadolibre/debug-order?account_id=xxx&order_id=yyy
 export async function GET(request: NextRequest) {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const auth = await requireUser()
+  if (auth.error) return auth.response
 
   const accountId = request.nextUrl.searchParams.get("account_id")
   const orderId = request.nextUrl.searchParams.get("order_id")
@@ -31,10 +29,10 @@ export async function GET(request: NextRequest) {
 
   if (!ml) return NextResponse.json({ error: "Cuenta no encontrada" }, { status: 404 })
 
-  const auth = `Bearer ${ml.access_token}`
+  const mlAuth = `Bearer ${ml.access_token}`
 
   // Paso 1: GET /orders/{id} → leer buyer.billing_info.id
-  const orderRes = await fetch(`https://api.mercadolibre.com/orders/${orderId}`, { headers: { Authorization: auth } })
+  const orderRes = await fetch(`https://api.mercadolibre.com/orders/${orderId}`, { headers: { Authorization: mlAuth } })
   const orderData = await orderRes.json()
   const billingInfoId = orderData?.buyer?.billing_info?.id
   const contentMissing = orderRes.headers.get("x-content-missing") ?? null
@@ -44,7 +42,7 @@ export async function GET(request: NextRequest) {
   let billingStatusA = null
   if (billingInfoId) {
     const billingRes = await fetch(`https://api.mercadolibre.com/orders/billing-info/MLA/${billingInfoId}`, {
-      headers: { Authorization: auth },
+      headers: { Authorization: mlAuth },
     })
     billingStatusA = billingRes.status
     billingDataA = billingRes.ok ? await billingRes.json() : await billingRes.text()
@@ -52,14 +50,14 @@ export async function GET(request: NextRequest) {
 
   // Paso 2b V2: GET /orders/{id}/billing_info con x-version: 2
   const billingResBv2 = await fetch(`https://api.mercadolibre.com/orders/${orderId}/billing_info`, {
-    headers: { Authorization: auth, "x-version": "2" },
+    headers: { Authorization: mlAuth, "x-version": "2" },
   })
   const billingStatusBv2 = billingResBv2.status
   const billingDataBv2 = billingResBv2.ok ? await billingResBv2.json() : await billingResBv2.text()
 
   // Paso 2b V1: GET /orders/{id}/billing_info sin header (legacy)
   const billingResBv1 = await fetch(`https://api.mercadolibre.com/orders/${orderId}/billing_info`, {
-    headers: { Authorization: auth },
+    headers: { Authorization: mlAuth },
   })
   const billingStatusBv1 = billingResBv1.status
   const billingDataBv1 = billingResBv1.ok ? await billingResBv1.json() : await billingResBv1.text()

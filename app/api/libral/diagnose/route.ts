@@ -4,10 +4,14 @@
  */
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
+import { requireUser } from "@/lib/auth/require-auth"
 
 const DB_NAME = "GN6LIBRAL"
 
 export async function GET() {
+  const auth = await requireUser()
+  if (auth.error) return auth.response
+
   try {
     const supabase = await createClient()
 
