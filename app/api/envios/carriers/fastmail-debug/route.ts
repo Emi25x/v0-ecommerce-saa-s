@@ -17,6 +17,7 @@
  */
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/db/admin"
+import { requireUser } from "@/lib/auth/require-auth"
 import {
   createFastMailClient,
   type FastMailConfig,
@@ -30,6 +31,9 @@ const toVal = (r: PromiseSettledResult<any>) =>
   r.status === "fulfilled" ? r.value : { ERROR: r.reason?.message ?? String(r.reason) }
 
 export async function GET(request: NextRequest) {
+  const auth = await requireUser()
+  if (auth.error) return auth.response
+
   const { searchParams } = request.nextUrl
   const origen_cp = searchParams.get("origen_cp") ?? "1000"
   const destino_cp = searchParams.get("destino_cp") ?? "1900"

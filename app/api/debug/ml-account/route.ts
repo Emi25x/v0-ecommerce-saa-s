@@ -1,12 +1,16 @@
 /**
- * @internal Development-only diagnostic endpoint.
+ * @internal Diagnostic endpoint — ML account details (without sensitive tokens).
  * Used by: app/(dashboard)/ml/matcher/page.tsx, app/(dashboard)/ml/importer/page.tsx
- * Shows ML account details (without sensitive tokens).
+ * Protected by requireUser() — only authenticated users can access.
  */
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/db/admin"
+import { requireUser } from "@/lib/auth/require-auth"
 
 export async function GET(request: NextRequest) {
+  const auth = await requireUser()
+  if (auth.error) return auth.response
+
   try {
     const { searchParams } = new URL(request.url)
     const accountId = searchParams.get("account_id")
@@ -15,9 +19,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "account_id required" }, { status: 400 })
     }
 
-    console.log(`[DEBUG-ML-ACCOUNT] Looking up account: ${accountId}`)
-
-    // Usar service role para bypassear RLS
     const supabase = createAdminClient()
 
     const { data: account, error } = await supabase
@@ -27,7 +28,6 @@ export async function GET(request: NextRequest) {
       .single()
 
     if (error) {
-      console.error(`[DEBUG-ML-ACCOUNT] Error fetching account:`, error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
@@ -35,21 +35,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Account not found" }, { status: 404 })
     }
 
-    // Retornar sin tokens sensibles
-    const response = {
+    return NextResponse.json({
       id: account.id,
       name: account.nickname,
       ml_user_id: account.ml_user_id,
       token_expires_at: account.token_expires_at,
       has_refresh_token: !!account.refresh_token,
       token_valid: account.token_expires_at ? new Date(account.token_expires_at) > new Date() : false,
-    }
-
-    console.log(`[DEBUG-ML-ACCOUNT] Account found:`, response)
-
-    return NextResponse.json(response)
+    })
   } catch (error: any) {
-    console.error("[DEBUG-ML-ACCOUNT] Error:", error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

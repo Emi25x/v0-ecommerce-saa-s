@@ -1,11 +1,16 @@
 import { createAdminClient } from "@/lib/db/admin"
 import { NextRequest, NextResponse } from "next/server"
+import { requireUser } from "@/lib/auth/require-auth"
 
 /**
- * GET /api/ml/matcher/diagnostic?account_id=xxx
- * Diagnóstico completo del matcher: métricas de identificadores en publications y products.
+ * @internal Diagnostic endpoint — Matcher metrics (matched vs unmatched publications).
+ * Used by: app/(dashboard)/ml/matcher/page.tsx
+ * Protected by requireUser() — only authenticated users can access.
  */
 export async function GET(request: NextRequest) {
+  const auth = await requireUser()
+  if (auth.error) return auth.response
+
   try {
     const accountId = request.nextUrl.searchParams.get("account_id")
     if (!accountId) return NextResponse.json({ ok: false, error: "missing_account_id" }, { status: 400 })

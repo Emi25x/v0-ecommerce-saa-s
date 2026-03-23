@@ -1,20 +1,23 @@
 /**
- * @internal Development-only diagnostic endpoint.
+ * @internal Diagnostic endpoint — Product count and duplicate diagnostics.
  * Used by: hooks/use-import-sources.ts
- * Product count and duplicate diagnostics.
+ * Protected by requireUser() — only authenticated users can access.
  */
-import { createClient } from "@supabase/supabase-js"
 import { NextResponse } from "next/server"
+import { createAdminClient } from "@/lib/db/admin"
+import { requireUser } from "@/lib/auth/require-auth"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 export const maxDuration = 10
 
 export async function GET() {
-  try {
-    const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+  const auth = await requireUser()
+  if (auth.error) return auth.response
 
-    // Solo contar total de productos
+  try {
+    const supabase = createAdminClient()
+
     const { count } = await supabase.from("products").select("*", { count: "exact", head: true })
 
     return NextResponse.json({
@@ -31,7 +34,7 @@ export async function GET() {
         error: error.message,
         useSqlScripts: true,
       },
-      { status: 200 }, // Devolver 200 en lugar de 500 para evitar errores en el cliente
+      { status: 200 },
     )
   }
 }

@@ -1,15 +1,22 @@
+/**
+ * @internal Webhook queue processor — processes queued ML notifications.
+ * Can be called from a cron job or manually from the UI.
+ * Protected by requireCron() — accepts CRON_SECRET or user session.
+ */
 import { type NextRequest, NextResponse } from "next/server"
-import { createClient } from "@/lib/db/server"
+import { createAdminClient } from "@/lib/db/admin"
 import { getValidAccessToken } from "@/lib/mercadolibre"
 import { createStructuredLogger, genRequestId } from "@/lib/logger"
+import { requireCron } from "@/lib/auth/require-auth"
 
-// Endpoint para procesar las notificaciones en cola
-// Este endpoint se puede llamar desde un cron job o manualmente
 const log = createStructuredLogger({ request_id: genRequestId() })
 
 export async function POST(request: NextRequest) {
+  const cronAuth = await requireCron(request)
+  if (cronAuth.error) return cronAuth.response
+
   try {
-    const supabase = await createClient()
+    const supabase = createAdminClient()
 
     const { data: notifications, error } = await supabase
       .from("ml_webhook_queue")
@@ -117,7 +124,7 @@ async function processNotification(notification: any) {
 }
 
 async function processOrderUpdate(orderData: any, userId: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   log.info("Processing order update", "webhook.order", { order_id: orderData.id })
 
@@ -182,7 +189,7 @@ async function processOrderUpdate(orderData: any, userId: string) {
 }
 
 async function processShipmentUpdate(shipmentData: any, userId: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   log.info("Processing shipment update", "webhook.shipment", { shipment_id: shipmentData.id })
 
@@ -216,7 +223,7 @@ async function processShipmentUpdate(shipmentData: any, userId: string) {
 }
 
 async function processItemUpdate(itemData: any, userId: string) {
-  const supabase = await createClient()
+  const supabase = createAdminClient()
 
   log.info("Processing item update", "webhook.item", { item_id: itemData.id })
 
