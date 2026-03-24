@@ -18,6 +18,12 @@ interface FastMailSucursal {
   cp?: number | string
 }
 
+interface CabifyHub {
+  external_id: string
+  name: string
+  address?: string
+}
+
 interface Carrier {
   id: string
   name: string
@@ -53,6 +59,12 @@ export default function CarrierConfigPage() {
   const [sucursalesError, setSucursalesError] = useState<string | null>(null)
   const [selectedSucursal, setSelectedSucursal] = useState("")
 
+  // Cabify: hubs
+  const [cabifyHubs, setCabifyHubs] = useState<CabifyHub[]>([])
+  const [cabifyHubsLoading, setCabifyHubsLoading] = useState(false)
+  const [cabifyHubsError, setCabifyHubsError] = useState<string | null>(null)
+  const [selectedDefaultHub, setSelectedDefaultHub] = useState("")
+
   const isCabify = slug === "cabify"
   const isFastmail = slug === "fastmail"
 
@@ -66,8 +78,33 @@ export default function CarrierConfigPage() {
       if (slug === "fastmail") {
         setSelectedSucursal(data?.config?.sucursal ?? "")
       }
+      if (slug === "cabify") {
+        setSelectedDefaultHub(data?.config?.default_hub_external_id ?? "")
+      }
     }
     setLoading(false)
+  }
+
+  async function loadCabifyHubs() {
+    setCabifyHubsLoading(true)
+    setCabifyHubsError(null)
+    try {
+      const res = await fetch("/api/envios/carriers/cabify/hubs")
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        setCabifyHubsError(data.error ?? "Error al cargar hubs")
+      } else {
+        const hubs = (data.hubs ?? []).map((h: any) => ({
+          external_id: h.external_id ?? h.id ?? "",
+          name: h.name ?? h.external_id ?? "Sin nombre",
+          address: h.address ?? "",
+        }))
+        setCabifyHubs(hubs)
+      }
+    } catch (err: any) {
+      setCabifyHubsError(err.message)
+    }
+    setCabifyHubsLoading(false)
   }
 
   async function loadSucursales() {
@@ -90,6 +127,17 @@ export default function CarrierConfigPage() {
     const newConfig: any = { ...carrier.config, base_url: baseUrl }
     if (isFastmail && selectedSucursal) {
       newConfig.sucursal = selectedSucursal
+    }
+    if (isCabify) {
+      newConfig.default_hub_external_id = selectedDefaultHub || undefined
+      // Guardar también los hubs cargados como caché local
+      if (cabifyHubs.length > 0) {
+        newConfig.hubs = cabifyHubs.map((h) => ({
+          external_id: h.external_id,
+          name: h.name,
+          address: h.address ?? "",
+        }))
+      }
     }
     const body: any = {
       config: newConfig,
@@ -141,7 +189,10 @@ export default function CarrierConfigPage() {
     if (isFastmail && carrier?.active) {
       loadSucursales()
     }
-  }, [isFastmail, carrier?.active])
+    if (isCabify && carrier?.active) {
+      loadCabifyHubs()
+    }
+  }, [isFastmail, isCabify, carrier?.active])
 
   if (loading) return <div className="p-6 text-sm text-muted-foreground">Cargando…</div>
   if (!carrier) return <div className="p-6 text-sm text-muted-foreground">Transportista no encontrado.</div>
@@ -361,6 +412,70 @@ export default function CarrierConfigPage() {
                 ))}
                 <p className="text-xs text-muted-foreground mt-1">
                   Hacé clic en <strong>Guardar</strong> (arriba) para aplicar la sucursal seleccionada.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Hubs Cabify */}
+      {isCabify && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <MapPin className="h-4 w-4" />
+                  Hubs (depósitos)
+                </CardTitle>
+                <CardDescription>
+                  Seleccioná el hub por defecto para pickup. Se usa como punto de retiro en los envíos.
+                </CardDescription>
+              </div>
+              <Button variant="outline" size="sm" onClick={loadCabifyHubs} disabled={cabifyHubsLoading}>
+                <RefreshCw className={`h-4 w-4 mr-1.5 ${cabifyHubsLoading ? "animate-spin" : ""}`} />
+                {cabifyHubsLoading ? "Cargando…" : "Sincronizar"}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {cabifyHubsError && <p className="text-sm text-red-600 mb-3">{cabifyHubsError}</p>}
+            {!cabifyHubsLoading && cabifyHubs.length === 0 && !cabifyHubsError && (
+              <p className="text-sm text-muted-foreground">
+                No se encontraron hubs. Verificá que las credenciales sean correctas y que tengas hubs creados en Cabify Logistics.
+              </p>
+            )}
+            {cabifyHubs.length > 0 && (
+              <div className="flex flex-col gap-2">
+                {cabifyHubs.map((h) => (
+                  <label
+                    key={h.external_id}
+                    className={`flex items-start gap-3 rounded-md border p-3 cursor-pointer transition-colors ${
+                      selectedDefaultHub === h.external_id
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-muted-foreground"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="cabify_hub"
+                      value={h.external_id}
+                      checked={selectedDefaultHub === h.external_id}
+                      onChange={() => setSelectedDefaultHub(h.external_id)}
+                      className="mt-0.5"
+                    />
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                      <span className="font-medium text-sm">{h.name}</span>
+                      <span className="text-xs text-muted-foreground font-mono">{h.external_id}</span>
+                      {h.address && (
+                        <span className="text-xs text-muted-foreground">{h.address}</span>
+                      )}
+                    </div>
+                  </label>
+                ))}
+                <p className="text-xs text-muted-foreground mt-1">
+                  Hacé clic en <strong>Guardar</strong> (arriba) para aplicar el hub seleccionado como default.
                 </p>
               </div>
             )}
