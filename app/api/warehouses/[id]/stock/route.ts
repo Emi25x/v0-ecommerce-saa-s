@@ -127,26 +127,25 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     let globalTotalUnits = 0
     if (!noLinkedSources && (totalCount ?? 0) > 0) {
       // Fetch all matching products (solo id + stock_by_source, sin paginación)
-      let sumQ = supabase
+      const { data: allProds } = await supabase
         .from("products")
         .select("stock_by_source")
         .gt("stock", 0)
         .or(jsonbOrFilter)
-      const { data: allProds } = await sumQ
       if (allProds) {
         globalTotalUnits = allProds.reduce((sum: number, p: any) => {
           return sum + sourceKeys.reduce((s: number, k: string) => s + ((p.stock_by_source?.[k] ?? 0) as number), 0)
         }, 0)
       }
     } else if (noLinkedSources && (totalCount ?? 0) > 0) {
-      let sumQ = supabase
+      let sumQ2 = supabase
         .from("products")
         .select("stock")
         .gt("stock", 0)
       if (search) {
-        sumQ = sumQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
+        sumQ2 = sumQ2.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
       }
-      const { data: allProds } = await sumQ
+      const { data: allProds } = await sumQ2
       if (allProds) {
         globalTotalUnits = allProds.reduce((sum: number, p: any) => sum + (p.stock ?? 0), 0)
       }
@@ -208,18 +207,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function emptyResponse(warehouse: any, sourceNames: string[]) {
-  return {
-    warehouse,
-    items: [],
-    data_source: "products",
-    linked_sources: sourceNames,
-    source_keys: [],
-    pagination: { total: 0, page: 1, page_size: PAGE_SIZE, total_pages: 0 },
-    stats: { total_skus: 0, total_units: 0, matched_skus: 0, unmatched_skus: 0 },
-  }
-}
 
 async function catalogModeResponse({ supabase, warehouseId, warehouse, sourceNames, search, page, offset }: any) {
   // Query catalog items WITHOUT inline join to avoid PostgREST join issues
