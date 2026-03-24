@@ -80,6 +80,10 @@ export default function CarrierConfigPage() {
       }
       if (slug === "cabify") {
         setSelectedDefaultHub(data?.config?.default_hub_external_id ?? "")
+        // Cargar hubs cacheados de la config para mostrar inmediatamente
+        if (data?.config?.hubs?.length > 0) {
+          setCabifyHubs(data.config.hubs)
+        }
       }
     }
     setLoading(false)
@@ -92,19 +96,36 @@ export default function CarrierConfigPage() {
       const res = await fetch("/api/envios/carriers/cabify/hubs")
       const data = await res.json()
       if (!res.ok || data.error) {
-        setCabifyHubsError(data.error ?? "Error al cargar hubs")
-      } else {
-        const hubs = (data.hubs ?? []).map((h: any) => ({
-          external_id: h.external_id ?? h.id ?? "",
-          name: h.name ?? h.external_id ?? "Sin nombre",
-          address: h.address ?? "",
-        }))
+        setCabifyHubsError(
+          `${data.error ?? "Error al cargar hubs"}${data.source === "cache" ? " (mostrando caché)" : ""}`,
+        )
+      }
+      const hubs = (data.hubs ?? []).map((h: any) => ({
+        external_id: h.external_id ?? h.id ?? "",
+        name: h.name ?? h.external_id ?? "Sin nombre",
+        address: h.address ?? "",
+      }))
+      if (hubs.length > 0) {
         setCabifyHubs(hubs)
+      }
+      if (data.source) {
+        setCabifyHubsError(
+          hubs.length > 0
+            ? `Fuente: ${data.source}${data.raw_keys ? ` (keys: ${data.raw_keys.join(", ")})` : ""}`
+            : data.error ?? "La API no devolvió hubs. Podés agregarlos manualmente.",
+        )
       }
     } catch (err: any) {
       setCabifyHubsError(err.message)
     }
     setCabifyHubsLoading(false)
+  }
+
+  function addHubManually(externalId: string, name: string, address: string) {
+    if (!externalId) return
+    const exists = cabifyHubs.some((h) => h.external_id === externalId)
+    if (exists) return
+    setCabifyHubs((prev) => [...prev, { external_id: externalId, name, address }])
   }
 
   async function loadSucursales() {
@@ -435,17 +456,18 @@ export default function CarrierConfigPage() {
               </div>
               <Button variant="outline" size="sm" onClick={loadCabifyHubs} disabled={cabifyHubsLoading}>
                 <RefreshCw className={`h-4 w-4 mr-1.5 ${cabifyHubsLoading ? "animate-spin" : ""}`} />
-                {cabifyHubsLoading ? "Cargando…" : "Sincronizar"}
+                {cabifyHubsLoading ? "Cargando…" : "Sincronizar desde API"}
               </Button>
             </div>
           </CardHeader>
-          <CardContent>
-            {cabifyHubsError && <p className="text-sm text-red-600 mb-3">{cabifyHubsError}</p>}
-            {!cabifyHubsLoading && cabifyHubs.length === 0 && !cabifyHubsError && (
-              <p className="text-sm text-muted-foreground">
-                No se encontraron hubs. Verificá que las credenciales sean correctas y que tengas hubs creados en Cabify Logistics.
+          <CardContent className="flex flex-col gap-4">
+            {cabifyHubsError && (
+              <p className={`text-sm ${cabifyHubsError.startsWith("Fuente:") ? "text-muted-foreground" : "text-red-600"}`}>
+                {cabifyHubsError}
               </p>
             )}
+
+            {/* Lista de hubs */}
             {cabifyHubs.length > 0 && (
               <div className="flex flex-col gap-2">
                 {cabifyHubs.map((h) => (
@@ -466,7 +488,12 @@ export default function CarrierConfigPage() {
                       className="mt-0.5"
                     />
                     <div className="flex flex-col gap-0.5 min-w-0">
-                      <span className="font-medium text-sm">{h.name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm">{h.name}</span>
+                        {selectedDefaultHub === h.external_id && (
+                          <Badge variant="default" className="text-[10px] px-1.5 py-0">default</Badge>
+                        )}
+                      </div>
                       <span className="text-xs text-muted-foreground font-mono">{h.external_id}</span>
                       {h.address && (
                         <span className="text-xs text-muted-foreground">{h.address}</span>
@@ -479,6 +506,35 @@ export default function CarrierConfigPage() {
                 </p>
               </div>
             )}
+
+            {/* Agregar hub manualmente */}
+            <details className="group">
+              <summary className="cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground">
+                + Agregar hub manualmente
+              </summary>
+              <div className="mt-3 flex flex-col gap-2">
+                <Input id="hub_ext_id" placeholder="External ID (ej: 544537221)" />
+                <Input id="hub_name" placeholder="Nombre (ej: Libroide)" />
+                <Input id="hub_addr" placeholder="Dirección (opcional)" />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const extId = (document.getElementById("hub_ext_id") as HTMLInputElement)?.value?.trim()
+                    const name = (document.getElementById("hub_name") as HTMLInputElement)?.value?.trim()
+                    const addr = (document.getElementById("hub_addr") as HTMLInputElement)?.value?.trim()
+                    if (extId && name) {
+                      addHubManually(extId, name, addr ?? "")
+                      ;(document.getElementById("hub_ext_id") as HTMLInputElement).value = ""
+                      ;(document.getElementById("hub_name") as HTMLInputElement).value = ""
+                      ;(document.getElementById("hub_addr") as HTMLInputElement).value = ""
+                    }
+                  }}
+                >
+                  Agregar
+                </Button>
+              </div>
+            </details>
           </CardContent>
         </Card>
       )}
