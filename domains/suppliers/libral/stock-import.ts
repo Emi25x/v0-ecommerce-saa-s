@@ -29,7 +29,7 @@ export interface LibralImportResult {
   error?: string
 }
 
-export async function runLibralStockImport(sourceKey = "libral"): Promise<LibralImportResult> {
+export async function runLibralStockImport(sourceKey = "libral_argentina"): Promise<LibralImportResult> {
   const start = Date.now()
   const supabase = createAdminClient()
   const run = await startRun(supabase, "libral_stock", "Libral Stock Import")

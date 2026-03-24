@@ -23,8 +23,8 @@ export async function GET(request: Request) {
     const { data: libralSource } = await supabase
       .from("import_sources")
       .select("*")
-      .eq("name", "Libral")
-      .eq("enabled", true)
+      .ilike("name", "%libral%")
+      .eq("is_active", true)
       .single()
 
     if (!libralSource) {
