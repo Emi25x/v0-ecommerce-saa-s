@@ -30,6 +30,7 @@ export default function WarehouseDetailPage() {
   const [search, setSearch] = useState("")
   const [searchInput, setSearchInput] = useState("")
   const [page, setPage] = useState(1)
+  const [stockFilter, setStockFilter] = useState<"in_stock" | "all">("in_stock")
 
   // Sources / suppliers assignment
   const [allSources, setAllSources] = useState<any[]>([])
@@ -40,27 +41,62 @@ export default function WarehouseDetailPage() {
   const [assignResult, setAssignResult] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  /** Bidirectional fuzzy match: supplier code/name ↔ import_source name/source_key
-   *  Normalizes underscores ↔ spaces so "libral_argentina" matches "Libral Argentina" */
-  function sourceMatchesSupplier(source: any, supplierCode: string): boolean {
+  /**
+   * Match import_source ↔ supplier using multiple strategies:
+   * 1. Exact or substring match (normalized) between source name/key and supplier code/name
+   * 2. First-word overlap (e.g. "Libral" from "Libral Argentina" matches source starting with "libral")
+   * 3. Token overlap — at least 1 significant word (3+ chars) in common
+   *
+   * Normalizes underscores ↔ spaces, case-insensitive.
+   * Handles cases like: supplier.code="LIBRAAR" + supplier.name="Libral Argentina"
+   * vs source.name="Libral Argentina" + source.source_key="libral_argentina"
+   */
+  function sourceMatchesSupplier(source: any, supplierCode: string, supplierName?: string): boolean {
     const normalize = (s: string) => s.toLowerCase().replace(/_/g, " ").trim()
     const sName = normalize(source.name ?? "")
     const sKey = normalize(source.source_key ?? "")
     const code = normalize(supplierCode)
-    return (
+    const name = normalize(supplierName ?? "")
+
+    // Strategy 1: direct substring match on code
+    if (
       sName.includes(code) ||
       sKey.includes(code) ||
-      (sKey.length > 0 && code.includes(sKey)) ||
-      (sName.length > 0 && code.includes(sName.split(" ")[0]))
-    )
+      (code.length > 0 && (sKey.includes(code) || code.includes(sKey)))
+    ) {
+      return true
+    }
+
+    // Strategy 2: direct substring match on supplier name
+    if (name.length > 2) {
+      if (sName.includes(name) || name.includes(sName) || sKey.includes(name) || name.includes(sKey)) {
+        return true
+      }
+    }
+
+    // Strategy 3: first-word match (e.g. "libral" from "libral argentina")
+    const nameWords = name.split(/\s+/).filter((w) => w.length >= 3)
+    const sNameWords = sName.split(/\s+/).filter((w) => w.length >= 3)
+    const sKeyWords = sKey.split(/\s+/).filter((w) => w.length >= 3)
+    const allSourceWords = [...new Set([...sNameWords, ...sKeyWords])]
+
+    // If any significant word from the supplier name appears in source name/key
+    for (const word of nameWords) {
+      if (allSourceWords.some((sw) => sw.includes(word) || word.includes(sw))) {
+        return true
+      }
+    }
+
+    return false
   }
 
   const fetchData = useCallback(
-    async (currentPage: number, currentSearch: string) => {
+    async (currentPage: number, currentSearch: string, currentStockFilter: string) => {
       setLoading(true)
       try {
         const qs = new URLSearchParams({
           page: String(currentPage),
+          stock_filter: currentStockFilter,
           ...(currentSearch ? { search: currentSearch } : {}),
         })
         const res = await fetch(`/api/warehouses/${warehouseId}/stock?${qs}`)
@@ -80,8 +116,8 @@ export default function WarehouseDetailPage() {
   )
 
   useEffect(() => {
-    fetchData(page, search)
-  }, [page, search, fetchData])
+    fetchData(page, search, stockFilter)
+  }, [page, search, stockFilter, fetchData])
 
   // Load suppliers + import sources when panel opens
   useEffect(() => {
@@ -96,8 +132,9 @@ export default function WarehouseDetailPage() {
         const linkedSourceIds = new Set(srcs.filter((s: any) => s.warehouse_id === warehouseId).map((s: any) => s.id))
         const preSelected = sups
           .filter((sup: any) => {
-            const code = (sup.code ?? sup.name ?? "").toLowerCase()
-            return srcs.some((s: any) => linkedSourceIds.has(s.id) && sourceMatchesSupplier(s, code))
+            const code = (sup.code ?? "").toLowerCase()
+            const name = sup.name ?? ""
+            return srcs.some((s: any) => linkedSourceIds.has(s.id) && sourceMatchesSupplier(s, code, name))
           })
           .map((sup: any) => sup.id)
         setSelectedSupplierIds(preSelected)
@@ -115,8 +152,8 @@ export default function WarehouseDetailPage() {
           selectedSupplierIds.some((supId) => {
             const sup = allSuppliers.find((p: any) => p.id === supId)
             if (!sup) return false
-            const code = (sup.code ?? sup.name ?? "").toLowerCase()
-            return sourceMatchesSupplier(s, code)
+            const code = (sup.code ?? "").toLowerCase()
+            return sourceMatchesSupplier(s, code, sup.name)
           }),
         )
         .map((s: any) => s.id)
@@ -138,7 +175,7 @@ export default function WarehouseDetailPage() {
       if (res.ok) {
         setShowSourcePanel(false)
         setPage(1)
-        fetchData(1, search)
+        fetchData(1, search, stockFilter)
       }
     } catch (e: any) {
       setAssignResult(`Error: ${e.message}`)
@@ -227,8 +264,8 @@ export default function WarehouseDetailPage() {
           ) : (
             <div className="space-y-2 max-h-48 overflow-y-auto">
               {allSuppliers.map((sup: any) => {
-                const code = (sup.code ?? sup.name ?? "").toLowerCase()
-                const matchingSources = allSources.filter((s: any) => sourceMatchesSupplier(s, code))
+                const code = (sup.code ?? "").toLowerCase()
+                const matchingSources = allSources.filter((s: any) => sourceMatchesSupplier(s, code, sup.name))
                 const linkedCount = matchingSources.filter((s: any) => s.warehouse_id === warehouseId).length
                 return (
                   <label key={sup.id} className="flex items-center gap-3 cursor-pointer">
@@ -295,16 +332,42 @@ export default function WarehouseDetailPage() {
         </div>
       )}
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <input
-          type="text"
-          placeholder="Buscar por título, EAN o SKU…"
-          value={searchInput}
-          onChange={(e) => handleSearchChange(e.target.value)}
-          className="w-full border rounded-lg pl-9 pr-4 py-2 text-sm bg-background"
-        />
+      {/* Search + stock filter */}
+      <div className="flex gap-3 items-center">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Buscar por título, EAN o SKU…"
+            value={searchInput}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            className="w-full border rounded-lg pl-9 pr-4 py-2 text-sm bg-background"
+          />
+        </div>
+        {dataSource === "products_by_source" && (
+          <div className="flex rounded-lg border overflow-hidden shrink-0">
+            <button
+              className={`px-3 py-2 text-xs font-medium transition-colors ${
+                stockFilter === "in_stock"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-background text-muted-foreground hover:bg-muted"
+              }`}
+              onClick={() => { setStockFilter("in_stock"); setPage(1) }}
+            >
+              Con stock
+            </button>
+            <button
+              className={`px-3 py-2 text-xs font-medium transition-colors border-l ${
+                stockFilter === "all"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-background text-muted-foreground hover:bg-muted"
+              }`}
+              onClick={() => { setStockFilter("all"); setPage(1) }}
+            >
+              Todos
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Table */}

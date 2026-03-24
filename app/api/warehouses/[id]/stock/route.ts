@@ -40,6 +40,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const { searchParams } = new URL(request.url)
     const search = searchParams.get("search") ?? ""
     const page = parseInt(searchParams.get("page") ?? "1", 10)
+    const stockFilter = searchParams.get("stock_filter") ?? "in_stock" // "in_stock" | "all"
     const offset = (page - 1) * PAGE_SIZE
 
     // ── Fuentes vinculadas (con source_key) ───────────────────────────────────
@@ -71,21 +72,32 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const noLinkedSources = sourceKeys.length === 0
 
     // ── Modo 2: products filtrados por stock_by_source[source_key] ────────────
-    // Construir filtro OR: stock_by_source->>'key1'.not.is.null,...
-    const jsonbOrFilter = noLinkedSources
-      ? ""
-      : sourceKeys.map((k: string) => `stock_by_source->>${k}.not.is.null`).join(",")
+    // Dos modos de filtro:
+    //   "in_stock": solo productos con stock > 0 en ESTE warehouse (stock_by_source->key > 0)
+    //   "all":      todos los productos vinculados al warehouse (stock_by_source->>key IS NOT NULL)
+    const wantsInStock = stockFilter !== "all"
+
+    let jsonbOrFilter = ""
+    if (!noLinkedSources) {
+      if (wantsInStock) {
+        // Filtrar por stock real > 0 en al menos una source del warehouse
+        // Usar -> (JSON value) en lugar de ->> (text) para comparación numérica
+        jsonbOrFilter = sourceKeys.map((k: string) => `stock_by_source->${k}.gt.0`).join(",")
+      } else {
+        // Mostrar todos los productos que tengan la clave, aunque stock sea 0
+        jsonbOrFilter = sourceKeys.map((k: string) => `stock_by_source->>${k}.not.is.null`).join(",")
+      }
+    }
 
     // Construir queries — cuando hay fuentes vinculadas, SIEMPRE filtrar por ellas.
     // Si no hay productos que coincidan, devolver vacío (no fallback a "todos").
     let prodQ = supabase
       .from("products")
       .select("id, ean, sku, title, stock, cost_price, stock_by_source")
-      .gt("stock", 0)
       .order("stock", { ascending: false })
       .range(offset, offset + PAGE_SIZE - 1)
 
-    let countQ = supabase.from("products").select("*", { count: "exact", head: true }).gt("stock", 0)
+    let countQ = supabase.from("products").select("*", { count: "exact", head: true })
 
     if (!noLinkedSources) {
       // Siempre filtrar por source_key cuando hay fuentes vinculadas
@@ -96,9 +108,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         prodQ = prodQ.or(searchFilter)
         countQ = countQ.or(searchFilter)
       }
-    } else if (search) {
-      prodQ = prodQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
-      countQ = countQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
+    } else {
+      // Sin fuentes vinculadas → fallback a stock global > 0
+      prodQ = prodQ.gt("stock", 0)
+      countQ = countQ.gt("stock", 0)
+      if (search) {
+        prodQ = prodQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
+        countQ = countQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
+      }
     }
 
     const [{ data: prodData, error: prodErr }, { count: totalCount }] = await Promise.all([prodQ, countQ])
@@ -162,6 +179,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       warehouse,
       items,
       data_source: noLinkedSources ? "products_all" : "products_by_source",
+      stock_filter: noLinkedSources ? "all" : stockFilter,
       linked_sources: sourceNames,
       source_keys: sourceKeys,
       pagination: {

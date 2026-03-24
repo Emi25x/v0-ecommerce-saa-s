@@ -65,6 +65,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({
+      ok: true,
       total_publications: totalPubs || 0,
       matched_publications: matchedPubs || 0,
       unmatched_publications: unmatchedPubs || 0,
