@@ -770,7 +770,6 @@ export default function MLImporterPage() {
                   {log.action === "success" && (
                     <>
                       <span>{log.imported_delta} importadas</span>
-                      <span>{log.matched_delta} vinculadas</span>
                     </>
                   )}
                   {log.retry_after && <span className="text-yellow-600">Retry en {log.retry_after}s</span>}
