@@ -44,12 +44,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
     // ── Fuentes vinculadas (con source_key) ───────────────────────────────────
     // Usar admin client para evitar problemas de RLS en import_sources
+    // No filtrar por is_active: si la fuente está vinculada al warehouse, debe contar
     const supabaseAdmin = createAdminClient()
     const { data: linkedSources } = await supabaseAdmin
       .from("import_sources")
       .select("id, name, source_key")
       .eq("warehouse_id", warehouseId)
-      .eq("is_active", true)
 
     const sourceNames = (linkedSources ?? []).map((s: any) => s.name)
     // source_keys: claves cortas para filtrar stock_by_source (ej: ["libral", "azeta"])
@@ -80,7 +80,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     // Si no hay productos que coincidan, devolver vacío (no fallback a "todos").
     let prodQ = supabase
       .from("products")
-      .select("id, sku, title, stock, cost_price, stock_by_source")
+      .select("id, ean, sku, title, stock, cost_price, stock_by_source")
       .gt("stock", 0)
       .order("stock", { ascending: false })
       .range(offset, offset + PAGE_SIZE - 1)
@@ -89,17 +89,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
     if (!noLinkedSources) {
       // Siempre filtrar por source_key cuando hay fuentes vinculadas
+      prodQ = prodQ.or(jsonbOrFilter)
+      countQ = countQ.or(jsonbOrFilter)
       if (search) {
-        const searchFilter = `title.ilike.%${search}%,sku.ilike.%${search}%`
-        prodQ = prodQ.or(jsonbOrFilter).or(searchFilter)
-        countQ = countQ.or(jsonbOrFilter).or(searchFilter)
-      } else {
-        prodQ = prodQ.or(jsonbOrFilter)
-        countQ = countQ.or(jsonbOrFilter)
+        const searchFilter = `title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`
+        prodQ = prodQ.or(searchFilter)
+        countQ = countQ.or(searchFilter)
       }
     } else if (search) {
-      prodQ = prodQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%`)
-      countQ = countQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%`)
+      prodQ = prodQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
+      countQ = countQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
     }
 
     const [{ data: prodData, error: prodErr }, { count: totalCount }] = await Promise.all([prodQ, countQ])
@@ -138,19 +137,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const mlMap = await fetchMLMap(supabase, productIds)
 
     const items = prodItems.map((p) => {
-      // Calcular stock específico de las fuentes del almacén
+      // Calcular stock específico de las fuentes del almacén.
+      // Cuando hay fuentes vinculadas, SIEMPRE mostrar stock del warehouse (incluso si es 0).
+      // Solo usar stock global cuando NO hay fuentes vinculadas (fallback mode).
       const sourceStock = sourceKeys.reduce((sum: number, k: string) => sum + (p.stock_by_source?.[k] ?? 0), 0)
-      const displayStock = sourceStock > 0 ? sourceStock : (p.stock ?? 0)
+      const displayStock = noLinkedSources ? (p.stock ?? 0) : sourceStock
       return {
         id: `prod_${p.id}`,
-        supplier_ean: p.sku,
+        supplier_ean: (p as any).ean ?? p.sku,
         supplier_sku: p.sku,
         title: p.title ?? "",
         stock_quantity: displayStock,
         price_original: p.cost_price,
         matched_by: "products",
         product_id: p.id,
-        products: { id: p.id, ean: p.sku, sku: p.sku, title: p.title },
+        products: { id: p.id, ean: (p as any).ean ?? p.sku, sku: p.sku, title: p.title },
         ml_publications: mlMap[p.id] ?? [],
       }
     })

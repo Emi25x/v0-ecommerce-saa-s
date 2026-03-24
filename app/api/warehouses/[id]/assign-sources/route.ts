@@ -75,7 +75,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     // Backfill: asignar stock_by_source[source_key] para productos sin fuente asignada
     // Solo toca productos donde stock_by_source IS NULL o {} (vacío)
     // Usar source_key (clave corta) en lugar de UUID para compatibilidad con filtros JSONB
-    const { data: primarySource } = await supabase
+    // Usar admin client para evitar problemas de RLS en import_sources
+    const { data: primarySource } = await supabaseAdmin
       .from("import_sources")
       .select("id, name, source_key")
       .eq("id", source_ids[0])

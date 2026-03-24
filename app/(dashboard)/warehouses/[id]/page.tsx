@@ -40,15 +40,18 @@ export default function WarehouseDetailPage() {
   const [assignResult, setAssignResult] = useState<string | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  /** Bidirectional fuzzy match: supplier code/name ↔ import_source name/source_key */
+  /** Bidirectional fuzzy match: supplier code/name ↔ import_source name/source_key
+   *  Normalizes underscores ↔ spaces so "libral_argentina" matches "Libral Argentina" */
   function sourceMatchesSupplier(source: any, supplierCode: string): boolean {
-    const sName = (source.name ?? "").toLowerCase()
-    const sKey = (source.source_key ?? "").toLowerCase()
+    const normalize = (s: string) => s.toLowerCase().replace(/_/g, " ").trim()
+    const sName = normalize(source.name ?? "")
+    const sKey = normalize(source.source_key ?? "")
+    const code = normalize(supplierCode)
     return (
-      sName.includes(supplierCode) ||
-      sKey.includes(supplierCode) ||
-      (sKey && supplierCode.includes(sKey)) ||
-      (sName && supplierCode.includes(sName.split(" ")[0]))
+      sName.includes(code) ||
+      sKey.includes(code) ||
+      (sKey.length > 0 && code.includes(sKey)) ||
+      (sName.length > 0 && code.includes(sName.split(" ")[0]))
     )
   }
 
