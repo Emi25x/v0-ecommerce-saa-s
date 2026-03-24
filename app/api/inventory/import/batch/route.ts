@@ -472,37 +472,47 @@ export async function POST(request: NextRequest) {
       }
 
       // Populate stock_by_source so warehouse source-filtering works
-      const sourceKey = (source.source_key || source.name?.toLowerCase().replace(/[^a-z0-9]/g, "_") || "").slice(0, 30)
-      if (sourceKey && deduped.some((p: any) => p.stock !== null && p.stock !== undefined)) {
-        const eanStockMap = new Map<string, number>()
-        for (const p of deduped) {
-          if (p.stock !== null && p.stock !== undefined) {
-            eanStockMap.set(p.ean, parseInt(String(p.stock), 10) || 0)
+      const elapsedSoFar = Date.now() - startTime
+      const TIME_BUDGET_MS = 250_000 // leave 50s margin before Vercel 300s limit
+
+      if (elapsedSoFar < TIME_BUDGET_MS) {
+        const sourceKey = (source.source_key || source.name?.toLowerCase().replace(/[^a-z0-9]/g, "_") || "").slice(0, 30)
+        if (sourceKey && deduped.some((p: any) => p.stock !== null && p.stock !== undefined)) {
+          const eanStockMap = new Map<string, number>()
+          for (const p of deduped) {
+            if (p.stock !== null && p.stock !== undefined) {
+              eanStockMap.set(p.ean, parseInt(String(p.stock), 10) || 0)
+            }
+          }
+          const stockEans = Array.from(eanStockMap.keys())
+          const SBS_CHUNK = 200
+          for (let i = 0; i < stockEans.length; i += SBS_CHUNK) {
+            const eanChunk = stockEans.slice(i, i + SBS_CHUNK)
+            try {
+              const { data: prods } = await supabase
+                .from("products")
+                .select("id, ean, stock_by_source")
+                .in("ean", eanChunk)
+              if (!prods?.length) continue
+              await supabase.from("products").upsert(
+                prods.map((p: any) => ({
+                  id: p.id,
+                  stock_by_source: { ...(p.stock_by_source ?? {}), [sourceKey]: eanStockMap.get(p.ean) ?? 0 },
+                })),
+                { onConflict: "id" },
+              )
+            } catch (e) {
+              log.warn("stock_by_source update failed for chunk", "batch.stock_by_source", {
+                error: e instanceof Error ? e.message : String(e),
+              })
+            }
           }
         }
-        const stockEans = Array.from(eanStockMap.keys())
-        const SBS_CHUNK = 200
-        for (let i = 0; i < stockEans.length; i += SBS_CHUNK) {
-          const eanChunk = stockEans.slice(i, i + SBS_CHUNK)
-          try {
-            const { data: prods } = await supabase
-              .from("products")
-              .select("id, ean, stock_by_source")
-              .in("ean", eanChunk)
-            if (!prods?.length) continue
-            await supabase.from("products").upsert(
-              prods.map((p: any) => ({
-                id: p.id,
-                stock_by_source: { ...(p.stock_by_source ?? {}), [sourceKey]: eanStockMap.get(p.ean) ?? 0 },
-              })),
-              { onConflict: "id" },
-            )
-          } catch (e) {
-            log.warn("stock_by_source update failed for chunk", "batch.stock_by_source", {
-              error: e instanceof Error ? e.message : String(e),
-            })
-          }
-        }
+      } else {
+        log.warn("Skipping stock_by_source update — time budget exceeded", "batch.time_guard", {
+          elapsed_ms: elapsedSoFar,
+          budget_ms: TIME_BUDGET_MS,
+        })
       }
 
       if (!last_error) last_reason = "success"
@@ -602,8 +612,12 @@ export async function POST(request: NextRequest) {
           : undefined,
     })
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Error interno"
+    const message = error instanceof Error ? `${error.name}: ${error.message}` : "Error interno"
+    const stack = error instanceof Error ? error.stack?.split("\n").slice(0, 3).join(" | ") : undefined
     log.error("Batch import fatal error", error, "batch.fatal")
-    return NextResponse.json({ ok: false, error: { code: "internal_error", detail: message } }, { status: 500 })
+    return NextResponse.json(
+      { ok: false, error: { code: "internal_error", detail: message, stack_hint: stack } },
+      { status: 500 },
+    )
   }
 }

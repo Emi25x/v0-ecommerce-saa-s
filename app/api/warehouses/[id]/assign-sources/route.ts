@@ -73,7 +73,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
 
     // Backfill: asignar stock_by_source[source_key] para productos sin fuente asignada
-    // Solo toca productos donde stock_by_source IS NULL o {} (vacío)
+    // Solo toca productos donde stock_by_source IS NULL (no yet attributed to any source).
+    // Does NOT touch products that already have stock_by_source with other keys.
     // Usar source_key (clave corta) en lugar de UUID para compatibilidad con filtros JSONB
     // Usar admin client para evitar problemas de RLS en import_sources
     const { data: primarySource } = await supabaseAdmin
@@ -89,12 +90,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const FETCH_LIMIT = 10000
 
     while (true) {
-      // Fetch products with stock > 0 that don't yet have this source key in stock_by_source
+      // Fetch products with stock > 0 that have no stock_by_source attribution at all
       const { data: prods, error: fetchErr } = await supabaseAdmin
         .from("products")
         .select("id, stock, stock_by_source")
         .gt("stock", 0)
-        .or(`stock_by_source.is.null,stock_by_source->>${primarySourceKey}.is.null`)
+        .is("stock_by_source", null)
         .range(offset, offset + FETCH_LIMIT - 1)
         .order("id")
 

@@ -205,6 +205,7 @@ export default function BatchImportPage() {
     let accTimeouts = 0
     let currentBatchSize = 500
     let done = false
+    let retryCount = 0
 
     while (!done && !abortRef.current) {
       try {
@@ -220,14 +221,28 @@ export default function BatchImportPage() {
         const responseText = await response.text()
 
         if (!response.ok) {
-          let msg = `Error ${response.status}`
+          retryCount++
+          let msg = `Error ${response.status}: ${response.statusText}`
           try {
-            msg = JSON.parse(responseText).error || msg
+            const errBody = JSON.parse(responseText)
+            msg = errBody.error?.detail || errBody.error || msg
           } catch {}
-          addLog(`Error: ${msg}`)
+
+          if (retryCount <= 3) {
+            if (response.status >= 500) {
+              currentBatchSize = Math.max(50, Math.floor(currentBatchSize / 2))
+              addLog(`Error ${response.status} — reintentando con batch_size=${currentBatchSize} (intento ${retryCount}/3)...`)
+            } else {
+              addLog(`Error ${response.status} — reintentando en 2s (intento ${retryCount}/3)...`)
+            }
+            await new Promise((r) => setTimeout(r, 2000 * retryCount))
+            continue
+          }
+          addLog(`Error después de ${retryCount} reintentos: ${msg}`)
           setStatus(`Error: ${msg}`)
           break
         }
+        retryCount = 0 // Reset on success
 
         let result: any
         try {

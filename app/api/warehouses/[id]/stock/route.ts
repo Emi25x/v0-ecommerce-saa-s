@@ -74,7 +74,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     // Construir filtro OR: stock_by_source->>'key1'.not.is.null,...
     const jsonbOrFilter = noLinkedSources
       ? ""
-      : sourceKeys.map((k: string) => `stock_by_source->>${k}.not.is.null`).join(",")
+      : sourceKeys.map((k: string) => `and(stock_by_source->>${k}.not.is.null,stock_by_source->>${k}.neq.0)`).join(",")
 
     // Construir queries — cuando hay fuentes vinculadas, SIEMPRE filtrar por ellas.
     // Si no hay productos que coincidan, devolver vacío (no fallback a "todos").

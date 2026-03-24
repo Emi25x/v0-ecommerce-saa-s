@@ -139,7 +139,7 @@ export async function getWarehouseConsolidatedStock(
   }
 
   // 2. Build OR filter: stock_by_source has at least one of these keys set (not null)
-  const jsonbOrFilter = sourceKeys.map((k) => `stock_by_source->>${k}.not.is.null`).join(",")
+  const jsonbOrFilter = sourceKeys.map((k) => `and(stock_by_source->>${k}.not.is.null,stock_by_source->>${k}.neq.0)`).join(",")
 
   // 3. Query products
   let query = supabase
