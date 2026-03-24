@@ -80,28 +80,23 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     // Si no hay productos que coincidan, devolver vacío (no fallback a "todos").
     let prodQ = supabase
       .from("products")
-      .select("id, ean, sku, title, stock, cost_price, stock_by_source")
+      .select("id, ean, sku, title, stock, cost_price, stock_by_source", { count: "exact" })
       .gt("stock", 0)
       .order("stock", { ascending: false })
       .range(offset, offset + PAGE_SIZE - 1)
 
-    let countQ = supabase.from("products").select("*", { count: "exact", head: true }).gt("stock", 0)
-
     if (!noLinkedSources) {
       // Siempre filtrar por source_key cuando hay fuentes vinculadas
       prodQ = prodQ.or(jsonbOrFilter)
-      countQ = countQ.or(jsonbOrFilter)
       if (search) {
         const searchFilter = `title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`
         prodQ = prodQ.or(searchFilter)
-        countQ = countQ.or(searchFilter)
       }
     } else if (search) {
       prodQ = prodQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
-      countQ = countQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
     }
 
-    const [{ data: prodData, error: prodErr }, { count: totalCount }] = await Promise.all([prodQ, countQ])
+    const { data: prodData, error: prodErr, count: totalCount } = await prodQ
 
     if (prodErr) {
       console.error("[WAREHOUSE STOCK] Products query error:", prodErr.message)

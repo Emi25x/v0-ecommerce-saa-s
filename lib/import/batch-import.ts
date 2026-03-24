@@ -325,6 +325,41 @@ export async function executeBatchImport(
     }
   }
 
+  // Populate stock_by_source so warehouse source-filtering works
+  const sourceKey = (source as any).source_key || source.name?.toLowerCase().replace(/[^a-z0-9]/g, "_") || ""
+  if (sourceKey) {
+    const eanStockMap = new Map<string, number>()
+    for (const p of productsToInsert) {
+      if (p.ean && p.stock !== null && p.stock !== undefined) {
+        eanStockMap.set(p.ean, parseInt(String(p.stock), 10) || 0)
+      }
+    }
+    const stockEans = Array.from(eanStockMap.keys())
+    const SBS_CHUNK = 200
+    for (let i = 0; i < stockEans.length; i += SBS_CHUNK) {
+      const eanChunk = stockEans.slice(i, i + SBS_CHUNK)
+      try {
+        const { data: prods } = await supabase
+          .from("products")
+          .select("id, ean, stock_by_source")
+          .in("ean", eanChunk)
+        if (prods?.length) {
+          await supabase.from("products").upsert(
+            prods.map((p: any) => ({
+              id: p.id,
+              stock_by_source: { ...(p.stock_by_source ?? {}), [sourceKey]: eanStockMap.get(p.ean) ?? 0 },
+            })),
+            { onConflict: "id" },
+          )
+        }
+      } catch (e) {
+        log.warn("stock_by_source update failed", "batch_import.stock_by_source", {
+          error: e instanceof Error ? e.message : String(e),
+        })
+      }
+    }
+  }
+
   const newOffset = offset + batch.length
   const done = newOffset >= totalRows
   const progress = Math.round((newOffset / totalRows) * 100)
