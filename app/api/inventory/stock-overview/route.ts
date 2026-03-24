@@ -30,10 +30,10 @@ export async function GET(request: NextRequest) {
 
   // ── Fuentes: source.id es la clave en stock_by_source ─────────────────────
   // Agrupar por warehouse_id para la vista "Por almacén"
+  // No filtrar por is_active para incluir fuentes vinculadas a warehouses aunque estén inactivas
   const { data: sources } = await supabase
     .from("import_sources")
     .select("id, name, source_key, warehouse_id, warehouses(id, name, code)")
-    .eq("is_active", true)
 
   // source_key → warehouse info  (stock_by_source uses source_key, not UUID)
   const sourceWarehouse: Record<string, { id: string; name: string; code: string } | null> = {}

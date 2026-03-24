@@ -29,6 +29,17 @@ export interface CabifyConfig {
   base_url: string // https://logistics.api.cabify.com
   auth_url: string // https://cabify.com/auth/api/authorization
   timeout_ms: number
+  /** Hubs (depósitos) configurados localmente */
+  hubs?: CabifyHubConfig[]
+  /** External ID del hub por defecto para pickup */
+  default_hub_external_id?: string
+}
+
+/** Hub guardado en la config del carrier (subset de la info de Cabify) */
+export interface CabifyHubConfig {
+  external_id: string
+  name: string
+  address: string
 }
 
 // ── Modalidades de envío ───────────────────────────────────────────────────────

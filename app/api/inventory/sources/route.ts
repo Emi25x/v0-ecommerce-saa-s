@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
+import { createAdminClient } from "@/lib/db/admin"
 import { requireCron } from "@/lib/auth/require-auth"
 
 export async function GET(request: NextRequest) {
@@ -8,10 +9,12 @@ export async function GET(request: NextRequest) {
 
   try {
     const supabase = await createClient()
+    // Usar admin para import_sources (puede tener RLS sin policy para el user)
+    const supabaseAdmin = createAdminClient()
 
     console.log("[v0] Fetching import sources...")
 
-    const { data: sources, error: sourcesError } = await supabase
+    const { data: sources, error: sourcesError } = await supabaseAdmin
       .from("import_sources")
       .select("*")
       .order("created_at", { ascending: false })

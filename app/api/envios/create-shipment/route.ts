@@ -44,6 +44,15 @@ export async function POST(request: NextRequest) {
     // ── Dispatch por carrier ────────────────────────────────────────────────────
     if (carrier_slug === "cabify") {
       const client = createCabifyClient(carrier.config, carrier.credentials)
+      // Inyectar default hub como pickup si no se provee dirección ni hub
+      const defaultHub = carrier.config?.default_hub_external_id
+      if (defaultHub && shipment.parcels) {
+        for (const p of shipment.parcels) {
+          if (p.pickup_info && !p.pickup_info.hub_external_id && !p.pickup_info.addr && !p.pickup_info.loc) {
+            p.pickup_info.hub_external_id = defaultHub
+          }
+        }
+      }
       const res = await client.createShipment(shipment)
       result = {
         id: res.id,

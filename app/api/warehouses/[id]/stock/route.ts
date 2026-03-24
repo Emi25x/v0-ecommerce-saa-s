@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
+import { createAdminClient } from "@/lib/db/admin"
 
 const PAGE_SIZE = 50
 
@@ -10,7 +11,7 @@ const PAGE_SIZE = 50
  *  1. Catálogo: si hay supplier_catalog_items para este almacén
  *  2. Productos: filtra products.stock_by_source por los source_key de las fuentes vinculadas
  *     (ej: stock_by_source->>'libral' IS NOT NULL para fuente "Libral Argentina")
- *     Si no hay datos en stock_by_source aún, fallback: todos los productos con stock > 0.
+ *     Si no hay fuentes vinculadas, muestra todos los productos con stock > 0.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -42,11 +43,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const offset = (page - 1) * PAGE_SIZE
 
     // ── Fuentes vinculadas (con source_key) ───────────────────────────────────
-    const { data: linkedSources } = await supabase
+    // Usar admin client para evitar problemas de RLS en import_sources
+    // No filtrar por is_active: si la fuente está vinculada al warehouse, debe contar
+    const supabaseAdmin = createAdminClient()
+    const { data: linkedSources } = await supabaseAdmin
       .from("import_sources")
       .select("id, name, source_key")
       .eq("warehouse_id", warehouseId)
-      .eq("is_active", true)
 
     const sourceNames = (linkedSources ?? []).map((s: any) => s.name)
     // source_keys: claves cortas para filtrar stock_by_source (ej: ["libral", "azeta"])
@@ -65,61 +68,37 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }
 
     // ── Sin fuentes vinculadas → mostrar todos los productos con stock > 0 ─────
-    // No bloquear el almacén: si aún no tiene fuentes configuradas, muestra el
-    // catálogo completo como fallback para que el usuario pueda ver qué tiene.
-    // (Cuando se vinculen fuentes, se filtrará por stock_by_source[source_key])
     const noLinkedSources = sourceKeys.length === 0
 
     // ── Modo 2: products filtrados por stock_by_source[source_key] ────────────
-    // Los source_keys son cadenas cortas sin guiones (e.g. "libral", "azeta")
-    // por lo que el filtro JSONB funciona correctamente en PostgREST.
-    //
     // Construir filtro OR: stock_by_source->>'key1'.not.is.null,...
     const jsonbOrFilter = noLinkedSources
       ? ""
       : sourceKeys.map((k: string) => `stock_by_source->>${k}.not.is.null`).join(",")
 
-    // Contar cuántos productos ya tienen stock_by_source poblado con alguna de estas claves
-    let hasSourceData = false
-    if (!noLinkedSources && jsonbOrFilter) {
-      const { count: jsonbCount, error: jsonbTestErr } = await supabase
-        .from("products")
-        .select("*", { count: "exact", head: true })
-        .or(jsonbOrFilter)
-
-      if (jsonbTestErr) {
-        console.error("[WAREHOUSE STOCK] JSONB filter error:", jsonbTestErr.message)
-      } else {
-        hasSourceData = (jsonbCount ?? 0) > 0
-      }
-    }
-
-    // Construir queries según si hay datos de stock_by_source o no
+    // Construir queries — cuando hay fuentes vinculadas, SIEMPRE filtrar por ellas.
+    // Si no hay productos que coincidan, devolver vacío (no fallback a "todos").
     let prodQ = supabase
       .from("products")
-      .select("id, sku, title, stock, cost_price, stock_by_source")
+      .select("id, ean, sku, title, stock, cost_price, stock_by_source")
       .gt("stock", 0)
       .order("stock", { ascending: false })
       .range(offset, offset + PAGE_SIZE - 1)
 
-    // Always filter by stock > 0 for both data and count
     let countQ = supabase.from("products").select("*", { count: "exact", head: true }).gt("stock", 0)
 
-    if (hasSourceData) {
-      // Filtrar por source_key en stock_by_source
-      // Nota: combinar con búsqueda en un solo .or() evita que PostgREST
-      // descarte el primer parámetro or= cuando hay dos en la misma query.
+    if (!noLinkedSources) {
+      // Siempre filtrar por source_key cuando hay fuentes vinculadas
+      prodQ = prodQ.or(jsonbOrFilter)
+      countQ = countQ.or(jsonbOrFilter)
       if (search) {
-        const searchFilter = `title.ilike.%${search}%,sku.ilike.%${search}%`
-        prodQ = prodQ.or(jsonbOrFilter).or(searchFilter)
-        countQ = countQ.or(jsonbOrFilter).or(searchFilter)
-      } else {
-        prodQ = prodQ.or(jsonbOrFilter)
-        countQ = countQ.or(jsonbOrFilter)
+        const searchFilter = `title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`
+        prodQ = prodQ.or(searchFilter)
+        countQ = countQ.or(searchFilter)
       }
     } else if (search) {
-      prodQ = prodQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%`)
-      countQ = countQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%`)
+      prodQ = prodQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
+      countQ = countQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
     }
 
     const [{ data: prodData, error: prodErr }, { count: totalCount }] = await Promise.all([prodQ, countQ])
@@ -158,19 +137,21 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const mlMap = await fetchMLMap(supabase, productIds)
 
     const items = prodItems.map((p) => {
-      // Calcular stock específico de las fuentes del almacén
+      // Calcular stock específico de las fuentes del almacén.
+      // Cuando hay fuentes vinculadas, SIEMPRE mostrar stock del warehouse (incluso si es 0).
+      // Solo usar stock global cuando NO hay fuentes vinculadas (fallback mode).
       const sourceStock = sourceKeys.reduce((sum: number, k: string) => sum + (p.stock_by_source?.[k] ?? 0), 0)
-      const displayStock = sourceStock > 0 ? sourceStock : (p.stock ?? 0)
+      const displayStock = noLinkedSources ? (p.stock ?? 0) : sourceStock
       return {
         id: `prod_${p.id}`,
-        supplier_ean: p.sku,
+        supplier_ean: (p as any).ean ?? p.sku,
         supplier_sku: p.sku,
         title: p.title ?? "",
         stock_quantity: displayStock,
         price_original: p.cost_price,
         matched_by: "products",
         product_id: p.id,
-        products: { id: p.id, ean: p.sku, sku: p.sku, title: p.title },
+        products: { id: p.id, ean: (p as any).ean ?? p.sku, sku: p.sku, title: p.title },
         ml_publications: mlMap[p.id] ?? [],
       }
     })
@@ -180,7 +161,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json({
       warehouse,
       items,
-      data_source: noLinkedSources ? "products_all" : hasSourceData ? "products_by_source" : "products_fallback",
+      data_source: noLinkedSources ? "products_all" : "products_by_source",
       linked_sources: sourceNames,
       source_keys: sourceKeys,
       pagination: {

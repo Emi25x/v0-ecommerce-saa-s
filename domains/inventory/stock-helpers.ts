@@ -80,11 +80,13 @@ export async function getWarehouseSourceKeys(
   supabase: SupabaseClient,
   warehouseId: string,
 ): Promise<WarehouseSourceInfo[]> {
+  // No filtrar por is_active: si la fuente está vinculada al warehouse, debe contar
+  // para el cálculo de stock. Esto evita que fuentes "inactivas" pero vinculadas
+  // hagan que el warehouse entre en fallback mode mostrando stock global.
   const { data, error } = await supabase
     .from("import_sources")
     .select("id, name, source_key")
     .eq("warehouse_id", warehouseId)
-    .eq("is_active", true)
 
   if (error || !data) return []
 
