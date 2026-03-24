@@ -100,20 +100,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
     if (prodErr) {
       console.error("[WAREHOUSE STOCK] Products query error:", prodErr.message)
-      // Return empty items but keep the count to help diagnose
       return NextResponse.json({
         warehouse,
         items: [],
         data_source: "products_error",
         linked_sources: sourceNames,
         source_keys: sourceKeys,
-        pagination: {
-          total: totalCount ?? 0,
-          page,
-          page_size: PAGE_SIZE,
-          total_pages: Math.ceil((totalCount ?? 0) / PAGE_SIZE),
-        },
-        stats: { total_skus: totalCount ?? 0, total_units: 0, matched_skus: 0, unmatched_skus: 0 },
+        pagination: { total: 0, page, page_size: PAGE_SIZE, total_pages: 0 },
+        stats: { total_skus: 0, total_units: 0, matched_skus: 0, unmatched_skus: 0 },
         error: prodErr.message,
       })
     }
@@ -126,6 +120,37 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       cost_price: number | null
       stock_by_source: Record<string, number> | null
     }>
+
+    // ── Calcular total_units global (no solo la página) ─────────────────────────
+    // Usar RPC o query SUM sería ideal, pero PostgREST no soporta SUM directo.
+    // Workaround: query sin paginación solo para sumar stock del almacén.
+    let globalTotalUnits = 0
+    if (!noLinkedSources && (totalCount ?? 0) > 0) {
+      // Fetch all matching products (solo id + stock_by_source, sin paginación)
+      let sumQ = supabase
+        .from("products")
+        .select("stock_by_source")
+        .gt("stock", 0)
+        .or(jsonbOrFilter)
+      const { data: allProds } = await sumQ
+      if (allProds) {
+        globalTotalUnits = allProds.reduce((sum: number, p: any) => {
+          return sum + sourceKeys.reduce((s: number, k: string) => s + ((p.stock_by_source?.[k] ?? 0) as number), 0)
+        }, 0)
+      }
+    } else if (noLinkedSources && (totalCount ?? 0) > 0) {
+      let sumQ = supabase
+        .from("products")
+        .select("stock")
+        .gt("stock", 0)
+      if (search) {
+        sumQ = sumQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
+      }
+      const { data: allProds } = await sumQ
+      if (allProds) {
+        globalTotalUnits = allProds.reduce((sum: number, p: any) => sum + (p.stock ?? 0), 0)
+      }
+    }
 
     // ML enrichment
     const productIds = prodItems.map((p) => p.id)
@@ -152,6 +177,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     })
 
     const totalSKUs = totalCount ?? 0
+    const totalPages = Math.ceil(totalSKUs / PAGE_SIZE)
+
+    // Si la página solicitada excede las páginas reales, corregir
+    const effectivePage = totalPages > 0 ? Math.min(page, totalPages) : 1
 
     return NextResponse.json({
       warehouse,
@@ -161,13 +190,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       source_keys: sourceKeys,
       pagination: {
         total: totalSKUs,
-        page,
+        page: effectivePage,
         page_size: PAGE_SIZE,
-        total_pages: Math.ceil(totalSKUs / PAGE_SIZE),
+        total_pages: totalPages,
       },
       stats: {
         total_skus: totalSKUs,
-        total_units: items.reduce((s, i) => s + (i.stock_quantity ?? 0), 0),
+        total_units: globalTotalUnits,
         matched_skus: totalSKUs,
         unmatched_skus: 0,
       },

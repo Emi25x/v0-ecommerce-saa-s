@@ -95,6 +95,11 @@ export default function WarehouseDetailPage() {
         }
         const json = await res.json()
         setData(json)
+        // Si el backend corrigió la página (ej: pedimos pág 20 pero solo hay 17),
+        // sincronizar el estado local para que los controles de paginación funcionen.
+        if (json.pagination?.page && json.pagination.page !== currentPage) {
+          setPage(json.pagination.page)
+        }
       } catch (e) {
         console.error("[WarehouseDetail]", e)
       } finally {
@@ -449,13 +454,13 @@ export default function WarehouseDetailPage() {
           </table>
         </div>
 
-        {/* Pagination */}
-        {pagination && pagination.total_pages > 1 && (
+        {/* Pagination — show when there are multiple pages OR when user is beyond page 1 */}
+        {pagination && (pagination.total_pages > 1 || page > 1) && (
           <div className="flex items-center justify-between px-4 py-3 border-t bg-muted/20 text-sm text-muted-foreground">
             <span>
-              {((page - 1) * pagination.page_size + 1).toLocaleString("es-AR")}–
-              {Math.min(page * pagination.page_size, pagination.total).toLocaleString("es-AR")} de{" "}
-              {pagination.total.toLocaleString("es-AR")}
+              {pagination.total > 0
+                ? `${((page - 1) * pagination.page_size + 1).toLocaleString("es-AR")}–${Math.min(page * pagination.page_size, pagination.total).toLocaleString("es-AR")} de ${pagination.total.toLocaleString("es-AR")}`
+                : "0 resultados"}
             </span>
             <div className="flex gap-1">
               <Button variant="ghost" size="icon" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
