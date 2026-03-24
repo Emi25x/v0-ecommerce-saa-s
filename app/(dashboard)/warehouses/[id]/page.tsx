@@ -41,18 +41,43 @@ export default function WarehouseDetailPage() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   /** Bidirectional fuzzy match: supplier code/name ↔ import_source name/source_key
-   *  Normalizes underscores ↔ spaces so "libral_argentina" matches "Libral Argentina" */
-  function sourceMatchesSupplier(source: any, supplierCode: string): boolean {
-    const normalize = (s: string) => s.toLowerCase().replace(/_/g, " ").trim()
+   *  Normalizes underscores, hyphens, spaces and compares word tokens */
+  function sourceMatchesSupplier(source: any, supplierCode: string, supplierName?: string): boolean {
+    const normalize = (s: string) =>
+      s
+        .toLowerCase()
+        .replace(/[_\-]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    const tokenize = (s: string) => normalize(s).split(" ").filter(Boolean)
+
     const sName = normalize(source.name ?? "")
     const sKey = normalize(source.source_key ?? "")
     const code = normalize(supplierCode)
-    return (
-      sName.includes(code) ||
-      sKey.includes(code) ||
-      (sKey.length > 0 && code.includes(sKey)) ||
-      (sName.length > 0 && code.includes(sName.split(" ")[0]))
-    )
+    const supName = normalize(supplierName ?? "")
+
+    // Direct substring matches (both directions)
+    if (sName && code && (sName.includes(code) || code.includes(sName))) return true
+    if (sKey && code && (sKey.includes(code) || code.includes(sKey))) return true
+    if (sName && supName && (sName.includes(supName) || supName.includes(sName))) return true
+    if (sKey && supName && (sKey.includes(supName) || supName.includes(sKey))) return true
+
+    // Token-based: if the first word of the source name/key matches any word of supplier
+    const codeTokens = tokenize(supplierCode)
+    const nameTokens = tokenize(supplierName ?? "")
+    const allSupTokens = [...new Set([...codeTokens, ...nameTokens])]
+
+    const sNameFirst = tokenize(source.name ?? "")[0] ?? ""
+    const sKeyFirst = tokenize(source.source_key ?? "")[0] ?? ""
+
+    if (sNameFirst && allSupTokens.includes(sNameFirst)) return true
+    if (sKeyFirst && allSupTokens.includes(sKeyFirst)) return true
+
+    // Reverse: first word of supplier matches source
+    const sTokens = [...new Set([...tokenize(source.name ?? ""), ...tokenize(source.source_key ?? "")])]
+    if (allSupTokens.length > 0 && allSupTokens.some((t) => t.length > 2 && sTokens.includes(t))) return true
+
+    return false
   }
 
   const fetchData = useCallback(
@@ -97,7 +122,7 @@ export default function WarehouseDetailPage() {
         const preSelected = sups
           .filter((sup: any) => {
             const code = (sup.code ?? sup.name ?? "").toLowerCase()
-            return srcs.some((s: any) => linkedSourceIds.has(s.id) && sourceMatchesSupplier(s, code))
+            return srcs.some((s: any) => linkedSourceIds.has(s.id) && sourceMatchesSupplier(s, code, sup.name))
           })
           .map((sup: any) => sup.id)
         setSelectedSupplierIds(preSelected)
@@ -116,7 +141,7 @@ export default function WarehouseDetailPage() {
             const sup = allSuppliers.find((p: any) => p.id === supId)
             if (!sup) return false
             const code = (sup.code ?? sup.name ?? "").toLowerCase()
-            return sourceMatchesSupplier(s, code)
+            return sourceMatchesSupplier(s, code, sup.name)
           }),
         )
         .map((s: any) => s.id)
@@ -228,7 +253,7 @@ export default function WarehouseDetailPage() {
             <div className="space-y-2 max-h-48 overflow-y-auto">
               {allSuppliers.map((sup: any) => {
                 const code = (sup.code ?? sup.name ?? "").toLowerCase()
-                const matchingSources = allSources.filter((s: any) => sourceMatchesSupplier(s, code))
+                const matchingSources = allSources.filter((s: any) => sourceMatchesSupplier(s, code, sup.name))
                 const linkedCount = matchingSources.filter((s: any) => s.warehouse_id === warehouseId).length
                 return (
                   <label key={sup.id} className="flex items-center gap-3 cursor-pointer">
