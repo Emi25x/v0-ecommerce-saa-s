@@ -30,6 +30,7 @@ export default function WarehouseDetailPage() {
   const [search, setSearch] = useState("")
   const [searchInput, setSearchInput] = useState("")
   const [page, setPage] = useState(1)
+  const [stockFilter, setStockFilter] = useState<"in_stock" | "all">("in_stock")
 
   // Sources / suppliers assignment
   const [allSources, setAllSources] = useState<any[]>([])
@@ -90,11 +91,12 @@ export default function WarehouseDetailPage() {
   }
 
   const fetchData = useCallback(
-    async (currentPage: number, currentSearch: string) => {
+    async (currentPage: number, currentSearch: string, currentStockFilter: string) => {
       setLoading(true)
       try {
         const qs = new URLSearchParams({
           page: String(currentPage),
+          stock_filter: currentStockFilter,
           ...(currentSearch ? { search: currentSearch } : {}),
         })
         const res = await fetch(`/api/warehouses/${warehouseId}/stock?${qs}`)
@@ -114,8 +116,8 @@ export default function WarehouseDetailPage() {
   )
 
   useEffect(() => {
-    fetchData(page, search)
-  }, [page, search, fetchData])
+    fetchData(page, search, stockFilter)
+  }, [page, search, stockFilter, fetchData])
 
   // Load suppliers + import sources when panel opens
   useEffect(() => {
@@ -173,7 +175,7 @@ export default function WarehouseDetailPage() {
       if (res.ok) {
         setShowSourcePanel(false)
         setPage(1)
-        fetchData(1, search)
+        fetchData(1, search, stockFilter)
       }
     } catch (e: any) {
       setAssignResult(`Error: ${e.message}`)
@@ -330,16 +332,42 @@ export default function WarehouseDetailPage() {
         </div>
       )}
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <input
-          type="text"
-          placeholder="Buscar por título, EAN o SKU…"
-          value={searchInput}
-          onChange={(e) => handleSearchChange(e.target.value)}
-          className="w-full border rounded-lg pl-9 pr-4 py-2 text-sm bg-background"
-        />
+      {/* Search + stock filter */}
+      <div className="flex gap-3 items-center">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Buscar por título, EAN o SKU…"
+            value={searchInput}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            className="w-full border rounded-lg pl-9 pr-4 py-2 text-sm bg-background"
+          />
+        </div>
+        {dataSource === "products_by_source" && (
+          <div className="flex rounded-lg border overflow-hidden shrink-0">
+            <button
+              className={`px-3 py-2 text-xs font-medium transition-colors ${
+                stockFilter === "in_stock"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-background text-muted-foreground hover:bg-muted"
+              }`}
+              onClick={() => { setStockFilter("in_stock"); setPage(1) }}
+            >
+              Con stock
+            </button>
+            <button
+              className={`px-3 py-2 text-xs font-medium transition-colors border-l ${
+                stockFilter === "all"
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-background text-muted-foreground hover:bg-muted"
+              }`}
+              onClick={() => { setStockFilter("all"); setPage(1) }}
+            >
+              Todos
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Table */}

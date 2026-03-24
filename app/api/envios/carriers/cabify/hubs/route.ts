@@ -28,7 +28,7 @@ export async function GET() {
   const client = new CabifyLogisticsClient(config ?? {}, creds)
 
   try {
-    const result = await client.listHubs()
+    const result: any = await client.listHubs()
     // La API puede devolver: { client_hubs: [...] }, { hubs: [...] }, o un array directo
     let hubs: any[]
     if (Array.isArray(result)) {
