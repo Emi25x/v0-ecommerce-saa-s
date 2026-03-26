@@ -308,7 +308,7 @@ export default function WarehouseDetailPage() {
           </Card>
           <Card className="p-4 space-y-1">
             <p className="text-xs text-muted-foreground">Unidades totales</p>
-            <p className="text-2xl font-semibold">{stats.total_units.toLocaleString("es-AR")}</p>
+            <p className="text-2xl font-semibold">{stats.total_units != null ? stats.total_units.toLocaleString("es-AR") : "—"}</p>
           </Card>
           <Card className="p-4 space-y-1">
             <p className="text-xs text-muted-foreground">Vinculados al catálogo</p>

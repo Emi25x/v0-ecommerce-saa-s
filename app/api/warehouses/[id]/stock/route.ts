@@ -123,32 +123,22 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }>
 
     // ── Calcular total_units global (no solo la página) ─────────────────────────
-    // Usar RPC o query SUM sería ideal, pero PostgREST no soporta SUM directo.
-    // Workaround: query sin paginación solo para sumar stock del almacén.
-    let globalTotalUnits = 0
-    if (!noLinkedSources && (totalCount ?? 0) > 0) {
-      // Fetch all matching products (solo id + stock_by_source, sin paginación)
-      const { data: allProds } = await supabase
+    // Solo calcular cuando hay fuentes vinculadas (dataset acotado, ~1K productos).
+    // Sin fuentes (fallback mode, potencialmente 200K+ productos), no es viable
+    // sumar todo — se devuelve null y el frontend muestra "—".
+    let globalTotalUnits: number | null = null
+    if (!noLinkedSources && (totalCount ?? 0) > 0 && (totalCount ?? 0) <= 10000) {
+      // Fetch all matching products (solo stock_by_source, sin paginación)
+      const { data: allProds } = await supabaseAdmin
         .from("products")
         .select("stock_by_source")
         .gt("stock", 0)
         .or(jsonbOrFilter)
+        .limit(10000)
       if (allProds) {
         globalTotalUnits = allProds.reduce((sum: number, p: any) => {
           return sum + sourceKeys.reduce((s: number, k: string) => s + ((p.stock_by_source?.[k] ?? 0) as number), 0)
         }, 0)
-      }
-    } else if (noLinkedSources && (totalCount ?? 0) > 0) {
-      let sumQ2 = supabase
-        .from("products")
-        .select("stock")
-        .gt("stock", 0)
-      if (search) {
-        sumQ2 = sumQ2.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
-      }
-      const { data: allProds } = await sumQ2
-      if (allProds) {
-        globalTotalUnits = allProds.reduce((sum: number, p: any) => sum + (p.stock ?? 0), 0)
       }
     }
 
