@@ -25,10 +25,11 @@ export async function GET(request: Request) {
       .select("*")
       .ilike("name", "%libral%")
       .eq("is_active", true)
+      .eq("feed_type", "api")
       .single()
 
     if (!libralSource) {
-      return NextResponse.json({ message: "Libral no configurado", skipped: true })
+      return NextResponse.json({ message: "Libral API source no configurado o inactivo", skipped: true })
     }
 
     const libralSourceKey: string =

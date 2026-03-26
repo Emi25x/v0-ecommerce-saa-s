@@ -60,9 +60,9 @@ export async function GET(request: NextRequest) {
         const nameLower = source.name.toLowerCase()
         const isAzeta = nameLower.includes("azeta")
         const isArnoiaStock = nameLower.includes("arnoia") && source.feed_type === "stock_price"
-        // Only feed_type="api" sources use the Libral API importer.
+        // Only feed_type="api" Libral sources use the Libral API importer.
         // "Libral Argentina" (feed_type="stock_price") goes through executeFullImport.
-        const isLibral = source.feed_type === "api"
+        const isLibral = source.feed_type === "api" && nameLower.includes("libral")
         let importResult: { success: boolean; created?: number; updated?: number; message?: string }
 
         if (isAzeta && source.feed_type === "stock_price") {

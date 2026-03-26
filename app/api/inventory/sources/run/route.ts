@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
     // Only route feed_type="api" sources to the Libral API importer.
     // "Libral Argentina" is feed_type="stock_price" (TAB text file) and must
     // go through the generic batch-import path instead.
-    const isLibral = source.feed_type === "api"
+    const isLibral = source.feed_type === "api" && source.name.toLowerCase().includes("libral")
 
     if (isLibral) {
       // Libral API: JSON paginada, ejecutar directamente con admin client
