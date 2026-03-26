@@ -180,11 +180,17 @@ export async function runArnoiaStockImport(): Promise<ArnoiaStockImportResult> {
     // ── Zero-out: poner stock_by_source[source_key] = 0 en productos que
     // NO están en el archivo (ya no disponibles en Arnoia este día).
     // Preserva stock de otros proveedores (Azeta, Libral, etc.)
+    // SAFETY: If the feed returned very few EANs, skip zeroing (likely download/parse failure)
     let zeroed = 0
-    const { data: zeroResult, error: zeroError } = await supabase.rpc("zero_source_stock_not_in_list", {
-      p_eans: eans,
-      p_source_key: stockKey,
-    })
+    if (eans.length < 10) {
+      console.warn(`[ARNOIA-STOCK] SKIPPING zero step — only ${eans.length} EANs parsed (likely feed failure)`)
+    }
+    const { data: zeroResult, error: zeroError } = eans.length >= 10
+      ? await supabase.rpc("zero_source_stock_not_in_list", {
+          p_eans: eans,
+          p_source_key: stockKey,
+        })
+      : { data: 0, error: null }
     if (zeroError) {
       // Si la función no existe aún, intentar con la genérica
       console.warn(`[ARNOIA-STOCK] zero_source_stock_not_in_list error: ${zeroError.message}`)

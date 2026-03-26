@@ -161,24 +161,32 @@ async function _runLibralStockImportInner(
   }
 
   // ── 4. Zero out stock for products NOT in Libral's response ─────────────────
-  // Only zero products that currently have a non-zero libral key
+  // Only zero products that currently have a non-zero libral key.
+  // SAFETY: If the API returned 0 or very few products, do NOT zero — it's likely
+  // an API failure, not a real stock wipeout. Skip zeroing and log a warning.
   let zeroed = 0
-  const { data: withLibralStock } = await supabase
-    .from("products")
-    .select("id, ean, stock_by_source")
-    .not(`stock_by_source->>${sourceKey}`, "is", null)
-    .gt(`stock_by_source->>${sourceKey}`, "0")
+  if (allEans.size < 10) {
+    console.warn(
+      `[LIBRAL-IMPORT] SKIPPING zero step — API only returned ${allEans.size} EANs (likely API failure). No stock will be zeroed.`,
+    )
+  } else {
+    const { data: withLibralStock } = await supabase
+      .from("products")
+      .select("id, ean, stock_by_source")
+      .not(`stock_by_source->>${sourceKey}`, "is", null)
+      .gt(`stock_by_source->>${sourceKey}`, "0")
 
-  const toZero = (withLibralStock ?? []).filter((p: any) => !allEans.has(p.ean))
+    const toZero = (withLibralStock ?? []).filter((p: any) => !allEans.has(p.ean))
 
-  for (let i = 0; i < toZero.length; i += UPSERT_CHUNK) {
-    const chunk = toZero.slice(i, i + UPSERT_CHUNK)
-    const updates = chunk.map((p: any) => {
-      const { stock_by_source, stock } = mergeStockBySource(p.stock_by_source, sourceKey, 0)
-      return { id: p.id, stock, stock_by_source }
-    })
-    await supabase.from("products").upsert(updates, { onConflict: "id" })
-    zeroed += chunk.length
+    for (let i = 0; i < toZero.length; i += UPSERT_CHUNK) {
+      const chunk = toZero.slice(i, i + UPSERT_CHUNK)
+      const updates = chunk.map((p: any) => {
+        const { stock_by_source, stock } = mergeStockBySource(p.stock_by_source, sourceKey, 0)
+        return { id: p.id, stock, stock_by_source }
+      })
+      await supabase.from("products").upsert(updates, { onConflict: "id" })
+      zeroed += chunk.length
+    }
   }
 
   const elapsed = Math.round((Date.now() - start) / 1000)

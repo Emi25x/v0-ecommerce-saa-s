@@ -234,14 +234,17 @@ export async function executeBatchImport(
     const progress = Math.round((newOffset / totalRows) * 100)
 
     // Si terminamos, poner stock=0 en productos que no están en el archivo
+    // SAFETY: skip if feed returned very few EANs (likely download/parse failure)
     if (done) {
-      log.info("Zeroing stock for unlisted products", "batch_import.zero_stock")
-
       const eansInFile = data.map((row) => row[mapping.ean || "EAN"]?.trim()).filter(Boolean)
 
-      const { data: zeroResult, error: zeroError } = await supabase.rpc("zero_stock_not_in_list", {
-        ean_list: eansInFile,
-      })
+      if (eansInFile.length < 10) {
+        log.warn("SKIPPING zero step — too few EANs, likely feed failure", "batch_import.zero_skip", { count: eansInFile.length })
+      }
+
+      const { data: zeroResult, error: zeroError } = eansInFile.length >= 10
+        ? await supabase.rpc("zero_stock_not_in_list", { ean_list: eansInFile })
+        : { data: null, error: null }
 
       if (!zeroError && zeroResult) {
         zeroStockCount = zeroResult.zeroed || 0
