@@ -182,6 +182,36 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     // Si la página solicitada excede las páginas reales, corregir
     const effectivePage = totalPages > 0 ? Math.min(page, totalPages) : 1
 
+    // ── Diagnóstico: sample de productos para detectar estado de stock ────────
+    let debugSample: any = null
+    if (totalSKUs === 0) {
+      const { count: totalProducts } = await supabaseAdmin
+        .from("products")
+        .select("*", { count: "exact", head: true })
+      const { count: productsWithStock } = await supabaseAdmin
+        .from("products")
+        .select("*", { count: "exact", head: true })
+        .gt("stock", 0)
+      const { data: sampleProds } = await supabaseAdmin
+        .from("products")
+        .select("ean, stock, stock_by_source")
+        .not("stock_by_source", "is", null)
+        .limit(3)
+      debugSample = {
+        total_products_in_db: totalProducts,
+        products_with_stock_gt_0: productsWithStock,
+        linked_sources_count: linkedSources?.length ?? 0,
+        linked_source_keys: sourceKeys,
+        catalog_items_count: catalogCount,
+        jsonb_filter: jsonbOrFilter || "(none - no linked sources)",
+        sample_stock_by_source: sampleProds?.map((p: any) => ({
+          ean: p.ean,
+          stock: p.stock,
+          stock_by_source: p.stock_by_source,
+        })),
+      }
+    }
+
     return NextResponse.json({
       warehouse,
       items,
@@ -200,6 +230,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         matched_skus: totalSKUs,
         unmatched_skus: 0,
       },
+      ...(debugSample ? { _debug: debugSample } : {}),
     })
   } catch (error) {
     console.error("[WAREHOUSE STOCK]", error)
