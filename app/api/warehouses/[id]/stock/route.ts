@@ -83,6 +83,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       .select("id, ean, sku, title, stock, cost_price, stock_by_source", { count: "exact" })
       .gt("stock", 0)
       .order("stock", { ascending: false })
+      .order("id", { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1)
 
     if (!noLinkedSources) {
