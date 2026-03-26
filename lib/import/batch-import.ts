@@ -196,10 +196,11 @@ export async function executeBatchImport(
   let updatedCount = 0
   let createdCount = 0
   let failedCount = 0
-  let zeroStockCount = 0
+  const zeroStockCount = 0
 
   // LÓGICA PARA STOCK_PRICE
   if (source.feed_type === "stock_price") {
+    const sourceKey = (source as any).source_key || source.name?.toLowerCase().replace(/[^a-z0-9]/g, "_") || ""
     const batchEans: string[] = []
     const stockMap = new Map<string, { stock: number; price: number }>()
 
@@ -213,20 +214,26 @@ export async function executeBatchImport(
       stockMap.set(ean, { stock, price })
     }
 
-    const stockUpdates = batchEans.map((ean) => {
-      const stockData = stockMap.get(ean)!
-      return { ean, stock: stockData.stock, price: stockData.price }
-    })
+    // Usar bulk_update_stock_price RPC (existe y funciona)
+    const CHUNK = 500
+    for (let i = 0; i < batchEans.length; i += CHUNK) {
+      const chunkEans = batchEans.slice(i, i + CHUNK)
+      const chunkStocks = chunkEans.map((ean) => stockMap.get(ean)?.stock ?? 0)
+      const chunkPrices = chunkEans.map((ean) => stockMap.get(ean)?.price ?? 0)
 
-    const { data: rpcResult, error: rpcError } = await supabase.rpc("update_stock_batch", {
-      stock_updates: stockUpdates,
-    })
+      const { data: rpcResult, error: rpcError } = await supabase.rpc("bulk_update_stock_price", {
+        p_eans: chunkEans,
+        p_stocks: chunkStocks,
+        p_prices: chunkPrices,
+        ...(sourceKey ? { p_source_key: sourceKey } : {}),
+      })
 
-    if (!rpcError && rpcResult) {
-      updatedCount = rpcResult.updated || 0
-    } else {
-      log.error("RPC error in stock batch", rpcError, "batch_import.stock_rpc")
-      failedCount = batchEans.length
+      if (rpcError) {
+        log.error("RPC error in stock batch", rpcError, "batch_import.stock_rpc")
+        failedCount += chunkEans.length
+      } else {
+        updatedCount += typeof rpcResult === "number" ? rpcResult : 0
+      }
     }
 
     const newOffset = offset + batch.length
@@ -235,20 +242,22 @@ export async function executeBatchImport(
 
     // Si terminamos, poner stock=0 en productos que no están en el archivo
     // SAFETY: skip if feed returned very few EANs (likely download/parse failure)
-    if (done) {
+    if (done && sourceKey) {
       const eansInFile = data.map((row) => row[mapping.ean || "EAN"]?.trim()).filter(Boolean)
 
       if (eansInFile.length < 10) {
         log.warn("SKIPPING zero step — too few EANs, likely feed failure", "batch_import.zero_skip", { count: eansInFile.length })
-      }
-
-      const { data: zeroResult, error: zeroError } = eansInFile.length >= 10
-        ? await supabase.rpc("zero_stock_not_in_list", { ean_list: eansInFile })
-        : { data: null, error: null }
-
-      if (!zeroError && zeroResult) {
-        zeroStockCount = zeroResult.zeroed || 0
-        log.info("Products zeroed", "batch_import.zero_stock", { count: zeroStockCount })
+      } else {
+        try {
+          await supabase.rpc("zero_source_stock_not_in_list", {
+            p_eans: eansInFile,
+            p_source_key: sourceKey,
+          })
+        } catch (e) {
+          log.warn("zero_source_stock_not_in_list failed", "batch_import.zero_error", {
+            error: e instanceof Error ? e.message : String(e),
+          })
+        }
       }
     }
 
