@@ -159,16 +159,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       }
     }
 
-    // ML enrichment
+    // ML enrichment — also count publications for stats
     const productIds = prodItems.map((p) => p.id)
     const mlMap = await fetchMLMap(supabase, productIds)
 
+    // Count how many products have ML publications (for stats)
+    const withMLCount = productIds.filter((id) => (mlMap[id]?.length ?? 0) > 0).length
+
     const items = prodItems.map((p) => {
-      // Calcular stock específico de las fuentes del almacén.
-      // Cuando hay fuentes vinculadas, SIEMPRE mostrar stock del warehouse (incluso si es 0).
-      // Solo usar stock global cuando NO hay fuentes vinculadas (fallback mode).
       const sourceStock = sourceKeys.reduce((sum: number, k: string) => sum + (p.stock_by_source?.[k] ?? 0), 0)
       const displayStock = noLinkedSources ? (p.stock ?? 0) : sourceStock
+      const hasML = (mlMap[p.id]?.length ?? 0) > 0
       return {
         id: `prod_${p.id}`,
         supplier_ean: (p as any).ean ?? p.sku,
@@ -178,6 +179,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         price_original: p.cost_price,
         matched_by: "products",
         product_id: p.id,
+        has_ml: hasML,
         products: { id: p.id, ean: (p as any).ean ?? p.sku, sku: p.sku, title: p.title },
         ml_publications: mlMap[p.id] ?? [],
       }
@@ -213,6 +215,29 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       }
     }
 
+    // En modo products_by_source: "vinculado" = tiene publicación ML.
+    // Count global de publicaciones ML para todos los productos del warehouse.
+    let publishedCount: number | null = null
+    if (!noLinkedSources && totalSKUs > 0 && totalSKUs <= 10000) {
+      // Fetch IDs de todos los productos del warehouse (sin paginar)
+      const { data: allIds } = await supabase
+        .from("products")
+        .select("id")
+        .gt("stock", 0)
+        .or(jsonbOrFilter)
+        .limit(10000)
+      if (allIds && allIds.length > 0) {
+        const { count: mlCount } = await supabase
+          .from("ml_publications")
+          .select("product_id", { count: "exact", head: true })
+          .in("product_id", allIds.map((p: any) => p.id))
+        publishedCount = mlCount ?? 0
+      }
+    }
+
+    const mlPublished = publishedCount ?? withMLCount
+    const mlUnpublished = publishedCount !== null ? totalSKUs - mlPublished : null
+
     return NextResponse.json({
       warehouse,
       items,
@@ -228,8 +253,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       stats: {
         total_skus: totalSKUs,
         total_units: globalTotalUnits,
-        matched_skus: totalSKUs,
-        unmatched_skus: 0,
+        published_ml: mlPublished,
+        unpublished_ml: mlUnpublished,
       },
       ...(debugSample ? { _debug: debugSample } : {}),
     })

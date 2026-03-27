@@ -311,15 +311,15 @@ export default function WarehouseDetailPage() {
             <p className="text-2xl font-semibold">{stats.total_units != null ? stats.total_units.toLocaleString("es-AR") : "—"}</p>
           </Card>
           <Card className="p-4 space-y-1">
-            <p className="text-xs text-muted-foreground">Vinculados al catálogo</p>
+            <p className="text-xs text-muted-foreground">Publicados en ML</p>
             <p className="text-2xl font-semibold text-green-600 dark:text-green-400">
-              {stats.matched_skus.toLocaleString("es-AR")}
+              {stats.published_ml != null ? stats.published_ml.toLocaleString("es-AR") : "—"}
             </p>
           </Card>
           <Card className="p-4 space-y-1">
-            <p className="text-xs text-muted-foreground">Sin vincular</p>
+            <p className="text-xs text-muted-foreground">Sin publicar</p>
             <p className="text-2xl font-semibold text-amber-600 dark:text-amber-400">
-              {stats.unmatched_skus.toLocaleString("es-AR")}
+              {stats.unpublished_ml != null ? stats.unpublished_ml.toLocaleString("es-AR") : "—"}
             </p>
           </Card>
         </div>
@@ -377,7 +377,6 @@ export default function WarehouseDetailPage() {
                     <tr key={item.id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-3">
                         <p className="font-medium line-clamp-1">{title}</p>
-                        {product && <p className="text-xs text-muted-foreground mt-0.5">Vinculado al catálogo</p>}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">
                         <p className="font-mono text-xs">{ean}</p>
@@ -428,21 +427,20 @@ export default function WarehouseDetailPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        {item.product_id ? (
+                        {hasML ? (
                           <Badge
                             variant="outline"
                             className="gap-1 text-green-700 border-green-300 dark:text-green-400"
                           >
                             <CheckCircle2 className="h-3 w-3" />
-                            Vinculado
+                            En ML
                           </Badge>
                         ) : (
                           <Badge
                             variant="outline"
-                            className="gap-1 text-amber-700 border-amber-300 dark:text-amber-400"
+                            className="gap-1 text-muted-foreground border-border"
                           >
-                            <AlertCircle className="h-3 w-3" />
-                            Sin vincular
+                            Sin publicar
                           </Badge>
                         )}
                       </td>
@@ -454,7 +452,7 @@ export default function WarehouseDetailPage() {
           </table>
         </div>
 
-        {/* Pagination — show when there are multiple pages OR when user is beyond page 1 */}
+        {/* Pagination */}
         {pagination && (pagination.total_pages > 1 || page > 1) && (
           <div className="flex items-center justify-between px-4 py-3 border-t bg-muted/20 text-sm text-muted-foreground">
             <span>
@@ -462,18 +460,23 @@ export default function WarehouseDetailPage() {
                 ? `${((page - 1) * pagination.page_size + 1).toLocaleString("es-AR")}–${Math.min(page * pagination.page_size, pagination.total).toLocaleString("es-AR")} de ${pagination.total.toLocaleString("es-AR")}`
                 : "0 resultados"}
             </span>
-            <div className="flex gap-1">
-              <Button variant="ghost" size="icon" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                disabled={page >= pagination.total_pages}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
+            <div className="flex items-center gap-2">
+              <span className="text-xs">
+                Pág. {page} de {pagination.total_pages}
+              </span>
+              <div className="flex gap-1">
+                <Button variant="ghost" size="icon" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  disabled={page >= pagination.total_pages}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </div>
         )}
