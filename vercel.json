@@ -59,6 +59,10 @@
     {
       "path": "/api/cron/resume-imports",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/export-libral-orders",
+      "schedule": "0 9 * * *"
     }
   ]
 }
