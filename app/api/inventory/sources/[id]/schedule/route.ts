@@ -1,41 +1,30 @@
-import { createServerClient } from "@supabase/ssr"
-import { cookies } from "next/headers"
 import { type NextRequest, NextResponse } from "next/server"
-import { requireCron } from "@/lib/auth/require-auth"
+import { createClient } from "@/lib/db/server"
+import { createAdminClient } from "@/lib/db/admin"
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireCron(request)
-  if (auth.error) return auth.response
+  // Accept both user auth and cron auth
+  const supabaseUser = await createClient()
+  const { data: { user } } = await supabaseUser.auth.getUser()
 
-  const { id } = await params
+  const cronHeader = request.headers.get("authorization")
+  const isCron = cronHeader === `Bearer ${process.env.CRON_SECRET}`
+
+  if (!user && !isCron) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const supabase = createAdminClient()
+  const { id: sourceId } = await params
   try {
-    const cookieStore = await cookies()
-    const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value
-        },
-      },
-    })
-
     const body = await request.json()
-    const { enabled, frequency, timezone, hour: hourNum, minute: minuteNum, dayOfWeek, dayOfMonth } = body
-    const sourceId = id
+    const { enabled, frequency, timezone, hour: hourNum, minute: minuteNum, dayOfWeek, dayOfMonth, interval_hours } = body
 
-    console.log("[v0] POST /api/inventory/sources/[id]/schedule - Datos recibidos:", {
-      sourceId,
-      body,
-    })
-
-    const hour = hourNum
-    const minute = minuteNum
-
-    console.log("[v0] Hora y minutos:", { hour, minute, dayOfWeek, dayOfMonth })
+    const hour = hourNum ?? 0
+    const minute = minuteNum ?? 0
 
     if (enabled) {
       const nextRunAt = calculateNextRun({ frequency, hour, minute, timezone, dayOfWeek, dayOfMonth })
-
-      console.log("[v0] Próxima ejecución calculada:", nextRunAt)
 
       const { data: existing } = await supabase
         .from("import_schedules")
@@ -45,78 +34,34 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       console.log("[v0] Schedule existente:", existing)
 
+      const scheduleData = {
+        frequency,
+        timezone,
+        hour,
+        minute,
+        day_of_week: dayOfWeek ?? null,
+        day_of_month: dayOfMonth ?? null,
+        interval_hours: interval_hours ?? null,
+        enabled: true,
+        next_run_at: nextRunAt,
+        updated_at: new Date().toISOString(),
+      }
+
       if (existing) {
-        console.log("[v0] Actualizando schedule existente con:", {
-          frequency,
-          timezone,
-          hour,
-          minute,
-          day_of_week: dayOfWeek,
-          day_of_month: dayOfMonth,
-          enabled: true,
-          next_run_at: nextRunAt,
-        })
-
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from("import_schedules")
-          .update({
-            frequency,
-            timezone,
-            hour,
-            minute,
-            day_of_week: dayOfWeek,
-            day_of_month: dayOfMonth,
-            enabled: true,
-            next_run_at: nextRunAt,
-            updated_at: new Date().toISOString(),
-          })
+          .update(scheduleData)
           .eq("id", existing.id)
-          .select()
-
         if (error) throw error
-
-        console.log("[v0] Schedule actualizado exitosamente:", data)
       } else {
-        console.log("[v0] Creando nuevo schedule con:", {
-          source_id: sourceId,
-          frequency,
-          timezone,
-          hour,
-          minute,
-          day_of_week: dayOfWeek,
-          day_of_month: dayOfMonth,
-          enabled: true,
-          next_run_at: nextRunAt,
-        })
-
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from("import_schedules")
-          .insert({
-            source_id: sourceId,
-            frequency,
-            timezone,
-            hour,
-            minute,
-            day_of_week: dayOfWeek,
-            day_of_month: dayOfMonth,
-            enabled: true,
-            next_run_at: nextRunAt,
-          })
-          .select()
-
+          .insert({ source_id: sourceId, ...scheduleData })
         if (error) throw error
-
-        console.log("[v0] Schedule creado exitosamente:", data)
       }
     } else {
-      // Desactivar programación
-      console.log("[v0] Desactivando schedule para source:", sourceId)
-
       const { error } = await supabase.from("import_schedules").update({ enabled: false }).eq("source_id", sourceId)
-
       if (error) throw error
-
-      console.log("[v0] Schedule desactivado exitosamente")
     }
 
     return NextResponse.json({ success: true })

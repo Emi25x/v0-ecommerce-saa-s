@@ -16,6 +16,7 @@ import {
   Settings,
   StopCircle,
   Trash2,
+  CalendarClock,
 } from "lucide-react"
 import Link from "next/link"
 import type { SourceWithSchedule, ImportProgressState } from "./types"
@@ -30,6 +31,7 @@ interface SourceCardProps {
   onToggleExpand: (id: string) => void
   onRunImport: (source: SourceWithSchedule) => void
   onRunImportPro: (source: SourceWithSchedule) => void
+  onSchedule: (source: SourceWithSchedule) => void
   onDelete: (source: SourceWithSchedule) => void
   onCancelImport: () => void
   onCancelBackgroundImport: (source: SourceWithSchedule) => void
@@ -45,6 +47,7 @@ export function SourceCard({
   onToggleExpand,
   onRunImport,
   onRunImportPro,
+  onSchedule,
   onDelete,
   onCancelImport,
   onCancelBackgroundImport,
@@ -85,6 +88,15 @@ export function SourceCard({
               title="Importador PRO (anti-timeout)"
             >
               <Database className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onSchedule(source)}
+              title="Programar ejecución"
+              className={source.schedules?.some((s: any) => s.enabled) ? "border-green-500 text-green-600" : ""}
+            >
+              <CalendarClock className="h-4 w-4" />
             </Button>
             <Button variant="outline" size="sm" onClick={() => onDelete(source)}>
               <Trash2 className="h-4 w-4" />

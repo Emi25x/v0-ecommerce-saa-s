@@ -2,6 +2,7 @@
 
 export const dynamic = "force-dynamic"
 
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Database, Download, FileText, Loader2, Play, RefreshCw, RotateCcw, Trash2, Upload } from "lucide-react"
@@ -14,10 +15,13 @@ import {
   DiagnosticDialog,
   ResetDatabaseDialog,
 } from "@/components/inventory/sources"
+import { ScheduleDialog } from "@/components/inventory/sources/ScheduleDialog"
 import { toast } from "@/hooks/use-toast"
 
 export default function SourcesPage() {
   const s = useImportSources()
+  const [scheduleSource, setScheduleSource] = useState<any>(null)
+  const [showScheduleDialog, setShowScheduleDialog] = useState(false)
 
   return (
     <div className="container mx-auto p-6">
@@ -105,6 +109,7 @@ export default function SourcesPage() {
                   `/inventory/sources/import-pro?sourceId=${source.id}&name=${encodedName}&mode=${defaultMode}`,
                 )
               }}
+              onSchedule={(source) => { setScheduleSource(source); setShowScheduleDialog(true) }}
               onDelete={s.handleDeleteSource}
               onCancelImport={s.cancelImport}
               onCancelBackgroundImport={(source) => {
@@ -162,6 +167,16 @@ export default function SourcesPage() {
         onConfirmTextChange={s.setResetConfirmText}
         loading={s.resetLoading}
         onReset={s.handleResetDatabase}
+      />
+
+      <ScheduleDialog
+        open={showScheduleDialog}
+        onOpenChange={setShowScheduleDialog}
+        source={scheduleSource}
+        onSaved={() => {
+          s.loadSources()
+          toast({ title: "Programación guardada" })
+        }}
       />
     </div>
   )
