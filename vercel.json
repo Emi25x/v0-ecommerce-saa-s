@@ -61,7 +61,7 @@
       "schedule": "*/10 * * * *"
     },
     {
-      "path": "/api/cron/export-libral-orders",
+      "path": "/api/sales/export-libral",
       "schedule": "0 9 * * *"
     }
   ]

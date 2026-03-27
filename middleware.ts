@@ -35,6 +35,7 @@ const UNAUTHENTICATED_API_PREFIXES = [
   "/api/auth/",                       // OAuth callbacks
   "/api/cron/",                       // Cron jobs — secured by requireCron()
   "/api/arnoia/",                     // Supplier imports — secured by requireCron()
+  "/api/sales/export-libral",         // Libral order export cron — secured by requireCron()
   "/api/inventory/import/",           // Batch imports — secured by requireCron()
   "/api/inventory/sources/",          // Source config — secured by requireCron()
   "/api/webhooks/",                   // Generic webhooks — per-handler auth
