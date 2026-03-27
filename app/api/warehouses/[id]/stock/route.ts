@@ -4,15 +4,6 @@ import { createAdminClient } from "@/lib/db/admin"
 
 const PAGE_SIZE = 50
 
-/**
- * GET /api/warehouses/[id]/stock
- *
- * Devuelve el stock de un almacén. Dos modos:
- *  1. Catálogo: si hay supplier_catalog_items para este almacén
- *  2. Productos: filtra products.stock_by_source por los source_key de las fuentes vinculadas
- *     (ej: stock_by_source->>'libral' IS NOT NULL para fuente "Libral Argentina")
- *     Si no hay fuentes vinculadas, muestra todos los productos con stock > 0.
- */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const supabase = await createClient()
@@ -39,12 +30,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
     const { searchParams } = new URL(request.url)
     const search = searchParams.get("search") ?? ""
-    const page = parseInt(searchParams.get("page") ?? "1", 10)
-    const offset = (page - 1) * PAGE_SIZE
+    const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10))
 
-    // ── Fuentes vinculadas (con source_key) ───────────────────────────────────
-    // Usar admin client para evitar problemas de RLS en import_sources
-    // No filtrar por is_active: si la fuente está vinculada al warehouse, debe contar
+    // ── Fuentes vinculadas ──────────────────────────────────────────────────
     const supabaseAdmin = createAdminClient()
     const { data: linkedSources } = await supabaseAdmin
       .from("import_sources")
@@ -52,191 +40,149 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       .eq("warehouse_id", warehouseId)
 
     const sourceNames = (linkedSources ?? []).map((s: any) => s.name)
-    // source_keys: claves cortas para filtrar stock_by_source (ej: ["libral", "azeta"])
     const sourceKeys = (linkedSources ?? [])
       .map((s: any) => s.source_key ?? s.name.split(" ")[0].toLowerCase())
       .filter(Boolean)
 
-    // ── Modo 1: supplier_catalog_items ────────────────────────────────────────
+    // ── Catálogo mode check ─────────────────────────────────────────────────
     const { count: catalogCount } = await supabase
       .from("supplier_catalog_items")
       .select("*", { count: "exact", head: true })
       .eq("warehouse_id", warehouseId)
 
     if ((catalogCount ?? 0) > 0) {
-      return catalogModeResponse({ supabase, warehouseId, warehouse, sourceNames, search, page, offset })
+      return catalogModeResponse({ supabase, warehouseId, warehouse, sourceNames, search, page })
     }
 
-    // ── Sin fuentes vinculadas → mostrar todos los productos con stock > 0 ─────
+    // ── Products mode ───────────────────────────────────────────────────────
     const noLinkedSources = sourceKeys.length === 0
-
-    // ── Modo 2: products filtrados por stock_by_source[source_key] ────────────
     const jsonbOrFilter = noLinkedSources
       ? ""
       : sourceKeys.map((k: string) => `and(stock_by_source->>${k}.not.is.null,stock_by_source->>${k}.neq.0)`).join(",")
 
-    // Query única con count + data (mismo client, misma query, sin divergencia)
-    let prodQ = supabase
+    // Build base query helper (reused for data + stats)
+    function applyFilters(q: any) {
+      q = q.gt("stock", 0)
+      if (!noLinkedSources) {
+        q = q.or(jsonbOrFilter)
+      }
+      if (search) {
+        q = q.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
+      }
+      return q
+    }
+
+    // ── Data query with count ───────────────────────────────────────────────
+    const offset = (page - 1) * PAGE_SIZE
+    let dataQ = supabase
       .from("products")
       .select("id, ean, sku, title, stock, cost_price, stock_by_source", { count: "exact" })
-      .gt("stock", 0)
       .order("stock", { ascending: false })
       .order("id", { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1)
+    dataQ = applyFilters(dataQ)
 
-    if (!noLinkedSources) {
-      prodQ = prodQ.or(jsonbOrFilter)
-      if (search) {
-        prodQ = prodQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
-      }
-    } else if (search) {
-      prodQ = prodQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
-    }
-
-    const { data: prodData, error: prodErr, count: totalCount } = await prodQ
-
-    // Si la página pidió fuera de rango y hay datos, corregir
-    const totalSKUs = totalCount ?? 0
-    const totalPages = Math.ceil(totalSKUs / PAGE_SIZE)
-    const effectivePage = totalPages > 0 ? Math.min(page, totalPages) : 1
-
-    // Si la página actual está fuera de rango y hay datos, re-ejecutar con página corregida
-    let finalData = prodData
-    if (totalSKUs > 0 && (prodData?.length ?? 0) === 0 && page > 1) {
-      const correctedOffset = (effectivePage - 1) * PAGE_SIZE
-      let retryQ = supabase
-        .from("products")
-        .select("id, ean, sku, title, stock, cost_price, stock_by_source")
-        .gt("stock", 0)
-        .order("stock", { ascending: false })
-        .order("id", { ascending: true })
-        .range(correctedOffset, correctedOffset + PAGE_SIZE - 1)
-      if (!noLinkedSources) retryQ = retryQ.or(jsonbOrFilter)
-      const { data: retryData } = await retryQ
-      finalData = retryData
-    }
+    const { data: prodData, error: prodErr, count: totalCount } = await dataQ
 
     if (prodErr) {
-      console.error("[WAREHOUSE STOCK] Products query error:", prodErr.message)
       return NextResponse.json({
-        warehouse,
-        items: [],
-        data_source: "products_error",
-        linked_sources: sourceNames,
-        source_keys: sourceKeys,
+        warehouse, items: [], data_source: "products_error",
+        linked_sources: sourceNames, source_keys: sourceKeys,
         pagination: { total: 0, page, page_size: PAGE_SIZE, total_pages: 0 },
-        stats: { total_skus: 0, total_units: 0, matched_skus: 0, unmatched_skus: 0 },
+        stats: { total_skus: 0, total_units: null, published_ml: null, unpublished_ml: null },
         error: prodErr.message,
       })
     }
 
-    const prodItems = (finalData ?? []) as Array<{
-      id: string
-      sku: string | null
-      title: string | null
-      stock: number | null
-      cost_price: number | null
-      stock_by_source: Record<string, number> | null
-    }>
+    const totalSKUs = totalCount ?? 0
+    const totalPages = Math.ceil(totalSKUs / PAGE_SIZE)
 
-    // ── Calcular total_units global (no solo la página) ─────────────────────────
-    // Solo calcular cuando hay fuentes vinculadas (dataset acotado, ~1K productos).
-    // Sin fuentes (fallback mode, potencialmente 200K+ productos), no es viable
-    // sumar todo — se devuelve null y el frontend muestra "—".
-    let globalTotalUnits: number | null = null
-    if (!noLinkedSources && (totalCount ?? 0) > 0 && (totalCount ?? 0) <= 10000) {
-      // Fetch all matching products (solo stock_by_source, sin paginación)
-      const { data: allProds } = await supabaseAdmin
+    // If page was beyond range and returned empty, retry with last valid page
+    let items_raw = prodData ?? []
+    let effectivePage = page
+    if (items_raw.length === 0 && totalSKUs > 0 && page > 1) {
+      effectivePage = totalPages
+      const correctedOffset = (effectivePage - 1) * PAGE_SIZE
+      let retryQ = supabase
         .from("products")
-        .select("stock_by_source")
-        .gt("stock", 0)
-        .or(jsonbOrFilter)
-        .limit(10000)
-      if (allProds) {
-        globalTotalUnits = allProds.reduce((sum: number, p: any) => {
-          return sum + sourceKeys.reduce((s: number, k: string) => s + ((p.stock_by_source?.[k] ?? 0) as number), 0)
-        }, 0)
-      }
+        .select("id, ean, sku, title, stock, cost_price, stock_by_source")
+        .order("stock", { ascending: false })
+        .order("id", { ascending: true })
+        .range(correctedOffset, correctedOffset + PAGE_SIZE - 1)
+      retryQ = applyFilters(retryQ)
+      const { data: retryData } = await retryQ
+      items_raw = retryData ?? []
+    } else {
+      effectivePage = Math.min(page, Math.max(totalPages, 1))
     }
 
-    // ML enrichment — also count publications for stats
-    const productIds = prodItems.map((p) => p.id)
-    const mlMap = await fetchMLMap(supabase, productIds)
+    // ── ML publications for this page ───────────────────────────────────────
+    const pageProductIds = items_raw.map((p: any) => p.id)
+    const mlMap = await fetchMLMap(supabase, pageProductIds)
 
-    // Count how many products have ML publications (for stats)
-    const withMLCount = productIds.filter((id) => (mlMap[id]?.length ?? 0) > 0).length
-
-    const items = prodItems.map((p) => {
+    // ── Build items ─────────────────────────────────────────────────────────
+    const items = items_raw.map((p: any) => {
       const sourceStock = sourceKeys.reduce((sum: number, k: string) => sum + (p.stock_by_source?.[k] ?? 0), 0)
       const displayStock = noLinkedSources ? (p.stock ?? 0) : sourceStock
-      const hasML = (mlMap[p.id]?.length ?? 0) > 0
+      const pubs = mlMap[p.id] ?? []
       return {
         id: `prod_${p.id}`,
-        supplier_ean: (p as any).ean ?? p.sku,
+        supplier_ean: p.ean ?? p.sku,
         supplier_sku: p.sku,
         title: p.title ?? "",
         stock_quantity: displayStock,
         price_original: p.cost_price,
-        matched_by: "products",
         product_id: p.id,
-        has_ml: hasML,
-        products: { id: p.id, ean: (p as any).ean ?? p.sku, sku: p.sku, title: p.title },
-        ml_publications: mlMap[p.id] ?? [],
+        has_ml: pubs.length > 0,
+        products: { id: p.id, ean: p.ean ?? p.sku, sku: p.sku, title: p.title },
+        ml_publications: pubs,
       }
     })
 
-    // ── Diagnóstico: sample de productos para detectar estado de stock ────────
-    let debugSample: any = null
-    if (totalSKUs === 0) {
-      const { count: totalProducts } = await supabaseAdmin
-        .from("products")
-        .select("*", { count: "exact", head: true })
-      const { count: productsWithStock } = await supabaseAdmin
-        .from("products")
-        .select("*", { count: "exact", head: true })
-        .gt("stock", 0)
-      const { data: sampleProds } = await supabaseAdmin
-        .from("products")
-        .select("ean, stock, stock_by_source")
-        .not("stock_by_source", "is", null)
-        .limit(3)
-      debugSample = {
-        total_products_in_db: totalProducts,
-        products_with_stock_gt_0: productsWithStock,
-        linked_sources_count: linkedSources?.length ?? 0,
-        linked_source_keys: sourceKeys,
-        catalog_items_count: catalogCount,
-        jsonb_filter: jsonbOrFilter || "(none - no linked sources)",
-        sample_stock_by_source: sampleProds?.map((p: any) => ({
-          ean: p.ean,
-          stock: p.stock,
-          stock_by_source: p.stock_by_source,
-        })),
-      }
-    }
+    // ── Global stats (async, non-blocking) ──────────────────────────────────
+    // Only compute for warehouses with linked sources and manageable size
+    let globalTotalUnits: number | null = null
+    let publishedML: number | null = null
 
-    // En modo products_by_source: "vinculado" = tiene publicación ML.
-    // Count global de publicaciones ML para todos los productos del warehouse.
-    let publishedCount: number | null = null
     if (!noLinkedSources && totalSKUs > 0 && totalSKUs <= 10000) {
-      // Fetch IDs de todos los productos del warehouse (sin paginar)
-      const { data: allIds } = await supabase
-        .from("products")
-        .select("id")
-        .gt("stock", 0)
-        .or(jsonbOrFilter)
-        .limit(10000)
-      if (allIds && allIds.length > 0) {
-        const { count: mlCount } = await supabase
-          .from("ml_publications")
-          .select("product_id", { count: "exact", head: true })
-          .in("product_id", allIds.map((p: any) => p.id))
-        publishedCount = mlCount ?? 0
+      try {
+        // Fetch all matching products (minimal fields, with limit)
+        let allQ = supabaseAdmin
+          .from("products")
+          .select("id, stock_by_source")
+          .limit(10000)
+        allQ = applyFilters(allQ)
+        const { data: allProds } = await allQ
+
+        if (allProds && allProds.length > 0) {
+          // Total units: sum stock from warehouse sources
+          globalTotalUnits = allProds.reduce((sum: number, p: any) => {
+            return sum + sourceKeys.reduce((s: number, k: string) => s + ((p.stock_by_source?.[k] ?? 0) as number), 0)
+          }, 0)
+
+          // ML publications: batch .in() queries to avoid URL limit
+          const allIds = allProds.map((p: any) => p.id)
+          const publishedIds = new Set<string>()
+          const BATCH = 200
+          for (let i = 0; i < allIds.length; i += BATCH) {
+            const batch = allIds.slice(i, i + BATCH)
+            const { data: pubs } = await supabase
+              .from("ml_publications")
+              .select("product_id")
+              .in("product_id", batch)
+            for (const pub of pubs ?? []) {
+              if (pub.product_id) publishedIds.add(pub.product_id)
+            }
+          }
+          publishedML = publishedIds.size
+        }
+      } catch (e) {
+        // Non-critical — stats show null, page still works
+        console.warn("[WAREHOUSE STOCK] Global stats error:", e)
       }
     }
 
-    const mlPublished = publishedCount ?? withMLCount
-    const mlUnpublished = publishedCount !== null ? totalSKUs - mlPublished : null
+    const unpublishedML = publishedML !== null ? totalSKUs - publishedML : null
 
     return NextResponse.json({
       warehouse,
@@ -253,10 +199,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       stats: {
         total_skus: totalSKUs,
         total_units: globalTotalUnits,
-        published_ml: mlPublished,
-        unpublished_ml: mlUnpublished,
+        published_ml: publishedML,
+        unpublished_ml: unpublishedML,
       },
-      ...(debugSample ? { _debug: debugSample } : {}),
     })
   } catch (error) {
     console.error("[WAREHOUSE STOCK]", error)
@@ -264,10 +209,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Catalog mode ──────────────────────────────────────────────────────────────
 
-async function catalogModeResponse({ supabase, warehouseId, warehouse, sourceNames, search, page, offset }: any) {
-  // Query catalog items WITHOUT inline join to avoid PostgREST join issues
+async function catalogModeResponse({ supabase, warehouseId, warehouse, sourceNames, search, page }: any) {
+  const offset = (page - 1) * PAGE_SIZE
+
   let catQ = supabase
     .from("supplier_catalog_items")
     .select("id, supplier_ean, supplier_sku, title, stock_quantity, price_original, matched_by, product_id", {
@@ -284,17 +230,11 @@ async function catalogModeResponse({ supabase, warehouseId, warehouse, sourceNam
   const { data: catItems, count: catTotal, error: catErr } = await catQ
 
   if (catErr) {
-    console.error("[WAREHOUSE STOCK] Catalog query error:", catErr.message, catErr.code, catErr.details)
-    // Return error info visible in response instead of silently returning empty items
     return NextResponse.json({
-      warehouse,
-      items: [],
-      data_source: "catalog_error",
-      catalog_error: catErr.message,
-      linked_sources: sourceNames,
-      source_keys: [],
+      warehouse, items: [], data_source: "catalog_error",
+      linked_sources: sourceNames, source_keys: [],
       pagination: { total: 0, page, page_size: PAGE_SIZE, total_pages: 0 },
-      stats: { total_skus: 0, total_units: 0, matched_skus: 0, unmatched_skus: 0 },
+      stats: { total_skus: 0, total_units: null, published_ml: null, unpublished_ml: null },
     })
   }
 
@@ -310,16 +250,13 @@ async function catalogModeResponse({ supabase, warehouseId, warehouse, sourceNam
   const totalSKUs = catTotalCount ?? 0
   const matchedSKUs = matchedCount ?? 0
   const totalUnits = (catItems ?? []).reduce((s: number, r: any) => s + (r.stock_quantity ?? 0), 0)
+  const reliableTotal = catTotal ?? catTotalCount ?? 0
 
-  // Fetch product data separately (avoids RLS join issues)
   const productIds = (catItems ?? []).filter((i: any) => i.product_id).map((i: any) => i.product_id as string)
   const [mlMap, productMap] = await Promise.all([
     fetchMLMap(supabase, productIds),
     fetchProductMap(supabase, productIds),
   ])
-
-  // Use catTotalCount as reliable count (catTotal may be null if query had issues)
-  const reliableTotal = catTotal ?? catTotalCount ?? 0
 
   return NextResponse.json({
     warehouse,
@@ -335,11 +272,13 @@ async function catalogModeResponse({ supabase, warehouseId, warehouse, sourceNam
     stats: {
       total_skus: totalSKUs,
       total_units: totalUnits,
-      matched_skus: matchedSKUs,
-      unmatched_skus: totalSKUs - matchedSKUs,
+      published_ml: matchedSKUs,
+      unpublished_ml: totalSKUs - matchedSKUs,
     },
   })
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function fetchProductMap(supabase: any, productIds: string[]) {
   const productMap: Record<string, { id: string; sku: string | null; title: string | null }> = {}
@@ -356,17 +295,22 @@ async function fetchProductMap(supabase: any, productIds: string[]) {
 async function fetchMLMap(supabase: any, productIds: string[]) {
   const mlMap: Record<string, { ml_item_id: string; account_nickname: string }[]> = {}
   if (productIds.length === 0) return mlMap
-  const { data: mlPubs } = await supabase
-    .from("ml_publications")
-    .select("product_id, ml_item_id, ml_accounts(nickname, ml_user_id)")
-    .in("product_id", productIds)
-  for (const pub of mlPubs ?? []) {
-    if (!pub.product_id) continue
-    if (!mlMap[pub.product_id]) mlMap[pub.product_id] = []
-    mlMap[pub.product_id].push({
-      ml_item_id: pub.ml_item_id,
-      account_nickname: (pub.ml_accounts as any)?.nickname ?? (pub.ml_accounts as any)?.ml_user_id ?? "",
-    })
+  // Batch to avoid URL length limits
+  const BATCH = 200
+  for (let i = 0; i < productIds.length; i += BATCH) {
+    const batch = productIds.slice(i, i + BATCH)
+    const { data: mlPubs } = await supabase
+      .from("ml_publications")
+      .select("product_id, ml_item_id, ml_accounts(nickname, ml_user_id)")
+      .in("product_id", batch)
+    for (const pub of mlPubs ?? []) {
+      if (!pub.product_id) continue
+      if (!mlMap[pub.product_id]) mlMap[pub.product_id] = []
+      mlMap[pub.product_id].push({
+        ml_item_id: pub.ml_item_id,
+        account_nickname: (pub.ml_accounts as any)?.nickname ?? (pub.ml_accounts as any)?.ml_user_id ?? "",
+      })
+    }
   }
   return mlMap
 }
