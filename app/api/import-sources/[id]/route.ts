@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/db/server"
+import { createAdminClient } from "@/lib/db/admin"
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -53,7 +54,19 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     const { id } = await params
     const supabase = await createClient()
 
-    const { error } = await supabase.from("import_sources").delete().eq("id", id)
+    // Verify user is authenticated
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    // Use admin client to bypass RLS (import_sources has no DELETE policy for users)
+    const supabaseAdmin = createAdminClient()
+
+    // Clean up related records first
+    await supabaseAdmin.from("import_schedules").delete().eq("source_id", id)
+
+    const { error } = await supabaseAdmin.from("import_sources").delete().eq("id", id)
 
     if (error) throw error
 

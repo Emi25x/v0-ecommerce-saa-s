@@ -644,8 +644,12 @@ export function useImportSources() {
   async function confirmDelete() {
     if (!selectedSource) return
     try {
-      const { error } = await supabase.from("import_sources").delete().eq("id", selectedSource.id)
-      if (error) throw error
+      // Use API route which uses admin client to bypass RLS
+      const res = await fetch(`/api/import-sources/${selectedSource.id}`, { method: "DELETE" })
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error ?? "Error al eliminar")
+      }
       toast({
         title: "Fuente eliminada",
         description: `La fuente "${selectedSource.name}" ha sido eliminada correctamente`,
