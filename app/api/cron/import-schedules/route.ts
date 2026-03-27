@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
             message: r.error ?? `${r.updated} actualizados, ${r.not_found} no encontrados`,
           }
         } else if (isLibralApi) {
-          const sourceKey = source.source_key ?? "libral"
+          const sourceKey = source.source_key ?? "libral_argentina"
           const r = await runLibralStockImport(sourceKey)
           importResult = {
             success: r.success,

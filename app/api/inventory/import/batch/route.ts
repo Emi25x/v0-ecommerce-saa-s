@@ -345,7 +345,7 @@ export async function POST(request: NextRequest) {
                 const n = parseFloat(String(p.price_ars).replace(",", "."))
                 return isNaN(n) ? null : n
               })
-              const twoPriceSourceKey = (source as any).source_key || source.name?.toLowerCase().replace(/[^a-z0-9]/g, "_") || "libral"
+              const twoPriceSourceKey = (source as any).source_key || source.name?.toLowerCase().replace(/[^a-z0-9]/g, "_") || "libral_argentina"
               const res = await supabase.rpc("bulk_update_stock_two_prices", {
                 p_eans: eans,
                 p_stocks: stocks,

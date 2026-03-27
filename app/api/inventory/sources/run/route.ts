@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
     if (isLibral) {
       // Libral API: JSON paginada, ejecutar directamente con admin client
       console.log(`[SOURCES-RUN] Fuente API Libral detectada, ejecutando runLibralStockImport`)
-      const sourceKey = source.source_key ?? "libral"
+      const sourceKey = source.source_key ?? "libral_argentina"
       const r = await runLibralStockImport(sourceKey)
 
       await supabase
