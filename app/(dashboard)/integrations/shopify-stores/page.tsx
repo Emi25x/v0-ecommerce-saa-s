@@ -23,6 +23,7 @@ export default function ShopifyStoresPage() {
   const [loading, setLoading] = useState(true)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingStore, setEditingStore] = useState<ShopifyStore | null>(null)
+  const [empresas, setEmpresas] = useState<Array<{ id: string; razon_social: string; nombre_empresa?: string | null }>>([])
   const { toast } = useToast()
 
   const loadStores = async () => {
@@ -51,6 +52,9 @@ export default function ShopifyStoresPage() {
 
   useEffect(() => {
     loadStores()
+    fetch("/api/billing/config").then((r) => r.json()).then((data) => {
+      setEmpresas(Array.isArray(data) ? data : (data.configs ?? []))
+    }).catch(() => {})
     // Handle OAuth callback results
     const success = searchParams.get("success")
     const error = searchParams.get("error")
@@ -157,6 +161,7 @@ export default function ShopifyStoresPage() {
         onOpenChange={handleDialogClose}
         onSuccess={handleSuccess}
         store={editingStore}
+        empresas={empresas}
       />
     </div>
   )

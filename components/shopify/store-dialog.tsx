@@ -26,14 +26,21 @@ interface ShopifyStore {
   is_active: boolean
 }
 
+interface Empresa {
+  id: string
+  razon_social: string
+  nombre_empresa?: string | null
+}
+
 interface ShopifyStoreDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSuccess: () => void
   store?: ShopifyStore | null
+  empresas?: Empresa[]
 }
 
-export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: ShopifyStoreDialogProps) {
+export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store, empresas = [] }: ShopifyStoreDialogProps) {
   const [storeName, setStoreName] = useState("")
   const [shopDomain, setShopDomain] = useState("")
   const [authMode, setAuthMode] = useState<AuthMode>("token")
@@ -45,6 +52,8 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
   const [loading, setLoading] = useState(false)
   const [loadingLocations, setLoadingLocations] = useState(false)
   const [testingConnection, setTestingConnection] = useState(false)
+  const [platformCode, setPlatformCode] = useState("")
+  const [empresaId, setEmpresaId] = useState("")
   const { toast } = useToast()
 
   useEffect(() => {
@@ -52,6 +61,8 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
       setStoreName((store as any).name || "")
       setShopDomain(store.shop_domain)
       setDefaultLocationId(store.default_location_id || "")
+      setPlatformCode((store as any).platform_code || "")
+      setEmpresaId((store as any).empresa_id || "")
       setAccessToken("")
       setApiKey("")
       setApiSecret("")
@@ -62,6 +73,8 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
       setApiKey("")
       setApiSecret("")
       setDefaultLocationId("")
+      setPlatformCode("")
+      setEmpresaId("")
       setAuthMode("token")
     }
     setLocations([])
@@ -188,6 +201,12 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
 
       if (defaultLocationId) {
         body.default_location_id = defaultLocationId
+      }
+
+      // Libral config
+      if (store) {
+        body.platform_code = platformCode || null
+        body.empresa_id = empresaId || null
       }
 
       const response = await fetch(url, {
@@ -360,6 +379,41 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store }: Sho
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          )}
+
+          {store && (
+            <div className="space-y-2 p-3 bg-muted/50 rounded-lg">
+              <Label className="text-sm font-medium">Configuración Libral</Label>
+              <div>
+                <Label className="text-xs text-muted-foreground">Platform Code</Label>
+                <Select value={platformCode} onValueChange={setPlatformCode}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Seleccionar..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sin asignar</SelectItem>
+                    <SelectItem value="SP1">SP1</SelectItem>
+                    <SelectItem value="SP2">SP2</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Empresa</Label>
+                <Select value={empresaId} onValueChange={setEmpresaId}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Seleccionar empresa..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sin asignar</SelectItem>
+                    {empresas.map((e) => (
+                      <SelectItem key={e.id} value={e.id}>
+                        {e.nombre_empresa || e.razon_social}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           )}
 

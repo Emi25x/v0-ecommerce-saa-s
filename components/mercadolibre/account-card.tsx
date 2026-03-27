@@ -27,6 +27,7 @@ import {
   X,
   ExternalLink,
   Globe,
+  AlertCircle,
 } from "lucide-react"
 
 interface MLAccount {
@@ -43,16 +44,26 @@ interface MLAccount {
   last_new_listings_sync_at?: string
   stock_sync_count?: number
   new_listings_count?: number
+  platform_code?: string | null
+  empresa_id?: string | null
+}
+
+interface Empresa {
+  id: string
+  razon_social: string
+  nombre_empresa?: string | null
 }
 
 export function MLAccountCard({
   account,
   onUpdate,
   onDelete,
+  empresas = [],
 }: {
   account: MLAccount
   onUpdate: () => void
   onDelete: () => void
+  empresas?: Empresa[]
 }) {
   const [isEditingNickname, setIsEditingNickname] = useState(false)
   const [nickname, setNickname] = useState(account.nickname || account.ml_user_id)
@@ -69,6 +80,36 @@ export function MLAccountCard({
   const [autoSyncNewListings, setAutoSyncNewListings] = useState(account.auto_sync_new_listings ?? true)
   const [isSavingSync, setIsSavingSync] = useState(false)
   const [isSyncingStock, setIsSyncingStock] = useState(false)
+  const [platformCode, setPlatformCode] = useState(account.platform_code ?? "")
+  const [empresaId, setEmpresaId] = useState(account.empresa_id ?? "")
+  const [isSavingLibral, setIsSavingLibral] = useState(false)
+  const [libralSaveResult, setLibralSaveResult] = useState<{ ok: boolean; msg: string } | null>(null)
+
+  const handleSaveLibralConfig = async () => {
+    setIsSavingLibral(true)
+    setLibralSaveResult(null)
+    try {
+      const res = await fetch(`/api/ml/accounts/${account.id}/libral-config`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          platform_code: platformCode || null,
+          empresa_id: empresaId || null,
+        }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setLibralSaveResult({ ok: true, msg: "Guardado" })
+        onUpdate()
+      } else {
+        setLibralSaveResult({ ok: false, msg: data.error ?? "Error" })
+      }
+    } catch {
+      setLibralSaveResult({ ok: false, msg: "Error de conexión" })
+    } finally {
+      setIsSavingLibral(false)
+    }
+  }
 
   useEffect(() => {
     const stored = localStorage.getItem(`ml_browser_${account.id}`)
@@ -422,6 +463,66 @@ export function MLAccountCard({
           >
             {isSyncingStock ? "Sincronizando..." : "Sincronizar stock ahora"}
           </Button>
+        </div>
+
+        {/* Configuración Libral */}
+        <div className="space-y-3 p-3 bg-muted/50 rounded-lg">
+          <Label className="text-sm font-medium">Configuración Libral</Label>
+
+          {(!account.platform_code || !account.empresa_id) && (
+            <div className="flex items-start gap-2 text-xs text-amber-600 dark:text-amber-400">
+              <AlertCircle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+              <span>
+                {!account.platform_code && !account.empresa_id
+                  ? "Falta platform code y empresa"
+                  : !account.platform_code
+                    ? "Falta platform code"
+                    : "Falta empresa asociada"}
+              </span>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <div>
+              <Label className="text-xs text-muted-foreground">Platform Code</Label>
+              <Select value={platformCode} onValueChange={setPlatformCode}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="Seleccionar..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sin asignar</SelectItem>
+                  <SelectItem value="C1">C1</SelectItem>
+                  <SelectItem value="C2">C2</SelectItem>
+                  <SelectItem value="C3">C3</SelectItem>
+                  <SelectItem value="C4">C4</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Empresa</Label>
+              <Select value={empresaId} onValueChange={setEmpresaId}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="Seleccionar empresa..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sin asignar</SelectItem>
+                  {empresas.map((e) => (
+                    <SelectItem key={e.id} value={e.id}>
+                      {e.nombre_empresa || e.razon_social}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={handleSaveLibralConfig} disabled={isSavingLibral} size="sm" className="w-full">
+              {isSavingLibral ? "Guardando..." : "Guardar config Libral"}
+            </Button>
+            {libralSaveResult && (
+              <p className={`text-xs ${libralSaveResult.ok ? "text-green-600" : "text-red-600"}`}>
+                {libralSaveResult.msg}
+              </p>
+            )}
+          </div>
         </div>
 
         <div className="flex gap-2">

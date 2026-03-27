@@ -27,6 +27,7 @@ export default function IntegrationsPage() {
   const [diagnosisResults, setDiagnosisResults] = useState<string | null>(null)
   const [mlAccounts, setMlAccounts] = useState<any[]>([])
   const [loadingAccounts, setLoadingAccounts] = useState(true)
+  const [empresas, setEmpresas] = useState<Array<{ id: string; razon_social: string; nombre_empresa?: string | null }>>([])
   const [runningMigration, setRunningMigration] = useState(false)
   const [migrationMessage, setMigrationMessage] = useState<string | null>(null)
   const [generatingLink, setGeneratingLink] = useState(false)
@@ -35,6 +36,9 @@ export default function IntegrationsPage() {
   useEffect(() => {
     testShopifyConnection()
     fetchMlAccounts()
+    fetch("/api/billing/config").then((r) => r.json()).then((data) => {
+      setEmpresas(Array.isArray(data) ? data : (data.configs ?? []))
+    }).catch(() => {})
     checkLibralConnection()
 
     const params = new URLSearchParams(window.location.search)
@@ -563,6 +567,7 @@ export default function IntegrationsPage() {
                   account={account}
                   onUpdate={fetchMlAccounts}
                   onDelete={fetchMlAccounts}
+                  empresas={empresas}
                 />
               ))}
             </div>

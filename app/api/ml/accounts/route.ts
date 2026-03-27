@@ -15,7 +15,7 @@ export async function GET() {
   try {
     const { data: accounts, error } = await auth.supabase
       .from("ml_accounts")
-      .select("id, ml_user_id, nickname, token_expires_at, access_token, refresh_token, created_at, updated_at")
+      .select("id, ml_user_id, nickname, token_expires_at, access_token, refresh_token, platform_code, empresa_id, created_at, updated_at")
       .order("created_at", { ascending: false })
 
     if (error) {
@@ -40,6 +40,8 @@ export async function GET() {
             ml_user_id: account.ml_user_id,
             nickname: account.nickname,
             token_expires_at: refreshedAccount.token_expires_at,
+            platform_code: account.platform_code,
+            empresa_id: account.empresa_id,
             created_at: account.created_at,
             updated_at: account.updated_at,
             tokenExpired: isExpired,
@@ -51,6 +53,8 @@ export async function GET() {
             ml_user_id: account.ml_user_id,
             nickname: account.nickname,
             token_expires_at: account.token_expires_at,
+            platform_code: account.platform_code,
+            empresa_id: account.empresa_id,
             created_at: account.created_at,
             updated_at: account.updated_at,
             tokenExpired: true,

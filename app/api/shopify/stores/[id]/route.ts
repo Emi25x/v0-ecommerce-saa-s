@@ -17,7 +17,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     }
 
     const body = await request.json()
-    const { name, access_token, default_location_id, is_active } = body
+    const { name, access_token, default_location_id, is_active, platform_code, empresa_id } = body
 
     // Build update object
     const updates: any = {
@@ -60,6 +60,31 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
     if (is_active !== undefined) {
       updates.is_active = is_active
+    }
+
+    if (platform_code !== undefined) {
+      // Validate platform_code for Shopify
+      const validCodes = ["SP1", "SP2"]
+      if (platform_code !== null && !validCodes.includes(platform_code)) {
+        return NextResponse.json({ error: `platform_code debe ser SP1 o SP2` }, { status: 400 })
+      }
+      // Check duplicate
+      if (platform_code) {
+        const { data: dup } = await supabase
+          .from("shopify_stores")
+          .select("id, name")
+          .eq("platform_code", platform_code)
+          .neq("id", id)
+          .limit(1)
+        if (dup && dup.length > 0) {
+          return NextResponse.json({ error: `platform_code ${platform_code} ya asignado a "${dup[0].name}"` }, { status: 409 })
+        }
+      }
+      updates.platform_code = platform_code
+    }
+
+    if (empresa_id !== undefined) {
+      updates.empresa_id = empresa_id
     }
 
     const { data: store, error: updateError } = await supabase
