@@ -229,6 +229,15 @@ export const navigation: NavSection[] = [
     ],
   },
 
+  // ── Ventas (unified sales + Libral export) ──
+  {
+    id: "sales",
+    label: "Ventas Unificadas",
+    icon: ShoppingBag,
+    flat: true,
+    flatHref: "/sales",
+  },
+
   // ── Facturación (flat link with children) ──
   {
     id: "billing",
