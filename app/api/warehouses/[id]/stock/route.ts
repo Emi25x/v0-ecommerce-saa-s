@@ -76,28 +76,41 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       ? ""
       : sourceKeys.map((k: string) => `and(stock_by_source->>${k}.not.is.null,stock_by_source->>${k}.neq.0)`).join(",")
 
-    // Construir queries — cuando hay fuentes vinculadas, SIEMPRE filtrar por ellas.
-    // Si no hay productos que coincidan, devolver vacío (no fallback a "todos").
+    // Primero obtener el count real para calcular paginación correcta
+    let countQ = supabaseAdmin
+      .from("products")
+      .select("*", { count: "exact", head: true })
+      .gt("stock", 0)
+    if (!noLinkedSources) countQ = countQ.or(jsonbOrFilter)
+    if (search) countQ = countQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
+    const { count: totalCount } = await countQ
+
+    const totalSKUs = totalCount ?? 0
+    const totalPages = Math.ceil(totalSKUs / PAGE_SIZE)
+
+    // Corregir página ANTES de ejecutar la query de datos
+    const effectivePage = totalPages > 0 ? Math.min(page, totalPages) : 1
+    const effectiveOffset = (effectivePage - 1) * PAGE_SIZE
+
+    // Ahora ejecutar query de datos con offset corregido
     let prodQ = supabase
       .from("products")
-      .select("id, ean, sku, title, stock, cost_price, stock_by_source", { count: "exact" })
+      .select("id, ean, sku, title, stock, cost_price, stock_by_source")
       .gt("stock", 0)
       .order("stock", { ascending: false })
       .order("id", { ascending: true })
-      .range(offset, offset + PAGE_SIZE - 1)
+      .range(effectiveOffset, effectiveOffset + PAGE_SIZE - 1)
 
     if (!noLinkedSources) {
-      // Siempre filtrar por source_key cuando hay fuentes vinculadas
       prodQ = prodQ.or(jsonbOrFilter)
       if (search) {
-        const searchFilter = `title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`
-        prodQ = prodQ.or(searchFilter)
+        prodQ = prodQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
       }
     } else if (search) {
       prodQ = prodQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
     }
 
-    const { data: prodData, error: prodErr, count: totalCount } = await prodQ
+    const { data: prodData, error: prodErr } = await prodQ
 
     if (prodErr) {
       console.error("[WAREHOUSE STOCK] Products query error:", prodErr.message)
@@ -165,12 +178,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         ml_publications: mlMap[p.id] ?? [],
       }
     })
-
-    const totalSKUs = totalCount ?? 0
-    const totalPages = Math.ceil(totalSKUs / PAGE_SIZE)
-
-    // Si la página solicitada excede las páginas reales, corregir
-    const effectivePage = totalPages > 0 ? Math.min(page, totalPages) : 1
 
     // ── Diagnóstico: sample de productos para detectar estado de stock ────────
     let debugSample: any = null
