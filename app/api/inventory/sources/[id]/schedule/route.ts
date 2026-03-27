@@ -32,19 +32,20 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         .eq("source_id", sourceId)
         .maybeSingle()
 
-      console.log("[v0] Schedule existente:", existing)
-
-      const scheduleData = {
+      const scheduleData: Record<string, unknown> = {
         frequency,
         timezone,
         hour,
         minute,
         day_of_week: dayOfWeek ?? null,
         day_of_month: dayOfMonth ?? null,
-        interval_hours: interval_hours ?? null,
         enabled: true,
         next_run_at: nextRunAt,
         updated_at: new Date().toISOString(),
+      }
+      // Only include interval_hours if frequency requires it (column may not exist yet)
+      if (frequency === "every_n_hours" && interval_hours) {
+        scheduleData.interval_hours = interval_hours
       }
 
       if (existing) {

@@ -71,35 +71,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const noLinkedSources = sourceKeys.length === 0
 
     // ── Modo 2: products filtrados por stock_by_source[source_key] ────────────
-    // Construir filtro OR: stock_by_source->>'key1'.not.is.null,...
     const jsonbOrFilter = noLinkedSources
       ? ""
       : sourceKeys.map((k: string) => `and(stock_by_source->>${k}.not.is.null,stock_by_source->>${k}.neq.0)`).join(",")
 
-    // Primero obtener el count real para calcular paginación correcta
-    let countQ = supabaseAdmin
-      .from("products")
-      .select("*", { count: "exact", head: true })
-      .gt("stock", 0)
-    if (!noLinkedSources) countQ = countQ.or(jsonbOrFilter)
-    if (search) countQ = countQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
-    const { count: totalCount } = await countQ
-
-    const totalSKUs = totalCount ?? 0
-    const totalPages = Math.ceil(totalSKUs / PAGE_SIZE)
-
-    // Corregir página ANTES de ejecutar la query de datos
-    const effectivePage = totalPages > 0 ? Math.min(page, totalPages) : 1
-    const effectiveOffset = (effectivePage - 1) * PAGE_SIZE
-
-    // Ahora ejecutar query de datos con offset corregido
+    // Query única con count + data (mismo client, misma query, sin divergencia)
     let prodQ = supabase
       .from("products")
-      .select("id, ean, sku, title, stock, cost_price, stock_by_source")
+      .select("id, ean, sku, title, stock, cost_price, stock_by_source", { count: "exact" })
       .gt("stock", 0)
       .order("stock", { ascending: false })
       .order("id", { ascending: true })
-      .range(effectiveOffset, effectiveOffset + PAGE_SIZE - 1)
+      .range(offset, offset + PAGE_SIZE - 1)
 
     if (!noLinkedSources) {
       prodQ = prodQ.or(jsonbOrFilter)
@@ -110,7 +93,28 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       prodQ = prodQ.or(`title.ilike.%${search}%,sku.ilike.%${search}%,ean.ilike.%${search}%`)
     }
 
-    const { data: prodData, error: prodErr } = await prodQ
+    const { data: prodData, error: prodErr, count: totalCount } = await prodQ
+
+    // Si la página pidió fuera de rango y hay datos, corregir
+    const totalSKUs = totalCount ?? 0
+    const totalPages = Math.ceil(totalSKUs / PAGE_SIZE)
+    const effectivePage = totalPages > 0 ? Math.min(page, totalPages) : 1
+
+    // Si la página actual está fuera de rango y hay datos, re-ejecutar con página corregida
+    let finalData = prodData
+    if (totalSKUs > 0 && (prodData?.length ?? 0) === 0 && page > 1) {
+      const correctedOffset = (effectivePage - 1) * PAGE_SIZE
+      let retryQ = supabase
+        .from("products")
+        .select("id, ean, sku, title, stock, cost_price, stock_by_source")
+        .gt("stock", 0)
+        .order("stock", { ascending: false })
+        .order("id", { ascending: true })
+        .range(correctedOffset, correctedOffset + PAGE_SIZE - 1)
+      if (!noLinkedSources) retryQ = retryQ.or(jsonbOrFilter)
+      const { data: retryData } = await retryQ
+      finalData = retryData
+    }
 
     if (prodErr) {
       console.error("[WAREHOUSE STOCK] Products query error:", prodErr.message)
@@ -126,7 +130,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       })
     }
 
-    const prodItems = (prodData ?? []) as Array<{
+    const prodItems = (finalData ?? []) as Array<{
       id: string
       sku: string | null
       title: string | null
