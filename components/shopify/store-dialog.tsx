@@ -205,8 +205,8 @@ export function ShopifyStoreDialog({ open, onOpenChange, onSuccess, store, empre
 
       // Libral config
       if (store) {
-        body.platform_code = platformCode || null
-        body.empresa_id = empresaId || null
+        body.platform_code = platformCode === "none" ? null : platformCode || null
+        body.empresa_id = empresaId === "none" ? null : empresaId || null
       }
 
       const response = await fetch(url, {

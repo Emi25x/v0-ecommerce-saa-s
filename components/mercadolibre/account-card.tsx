@@ -93,8 +93,8 @@ export function MLAccountCard({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          platform_code: platformCode || null,
-          empresa_id: empresaId || null,
+          platform_code: platformCode === "none" ? null : platformCode || null,
+          empresa_id: empresaId === "none" ? null : empresaId || null,
         }),
       })
       const data = await res.json()
