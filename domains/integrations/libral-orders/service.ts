@@ -297,23 +297,41 @@ export async function cancelOrderInLibral(orderId: string): Promise<{
 
 /**
  * Enrich orders with platform_code and company_name from their account config.
+ * Resolves company_name from arca_config.razon_social via empresa_id FK.
  * Mutates the orders array in place.
  */
 async function enrichOrdersFromAccounts(supabase: SupabaseAdmin, orders: any[]): Promise<void> {
   const needsEnrichment = orders.filter((o) => !o.platform_code || !o.company_name)
   if (needsEnrichment.length === 0) return
 
-  // Get all ML accounts with platform_code
+  // Get all ML accounts with platform_code + empresa_id
   const { data: mlAccounts } = await supabase
     .from("ml_accounts")
-    .select("id, platform_code, company_name")
+    .select("id, platform_code, empresa_id")
     .not("platform_code", "is", null)
 
-  // Get all Shopify stores with platform_code
+  // Get all Shopify stores with platform_code + empresa_id
   const { data: shopifyStores } = await supabase
     .from("shopify_stores")
-    .select("id, platform_code, company_name")
+    .select("id, platform_code, empresa_id")
     .not("platform_code", "is", null)
+
+  // Collect all empresa_ids to resolve razon_social
+  const empresaIds = new Set<string>()
+  for (const a of mlAccounts ?? []) if (a.empresa_id) empresaIds.add(a.empresa_id)
+  for (const s of shopifyStores ?? []) if (s.empresa_id) empresaIds.add(s.empresa_id)
+
+  // Fetch razón social from arca_config
+  const empresaMap = new Map<string, string>()
+  if (empresaIds.size > 0) {
+    const { data: empresas } = await supabase
+      .from("arca_config")
+      .select("id, razon_social")
+      .in("id", Array.from(empresaIds))
+    for (const e of empresas ?? []) {
+      empresaMap.set(e.id, e.razon_social)
+    }
+  }
 
   const mlMap = new Map((mlAccounts ?? []).map((a) => [a.id, a]))
   const spMap = new Map((shopifyStores ?? []).map((s) => [s.id, s]))
@@ -324,16 +342,21 @@ async function enrichOrdersFromAccounts(supabase: SupabaseAdmin, orders: any[]):
       : spMap.get(order.account_id)
 
     if (accountConfig) {
-      order.platform_code = order.platform_code || accountConfig.platform_code
-      order.company_name = order.company_name || accountConfig.company_name
+      const platformCode = order.platform_code || accountConfig.platform_code
+      const empresaId = accountConfig.empresa_id
+      const companyName = empresaId ? empresaMap.get(empresaId) ?? null : null
+
+      order.platform_code = platformCode
+      order.company_name = order.company_name || companyName
 
       // Persist enrichment to DB
       await supabase
         .from("orders")
         .update({
-          platform_code: order.platform_code,
-          company_name: order.company_name,
-          libral_reference: `${order.platform_code}-${order.platform_order_id}`,
+          platform_code: platformCode,
+          empresa_id: empresaId ?? undefined,
+          company_name: companyName ?? undefined,
+          libral_reference: platformCode ? `${platformCode}-${order.platform_order_id}` : undefined,
         })
         .eq("id", order.id)
     }

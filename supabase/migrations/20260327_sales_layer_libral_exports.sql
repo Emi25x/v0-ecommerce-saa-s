@@ -1,27 +1,34 @@
 -- ============================================================================
 -- SALES LAYER + LIBRAL ORDER EXPORT
 -- Extends existing orders system for Libral integration
+--
+-- Empresa/razón social se resuelve via FK a arca_config (tabla existente de
+-- empresas configuradas en el sistema de facturación).
+-- NO se duplica como texto libre.
 -- ============================================================================
 
--- 1. Add platform_code and company_name to ml_accounts
+-- 1. Add platform_code and empresa_id (FK a arca_config) to ml_accounts
 ALTER TABLE ml_accounts
   ADD COLUMN IF NOT EXISTS platform_code TEXT,
-  ADD COLUMN IF NOT EXISTS company_name TEXT;
+  ADD COLUMN IF NOT EXISTS empresa_id UUID REFERENCES arca_config(id) ON DELETE SET NULL;
 
 COMMENT ON COLUMN ml_accounts.platform_code IS 'Libral platform identifier: C1, C2, C3, C4';
-COMMENT ON COLUMN ml_accounts.company_name IS 'Razón social fija para esta cuenta (ej: Valletta Ediciones)';
+COMMENT ON COLUMN ml_accounts.empresa_id IS 'Empresa/razón social asociada a esta cuenta (FK a arca_config)';
 
--- 2. Add platform_code and company_name to shopify_stores
+-- 2. Add platform_code and empresa_id to shopify_stores
 ALTER TABLE shopify_stores
   ADD COLUMN IF NOT EXISTS platform_code TEXT,
-  ADD COLUMN IF NOT EXISTS company_name TEXT;
+  ADD COLUMN IF NOT EXISTS empresa_id UUID REFERENCES arca_config(id) ON DELETE SET NULL;
 
 COMMENT ON COLUMN shopify_stores.platform_code IS 'Libral platform identifier: SP1, SP2';
-COMMENT ON COLUMN shopify_stores.company_name IS 'Razón social fija para esta tienda (ej: Valletta Ediciones)';
+COMMENT ON COLUMN shopify_stores.empresa_id IS 'Empresa/razón social asociada a esta tienda (FK a arca_config)';
 
 -- 3. Add Libral-specific columns to orders table
+--    empresa_id FK para trazabilidad; company_name se copia al momento del export
+--    como snapshot (por si la razón social cambia después).
 ALTER TABLE orders
   ADD COLUMN IF NOT EXISTS platform_code TEXT,
+  ADD COLUMN IF NOT EXISTS empresa_id UUID REFERENCES arca_config(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS company_name TEXT,
   ADD COLUMN IF NOT EXISTS libral_reference TEXT,
   ADD COLUMN IF NOT EXISTS libral_status TEXT DEFAULT 'not_ready',
@@ -30,7 +37,8 @@ ALTER TABLE orders
   ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ;
 
 COMMENT ON COLUMN orders.platform_code IS 'C1, C2, C3, C4, SP1, SP2';
-COMMENT ON COLUMN orders.company_name IS 'Razón social emisora (copiada de cuenta al sincronizar)';
+COMMENT ON COLUMN orders.empresa_id IS 'Empresa asociada (FK a arca_config). Fuente de verdad para razón social.';
+COMMENT ON COLUMN orders.company_name IS 'Snapshot de razon_social al momento del export (no editable directamente).';
 COMMENT ON COLUMN orders.libral_reference IS 'Referencia única: <platform_code>-<channel_order_id>';
 COMMENT ON COLUMN orders.libral_status IS 'not_ready, pending_export, export_blocked, sent, failed, cancel_pending, cancelled_in_erp, cancel_failed, cancelled_not_sent';
 COMMENT ON COLUMN orders.export_error IS 'Último error de exportación a Libral';
