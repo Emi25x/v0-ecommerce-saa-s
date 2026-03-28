@@ -56,9 +56,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
     // ── Products mode ───────────────────────────────────────────────────────
     const noLinkedSources = sourceKeys.length === 0
+
+    // JSONB filter: use .not("stock_by_source->key", "is", null) which is simpler
+    // and more index-friendly than the text-extraction neq approach.
+    // The .gt("stock", 0) already ensures the product has stock.
     const jsonbOrFilter = noLinkedSources
       ? ""
-      : sourceKeys.map((k: string) => `and(stock_by_source->>${k}.not.is.null,stock_by_source->>${k}.neq.0)`).join(",")
+      : sourceKeys.map((k: string) => `stock_by_source->>${k}.not.is.null`).join(",")
 
     // Build base query helper (reused for data + stats)
     function applyFilters(q: any) {
@@ -166,7 +170,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
           const BATCH = 200
           for (let i = 0; i < allIds.length; i += BATCH) {
             const batch = allIds.slice(i, i + BATCH)
-            const { data: pubs } = await supabase
+            const { data: pubs } = await supabaseAdmin
               .from("ml_publications")
               .select("product_id")
               .in("product_id", batch)
