@@ -27,7 +27,14 @@ interface DashboardData {
   sales: { last_24h: number; pending_export: number; export_blocked: number; failed: number; sent_today: number }
   stock: { products_with_stock: number; products_total: number; sources_active: number }
   libral_exports: { today: number; exports: any[] }
-  schedules: Array<{ id: string; source_name: string; frequency: string; hour: number; minute: number; last_run_at: string | null; next_run_at: string | null; status: string }>
+  sources: Array<{
+    source_id: string; source_name: string; source_key: string | null; feed_type: string | null
+    status: string
+    schedule: { enabled: boolean; frequency: string; hour: number; minute: number; timezone: string; last_run_at: string | null; next_run_at: string | null } | null
+    last_run: { status: string; started_at: string; duration_ms: number; rows_processed: number; rows_updated: number; rows_failed: number; error: string | null } | null
+    hours_since_run: number | null
+    diagnosis: string | null; suggestion: string | null
+  }>
   accounts: { ml: any[]; shopify: any[]; ml_total: number; shopify_total: number; ml_missing_config: number; shopify_missing_config: number; ml_expired: number }
   catalog: { ml_publications: number; ml_no_sku: number }
   alerts: Array<{ type: string; message: string; href: string; severity: "error" | "warning" | "info" }>
@@ -39,9 +46,10 @@ const STATUS_COLORS: Record<string, string> = {
   delayed: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
   error: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
   never_run: "bg-gray-100 text-gray-800 dark:bg-gray-800/50 dark:text-gray-400",
+  disabled: "bg-gray-100 text-gray-500 dark:bg-gray-800/50 dark:text-gray-500",
 }
 
-const STATUS_LABELS: Record<string, string> = { ok: "OK", delayed: "Retrasada", error: "Error", never_run: "Sin ejecutar" }
+const STATUS_LABELS: Record<string, string> = { ok: "OK", delayed: "Retrasada", error: "Error", never_run: "Sin ejecutar", disabled: "Deshabilitada" }
 
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null)
@@ -158,11 +166,11 @@ export default function DashboardPage() {
             </div>
             <p className="text-2xl font-semibold">{data.stock.sources_active}</p>
             <div className="flex gap-1 flex-wrap">
-              {data.schedules.filter((s) => s.status === "error").length > 0 && (
-                <Badge variant="destructive" className="text-[10px]">{data.schedules.filter((s) => s.status === "error").length} con error</Badge>
+              {data.sources.filter((s) => s.status === "error").length > 0 && (
+                <Badge variant="destructive" className="text-[10px]">{data.sources.filter((s) => s.status === "error").length} con error</Badge>
               )}
-              {data.schedules.filter((s) => s.status === "ok").length > 0 && (
-                <Badge variant="outline" className="text-[10px] text-green-600 border-green-300">{data.schedules.filter((s) => s.status === "ok").length} OK</Badge>
+              {data.sources.filter((s) => s.status === "ok").length > 0 && (
+                <Badge variant="outline" className="text-[10px] text-green-600 border-green-300">{data.sources.filter((s) => s.status === "ok").length} OK</Badge>
               )}
             </div>
           </Card>
@@ -200,33 +208,79 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      {/* ── FUENTES Y SCHEDULES ────────────────────────────────────────────── */}
+      {/* ── FUENTES CON DIAGNÓSTICO ──────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Schedules */}
         <Card className="overflow-hidden">
           <div className="px-4 py-3 border-b bg-muted/20 flex items-center justify-between">
-            <h2 className="font-medium text-sm">Fuentes programadas</h2>
+            <h2 className="font-medium text-sm">Fuentes e importaciones</h2>
             <Link href="/inventory/sources"><Button variant="ghost" size="sm" className="text-xs h-7">Ver todas</Button></Link>
           </div>
           <div className="divide-y">
-            {data.schedules.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-muted-foreground text-center">Sin schedules activos</p>
+            {data.sources.length === 0 ? (
+              <p className="px-4 py-6 text-sm text-muted-foreground text-center">Sin fuentes activas</p>
             ) : (
-              data.schedules.map((s) => (
-                <div key={s.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
-                  <div className="flex-1">
-                    <p className="font-medium">{s.source_name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {s.frequency === "daily" ? "Diaria" : s.frequency === "weekly" ? "Semanal" : s.frequency}{" "}
-                      {String(s.hour).padStart(2, "0")}:{String(s.minute).padStart(2, "0")}
+              data.sources.map((s) => (
+                <div key={s.source_id} className="px-4 py-3 text-sm space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium">{s.source_name}</p>
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${STATUS_COLORS[s.status] ?? STATUS_COLORS.never_run}`}>
+                        {STATUS_LABELS[s.status] ?? s.status}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {s.hours_since_run !== null && (
+                        <span className="text-xs text-muted-foreground">{timeAgo(s.schedule?.last_run_at ?? null)}</span>
+                      )}
+                      {(s.status === "error" || s.status === "delayed" || s.status === "never_run") && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-6 text-[10px] px-2"
+                          onClick={async () => {
+                            try {
+                              await fetch("/api/inventory/sources/run", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ source_id: s.source_id }),
+                              })
+                              fetchStats()
+                            } catch {}
+                          }}
+                        >
+                          Reintentar
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  {/* Schedule info */}
+                  {s.schedule && (
+                    <p className="text-[11px] text-muted-foreground">
+                      {s.schedule.frequency === "daily" ? "Diaria" : s.schedule.frequency === "weekly" ? "Semanal" : s.schedule.frequency}{" "}
+                      {String(s.schedule.hour).padStart(2, "0")}:{String(s.schedule.minute).padStart(2, "0")} {s.schedule.timezone?.includes("Argentina") ? "AR" : "UTC"}
                     </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">{timeAgo(s.last_run_at)}</span>
-                    <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${STATUS_COLORS[s.status] ?? STATUS_COLORS.never_run}`}>
-                      {STATUS_LABELS[s.status] ?? s.status}
-                    </span>
-                  </div>
+                  )}
+                  {/* Diagnosis */}
+                  {s.diagnosis && (
+                    <div className={`flex items-start gap-1.5 text-[11px] rounded px-2 py-1 ${
+                      s.status === "error" ? "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400"
+                        : s.status === "delayed" ? "bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400"
+                          : "bg-muted text-muted-foreground"
+                    }`}>
+                      <AlertCircle className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <span className="font-medium">{s.diagnosis}</span>
+                        {s.suggestion && <span className="ml-1 opacity-75">— {s.suggestion}</span>}
+                      </div>
+                    </div>
+                  )}
+                  {/* Last run details */}
+                  {s.last_run && s.last_run.status === "completed" && !s.diagnosis && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Último: {s.last_run.rows_updated ?? 0} actualizados, {s.last_run.rows_failed ?? 0} errores
+                      {s.last_run.duration_ms ? ` (${(s.last_run.duration_ms / 1000).toFixed(1)}s)` : ""}
+                    </p>
+                  )}
                 </div>
               ))
             )}

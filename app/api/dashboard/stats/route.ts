@@ -123,28 +123,142 @@ export async function GET() {
     empresa_id: s.empresa_id ?? null,
   }))
 
-  // Build schedules with status
+  // Build schedules with diagnostic — fetch ALL schedules (not just enabled)
+  // and last process_run per source for root cause analysis
+  const { data: allSchedules } = await admin
+    .from("import_schedules")
+    .select("id, source_id, enabled, frequency, hour, minute, timezone, last_run_at, next_run_at, import_sources(id, name, source_key, feed_type, is_active)")
+
+  // Fetch recent process_runs for each source (last 3 per source for diagnosis)
+  const sourceIds = (sourcesActive.data ?? []).map((s: any) => s.id)
+  const { data: recentRuns } = sourceIds.length > 0
+    ? await admin
+        .from("process_runs")
+        .select("id, process_type, process_name, status, started_at, duration_ms, rows_processed, rows_updated, rows_failed, error_message")
+        .order("started_at", { ascending: false })
+        .limit(50)
+    : { data: [] }
+
   const now = new Date()
-  const schedules = (sourcesLastRuns.data ?? []).map((s: any) => {
-    const lastRun = s.last_run_at ? new Date(s.last_run_at) : null
-    const hoursSinceRun = lastRun ? (now.getTime() - lastRun.getTime()) / 3600000 : null
-    let status = "ok"
-    if (!lastRun) status = "never_run"
+
+  // Build diagnosis per active source
+  const sourceDiagnostics = (sourcesActive.data ?? []).map((source: any) => {
+    const schedule = (allSchedules ?? []).find((s: any) => s.source_id === source.id)
+    const sourceRuns = (recentRuns ?? []).filter((r: any) =>
+      r.process_name?.toLowerCase().includes(source.name?.toLowerCase()?.split(" ")[0]) ||
+      r.process_type?.toLowerCase().includes(source.source_key?.toLowerCase())
+    ).slice(0, 3)
+
+    const lastRun = sourceRuns[0] ?? null
+    const lastRunAt = schedule?.last_run_at ? new Date(schedule.last_run_at) : null
+    const hoursSinceRun = lastRunAt ? (now.getTime() - lastRunAt.getTime()) / 3600000 : null
+
+    // Determine status
+    let status: "ok" | "delayed" | "error" | "never_run" | "disabled" = "ok"
+    if (!schedule) status = "disabled"
+    else if (!schedule.enabled) status = "disabled"
+    else if (!lastRunAt) status = "never_run"
     else if (hoursSinceRun! > 48) status = "error"
     else if (hoursSinceRun! > 25) status = "delayed"
 
+    // Root cause diagnosis
+    let diagnosis: string | null = null
+    let suggestion: string | null = null
+
+    if (status === "disabled") {
+      if (!schedule) {
+        diagnosis = "Sin schedule configurado"
+        suggestion = "Crear schedule desde Fuentes → icono reloj"
+      } else {
+        diagnosis = "Schedule deshabilitado"
+        suggestion = "Habilitar desde Fuentes → icono reloj"
+      }
+    } else if (status === "never_run") {
+      if (schedule?.next_run_at && new Date(schedule.next_run_at) > now) {
+        diagnosis = `Programado para ${new Date(schedule.next_run_at).toLocaleString("es-AR")}`
+        suggestion = "Esperar o ejecutar manualmente"
+      } else {
+        diagnosis = "Schedule activo pero nunca ejecutado"
+        suggestion = "Ejecutar manualmente o verificar cron de Vercel"
+      }
+    } else if (status === "error" || status === "delayed") {
+      if (lastRun?.status === "failed") {
+        const err = lastRun.error_message ?? ""
+        if (err.includes("timeout") || err.includes("canceling statement")) {
+          diagnosis = "Último run falló por timeout"
+          suggestion = "Verificar URL de descarga y tamaño del archivo"
+        } else if (err.includes("404") || err.includes("Not Found")) {
+          diagnosis = "Error 404 — archivo no encontrado"
+          suggestion = "Verificar URL de la fuente"
+        } else if (err.includes("401") || err.includes("403") || err.includes("Unauthorized")) {
+          diagnosis = "Error de autenticación con el proveedor"
+          suggestion = "Verificar credenciales de la fuente"
+        } else if (err.includes("parse") || err.includes("CSV") || err.includes("delimiter")) {
+          diagnosis = "Error parsing del archivo"
+          suggestion = "Verificar formato/delimitador del archivo"
+        } else if (err) {
+          diagnosis = `Error: ${err.slice(0, 100)}`
+          suggestion = "Reintentar import manual"
+        } else {
+          diagnosis = "Falló sin mensaje de error"
+          suggestion = "Reintentar import manual"
+        }
+      } else if (lastRun?.status === "completed" && lastRun?.rows_failed > 0) {
+        diagnosis = `Completó con ${lastRun.rows_failed} errores de ${lastRun.rows_processed} procesados`
+        suggestion = "Revisar datos del archivo fuente"
+      } else {
+        diagnosis = `No se ejecuta hace ${Math.round(hoursSinceRun ?? 0)}h`
+        suggestion = "Verificar que el cron import-schedules esté activo en Vercel"
+      }
+    }
+
     return {
-      id: s.id,
-      source_id: s.source_id,
-      source_name: (s.import_sources as any)?.name ?? "—",
-      frequency: s.frequency,
-      hour: s.hour,
-      minute: s.minute,
-      last_run_at: s.last_run_at,
-      next_run_at: s.next_run_at,
+      source_id: source.id,
+      source_name: source.name,
+      source_key: source.source_key,
+      feed_type: source.feed_type,
       status,
+      schedule: schedule ? {
+        enabled: schedule.enabled,
+        frequency: schedule.frequency,
+        hour: schedule.hour,
+        minute: schedule.minute,
+        timezone: schedule.timezone,
+        last_run_at: schedule.last_run_at,
+        next_run_at: schedule.next_run_at,
+      } : null,
+      last_run: lastRun ? {
+        status: lastRun.status,
+        started_at: lastRun.started_at,
+        duration_ms: lastRun.duration_ms,
+        rows_processed: lastRun.rows_processed,
+        rows_updated: lastRun.rows_updated,
+        rows_failed: lastRun.rows_failed,
+        error: lastRun.error_message,
+      } : null,
+      hours_since_run: hoursSinceRun !== null ? Math.round(hoursSinceRun) : null,
+      diagnosis,
+      suggestion,
     }
   })
+
+  // Also include scheduled-only sources (have schedule but might not be in sourcesActive)
+  const scheduleOnlySources = (allSchedules ?? [])
+    .filter((s: any) => s.enabled && !sourceDiagnostics.some((d: any) => d.source_id === s.source_id))
+    .map((s: any) => ({
+      source_id: s.source_id,
+      source_name: (s.import_sources as any)?.name ?? "—",
+      source_key: (s.import_sources as any)?.source_key ?? null,
+      feed_type: (s.import_sources as any)?.feed_type ?? null,
+      status: "ok" as const,
+      schedule: { enabled: s.enabled, frequency: s.frequency, hour: s.hour, minute: s.minute, timezone: s.timezone, last_run_at: s.last_run_at, next_run_at: s.next_run_at },
+      last_run: null,
+      hours_since_run: s.last_run_at ? Math.round((now.getTime() - new Date(s.last_run_at).getTime()) / 3600000) : null,
+      diagnosis: null,
+      suggestion: null,
+    }))
+
+  const allSourceDiagnostics = [...sourceDiagnostics, ...scheduleOnlySources]
 
   // Alerts
   const alerts: Array<{ type: string; message: string; href: string; severity: "error" | "warning" | "info" }> = []
@@ -153,10 +267,16 @@ export async function GET() {
     alerts.push({ type: "sales", message: `${salesBlocked.count} pedido(s) bloqueado(s) por falta de EAN`, href: "/sales?filter=missing_ean", severity: "error" })
   if ((salesFailed.count ?? 0) > 0)
     alerts.push({ type: "sales", message: `${salesFailed.count} pedido(s) con error de export a Libral`, href: "/sales?filter=failed", severity: "error" })
-  if (schedules.some((s) => s.status === "error"))
-    alerts.push({ type: "sources", message: "Fuentes sin ejecutar en >48h", href: "/inventory/sources", severity: "error" })
-  if (schedules.some((s) => s.status === "delayed"))
-    alerts.push({ type: "sources", message: "Fuentes con ejecución retrasada (>25h)", href: "/inventory/sources", severity: "warning" })
+  // Source-specific alerts with diagnosis
+  for (const diag of allSourceDiagnostics) {
+    if (diag.status === "error" && diag.diagnosis) {
+      alerts.push({ type: "sources", message: `${diag.source_name}: ${diag.diagnosis}`, href: "/inventory/sources", severity: "error" })
+    } else if (diag.status === "delayed" && diag.diagnosis) {
+      alerts.push({ type: "sources", message: `${diag.source_name}: ${diag.diagnosis}`, href: "/inventory/sources", severity: "warning" })
+    } else if (diag.status === "disabled" && diag.diagnosis) {
+      alerts.push({ type: "sources", message: `${diag.source_name}: ${diag.diagnosis}`, href: "/inventory/sources", severity: "warning" })
+    }
+  }
 
   const mlMissingConfig = mlAccounts.filter((a: any) => !a.platform_code || !a.empresa_id)
   if (mlMissingConfig.length > 0)
@@ -187,7 +307,7 @@ export async function GET() {
       today: (exportsToday.data ?? []).length,
       exports: exportsToday.data ?? [],
     },
-    schedules,
+    sources: allSourceDiagnostics,
     accounts: {
       ml: mlAccounts,
       shopify: shopifyStores,
