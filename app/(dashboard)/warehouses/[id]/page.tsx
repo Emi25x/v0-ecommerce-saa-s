@@ -226,6 +226,16 @@ export default function WarehouseDetailPage() {
             )}
           </div>
         </div>
+        <Button variant="outline" size="sm" className="gap-2 shrink-0" onClick={async () => {
+          try {
+            await fetch(`/api/warehouses/${warehouseId}/refresh`, { method: "POST" })
+            fetchData(1, search)
+            setPage(1)
+          } catch {}
+        }}>
+          <RefreshCw className="h-4 w-4" />
+          Refrescar
+        </Button>
         <Button variant="outline" size="sm" className="gap-2 shrink-0" onClick={() => setShowSourcePanel((v) => !v)}>
           <Link2 className="h-4 w-4" />
           Vincular fuentes

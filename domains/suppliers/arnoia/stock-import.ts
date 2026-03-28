@@ -248,6 +248,12 @@ export async function runArnoiaStockImport(): Promise<ArnoiaStockImportResult> {
       log_json: { zeroed, total_rows: lines.length, unique_eans: eans.length },
     })
 
+    // Refresh warehouse snapshots that use this source
+    try {
+      const { refreshWarehousesForSource } = await import("@/lib/warehouse/refresh")
+      await refreshWarehousesForSource(stockKey)
+    } catch { /* non-critical */ }
+
     return {
       success: true,
       updated: totalUpdated,

@@ -199,5 +199,11 @@ async function _runLibralStockImportInner(
     log_json: { zeroed, pages: page, source_key: sourceKey },
   })
 
+  // Refresh warehouse snapshots that use this source
+  try {
+    const { refreshWarehousesForSource } = await import("@/lib/warehouse/refresh")
+    await refreshWarehousesForSource(sourceKey)
+  } catch { /* non-critical */ }
+
   return { success: true, updated, zeroed, errors, elapsed_seconds: elapsed }
 }
