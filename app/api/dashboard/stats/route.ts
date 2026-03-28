@@ -75,10 +75,10 @@ export async function GET() {
       .from("import_schedules")
       .select("id, source_id, enabled, frequency, hour, minute, last_run_at, next_run_at, import_sources(name)")
       .eq("enabled", true),
-    // Accounts
+    // Accounts — use the ML accounts endpoint logic (includes token refresh)
     supabase
       .from("ml_accounts")
-      .select("id, nickname, token_expires_at, platform_code, empresa_id")
+      .select("id, nickname, token_expires_at, access_token, refresh_token, platform_code, empresa_id")
       .order("created_at", { ascending: false }),
     admin
       .from("shopify_stores")
@@ -107,14 +107,40 @@ export async function GET() {
       .or("sku.is.null,ean.is.null"),
   ])
 
-  // Process ML accounts - handle missing columns gracefully
-  const mlAccounts = (mlAccountsResult.data ?? []).map((a: any) => ({
-    id: a.id,
-    nickname: a.nickname,
-    tokenExpired: new Date(a.token_expires_at) <= new Date(),
-    platform_code: a.platform_code ?? null,
-    empresa_id: a.empresa_id ?? null,
-  }))
+  // Process ML accounts — refresh tokens if needed (same as /api/ml/accounts)
+  let refreshTokenIfNeeded: any = null
+  try {
+    const ml = await import("@/lib/mercadolibre")
+    refreshTokenIfNeeded = ml.refreshTokenIfNeeded
+  } catch { /* module might not exist */ }
+
+  const mlAccounts = await Promise.all(
+    (mlAccountsResult.data ?? []).map(async (a: any) => {
+      let tokenExpired = true
+      try {
+        if (refreshTokenIfNeeded && a.access_token && a.refresh_token) {
+          const refreshed = await refreshTokenIfNeeded({
+            id: a.id,
+            access_token: a.access_token,
+            refresh_token: a.refresh_token,
+            token_expires_at: a.token_expires_at,
+          })
+          tokenExpired = new Date(refreshed.token_expires_at) <= new Date()
+        } else {
+          tokenExpired = !a.token_expires_at || new Date(a.token_expires_at) <= new Date()
+        }
+      } catch {
+        tokenExpired = !a.token_expires_at || new Date(a.token_expires_at) <= new Date()
+      }
+      return {
+        id: a.id,
+        nickname: a.nickname,
+        tokenExpired,
+        platform_code: a.platform_code ?? null,
+        empresa_id: a.empresa_id ?? null,
+      }
+    }),
+  )
 
   const shopifyStores = (shopifyStoresResult.data ?? []).map((s: any) => ({
     id: s.id,
