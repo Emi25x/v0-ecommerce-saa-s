@@ -80,67 +80,60 @@ function calculateNextRun(schedule: {
   dayOfWeek?: number | null
   dayOfMonth?: number | null
 }): string {
-  const now = new Date()
+  // Calculate the next run time correctly handling timezone.
+  // The hour/minute are in the configured timezone (e.g., 16:00 Argentina).
+  // We need to store next_run_at in UTC.
 
-  // Convertir la hora actual a la zona horaria configurada
-  const nowInTimezone = new Date(now.toLocaleString("en-US", { timeZone: schedule.timezone }))
+  const tz = schedule.timezone || "America/Argentina/Buenos_Aires"
 
-  const nextRun = new Date(nowInTimezone)
-  nextRun.setHours(schedule.hour, schedule.minute, 0, 0)
+  // Get current time in target timezone
+  const nowUTC = new Date()
+  const nowInTz = new Date(nowUTC.toLocaleString("en-US", { timeZone: tz }))
+
+  // Build target date/time in the timezone
+  const targetInTz = new Date(nowInTz)
+  targetInTz.setHours(schedule.hour, schedule.minute, 0, 0)
 
   switch (schedule.frequency) {
     case "hourly":
-      // Ejecutar en la próxima hora
-      if (nextRun <= nowInTimezone) {
-        nextRun.setHours(nextRun.getHours() + 1)
+      if (targetInTz <= nowInTz) {
+        targetInTz.setHours(targetInTz.getHours() + 1)
       }
       break
-
     case "daily":
-      // Si la hora ya pasó hoy, programar para mañana
-      if (nextRun <= nowInTimezone) {
-        nextRun.setDate(nextRun.getDate() + 1)
+      if (targetInTz <= nowInTz) {
+        targetInTz.setDate(targetInTz.getDate() + 1)
       }
       break
-
     case "weekly":
-      // Programar para el día de la semana especificado
       if (schedule.dayOfWeek !== null && schedule.dayOfWeek !== undefined) {
-        const currentDay = nextRun.getDay()
-        let daysUntilTarget = schedule.dayOfWeek - currentDay
-
-        // Si el día ya pasó esta semana, programar para la próxima semana
-        if (daysUntilTarget < 0 || (daysUntilTarget === 0 && nextRun <= nowInTimezone)) {
-          daysUntilTarget += 7
+        const currentDay = targetInTz.getDay()
+        let daysToAdd = schedule.dayOfWeek - currentDay
+        if (daysToAdd < 0 || (daysToAdd === 0 && targetInTz <= nowInTz)) {
+          daysToAdd += 7
         }
-
-        nextRun.setDate(nextRun.getDate() + daysUntilTarget)
-      } else {
-        // Si no hay día especificado, ejecutar en 7 días
-        if (nextRun <= nowInTimezone) {
-          nextRun.setDate(nextRun.getDate() + 7)
-        }
+        targetInTz.setDate(targetInTz.getDate() + daysToAdd)
+      } else if (targetInTz <= nowInTz) {
+        targetInTz.setDate(targetInTz.getDate() + 7)
       }
       break
-
     case "monthly":
-      // Programar para el día del mes especificado
       if (schedule.dayOfMonth !== null && schedule.dayOfMonth !== undefined) {
-        nextRun.setDate(schedule.dayOfMonth)
-
-        // Si el día ya pasó este mes, programar para el próximo mes
-        if (nextRun <= nowInTimezone) {
-          nextRun.setMonth(nextRun.getMonth() + 1)
-          nextRun.setDate(schedule.dayOfMonth)
+        targetInTz.setDate(schedule.dayOfMonth)
+        if (targetInTz <= nowInTz) {
+          targetInTz.setMonth(targetInTz.getMonth() + 1)
+          targetInTz.setDate(schedule.dayOfMonth)
         }
-      } else {
-        // Si no hay día especificado, ejecutar en 30 días
-        if (nextRun <= nowInTimezone) {
-          nextRun.setMonth(nextRun.getMonth() + 1)
-        }
+      } else if (targetInTz <= nowInTz) {
+        targetInTz.setMonth(targetInTz.getMonth() + 1)
       }
       break
   }
 
-  return nextRun.toISOString()
+  // Convert from timezone-local back to UTC.
+  // The difference between nowUTC and nowInTz gives us the offset.
+  const offsetMs = nowUTC.getTime() - nowInTz.getTime()
+  const nextRunUTC = new Date(targetInTz.getTime() + offsetMs)
+
+  return nextRunUTC.toISOString()
 }

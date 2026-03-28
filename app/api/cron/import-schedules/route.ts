@@ -190,10 +190,12 @@ export async function GET(request: NextRequest) {
 
 // ── calculateNextRun ─────────────────────────────────────────────────────────
 // Soporta: hourly, every_n_hours, daily, weekly, monthly
+// Respeta timezone del schedule (hora configurada es en timezone local, se guarda en UTC)
 function calculateNextRun(schedule: {
   frequency: string
   hour?: number
   minute?: number
+  timezone?: string
   day_of_week?: number
   day_of_month?: number
   interval_hours?: number
@@ -201,70 +203,55 @@ function calculateNextRun(schedule: {
   const now = new Date()
   const hours = schedule.hour ?? 0
   const minutes = schedule.minute ?? 0
+  const tz = schedule.timezone || "UTC"
+
+  if (schedule.frequency === "every_n_hours") {
+    const intervalH = schedule.interval_hours ?? 3
+    const nextRun = new Date(now.getTime() + intervalH * 3600_000)
+    nextRun.setMinutes(minutes, 0, 0)
+    return nextRun.toISOString()
+  }
+
+  // Convert current time to target timezone for comparison
+  const nowInTz = new Date(now.toLocaleString("en-US", { timeZone: tz }))
+  const offsetMs = now.getTime() - nowInTz.getTime()
+
+  const targetInTz = new Date(nowInTz)
+  targetInTz.setHours(hours, minutes, 0, 0)
 
   switch (schedule.frequency) {
-    case "hourly": {
-      // Próxima hora en punto (o minuto configurado)
-      const nextRun = new Date(now)
-      nextRun.setMinutes(minutes, 0, 0)
-      if (nextRun <= now) {
-        nextRun.setHours(nextRun.getHours() + 1)
+    case "hourly":
+      targetInTz.setMinutes(minutes, 0, 0)
+      targetInTz.setHours(nowInTz.getHours())
+      if (targetInTz <= nowInTz) {
+        targetInTz.setHours(targetInTz.getHours() + 1)
       }
-      return nextRun.toISOString()
-    }
-
-    case "every_n_hours": {
-      // Cada N horas desde ahora
-      const intervalH = schedule.interval_hours ?? 3
-      const nextRun = new Date(now.getTime() + intervalH * 3600_000)
-      nextRun.setMinutes(minutes, 0, 0)
-      return nextRun.toISOString()
-    }
-
-    case "daily": {
-      const nextRun = new Date(now)
-      nextRun.setHours(hours, minutes, 0, 0)
-      if (nextRun <= now) {
-        nextRun.setDate(nextRun.getDate() + 1)
+      break
+    case "daily":
+      if (targetInTz <= nowInTz) {
+        targetInTz.setDate(targetInTz.getDate() + 1)
       }
-      return nextRun.toISOString()
-    }
-
+      break
     case "weekly": {
-      const nextRun = new Date(now)
-      nextRun.setHours(hours, minutes, 0, 0)
-      if (nextRun <= now) {
-        nextRun.setDate(nextRun.getDate() + 1)
-      }
       const targetDay = schedule.day_of_week ?? 1
-      const currentDay = nextRun.getDay()
+      const currentDay = targetInTz.getDay()
       let daysToAdd = targetDay - currentDay
       if (daysToAdd < 0) daysToAdd += 7
-      else if (daysToAdd === 0 && nextRun <= now) daysToAdd = 7
-      nextRun.setDate(nextRun.getDate() + daysToAdd)
-      return nextRun.toISOString()
+      else if (daysToAdd === 0 && targetInTz <= nowInTz) daysToAdd = 7
+      targetInTz.setDate(targetInTz.getDate() + daysToAdd)
+      break
     }
-
     case "monthly": {
-      const nextRun = new Date(now)
-      nextRun.setHours(hours, minutes, 0, 0)
-      const targetDayOfMonth = schedule.day_of_month ?? 1
-      nextRun.setDate(targetDayOfMonth)
-      if (nextRun <= now) {
-        nextRun.setMonth(nextRun.getMonth() + 1)
-        nextRun.setDate(targetDayOfMonth)
+      const targetDom = schedule.day_of_month ?? 1
+      targetInTz.setDate(targetDom)
+      if (targetInTz <= nowInTz) {
+        targetInTz.setMonth(targetInTz.getMonth() + 1)
+        targetInTz.setDate(targetDom)
       }
-      return nextRun.toISOString()
-    }
-
-    default: {
-      // Fallback: daily
-      const nextRun = new Date(now)
-      nextRun.setHours(hours, minutes, 0, 0)
-      if (nextRun <= now) {
-        nextRun.setDate(nextRun.getDate() + 1)
-      }
-      return nextRun.toISOString()
+      break
     }
   }
+
+  // Convert back to UTC
+  return new Date(targetInTz.getTime() + offsetMs).toISOString()
 }

@@ -38,7 +38,7 @@ export const AccountIdQuerySchema = z.object({
 export const BatchImportSchema = z.object({
   sourceId: zUUID,
   offset: z.number().int().min(0).optional().default(0),
-  mode: z.enum(["upsert", "insert", "update"]).optional().default("upsert"),
+  mode: z.enum(["upsert", "insert", "update", "create"]).optional().default("upsert"),
   historyId: z.string().nullable().optional().default(null),
   batch_size: z.number().int().min(50).max(1000).optional().default(500),
 })
