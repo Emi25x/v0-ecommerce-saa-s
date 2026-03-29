@@ -249,10 +249,8 @@ export async function runImportPipeline(config: PipelineConfig): Promise<Pipelin
     result.total_duration_ms = Date.now() - start
     await run.fail(err)
 
-    // Cleanup staging on error
-    try {
-      await admin.from("import_staging").delete().eq("run_id", runId)
-    } catch { /* ignore */ }
+    // Do NOT cleanup staging on error — allows resume or debugging
+    // Staging rows will be cleaned up on the next successful run for this source
 
     console.error(`[PIPELINE] ${config.sourceName}: FAILED — ${result.error}`)
     return result

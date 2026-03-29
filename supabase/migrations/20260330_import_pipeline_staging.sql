@@ -48,6 +48,40 @@ CREATE TABLE IF NOT EXISTS import_rejects (
 
 CREATE INDEX IF NOT EXISTS idx_rejects_run ON import_rejects (run_id);
 
+-- 2b. Copy invalid rows from staging to rejects (for post-mortem debugging)
+CREATE OR REPLACE FUNCTION copy_staging_rejects(
+  p_run_id UUID,
+  p_source_id UUID,
+  p_source_name TEXT
+)
+RETURNS INT
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE v_count INT;
+BEGIN
+  INSERT INTO import_rejects (run_id, source_id, source_name, line_number, ean, raw_data, error_message)
+  SELECT run_id, source_id, p_source_name, line_number, ean, raw_data, error_message
+  FROM import_staging
+  WHERE run_id = p_run_id AND is_valid = FALSE;
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END;
+$$;
+
+-- 2c. Validate EAN lengths in staging
+CREATE OR REPLACE FUNCTION validate_staging_eans(p_run_id UUID)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  UPDATE import_staging
+  SET is_valid = FALSE, error_message = 'EAN length != 13: ' || COALESCE(ean, '(null)')
+  WHERE run_id = p_run_id AND is_valid = TRUE AND ean IS NOT NULL AND length(ean) != 13;
+END;
+$$;
+
 -- 3. Merge function: staging → products (single SQL operation)
 CREATE OR REPLACE FUNCTION merge_staging_to_products(
   p_run_id UUID,
@@ -86,6 +120,12 @@ BEGIN
         updated_at = NOW()
       FROM staged s
       WHERE p.ean = s.ean
+        AND (
+          -- Only update if something actually changed
+          COALESCE((p.stock_by_source->>p_source_key)::int, -1) IS DISTINCT FROM COALESCE(s.stock, 0)
+          OR (s.price IS NOT NULL AND s.price > 0 AND p.cost_price IS DISTINCT FROM s.price)
+          OR (s.price_ars IS NOT NULL AND (p.custom_fields->>'precio_ars')::numeric IS DISTINCT FROM s.price_ars)
+        )
       RETURNING p.id
     )
     SELECT COUNT(*) INTO v_updated FROM updated;
