@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  Rocket,
   Database,
   FileText,
   History,
@@ -77,7 +78,12 @@ export function SourceCard({
                 <Settings className="h-4 w-4" />
               </Button>
             </Link>
-            <Button variant="outline" size="sm" onClick={() => onRunImport(source)} disabled={isRunning || isImporting}>
+            <Link href={`/inventory/sources/pipeline?sourceId=${source.id}&name=${encodeURIComponent(source.name)}`}>
+              <Button variant="outline" size="sm" title="Pipeline (importación optimizada)" className="border-blue-400 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950">
+                <Rocket className="h-4 w-4" />
+              </Button>
+            </Link>
+            <Button variant="outline" size="sm" onClick={() => onRunImport(source)} disabled={isRunning || isImporting} title="Import clásico">
               {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
             </Button>
             <Button
