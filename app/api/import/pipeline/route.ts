@@ -30,38 +30,37 @@ export async function POST(request: NextRequest) {
 
     let result: any
 
-    if (adapter === "arnoia_stock" || source_id) {
-      // Determine which adapter to use
-      if (adapter === "arnoia_stock") {
-        const { runArnoiaStockPipeline } = await import("@/lib/import/adapters/arnoia-stock")
-        result = await runArnoiaStockPipeline()
-      } else if (adapter === "libral_stock") {
+    if (adapter === "arnoia_stock") {
+      const { runArnoiaStockPipeline } = await import("@/lib/import/adapters/arnoia-stock")
+      result = await runArnoiaStockPipeline(source_id)
+    } else if (adapter === "libral_stock") {
+      const { runLibralStockPipeline } = await import("@/lib/import/adapters/libral-stock")
+      result = await runLibralStockPipeline(source_id)
+    } else if (source_id) {
+      // Resolve adapter from source metadata
+      const { createAdminClient } = await import("@/lib/db/admin")
+      const admin = createAdminClient()
+      const { data: source } = await admin
+        .from("import_sources")
+        .select("name, source_key, feed_type")
+        .eq("id", source_id)
+        .single()
+
+      if (!source) {
+        return NextResponse.json({ error: "Source not found" }, { status: 404 })
+      }
+
+      const key = (source.source_key ?? "").toLowerCase()
+      const name = (source.name ?? "").toLowerCase()
+
+      if (key.includes("libral") || name.includes("libral")) {
         const { runLibralStockPipeline } = await import("@/lib/import/adapters/libral-stock")
-        result = await runLibralStockPipeline()
+        result = await runLibralStockPipeline(source_id)
+      } else if (name.includes("arnoia")) {
+        const { runArnoiaStockPipeline } = await import("@/lib/import/adapters/arnoia-stock")
+        result = await runArnoiaStockPipeline(source_id)
       } else {
-        // Generic: determine adapter from source
-        const { createAdminClient } = await import("@/lib/db/admin")
-        const admin = createAdminClient()
-        const { data: source } = await admin
-          .from("import_sources")
-          .select("name, source_key")
-          .eq("id", source_id)
-          .single()
-
-        if (!source) {
-          return NextResponse.json({ error: "Source not found" }, { status: 404 })
-        }
-
-        const key = source.source_key?.toLowerCase() ?? source.name?.toLowerCase() ?? ""
-        if (key.includes("arnoia") && key.includes("stock")) {
-          const { runArnoiaStockPipeline } = await import("@/lib/import/adapters/arnoia-stock")
-          result = await runArnoiaStockPipeline()
-        } else if (key.includes("libral")) {
-          const { runLibralStockPipeline } = await import("@/lib/import/adapters/libral-stock")
-          result = await runLibralStockPipeline()
-        } else {
-          return NextResponse.json({ error: `No pipeline adapter for source: ${source.name}` }, { status: 400 })
-        }
+        return NextResponse.json({ error: `No pipeline adapter for source: ${source.name}. Use adapter parameter.` }, { status: 400 })
       }
     } else {
       return NextResponse.json({ error: "Specify adapter or source_id" }, { status: 400 })

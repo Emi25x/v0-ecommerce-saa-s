@@ -7,16 +7,27 @@ import { createAdminClient } from "@/lib/db/admin"
 import { runImportPipeline, type PipelineResult } from "@/lib/import/pipeline"
 import { fetchAndParseCsv } from "@/lib/import/csv-fetch"
 
-export async function runArnoiaStockPipeline(): Promise<PipelineResult> {
+export async function runArnoiaStockPipeline(sourceId?: string): Promise<PipelineResult> {
   const admin = createAdminClient()
 
-  // Find Arnoia stock source
-  const { data: source } = await admin
-    .from("import_sources")
-    .select("id, name, source_key, url_template, auth_type, credentials, delimiter, column_mapping")
-    .ilike("name", "%arnoia%stock%")
-    .eq("is_active", true)
-    .single()
+  // Find source by ID or by name
+  let source: any = null
+  if (sourceId) {
+    const { data } = await admin
+      .from("import_sources")
+      .select("id, name, source_key, url_template, auth_type, credentials, delimiter, column_mapping")
+      .eq("id", sourceId)
+      .single()
+    source = data
+  } else {
+    const { data } = await admin
+      .from("import_sources")
+      .select("id, name, source_key, url_template, auth_type, credentials, delimiter, column_mapping")
+      .eq("name", "Arnoia Stock")
+      .eq("is_active", true)
+      .maybeSingle()
+    source = data
+  }
 
   if (!source) {
     return { success: false, run_id: "", phases: {} as any, total_duration_ms: 0, error: "Arnoia stock source not found" }

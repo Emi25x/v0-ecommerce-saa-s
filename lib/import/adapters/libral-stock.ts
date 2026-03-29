@@ -7,15 +7,26 @@ import { createAdminClient } from "@/lib/db/admin"
 import { runImportPipeline, type PipelineResult } from "@/lib/import/pipeline"
 import { fetchAndParseCsv } from "@/lib/import/csv-fetch"
 
-export async function runLibralStockPipeline(): Promise<PipelineResult> {
+export async function runLibralStockPipeline(sourceId?: string): Promise<PipelineResult> {
   const admin = createAdminClient()
 
-  const { data: source } = await admin
-    .from("import_sources")
-    .select("id, name, source_key, url_template, auth_type, credentials, delimiter, column_mapping")
-    .eq("source_key", "libral_argentina")
-    .eq("is_active", true)
-    .single()
+  let source: any = null
+  if (sourceId) {
+    const { data } = await admin
+      .from("import_sources")
+      .select("id, name, source_key, url_template, auth_type, credentials, delimiter, column_mapping")
+      .eq("id", sourceId)
+      .single()
+    source = data
+  } else {
+    const { data } = await admin
+      .from("import_sources")
+      .select("id, name, source_key, url_template, auth_type, credentials, delimiter, column_mapping")
+      .eq("source_key", "libral_argentina")
+      .eq("is_active", true)
+      .maybeSingle()
+    source = data
+  }
 
   if (!source) {
     return { success: false, run_id: "", phases: {} as any, total_duration_ms: 0, error: "Libral Argentina source not found" }
@@ -26,7 +37,7 @@ export async function runLibralStockPipeline(): Promise<PipelineResult> {
   return runImportPipeline({
     sourceId: source.id,
     sourceName: source.name,
-    sourceKey: "libral_argentina",
+    sourceKey: source.source_key ?? "libral_argentina",
     mode: "stock_only",
     minRowsForZero: 10,
     fetchRows: () => fetchAndParseCsv({
