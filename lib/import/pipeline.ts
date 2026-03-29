@@ -173,27 +173,87 @@ export async function runImportPipeline(config: PipelineConfig): Promise<Pipelin
     }
     console.log(`[PIPELINE] ${config.sourceName}: Validated — ${validCount} valid, ${invalidCount} invalid in ${result.phases.validate.duration_ms}ms`)
 
-    // ── Phase 4: Merge ────────────────────────────────────────────────────
+    // ── Phase 4: Merge (batched to stay within HTTP timeout) ──────────────
     const t4 = Date.now()
+    let totalUpdated = 0
+    let totalCreated = 0
+    let totalSkipped = 0
 
-    const { data: mergeResult, error: mergeErr } = await admin.rpc("merge_staging_to_products", {
-      p_run_id: runId,
-      p_source_key: config.sourceKey,
-      p_mode: config.mode,
-    })
+    // Get distinct EAN count from staging to determine batch strategy
+    const { count: validEanCount } = await admin
+      .from("import_staging")
+      .select("*", { count: "exact", head: true })
+      .eq("run_id", runId)
+      .eq("is_valid", true)
 
-    if (mergeErr) {
-      throw new Error(`Merge failed: ${mergeErr.message}`)
+    const totalValid = validEanCount ?? 0
+    const MERGE_BATCH = 5000
+
+    if (totalValid <= MERGE_BATCH) {
+      // Small enough for a single RPC call
+      const { data: mergeResult, error: mergeErr } = await admin.rpc("merge_staging_to_products", {
+        p_run_id: runId,
+        p_source_key: config.sourceKey,
+        p_mode: config.mode,
+      })
+
+      if (mergeErr) throw new Error(`Merge failed: ${mergeErr.message}`)
+      const merge = mergeResult as any ?? {}
+      totalUpdated = merge.updated ?? 0
+      totalCreated = merge.created ?? 0
+      totalSkipped = merge.skipped ?? 0
+    } else {
+      // Large dataset: merge in batches of MERGE_BATCH EANs
+      // Fetch EANs from staging in pages and update products directly
+      for (let offset = 0; offset < totalValid; offset += MERGE_BATCH) {
+        const { data: batchEans } = await admin
+          .from("import_staging")
+          .select("ean, stock, price, price_ars")
+          .eq("run_id", runId)
+          .eq("is_valid", true)
+          .not("ean", "is", null)
+          .range(offset, offset + MERGE_BATCH - 1)
+
+        if (!batchEans || batchEans.length === 0) break
+
+        // Deduplicate by EAN (last wins)
+        const eanMap = new Map<string, any>()
+        for (const row of batchEans) {
+          if (row.ean) eanMap.set(row.ean, row)
+        }
+
+        const eans = Array.from(eanMap.keys())
+        const stocks = eans.map((e) => eanMap.get(e)?.stock ?? 0)
+        const prices = eans.map((e) => {
+          const p = eanMap.get(e)?.price
+          return p && p > 0 ? p : null
+        })
+
+        // Use bulk_update_stock_price RPC (works within HTTP timeout)
+        const { data: rpcResult, error: rpcErr } = await admin.rpc("bulk_update_stock_price", {
+          p_eans: eans,
+          p_stocks: stocks,
+          p_prices: prices,
+          p_source_key: config.sourceKey,
+        })
+
+        if (rpcErr) {
+          console.error(`[PIPELINE] Merge batch at offset ${offset} error:`, rpcErr.message)
+        } else {
+          totalUpdated += typeof rpcResult === "number" ? rpcResult : 0
+        }
+
+        console.log(`[PIPELINE] ${config.sourceName}: Merged batch ${offset}-${offset + eans.length} (${totalUpdated} updated so far)`)
+      }
     }
 
-    const merge = mergeResult as { updated: number; created: number; skipped: number } ?? { updated: 0, created: 0, skipped: 0 }
     result.phases.merge = {
-      updated: merge.updated ?? 0,
-      created: merge.created ?? 0,
-      skipped: merge.skipped ?? 0,
+      updated: totalUpdated,
+      created: totalCreated,
+      skipped: totalSkipped,
       duration_ms: Date.now() - t4,
     }
-    console.log(`[PIPELINE] ${config.sourceName}: Merged — ${merge.updated} updated, ${merge.created} created, ${merge.skipped} skipped in ${result.phases.merge.duration_ms}ms`)
+    console.log(`[PIPELINE] ${config.sourceName}: Merged — ${totalUpdated} updated, ${totalCreated} created, ${totalSkipped} skipped in ${result.phases.merge.duration_ms}ms`)
 
     // ── Phase 5: Post-process ─────────────────────────────────────────────
     const t5 = Date.now()
@@ -237,7 +297,7 @@ export async function runImportPipeline(config: PipelineConfig): Promise<Pipelin
 
     await run.complete({
       rows_processed: staged,
-      rows_updated: merge.updated + merge.created,
+      rows_updated: totalUpdated + totalCreated,
       rows_failed: invalidCount ?? 0,
       log_json: result.phases,
     })
