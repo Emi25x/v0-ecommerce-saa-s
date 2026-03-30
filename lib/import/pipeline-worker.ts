@@ -140,18 +140,28 @@ export async function startPipeline(config: {
 
 // ── Continue merging ────────────────────────────────────────────────────────
 
-export async function tickPipeline(): Promise<WorkerResult> {
+export async function tickPipeline(targetRunId?: string): Promise<WorkerResult> {
   const admin = createAdminClient()
   const start = Date.now()
 
-  // Find active pipeline
-  const { data: state } = await admin
+  // Find active pipeline — prefer specific run_id if provided
+  let stateQuery = admin
     .from("import_pipeline_state")
     .select("*")
     .in("phase", ["staged", "merging"])
     .order("started_at", { ascending: false })
     .limit(1)
-    .maybeSingle()
+
+  if (targetRunId) {
+    stateQuery = admin
+      .from("import_pipeline_state")
+      .select("*")
+      .eq("run_id", targetRunId)
+      .in("phase", ["staged", "merging"])
+      .limit(1)
+  }
+
+  const { data: state } = await stateQuery.maybeSingle()
 
   if (!state) {
     return { action: "idle" }

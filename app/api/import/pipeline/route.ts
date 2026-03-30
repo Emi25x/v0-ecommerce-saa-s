@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
 
     // ── Tick: continue merging ─────────────────────────────────────────────
     if (action === "tick") {
-      const result = await tickPipeline()
+      const result = await tickPipeline(body.run_id)
       return NextResponse.json(result)
     }
 

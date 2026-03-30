@@ -50,7 +50,7 @@ export default function PipelinePage() {
         const res = await fetch("/api/import/pipeline", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "tick" }),
+          body: JSON.stringify({ action: "tick", run_id: runId }),
         })
         const data: PipelineResult = await res.json()
 
